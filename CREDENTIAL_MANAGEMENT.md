@@ -227,14 +227,11 @@ dashboard/
 
 ### Infrastructure
 ```
-├── OCI_DEPLOYMENT.md                       # NEW: Complete deployment guide
-├── ARCHITECTURE_COMPLETE.md                # UPDATED: OCI self-hosted
-├── SETUP.md                                # UPDATED: Installation guide
-├── Dockerfile.backend                      # NEW: Backend container
-├── Dockerfile.frontend                     # NEW: Frontend container
-├── docker-compose.yml
+├── OCI_DEPLOYMENT.md                       # Deployment guide
+├── ARCHITECTURE_COMPLETE.md                # OCI-hosted architecture
+├── SETUP.md                                # Installation guide
 └── deploy/
-    └── deploy-oci.sh                       # NEW: OCI deployment script
+    └── deploy-oci.sh                       # OCI deployment automation
 ```
 
 ---
@@ -277,17 +274,15 @@ dashboard/
 
 ### For Developers (Deployment)
 
-#### Local Development
+#### OCI Deployment
 ```bash
-# 1. Set up Python environment
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# 1. Deploy infrastructure
+chmod +x deploy/deploy-oci.sh
+./deploy/deploy-oci.sh
 
-# 2. Start database
-docker run -d \
-  -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=optora \
+# 2. Database configured automatically
+# PostgreSQL is provisioned as OCI DBaaS during deployment
+# Login credentials available in OCI console
   -p 5432:5432 \
   postgres:15
 

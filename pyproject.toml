@@ -6,15 +6,16 @@ build-backend = "poetry.core.masonry.api"
 name = "optiora"
 version = "0.1.0"
 description = "OptiOra - Multi-Cloud Cost Automation MCP deployed on OCI. Optimize costs across AWS, Azure, GCP, and OCI."
-authors = [{name = "Your Name", email = "your.email@example.com"}]
+authors = [{name = "Leandro Michelino", email = "info@optiora.ai"}]
 license = "MIT"
 readme = "README.md"
+requires-python = ">=3.10"
 
 [tool.poetry]
 name = "optiora"
 version = "0.1.0"
-description = "OptiOra - Multi-Cloud Cost Automation MCP"
-authors = ["Your Name <your.email@example.com>"]
+description = "OptiOra - Multi-Cloud Cost Automation MCP on OCI"
+authors = ["Leandro Michelino <info@optiora.ai>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -27,13 +28,49 @@ oci = "^2.120.0"
 pydantic = "^2.0.0"
 python-dotenv = "^1.0.0"
 httpx = "^0.24.0"
+fastapi = "^0.100.0"
+uvicorn = "^0.24.0"
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
 pytest-asyncio = "^0.21.0"
+pytest-cov = "^4.1.0"
 black = "^23.0.0"
-ruff = "^0.0.280"
+ruff = "^0.1.0"
 mypy = "^1.5.0"
+pylint = "^3.0.0"
+pyright = "^1.1.0"
 
 [tool.poetry.scripts]
 optiora = "finops_mcp.server:main"
+
+# Tool configurations
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]  # Line length handled by black
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "--strict-markers -v"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[tool.pyright]
+include = ["finops_mcp", "tests"]
+exclude = [".venv", "venv", "build", "dist"]
+typeCheckingMode = "basic"

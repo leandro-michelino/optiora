@@ -123,16 +123,13 @@
 git clone https://github.com/leandro-michelino/optiora.git
 cd optiora
 
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Deploy on OCI (see SETUP.md for details)
+chmod +x deploy/deploy-oci.sh
+./deploy/deploy-oci.sh
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure credentials
-cp .env.example .env
-nano .env  # Add your AWS/Azure/GCP/OCI keys
+# For development references, see:
+# - SETUP.md for OCI deployment
+# - OCI_DEPLOYMENT.md for infrastructure details
 
 # Run MCP server
 python -m finops_mcp.server

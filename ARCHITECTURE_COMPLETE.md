@@ -357,18 +357,11 @@ dashboard/
 
 ## Deployment Architecture
 
-### Local Development
+### Production (OCI Hosted - Only Supported Deployment)
 
 ```
-Your Machine
-├── Python venv (.venv)
-│   └─── Backend running on :8000
-├── Node.js environment
-│   └─── Dashboard running on :3000
-└── (Optional) PostgreSQL locally or via docker-compose
-```
-
-### Production (OCI Hosted)
+OCI Region (us-phoenix-1)
+│
 
 ```
 OCI Region (us-phoenix-1)

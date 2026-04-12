@@ -56,29 +56,38 @@ dashboard/
 
 ## Getting Started
 
-### Prerequisites
+⚠️ **Deployment Note**: The dashboard is deployed as part of the OCI infrastructure. For production deployments, use the main deployment script:
 
-- Node.js 18+ 
-- npm or yarn package manager
+```bash
+cd ..
+chmod +x deploy/deploy-oci.sh
+./deploy/deploy-oci.sh
+```
 
-### Installation
+See [OCI_DEPLOYMENT.md](../OCI_DEPLOYMENT.md) for details.
+
+---
+
+### For Development Reference Only
+
+If developing locally for testing (not supported for production):
 
 ```bash
 # Install dependencies
 npm install
 
-# Start development server
+# Start development server  
 npm run dev
 
 # Open http://localhost:3000 in your browser
 ```
 
-### Environment Variables
+### Environment Setup
 
-Create a `.env.local` file in the dashboard directory:
+The dashboard uses environment variables defined in the root `.env.example`:
 
 ```env
-# MCP Backend API URL
+# MCP Backend API URL (production: set via OCI deployment)
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 

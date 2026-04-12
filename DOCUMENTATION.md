@@ -101,14 +101,12 @@ Complete guide to all OptiOra documentation. Start with your use case:
 
 ## 📈 **Quick Reference**
 
-### Installation (5 minutes)
+### OCI Deployment (5 minutes)
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python -m finops_mcp.server
+chmod +x deploy/deploy-oci.sh
+./deploy/deploy-oci.sh
 ```
-→ See [SETUP.md](./SETUP.md) for detailed steps
+→ See [SETUP.md](./SETUP.md) for detailed deployment guide
 
 ### Testing
 ```bash
