@@ -197,9 +197,6 @@ export default function SettingsPage() {
           <li><strong>4. Begin analysis:</strong> OptiOra starts finding cost optimization opportunities</li>
         </ol>
       </div>
-          + Add Cloud Provider
-        </button>
-      </div>
 
       {/* Preferences */}
       <div className="card">

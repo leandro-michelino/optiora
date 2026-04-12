@@ -136,7 +136,7 @@ export default function CostsPage() {
 
   const totalCost = costs.reduce((sum, c) => sum + c.cost, 0)
   const totalLastMonth = costs.reduce((sum, c) => sum + c.lastMonth, 0)
-  const totalTrend = ((totalCost - totalLastMonth) / totalLastMonth * 100).toFixed(1)
+  const totalTrend = parseFloat(((totalCost - totalLastMonth) / totalLastMonth * 100).toFixed(1))
   const totalSavingsPotential = costs.reduce((sum, c) => sum + c.savingsPotential, 0)
 
   const chartData = costs.map(c => ({
@@ -182,7 +182,7 @@ export default function CostsPage() {
           <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">${totalCost.toLocaleString()}</p>
           <p className={`text-sm mt-2 flex items-center gap-1 ${totalTrend > 0 ? 'text-red-600' : 'text-green-600'}`}>
             {totalTrend > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-            {Math.abs(parseFloat(totalTrend))}% vs last month
+            {Math.abs(totalTrend)}% vs last month
           </p>
         </div>
 
@@ -218,7 +218,7 @@ export default function CostsPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
               <YAxis />
-              <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => `$${(value || 0).toLocaleString()}`} />
               <Legend />
               <Bar dataKey="cost" fill="#3B82F6" name="This Month" />
               <Bar dataKey="lastMonth" fill="#93C5FD" name="Last Month" />
@@ -239,7 +239,7 @@ export default function CostsPage() {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                label={({ name, percent }: any) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
                 outerRadius={80}
                 fill="#8884d8"
                 dataKey="value"
@@ -248,7 +248,7 @@ export default function CostsPage() {
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
+              <Tooltip formatter={(value: any) => `$${(value || 0).toLocaleString()}`} />
             </PieChart>
           </ResponsiveContainer>
         </div>

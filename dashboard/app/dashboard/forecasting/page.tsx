@@ -117,7 +117,7 @@ export default function PredictiveAnalyticsPage() {
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="month" stroke="#64748b" />
-                <YAxis stroke="#64748b" formatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                <YAxis stroke="#64748b" tickFormatter={(value: any) => `$${(value / 1000).toFixed(0)}k`} />
                 <Tooltip
                   formatter={(value) => `$${(value as number).toLocaleString()}`}
                   contentStyle={{
