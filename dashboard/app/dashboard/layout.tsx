@@ -2,15 +2,18 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '@/lib/auth-context'
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Home, Zap, Grid } from 'lucide-react'
+import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Home, Zap, Grid, LogOut } from 'lucide-react'
 
-export default function DashboardLayout({
+function DashboardLayoutContent({
   children,
 }: {
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const { user, logout } = useAuth()
 
   const mainNavItems = [
     { href: '/dashboard', label: 'Overview', icon: BarChart3 },
@@ -148,6 +151,19 @@ export default function DashboardLayout({
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+          <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg">
+            <div className="text-sm">
+              <p className="font-medium text-slate-900 dark:text-white">{user?.full_name || user?.email}</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">{user?.email}</p>
+            </div>
+            <button
+              onClick={logout}
+              className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+            </button>
+          </div>
           <ThemeToggle />
           <div className="text-xs text-slate-600 dark:text-slate-400 p-2 bg-slate-50 dark:bg-slate-900 rounded-lg">
             <p className="font-medium mb-1">💡 Tip</p>
@@ -163,5 +179,17 @@ export default function DashboardLayout({
         </div>
       </main>
     </div>
+  )
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <ProtectedRoute>
+      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+    </ProtectedRoute>
   )
 }
