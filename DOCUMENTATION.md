@@ -74,7 +74,6 @@ Complete guide to all OptiOra documentation. Start with your use case:
 | [SETUP.md](./SETUP.md) | Local development setup | Getting started locally |
 | [ARCHITECTURE_COMPLETE.md](./ARCHITECTURE_COMPLETE.md) | Tech stack, MCP protocol details | Understanding code structure |
 | [CREDENTIAL_MANAGEMENT.md](./CREDENTIAL_MANAGEMENT.md) | Authentication system, REST API | Integrating with credentials system |
-| [CONTRIBUTING.md](./CONTRIBUTING.md) | Contribution guidelines, PR process | Submitting changes |
 | [TESTING.md](./TESTING.md) | How to write and run tests | Adding new features |
 | [DASHBOARD.md](./DASHBOARD.md) | Frontend components & pages | Modifying React dashboard |
 
@@ -139,7 +138,7 @@ pytest tests/ -v
 | OCI_DEPLOYMENT.md | 600 | Production deployment | ✅ Active |
 | CREDENTIAL_MANAGEMENT.md | 400 | Security system docs | ✅ Active |
 | TESTING.md | 200 | Test guide | ✅ Active |
-| CONTRIBUTING.md | 250 | Development workflow | ✅ Active |
+
 | DASHBOARD.md | 300 | Frontend docs | ✅ Active |
 | MONETIZATION.md | 250 | Pricing strategy | ✅ Active |
 | COMPETITIVE_ANALYSIS.md | 400 | Market analysis | ✅ Active |
@@ -214,4 +213,3 @@ When updating docs:
 - **"How much does it cost?"** → [COST_ESTIMATE.md](./COST_ESTIMATE.md)
 - **"How does it work?"** → [ARCHITECTURE_COMPLETE.md](./ARCHITECTURE_COMPLETE.md)
 - **"How do I deploy to production?"** → [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md)
-- **"How do I contribute code?"** → [CONTRIBUTING.md](./CONTRIBUTING.md)

@@ -36,7 +36,6 @@
 | [🏗️ Architecture](./ARCHITECTURE_COMPLETE.md) | System design & components |
 | [💵 Cost Estimate](./COST_ESTIMATE.md) | Deployment costs & ROI analysis |
 | [🧪 Testing Guide](./TESTING.md) | Run & write tests |
-| [🤝 Contributing](./CONTRIBUTING.md) | Development workflow |
 | [🚀 Deployment](./OCI_DEPLOYMENT.md) | Production deployment on OCI |
 | [🔐 Credentials](./CREDENTIAL_MANAGEMENT.md) | Secure credential system |
 | [💰 Business Model](./MONETIZATION.md) | Pricing & revenue strategy |
@@ -283,16 +282,12 @@ vercel
 
 ---
 
-## 🤝 Contributing
+## 💼 Enterprise Access
 
-We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
-
-**Areas to contribute:**
-- 🐛 Bug fixes
-- ✨ New features (e.g., new cloud providers)
-- 📚 Documentation improvements
-- 🧪 Test coverage
-- 🎨 UI/UX enhancements
+OptiOra is a **commercial SaaS platform**. Organizations interested in using OptiOra should:
+- 📧 Contact us for pricing and deployment
+- 🏢 Enterprise support available
+- 🔒 Self-hosted OCI deployment option
 
 ---
 
@@ -307,7 +302,6 @@ OptiOra is licensed under the **MIT License** — see [LICENSE](LICENSE) for det
 - 📖 **[Setup Guide](./SETUP.md)** — Installation & configuration
 - 🏗️ **[Architecture](./ARCHITECTURE_COMPLETE.md)** — System design
 - 🧪 **[Testing](./TESTING.md)** — How to write & run tests
-- 🤝 **[Contributing](./CONTRIBUTING.md)** — Development workflow
 - 🚀 **[Deployment](./OCI_DEPLOYMENT.md)** — Production setup
 - 📊 **[GitHub Repository](https://github.com/leandro-michelino/optiora)**
 
@@ -326,7 +320,7 @@ OptiOra is licensed under the **MIT License** — see [LICENSE](LICENSE) for det
 1. **Read**: [Setup.md](./SETUP.md) for installation
 2. **Run**: `pytest tests/ -v` to verify tests pass
 3. **Explore**: [ARCHITECTURE_COMPLETE.md](./ARCHITECTURE_COMPLETE.md) for system design
-4. **Contribute**: Check [Contributing.md](./CONTRIBUTING.md)
+4. **Deploy**: Follow [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for production
 
 ---
 
