@@ -10,19 +10,24 @@
 
 🚀 **Deployed on OCI Infrastructure** | 📊 **React Dashboard** | 🔌 **MCP Protocol** | 💰 **Multi-Cloud Support**
 
+📚 **[Browse All Documentation →](./DOCUMENTATION.md)** | Quick links below:
+
 ---
 
 ## 🎯 Quick Links
 
 | Document | Purpose |
 |----------|---------|
-| [📖 Setup Guide](./SETUP.md) | Installation & configuration |
+| [📖 Setup Guide](./SETUP.md) | Installation & configuration (5-min quickstart included) |
 | [🏗️ Architecture](./ARCHITECTURE_COMPLETE.md) | System design & components |
+| [💵 Cost Estimate](./COST_ESTIMATE.md) | Deployment costs & ROI analysis |
 | [🧪 Testing Guide](./TESTING.md) | Run & write tests |
 | [🤝 Contributing](./CONTRIBUTING.md) | Development workflow |
-| [🚀 Deployment](./OCI_DEPLOYMENT.md) | Production deployment |
-| [💰 Business Model](./MONETIZATION.md) | Pricing & revenue |
-| [🎯 Roadmap](./ROADMAP.md) | Future features |
+| [🚀 Deployment](./OCI_DEPLOYMENT.md) | Production deployment on OCI |
+| [🔐 Credentials](./CREDENTIAL_MANAGEMENT.md) | Secure credential system |
+| [💰 Business Model](./MONETIZATION.md) | Pricing & revenue strategy |
+| [📊 Competitive Analysis](./COMPETITIVE_ANALYSIS.md) | Market positioning vs competitors |
+| [🎯 Roadmap](./ROADMAP.md) | Future features & timeline |
 
 ---
 

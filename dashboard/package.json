@@ -25,6 +25,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.3",
     "autoprefixer": "^10.4.27",
     "axios": "^1.15.0",
     "lucide-react": "^1.8.0",
