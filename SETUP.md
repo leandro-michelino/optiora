@@ -1,713 +1,305 @@
-# Setup & Installation Guide for OptiOra
+# OptiOra Deployment Guide
 
-⚠️ **IMPORTANT:** This guide covers **LOCAL DEVELOPMENT ONLY**. 
+🚀 **OCI-ONLY DEPLOYMENT**
 
-**PRODUCTION MUST ALWAYS RUN ON OCI.** Never run OptiOra in production from your laptop or personal machines. 
-→ See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for production deployment.
+OptiOra is deployed **exclusively on Oracle Cloud Infrastructure (OCI)**.
 
----
-
-Complete step-by-step guide to set up OptiOra locally for development and testing.
-
----
-
-## Table of Contents
-
-1. [⚠️ Important: Local vs Production](#important-local-vs-production)
-2. [Local Development](#local-development)
-3. [Production Deployment (OCI)](#production-deployment-oci-required)
-4. [Docker Deployment](#docker-deployment)
-5. [Environment Configuration](#environment-configuration)
-6. [Troubleshooting](#troubleshooting)
+- ❌ NOT available for local/laptop development
+- ❌ NOT available for on-premises deployment
+- ❌ NOT available for self-hosted private infrastructure
+- ✅ **ONLY available as managed service on OCI**
 
 ---
 
-## ⚠️ Important: Local vs Production
+## Quick Start
 
-### ✅ Local Development (Your Laptop)
-
-**Use for:**
-- Writing and testing code
-- Debugging features
-- Running unit tests
-- Exploring the codebase
-
-**Limitations:**
-- Not suitable for customers
-- Single point of failure (your laptop)
-- No backup or disaster recovery
-- Unreliable/slow for multi-cloud API calls
-- Data not persisted if machine reboots
-
-**How to run:**
-```bash
-poetry install
-cp .env.example .env
-nano .env  # Fill in credentials
-python -m finops_mcp.server
-# Terminal 2: cd dashboard && npm run dev
-```
-
-### 🚫 NEVER Production (Your Laptop)
-
-**DO NOT:**
-- Connect production customer credentials/data to local .env
-- Run `npm run build && npm run start` on your laptop
-- Deploy customers to your local machine
-- Store customer data on your laptop
-- Leave laptop running 24/7 as a server
-
-### ✅ Production ONLY (OCI)
-
-**Always use OCI for:**
-- Customer-facing deployments
-- Handling real cost data
-- Running 24/7 monitoring
-- Storing encrypted credentials
-- Backup and disaster recovery
-- High availability and SLA compliance
-
-**How to run:** See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) - complete step-by-step guide
-
----
-
-## Local Development (Your Laptop - Dev/Testing Only)
-
-**Before you start:** Make sure you understand the [Local vs Production](#important-local-vs-production) distinction above.
+OptiOra is a managed service. Access and deployment are handled through OCI.
 
 ### Prerequisites
 
-- **Python**: 3.10+ ([download](https://www.python.org))
-- **Node.js**: 18+ ([download](https://nodejs.org))
-- **Git**: Latest version ([download](https://git-scm.com))
-- **(Optional) Docker**: For containerized development
+- OCI account with active subscription
+- OCI CLI installed: [Download](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/gettingstarted.htm)
+- GitHub account (for source repository)
 
-### Backend Setup (Python MCP Server)
-
-#### 1. Clone Repository
+### One-Click Deployment
 
 ```bash
+# 1. Clone repository
 git clone https://github.com/leandro-michelino/optiora.git
 cd optiora
+
+# 2. Set OCI credentials (one time)
+oci setup config
+
+# 3. Run deployment script
+chmod +x deploy/deploy-oci.sh
+./deploy/deploy-oci.sh
+
+# Deployment complete! Access dashboard via OCI API Gateway URL
 ```
 
-#### 2. Create Virtual Environment
+---
+
+## Deployment Options
+
+### Option 1: OCI Compute (Recommended for Most Users)
+
+**Best for:** Production deployments, predictable workloads, cost control
 
 ```bash
-# macOS/Linux
-python3 -m venv .venv
-source .venv/bin/activate
+# Deploy to OCI Compute Instance
+./deploy/deploy-oci.sh compute
 
-# Windows
-python -m venv .venv
-.venv\Scripts\activate
+# Returns: Dashboard URL
+# Example: https://optiora.apigateway.us-phoenix-1.oci.customer-oci.com
 ```
 
-#### 3. Install Dependencies
+**What gets created:**
+- Ubuntu 24.04 LTS Compute Instance (VM.Standard.E4.Flex)
+- PostgreSQL Database (OCI DBaaS)
+- API Gateway with DNS
+- SSL/TLS certificates
 
-OptiOra uses **Poetry** for Python dependency management. If you don't have Poetry installed:
+**Estimated cost:** $520/month (optimized) to $975/month (HA)
+
+### Option 2: OCI Functions (Serverless - Preview)
+
+**Best for:** Low-traffic, variable workloads, no server management
 
 ```bash
-# Install Poetry (macOS/Linux/Windows WSL)
-curl -sSL https://install.python-poetry.org | python3 -
+# Deploy serverless functions
+./deploy/deploy-oci.sh functions
 
-# Verify installation
-poetry --version
+# Auto-scales to zero when idle
+# Pay per invocation only
 ```
 
-Then install dependencies:
+**Estimated cost:** $50-200/month depending on usage
+
+### Option 3: OCI Container Engine (Kubernetes - Enterprise)
+
+**Best for:** Multi-tenant deployments, advanced orchestration
 
 ```bash
-# Install all dependencies from pyproject.toml
-poetry install
+# Deploy to OKE cluster
+./deploy/deploy-oci.sh kubernetes
 
-# Enter the virtual environment
-poetry shell
+# Requires: Existing OKE cluster
 ```
 
-**Alternative: Using pip directly (if Poetry not available)**
+---
+
+## Configuration
+
+### Environment Setup
+
+Create your `.env` file in the project root:
 
 ```bash
-pip install --upgrade pip
-pip install mcp boto3 azure-identity azure-mgmt-costmanagement google-cloud-billing oci pydantic python-dotenv httpx pytest pytest-asyncio
-```
-
-#### 4. Configure Environment Variables
-
-Copy the consolidated environment example and fill in your credentials:
-
-```bash
-# Copy master .env.example to .env
 cp .env.example .env
-
-# Edit with your cloud provider credentials
-nano .env
 ```
 
-The `.env.example` file contains both **Backend (MCP Server)** and **Frontend (Dashboard)** variables with detailed documentation. Minimal setup requires:
-
-**AWS Only (quickest start):**
+### Required Variables
 
 ```env
-# AWS Credentials
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
-AWS_REGION=us-east-1
+# OCI Configuration
+OCI_REGION=us-phoenix-1
+OCI_COMPARTMENT_ID=ocid1.compartment.oc1..xxxxx
+OCI_PROFILE=DEFAULT
 
-# Frontend
-NEXT_PUBLIC_API_URL=http://localhost:8000
+# Database
+OCI_DB_HOST=your-db-instance.subnet.vcn.oraclevcn.com
+OCI_DB_USER=optiora_user
+OCI_DB_PASSWORD=your_secure_password
 
-# Backend
-MCP_PORT=8000
-MCP_LOG_LEVEL=INFO
-```
-
-**Full Multi-Cloud Setup:**
-
-```env
-# AWS
+# Cloud Provider Credentials (for cost analysis)
 AWS_ACCESS_KEY_ID=your_key
 AWS_SECRET_ACCESS_KEY=your_secret
-
-# Azure
 AZURE_SUBSCRIPTION_ID=your_subscription
-AZURE_TENANT_ID=your_tenant
-AZURE_CLIENT_ID=your_client_id
-AZURE_CLIENT_SECRET=your_client_secret
+GCP_PROJECT_ID=your_project
 
-# GCP
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/gcp-key.json
-
-# OCI (for deployment)
-OCI_CONFIG_FILE=~/.oci/config
-OCI_DB_HOST=your_db_host
-OCI_DB_USER=optiora_user
-OCI_DB_PASSWORD=secure_password
-
-# Claude AI (for GenAI Dashboard features)
+# GenAI (Claude AI)
 ANTHROPIC_API_KEY=your_anthropic_key
 ```
 
-**Full Multi-Cloud Configuration:**
-
-```env
-# AWS
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-AWS_REGION=us-east-1
-
-# Azure
-AZURE_SUBSCRIPTION_ID=your_subscription
-AZURE_TENANT_ID=your_tenant
-AZURE_CLIENT_ID=your_client_id
-AZURE_CLIENT_SECRET=your_secret
-
-# GCP
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-GCP_PROJECT_ID=your_project
-
-# OCI (for cost analysis, not required for local dev)
-OCI_CONFIG_FILE=~/.oci/config
-OCI_PROFILE=DEFAULT
-OCI_REGION=us-phoenix-1
-
-# MCP Server
-MCP_PORT=8000
-MCP_LOG_LEVEL=DEBUG
-```
-
-#### 5. Run Server
+### Deploy the Service
 
 ```bash
-# Method 1: Direct Python
-python -m finops_mcp.server
+# Validate configuration
+./deploy/deploy-oci.sh validate
 
-# Method 2: Using Poetry (if installed)
-poetry run optiora
+# Deploy to OCI
+./deploy/deploy-oci.sh
 
-# Expected output:
-# INFO:finops_mcp.server:Starting OptiOra MCP server...
-# INFO:finops_mcp.server:MCP Server listening on port 8000
-```
-
-#### 6. Verify It's Running
-
-```bash
-# In another terminal
-curl -X GET http://localhost:8000/health
-# Returns: {"status": "healthy"}
-```
-
-### Frontend Setup (React Dashboard)
-
-#### 1. Navigate to Dashboard
-
-```bash
-cd dashboard
-```
-
-#### 2. Install Dependencies
-
-```bash
-npm install
-```
-
-#### 3. Configure Environment
-
-```bash
-# Copy example
-cp .env.local.example .env.local
-
-# Edit if needed (usually works as-is for local dev)
-nano .env.local
-```
-
-**Default Configuration:**
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-#### 4. Start Development Server
-
-```bash
-npm run dev
-
-# Open browser: http://localhost:3000
-```
-
-#### 5. Build for Production
-
-```bash
-npm run build
-npm start
-```
-
-### Running Tests
-
-```bash
-# From project root
-pytest tests/ -v
-
-# Expected: 33 tests pass
-# ====== 33 passed in 0.XX s ======
+# Monitor deployment
+./deploy/deploy-oci.sh status
 ```
 
 ---
 
-## Production Deployment (OCI Required - NOT Your Laptop)
+## Accessing Your Deployment
 
-⚠️ **MANDATORY:** OptiOra production must ALWAYS run on OCI. Never run production from your laptop.
+### Via OCI API Gateway
 
-### Prerequisites for OCI Deployment
+After deployment completes, you'll receive:
 
-- OCI account with tenancy OCID
-- OCI CLI installed and configured
-- Docker installed (for image building)
-- GitHub account with repository access
+```
+Dashboard URL:
+https://optiora-XXXXX.apigateway.us-phoenix-1.oci.customer-oci.com
 
-### Step 1: Set Up OCI Resources
+MCP API:
+https://optiora-api-XXXXX.apigateway.us-phoenix-1.oci.customer-oci.com
 
-#### 1a. Create OCI Compartment
-
-```bash
-# Create a compartment for OptiOra
-oci iam compartment create \
-  --name optiora \
-  --description "OptiOra MCP server and resources"
+Documentation:
+https://optiora-docs-XXXXX.apigateway.us-phoenix-1.oci.customer-oci.com
 ```
 
-Note the returned `id` (COMPARTMENT_ID).
+### Via OCI Console
 
-#### 1b. Create PostgreSQL Database
-
-```bash
-# Launch PostgreSQL Database System (via OCI Console)
-# Service: Database > MySQL Database Service > PostgreSQL
-# 
-# Configuration:
-# - Name: optiora-db
-# - Shape: MySQL.VM.Standard.E3.1.2GB
-# - Public IP: No (private VCN)
-# - High Availability: Disabled (for MVP)
-# 
-# Save credentials for later
-```
-
-#### 1c. Create Compute Instance
-
-```bash
-# Use deploy script (see below)
-# Or manually via OCI Console:
-# - Service: Compute > Instances
-# - Image: Ubuntu 24.04 LTS
-# - Shape: VM.Standard.E4.Flex (2 OCPU, 8 GB RAM)
-# - VCN: Default or custom VCN
-```
-
-### Step 2: Set Environment Variables
-
-```bash
-export OCI_REGION=us-phoenix-1
-export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..xxx
-export OCI_IMAGE_ID=ocid1.image.oc1...ubuntu...
-export OCI_INSTANCE_NAME=optiora-mcp
-```
-
-### Step 3: Deploy Using Script
-
-```bash
-# Make script executable
-chmod +x deploy/deploy-oci.sh
-
-# Run deployment
-./deploy/deploy-oci.sh compute
-
-# Script will:
-# 1. Validate prerequisites
-# 2. Create compute instance
-# 3. Install Docker
-# 4. Pull OptiOra image
-# 5. Configure environment
-# 6. Start MCP server
-```
-
-### Step 4: Configure API Gateway (Optional)
-
-```bash
-# Via OCI Console:
-# - Service: Developer Services > API Gateway
-# - Create new API Gateway
-# - Add routes to Compute instance
-# - Enable SSL/TLS
-# - Set rate limiting
-
-# Update .env:
-export OCI_API_GATEWAY_URL=https://your-gateway.apigateway.us-phoenix-1.oci.customer-oci.com
-```
-
-### Step 5: Deploy Frontend
-
-#### Option A: Vercel (Recommended)
-
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# From dashboard directory
-cd dashboard
-vercel
-
-# Follow prompts:
-# - Link to GitHub repository
-# - Set environment variables:
-#   NEXT_PUBLIC_API_URL=your_oci_api_gateway_url
-# - Deploy
-
-# Dashboard will be live at: optiora.vercel.app
-```
-
-#### Option B: CloudFlare Pages
-
-```bash
-# Install Wrangler
-npm install -g wrangler
-
-# Deploy
-wrangler pages deploy dashboard/out
-
-# Follow prompts to connect GitHub
-```
-
-#### Option C: Self-Hosted
-
-```bash
-# Build dashboard
-cd dashboard
-npm run build
-
-# Deploy to any static host (S3, GCS, etc.)
-# Or use Next.js server deployment
-npm start  # Runs on :3000
-```
+1. Sign in: [OCI Console](https://www.oracle.com/cloud/sign-in/)
+2. Navigate: **Developer Services** → **API Gateway**
+3. Select deployed API
+4. View endpoint URLs and metrics
 
 ---
 
-## Docker Deployment
+## Scaling & Monitoring
 
-### Build Docker Image
-
-```bash
-# From project root
-docker build -t optiora:latest .
-
-# Verify image
-docker images | grep optiora
-```
-
-### Run Locally with Docker
+### View Deployment Status
 
 ```bash
-# Create .env file first
-cp .env.example .env
-
-# Run container
-docker run -d \
-  --name optiora-mcp \
-  -p 8000:8000 \
-  --env-file .env \
-  optiora:latest
-
-# Check logs
-docker logs -f optiora-mcp
-
-# Stop container
-docker stop optiora-mcp
-docker rm optiora-mcp
-```
-
-### Run with Docker Compose
-
-```bash
-# Start services
-docker-compose up -d
+# Check all resources
+./deploy/deploy-oci.sh status
 
 # View logs
-docker-compose logs -f
+./deploy/deploy-oci.sh logs
 
-# Stop all
-docker-compose down
+# Get metrics
+./deploy/deploy-oci.sh metrics
 ```
 
-### Push to Registry
+### Scale Compute Instance
 
 ```bash
-# Tag image
-docker tag optiora:latest ghcr.io/leandro-michelino/optiora:latest
+# Increase OCPU allocation
+./deploy/deploy-oci.sh scale --ocpu 4 --memory 16
 
-# Login to registry
-docker login ghcr.io
+# Current: 2 OCPU, 8 GB RAM
+# After: 4 OCPU, 16 GB RAM
+```
 
-# Push
-docker push ghcr.io/leandro-michelino/optiora:latest
+### Enable High Availability
+
+```bash
+# Deploy with HA (Multi-AZ, Load Balancer)
+./deploy/deploy-oci.sh ha enable
+
+# Estimated additional cost: $455/month
 ```
 
 ---
 
-## Environment Configuration
+## Maintenance & Updates
 
-### Complete Environment Reference
+### Update OptiOra
 
-#### Server Configuration
+```bash
+# Pull latest code
+git pull origin main
 
-```env
-# MCP Server Settings
-MCP_PORT=8000                    # Server port
-MCP_LOG_LEVEL=INFO               # DEBUG, INFO, WARNING, ERROR
-DEPLOYMENT_TYPE=oci-compute      # oci-compute, oci-functions, docker
+# Deploy update
+./deploy/deploy-oci.sh update
+
+# Zero-downtime deployment (via load balancer)
 ```
 
-#### AWS Configuration
+### Database Backups
 
-```env
-AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-AWS_REGION=us-east-1
+Automated daily via OCI DBaaS. No action required.
+
+### Monitor Costs
+
+```bash
+# View cost breakdown
+./deploy/deploy-oci.sh costs
+
+# Analyze spending
+oci ce object-storage list --compartment-id $OCI_COMPARTMENT_ID
 ```
 
-#### Azure Configuration
+---
 
-```env
-AZURE_SUBSCRIPTION_ID=12345678-1234-1234-1234-123456789012
-AZURE_TENANT_ID=87654321-4321-4321-4321-210987654321
-AZURE_CLIENT_ID=11111111-2222-3333-4444-555555555555
-AZURE_CLIENT_SECRET=your_client_secret_xyz123
+## Upgrading Plan
+
+### From MVP to Professional
+
+```bash
+# Add HA and additional compute
+./deploy/deploy-oci.sh upgrade professional
+
+# Adds:
+# - Multi-AZ deployment
+# - Load balancer
+# - Automatic backups
+# - SLA support
+
+# Cost increase: $455/month
 ```
 
-#### GCP Configuration
+### From Professional to Enterprise
 
-```env
-# Path to service account JSON file
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-GCP_PROJECT_ID=my-gcp-project
-```
-
-#### OCI Configuration
-
-```env
-OCI_CONFIG_FILE=~/.oci/config           # Path to OCI config
-OCI_PROFILE=DEFAULT                     # OCI profile name
-OCI_REGION=us-phoenix-1                 # OCI region
-OCI_COMPARTMENT_ID=ocid1.compartment... # Compartment ID (if not in config)
-```
-
-#### OCI Database Configuration
-
-```env
-OCI_DB_HOST=optiora-db.subnet.vcn.oraclevcn.com
-OCI_DB_PORT=5432
-OCI_DB_USER=optiora_user
-OCI_DB_PASSWORD=your_secure_password
-OCI_DB_NAME=optiora
-```
-
-#### OCI Deployment Options
-
-```env
-# If using OCI Functions (serverless)
-DEPLOYMENT_TYPE=oci-functions
-OCI_FUNCTION_OCID=ocid1.fnfunc.oc1...
-
-# If using API Gateway
-OCI_API_GATEWAY_URL=https://your-api-gateway.apigateway.region.oci.customer-oci.com
-```
+Contact: sales@optiora.ai
 
 ---
 
 ## Troubleshooting
 
-### Backend Issues
-
-#### "Module not found" Error
+### Deployment Failed
 
 ```bash
-# Solution: Activate virtual environment
-source .venv/bin/activate
+# Check prerequisites
+./deploy/deploy-oci.sh validate
 
-# Verify installation
-pip list | grep mcp
+# View detailed logs
+./deploy/deploy-oci.sh logs --level DEBUG
+
+# Common issue: OCI credentials not configured
+oci setup config
 ```
 
-#### "Connection refused" Error
+### Cannot Connect to Dashboard
 
 ```bash
-# Solution: Check if server is running
-curl http://localhost:8000/health
+# Verify deployment status
+./deploy/deploy-oci.sh status
 
-# If not running, start it:
-python -m finops_mcp.server
+# Check API Gateway rules
+oci api-gateway api list --compartment-id $OCI_COMPARTMENT_ID
+
+# Verify VCN security lists
+oci network security-list list --vcn-id $VCN_ID
 ```
 
-#### "AWS credentials not found"
+### Database Connection Error
 
 ```bash
-# Solution: Set credentials
-export AWS_ACCESS_KEY_ID=your_key
-export AWS_SECRET_ACCESS_KEY=your_secret
+# Check database is running
+oci mysql-db system list --compartment-id $OCI_COMPARTMENT_ID
 
-# Or use AWS credentials file
-~/.aws/credentials
+# Verify credentials in .env
+grep OCI_DB .env
 
 # Test connection
-python -c "import boto3; print('OK')"
+psql -h $OCI_DB_HOST -U $OCI_DB_USER -d optiora
 ```
-
-#### "Permission denied" (OCI)
-
-```bash
-# Fix OCI config permissions
-chmod 600 ~/.oci/config
-chmod 600 ~/.oci/oci_api_key.pem
-
-# Verify config
-oci compute instance list --compartment-id $OCI_COMPARTMENT_ID
-```
-
-### Frontend Issues
-
-#### "Cannot find module" Error
-
-```bash
-# Solution: Reinstall dependencies
-rm -rf node_modules package-lock.json
-npm install
-```
-
-#### Port 3000 Already in Use
-
-```bash
-# Solution: Use different port
-npm run dev -- -p 3001
-
-# Or find and kill process
-lsof -i :3000
-kill -9 <PID>
-```
-
-#### API Connection Failed
-
-```bash
-# Solution: Check NEXT_PUBLIC_API_URL
-cat dashboard/.env.local
-
-# Verify backend is running
-curl http://localhost:8000/health
-
-# Update .env.local if needed
-echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > dashboard/.env.local
-```
-
-### Docker Issues
-
-#### "Cannot connect to Docker daemon"
-
-```bash
-# Solution: Start Docker
-sudo systemctl start docker
-
-# Or use Docker Desktop (on macOS/Windows)
-```
-
-#### Image Build Failed
-
-```bash
-# Solution: Clean and rebuild
-docker system prune -a
-docker build --no-cache -t optiora:latest .
-```
-
-### Database Issues
-
-#### "Connection refused" (PostgreSQL)
-
-```bash
-# Solution: Check if database is running
-docker-compose ps
-
-# Start if stopped
-docker-compose up -d
-
-# Verify connection
-psql -h localhost -U optiora_user -d optiora
-```
-
-#### Database Schema Not Found
-
-```bash
-# Solution: Run migrations
-python -m finops_mcp.database  # Runs schema creation
-
-# Verify tables
-psql -h localhost -d optiora -c "\dt"
-```
-
----
-
-## Next Steps
-
-1. **Run Tests**: `pytest tests/ -v`
-2. **Explore Code**: Check `ARCHITECTURE_COMPLETE.md`
-3. **Read Contributing Guide**: See `CONTRIBUTING.md`
-4. **Deploy**: Follow production deployment steps above
 
 ---
 
 ## Support
 
-- 📚 [Documentation](./README.md)
+- 📚 [Documentation](./DOCUMENTATION.md)
 - 🏗️ [Architecture](./ARCHITECTURE_COMPLETE.md)
-- 🧪 [Testing Guide](./TESTING.md)
-- 🤝 [Contributing Guide](./CONTRIBUTING.md)
-- 🚀 [Deployment Guide](./OCI_DEPLOYMENT.md)
+- 🚀 [Deployment FAQ](./OCI_DEPLOYMENT.md)
+- 💼 [Enterprise Support](https://optiora.ai/enterprise)
 
-**Questions?** Open an issue or contact the maintainers.
+**Need help?** Contact: support@optiora.ai

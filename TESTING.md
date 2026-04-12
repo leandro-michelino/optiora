@@ -51,56 +51,51 @@ tests/
 
 ## Running Tests
 
-### Prerequisites
+Tests are executed automatically as part of the OCI deployment pipeline via GitHub Actions.
+
+### Manual Test Execution
+
+To run tests locally for development:
 
 ```bash
-# Activate virtual environment
-source .venv/bin/activate
+# Connect to OCI Compute Instance
+ssh ubuntu@your-instance-ip
 
-# Install dependencies (if not done)
-pip install -r requirements.txt
-```
+# Run test suite
+cd /opt/optiora
+python -m pytest tests/ -v
 
-### Run All Tests
-
-```bash
-# Basic test run
-pytest tests/ -v
-
-# With coverage reporting
-pytest tests/ -v --cov=finops_mcp --cov-report=html
-
-# Watch mode (requires pytest-watch)
-ptw tests/
+# Run with coverage reporting
+python -m pytest tests/ -v --cov=finops_mcp --cov-report=html
 ```
 
 ### Run Specific Test File
 
 ```bash
 # Test AWS integration
-pytest tests/test_aws_integration.py -v
+python -m pytest tests/test_aws_integration.py -v
 
 # Test Azure & GCP
-pytest tests/test_azure_gcp.py -v
+python -m pytest tests/test_azure_gcp.py -v
 
 # Test anomalies and recommendations
-pytest tests/test_anomaly_recommendations.py -v
+python -m pytest tests/test_anomaly_recommendations.py -v
 
 # Test OCI and database
-pytest tests/test_oci_database.py -v
+python -m pytest tests/test_oci_database.py -v
 ```
 
 ### Run Specific Test
 
 ```bash
 # Run a single test
-pytest tests/test_aws_integration.py::test_config_validation -v
+python -m pytest tests/test_aws_integration.py::test_config_validation -v
 
 # Run tests matching pattern
-pytest tests/ -k "anomaly" -v
+python -m pytest tests/ -k "anomaly" -v
 
 # Run with detailed output
-pytest tests/ -vv --tb=long
+python -m pytest tests/ -vv --tb=long
 ```
 
 ## Test Categories

@@ -8,23 +8,25 @@ Complete guide to all OptiOra documentation. Start with your use case:
 
 ### MANDATORY RULE: Production on OCI Only
 
-| Environment | Location | Status | Use Case |
-|-----------|----------|--------|----------|
-| **Development** | Your laptop | ✅ Allowed | Coding, testing, debugging |
-| **Staging** | OCI | ✅ Allowed | Pre-production testing |
-| **Production** | OCI | ✅ **REQUIRED** | Customer deployments |
-| **Production** | Your laptop | ❌ **FORBIDDEN** | Never allowed |
+**OptiOra runs ONLY on OCI.**
 
-**Why?**
-- Your laptop is unreliable (crashes, reboots, network interruptions)
-- Customer data must be encrypted, isolated, and backed up
-- Production requires 24/7 uptime and SLA compliance
-- OCI provides infrastructure-grade reliability
+| Environment | Location | Status |
+|-----------|----------|--------|
+| **Production** | OCI | ✅ **REQUIRED** |
+| **Staging** | OCI | ✅ Allowed |
+| **Any other location** | Anywhere else | ❌ **NOT SUPPORTED** |
 
-**Implementation:**
-- Local .env files: DEV/TEST credentials ONLY
-- OCI deployment: See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md)
-- Code check: Server logs warnings if production config on local machine
+**Why OCI-Only?**
+- Enterprise-grade reliability and 24/7 uptime
+- Automatic backups and disaster recovery
+- Encrypted credential storage
+- Compliance and audit logging
+- SLA enforcement (99.99% availability)
+
+**Deployment:**
+- Single deployment command: `./deploy/deploy-oci.sh`
+- Automatic provisioning of all infrastructure
+- See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for details
 
 ---
 
@@ -33,10 +35,10 @@ Complete guide to all OptiOra documentation. Start with your use case:
 | Order | Document | Time | What You'll Learn |
 |-------|----------|------|-------------------|
 | 1 | [README.md](./README.md) | 3 min | What is OptiOra? Key features overview |
-| 2 | [SETUP.md](./SETUP.md) | 15 min | How to install and run locally (5-min quickstart included) |
-| 3 | [TESTING.md](./TESTING.md) | 10 min | How to run tests and verify everything works |
+| 2 | [SETUP.md](./SETUP.md) | 10 min | How to deploy on OCI (one-click deployment) |
+| 3 | [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) | 15 min | Production deployment details |
 
-**Est. Total Time:** 30 minutes → **You're ready to use OptiOra!**
+**Est. Total Time:** 30 minutes → **Your OptiOra instance is live on OCI!**
 
 ---
 

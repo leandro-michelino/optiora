@@ -12,15 +12,15 @@
 
 ---
 
-## ⚠️ IMPORTANT: Production Deployment Policy
+⚠️ **IMPORTANT: OCI-Only Deployment**
 
-**OptiOra production MUST ALWAYS run on OCI. Never run production from your laptop or personal machines.**
+**OptiOra is deployed exclusively on Oracle Cloud Infrastructure (OCI).**
 
-- ✅ **Local Development** (your laptop): Coding, testing, debugging
-- ❌ **Production** (your laptop): Never allowed
-- ✅ **Production** (OCI): Always required
+- ✅ **Production**: OCI (required)
+- ✅ **Staging**: OCI (recommended)
+- ❌ **Laptop or On-Premises**: Not supported
 
-→ See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for production setup (mandatory)
+→ See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for deployment setup
 
 ---
 
@@ -32,7 +32,7 @@
 
 | Document | Purpose |
 |----------|---------|
-| [📖 Setup Guide](./SETUP.md) | Installation & configuration (5-min quickstart included) |
+| [📖 Setup Guide](./SETUP.md) | OCI deployment guide (one-click setup) |
 | [🏗️ Architecture](./ARCHITECTURE_COMPLETE.md) | System design & components |
 | [💵 Cost Estimate](./COST_ESTIMATE.md) | Deployment costs & ROI analysis |
 | [🧪 Testing Guide](./TESTING.md) | Run & write tests |
