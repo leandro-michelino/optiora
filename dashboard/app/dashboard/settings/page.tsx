@@ -1,103 +1,202 @@
-'use client'
+'use client';
 
-import { Cloud, Key, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import React, { useState, useEffect } from 'react';
+import { Trash2, Loader, AlertCircle, CheckCircle, Plus } from 'lucide-react';
+import CredentialForm from '@/app/components/CredentialForm';
+import ScanningApproval from '@/app/components/ScanningApproval';
 
-interface CloudCredential {
-  id: string
+
+interface StoredCredential {
   provider: string
-  status: 'connected' | 'disconnected' | 'error'
-  lastSync: string
+  is_valid: boolean
+  tested_at?: string
+  last_tested?: string
 }
 
 export default function SettingsPage() {
-  const [credentials, setCredentials] = useState<CloudCredential[]>([
-    { id: '1', provider: 'AWS', status: 'connected', lastSync: '5 minutes ago' },
-    { id: '2', provider: 'Azure', status: 'connected', lastSync: '10 minutes ago' },
-    { id: '3', provider: 'GCP', status: 'connected', lastSync: '15 minutes ago' },
-    { id: '4', provider: 'OCI', status: 'disconnected', lastSync: 'Never' },
-  ])
+  const [storedCredentials, setStoredCredentials] = useState<StoredCredential[]>([])
+  const [loadingCredentials, setLoadingCredentials] = useState(true)
+  const [scanningApprovalStep, setScanningApprovalStep] = useState(false)
+  const [approvedProviders, setApprovedProviders] = useState<string[]>([])
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return 'text-green-600 dark:text-green-400'
-      case 'error':
-        return 'text-red-600 dark:text-red-400'
-      case 'disconnected':
-        return 'text-slate-600 dark:text-slate-400'
-      default:
-        return ''
+  useEffect(() => {
+    loadCredentials()
+  }, [])
+
+  const loadCredentials = async () => {
+    try {
+      const res = await fetch('/api/v1/credentials?customer_id=demo')
+      if (res.ok) {
+        const data = await res.json()
+        setStoredCredentials(data.credentials || [])
+      }
+    } catch (error) {
+      console.error('Failed to load credentials:', error)
+    } finally {
+      setLoadingCredentials(false)
     }
   }
 
-  const getStatusBg = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return 'bg-green-100 dark:bg-green-900/30'
-      case 'error':
-        return 'bg-red-100 dark:bg-red-900/30'
-      case 'disconnected':
-        return 'bg-slate-100 dark:bg-slate-800'
-      default:
-        return ''
+  const handleCredentialSubmitted = async (provider: string, credentials: Record<string, string>) => {
+    // After validation & storage, show scanning approval step
+    setApprovedProviders([provider])
+    setScanningApprovalStep(true)
+    
+    // Reload credentials list
+    await loadCredentials()
+  }
+
+  const handleDeleteCredential = async (provider: string) => {
+    if (!confirm(`Delete ${provider.toUpperCase()} credentials?`)) return
+
+    try {
+      const res = await fetch(`/api/v1/credentials/${provider}?customer_id=demo`, {
+        method: 'DELETE'
+      })
+
+      if (res.ok) {
+        await loadCredentials()
+      }
+    } catch (error) {
+      console.error('Failed to delete credential:', error)
+    }
+  }
+
+  const handleScanningApproved = async (config: any) => {
+    try {
+      const res = await fetch('/api/v1/scanning/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: 'demo',
+          ...config
+        })
+      })
+
+      if (res.ok) {
+        // Directly start the scan
+        const scanRes = await fetch('/api/v1/scanning/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_id: 'demo',
+            providers: approvedProviders
+          })
+        })
+
+        if (scanRes.ok) {
+          setScanningApprovalStep(false)
+          // Redirect to dashboard
+          window.location.href = '/dashboard'
+        }
+      }
+    } catch (error) {
+      console.error('Failed to approve scanning:', error)
     }
   }
 
   return (
     <div className="space-y-8">
+      
       <div>
         <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">
-          Settings
+          Cloud Settings
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Manage cloud provider integrations and preferences
+          Manage your cloud provider credentials and scanning preferences
         </p>
       </div>
 
-      {/* Cloud Integrations */}
-      <div className="card">
-        <h2 className="text-2xl font-semibold mb-6 text-slate-900 dark:text-white">
-          Cloud Provider Credentials
-        </h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Left Column: Forms */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* Add Credentials Section */}
+          <div>
+            <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Add Cloud Provider</h2>
+            <CredentialForm onSubmit={handleCredentialSubmitted} />
+          </div>
 
-        <div className="space-y-4">
-          {credentials.map((cred) => (
-            <div
-              key={cred.id}
-              className={`flex items-center justify-between p-4 rounded-lg border ${getStatusBg(
-                cred.status
-              )}`}
-            >
-              <div className="flex items-center gap-4">
-                <Cloud className="w-8 h-8 text-blue-600" />
-                <div>
-                  <h3 className="font-semibold text-slate-900 dark:text-white">
-                    {cred.provider}
-                  </h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Last synced: {cred.lastSync}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(cred.status)}`}>
-                  <span className="w-2 h-2 bg-current rounded-full inline-block mr-2"></span>
-                  {cred.status.charAt(0).toUpperCase() + cred.status.slice(1)}
-                </div>
-                <button className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition">
-                  <Key className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                </button>
-                <button className="p-2 hover:bg-red-200 dark:hover:bg-red-900/30 rounded-lg transition">
-                  <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
-                </button>
-              </div>
+          {/* Scanning Approval Section */}
+          {scanningApprovalStep && (
+            <div>
+              <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Complete Setup</h2>
+              <ScanningApproval
+                providers={approvedProviders}
+                onApprove={handleScanningApproved}
+              />
             </div>
-          ))}
+          )}
         </div>
 
-        <button className="mt-6 btn-primary">
+        {/* Right Column: Stored Credentials */}
+        <div>
+          <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-white">Connected Providers</h2>
+          
+          <div className="card space-y-3">
+            {loadingCredentials ? (
+              <div className="flex items-center justify-center p-8">
+                <Loader className="w-5 h-5 animate-spin text-slate-400" />
+              </div>
+            ) : storedCredentials.length === 0 ? (
+              <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg text-center text-slate-600 dark:text-slate-400 text-sm">
+                No credentials stored yet
+              </div>
+            ) : (
+              storedCredentials.map(cred => (
+                <div
+                  key={cred.provider}
+                  className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-between hover:shadow-sm transition"
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className={`w-2 h-2 rounded-full ${cred.is_valid ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <div>
+                      <div className="font-medium text-sm text-slate-900 dark:text-white">{cred.provider.toUpperCase()}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {cred.is_valid ? '✓ Valid' : '✗ Invalid'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteCredential(cred.provider)}
+                    className="p-1 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Quick Stats */}
+          {storedCredentials.length > 0 && (
+            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="text-sm">
+                <div className="font-semibold text-blue-900 dark:text-blue-300 mb-2">Setup Status</div>
+                <div className="space-y-1 text-xs text-blue-800 dark:text-blue-200">
+                  <div>✓ {storedCredentials.length} cloud provider(s) connected</div>
+                  <div>✓ Credentials validated</div>
+                  {storedCredentials.every(c => c.is_valid) && (
+                    <div>✓ Ready to scan</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Info Section */}
+      <div className="card bg-white dark:bg-slate-800">
+        <h3 className="font-semibold mb-3 text-slate-900 dark:text-white">How it works</h3>
+        <ol className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+          <li><strong>1. Add credentials:</strong> Securely store your cloud provider credentials</li>
+          <li><strong>2. Validate:</strong> OptiOra tests access to your cloud billing APIs</li>
+          <li><strong>3. Approve scanning:</strong> Review and approve cost analysis settings</li>
+          <li><strong>4. Begin analysis:</strong> OptiOra starts finding cost optimization opportunities</li>
+        </ol>
+      </div>
           + Add Cloud Provider
         </button>
       </div>

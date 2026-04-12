@@ -106,6 +106,65 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Cloud Credentials (Encrypted)
+CREATE TABLE IF NOT EXISTS cloud_credentials (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id),
+    cloud_provider VARCHAR(20) NOT NULL,
+    encrypted_credentials BYTEA NOT NULL,
+    encryption_key_id VARCHAR(50),
+    validation_status VARCHAR(20) DEFAULT 'pending',
+    last_validated_at TIMESTAMP,
+    validation_error_message TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(customer_id, cloud_provider)
+);
+
+-- Scanning Permissions
+CREATE TABLE IF NOT EXISTS scanning_permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id),
+    state VARCHAR(50) DEFAULT 'pending_approval',
+    providers TEXT[] NOT NULL,
+    scan_frequency VARCHAR(20) DEFAULT 'daily',
+    auto_remediate BOOLEAN DEFAULT FALSE,
+    notification_email VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approved_at TIMESTAMP,
+    last_scan_at TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(customer_id)
+);
+
+-- Scan History
+CREATE TABLE IF NOT EXISTS scan_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id),
+    scan_state VARCHAR(50) NOT NULL,
+    providers TEXT[] NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP,
+    total_resources_scanned INT,
+    anomalies_found INT,
+    savings_identified_usd DECIMAL(12, 2),
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Credential Validation Audit
+CREATE TABLE IF NOT EXISTS credential_validation_audit (
+    id SERIAL PRIMARY KEY,
+    customer_id UUID NOT NULL REFERENCES customers(id),
+    cloud_provider VARCHAR(20) NOT NULL,
+    validation_result BOOLEAN,
+    test_account_id VARCHAR(100),
+    test_cost_usd DECIMAL(12, 2),
+    error_details TEXT,
+    validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_cost_snapshots_customer ON cost_snapshots(customer_id);
 CREATE INDEX IF NOT EXISTS idx_cost_snapshots_date ON cost_snapshots(snapshot_date);
@@ -115,6 +174,12 @@ CREATE INDEX IF NOT EXISTS idx_cost_recommendations_customer ON cost_recommendat
 CREATE INDEX IF NOT EXISTS idx_cost_actions_customer ON cost_actions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_customer ON audit_logs(customer_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_cloud_credentials_customer ON cloud_credentials(customer_id);
+CREATE INDEX IF NOT EXISTS idx_cloud_credentials_provider ON cloud_credentials(cloud_provider);
+CREATE INDEX IF NOT EXISTS idx_scanning_permissions_customer ON scanning_permissions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_scan_history_customer ON scan_history(customer_id);
+CREATE INDEX IF NOT EXISTS idx_scan_history_started ON scan_history(started_at);
+CREATE INDEX IF NOT EXISTS idx_credential_validation_customer ON credential_validation_audit(customer_id);
 """
 
 

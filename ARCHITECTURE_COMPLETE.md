@@ -4,50 +4,162 @@
 
 OptiOra is a **multi-cloud FinOps platform** consisting of:
 - **MCP Server** (Python backend) - Cost analysis engine hosted on OCI
-- **React Dashboard** (Next.js frontend) - Cost visualization interface
-- **PostgreSQL Database** (OCI) - Audit logs and customer data
+- **React Dashboard** (Next.js frontend) - Self-hosted on OCI (not Vercel/CloudFlare)
+- **PostgreSQL Database** (OCI) - Customer data, credentials, and audit logs
 - **Cloud APIs** (AWS, Azure, GCP, OCI) - Cost data integrations
+- **Credential Management** - Secure storage and validation of cloud credentials
+- **Scanning Permissions** - Customer consent workflow before cost analysis
 
 ---
 
-## System Architecture Diagram
+## System Architecture Diagram (OCI Self-Hosted)
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    ORACLE CLOUD INFRASTRUCTURE                       │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌────────────────────┐              ┌────────────────────┐         │
+│  │  OCI Load Balancer │              │  OCI App Service   │         │
+│  │  (HTTPS Termination)│──┬───────────│  (React Frontend)  │         │
+│  └────────────────────┘  │           └────────────────────┘         │
+│                          │            - Next.js 14                   │
+│                          │            - React 18 Dashboard          │
+│              ┌───────────┤            - Tailwind CSS                 │
+│              │           │            - Light/Dark Theme            │
+│              │           │                                          │
+│              ▼           ▼                                          │
+│         ┌──────────────────────────┐                               │
+│         │  OCI Compute Instances   │                               │
+│         │  (Python MCP Backend)    │                               │
+│         ├──────────────────────────┤                               │
+│         │ finops_mcp/server.py     │                               │
+│         │ - MCP Protocol Handler   │                               │
+│         │ - API REST Endpoints     │                               │
+│         │ - Credential Manager     │                               │
+│         │ - Scanning Orchestrator  │                               │
+│         │                          │                               │
+│         │ Tools:                   │                               │
+│         │ ├─ AWS Costs            │                               │
+│         │ ├─ Azure Costs          │                               │
+│         │ ├─ GCP Costs            │                               │
+│         │ ├─ OCI Costs            │                               │
+│         │ ├─ Anomalies            │                               │
+│         │ ├─ Recommendations      │                               │
+│         │ └─ Actions              │                               │
+│         └──────────┬───────────────┘                               │
+│                    │                                               │
+│                    │ SQL / Connection Pooling                      │
+│                    ▼                                               │
+│         ┌────────────────────────┐                                │
+│         │  OCI PostgreSQL (DBaaS)│                                │
+│         ├────────────────────────┤                                │
+│         │ Tables:                │                                │
+│         │ ├─ customers           │                                │
+│         │ ├─ cloud_credentials   │ ◄─── NEW: Encrypted storage   │
+│         │ ├─ scanning_permissions│ ◄─── NEW: Consent tracking   │
+│         │ ├─ scan_history        │ ◄─── NEW: Audit trail       │
+│         │ ├─ cost_snapshots      │                                │
+│         │ ├─ cost_anomalies      │                                │
+│         │ ├─ cost_recommendations│                                │
+│         │ ├─ cost_actions        │                                │
+│         │ ├─ api_keys            │                                │
+│         │ └─ audit_logs          │                                │
+│         └────────────────────────┘                                │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+         │ Cloud SDKs      │ Cloud SDKs      │ Cloud SDKs 
+         │ (boto3)         │ (azure-sdk)     │ (google-cloud)
+         ▼                 ▼                 ▼
+    ┌─────────────────────────────────────────────┐
+    │  MULTI-CLOUD COST DATA SOURCES              │
+    ├─────────────────────────────────────────────┤
+    │ AWS Cost Explorer    │ Last Hour Costs     │
+    │ Azure Cost Mgmt      │ User-Provided Creds │
+    │ GCP Billing          │ Validated on Add    │
+    │ OCI Usage API        │ Encrypted Storage   │
+    └─────────────────────────────────────────────┘
+```
+
+---
+
+## New Credential Management Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                       USER INTERFACE LAYER                         │
-│                  (React Dashboard - Vercel/CF Pages)               │
+│ CUSTOMER ONBOARDING WORKFLOW                                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │                    Landing Page                            │  │
-│  │    (Hero, pricing, feature showcase)                       │  │
-│  └────────────────────────┬────────────────────────────────────┘  │
-│                           │ Login/Auth (Optional)                  │
-│                           ▼                                         │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │            Dashboard Pages (Protected)                     │  │
-│  │  ┌─────────────┬──────────────┬──────────────┬──────────┐  │  │
-│  │  │             │              │              │          │  │  │
-│  │  ▼             ▼              ▼              ▼          ▼  │  │
-│  │ Overview    Costs Multi-Cloud Anomalies  Recommendations │  │
-│  │ (KPIs,      by Cloud     Alerts       (ROI-ranked)      │  │
-│  │  trends)    breakdown                                    │  │
-│  │                                                          │  │
-│  │  Components: Recharts, Tables, Sidebars                │  │
-│  │  Theme: Light/Dark mode (next-themes)                  │  │
-│  │  Styling: Tailwind CSS                                 │  │
-│  └────────────────────────┬─────────────────────────────────┘  │
-│                           │ HTTPS API Calls                     │
-│                           │ (axios client)                       │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │
-         ┌──────────────────┼──────────────────┐
-         │                  │                  │
-         ▼                  ▼                  ▼
-   ┌──────────────┐  ┌──────────────┐  ┌───────────────┐
-   │ /costs       │  │ /anomalies   │  │ /recommendations
-   │ /forecast    │  │ /alerts      │  │ /actions
-   └──────────────┘  └──────────────┘  └───────────────┘
+│  STEP 1: Add Credentials                                           │
+│  ┌─────────────────────────────────┐                               │
+│  │ Dashboard Settings              │                               │
+│  │ ├─ AWS: Access Key + Secret    │                               │
+│  │ ├─ Azure: Tenant + Client ID   │                               │
+│  │ ├─ GCP: Service Account JSON   │                               │
+│  │ └─ OCI: Config File            │                               │
+│  └──────────────┬──────────────────┘                               │
+│                 │ POST /api/v1/credentials/validate                │
+│                 ▼                                                   │
+│  ┌─────────────────────────────────┐                               │
+│  │ Credential Validator            │ ◄─── NEW SERVICE             │
+│  │ ├─ Test AWS Cost Explorer      │                               │
+│  │ ├─ Test Azure Cost Management   │                               │
+│  │ ├─ Test GCP BigQuery           │                               │
+│  │ └─ Test OCI Usage API          │                               │
+│  └──────────────┬──────────────────┘                               │
+│                 │ Returns: valid/invalid + test_cost               │
+│                 ▼                                                   │
+│  ┌─────────────────────────────────┐                               │
+│  │ Encryption & Storage            │                               │
+│  │ → Encrypt with customer KMS key │                               │
+│  │ → Store in cloud_credentials    │                               │
+│  │ → Log validation in audit table │                               │
+│  └──────────────┬──────────────────┘                               │
+│                 │                                                   │
+│  STEP 2: Approve Scanning                                          │
+│  ┌─────────────────────────────────┐                               │
+│  │ Scanning Approval Form          │                               │
+│  │ ├─ Review providers             │                               │
+│  │ ├─ Select scan frequency        │                               │
+│  │ ├─ Configure auto-remediate     │                               │
+│  │ └─ Provide notification email   │                               │
+│  └──────────────┬──────────────────┘                               │
+│                 │ POST /api/v1/scanning/approve                    │
+│                 ▼                                                   │
+│  ┌─────────────────────────────────┐                               │
+│  │ Store Permission                │ ◄─── NEW: scanning_permissions│
+│  │ State: APPROVED                 │                               │
+│  └──────────────┬──────────────────┘                               │
+│                 │                                                   │
+│  STEP 3: Start Cost Analysis                                       │
+│  ┌─────────────────────────────────┐                               │
+│  │ POST /api/v1/scanning/start     │                               │
+│  │ Validates:                      │                               │
+│  │ ├─ Credentials exist            │                               │
+│  │ ├─ Credentials valid            │                               │
+│  │ └─ Scanning approved            │                               │
+│  └──────────────┬──────────────────┘                               │
+│                 │ Background Task                                   │
+│                 ▼                                                   │
+│  ┌─────────────────────────────────┐                               │
+│  │ Run Cost Analysis               │                               │
+│  │ ├─ Load encrypted credentials   │                               │
+│  │ ├─ Query cloud cost APIs        │                               │
+│  │ ├─ Detect anomalies             │                               │
+│  │ ├─ Generate recommendations     │                               │
+│  │ └─ Store results                │                               │
+│  └──────────────┬──────────────────┘                               │
+│                 │                                                   │
+│                 ▼                                                   │
+│  ┌─────────────────────────────────┐                               │
+│  │ Results in Dashboard            │                               │
+│  │ ├─ Cost breakdown               │                               │
+│  │ ├─ Anomaly alerts               │                               │
+│  │ └─ Savings opportunities        │                               │
+│  └─────────────────────────────────┘                               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
                             │
          ┌──────────────────┴──────────────────┐
          │                                     │
