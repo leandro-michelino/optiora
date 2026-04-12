@@ -46,36 +46,87 @@ python -m venv .venv
 
 #### 3. Install Dependencies
 
-```bash
-# Using requirements.txt (recommended)
-pip install --upgrade pip
-pip install -r requirements.txt
+OptiOra uses **Poetry** for Python dependency management. If you don't have Poetry installed:
 
-# Or using poetry (if installed)
+```bash
+# Install Poetry (macOS/Linux/Windows WSL)
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Verify installation
+poetry --version
+```
+
+Then install dependencies:
+
+```bash
+# Install all dependencies from pyproject.toml
 poetry install
+
+# Enter the virtual environment
+poetry shell
+```
+
+**Alternative: Using pip directly (if Poetry not available)**
+
+```bash
+pip install --upgrade pip
+pip install mcp boto3 azure-identity azure-mgmt-costmanagement google-cloud-billing oci pydantic python-dotenv httpx pytest pytest-asyncio
 ```
 
 #### 4. Configure Environment Variables
 
+Copy the consolidated environment example and fill in your credentials:
+
 ```bash
-# Copy example to actual .env file
+# Copy master .env.example to .env
 cp .env.example .env
 
-# Edit with your cloud credentials
+# Edit with your cloud provider credentials
 nano .env
 ```
 
-**Minimal Configuration (AWS only):**
+The `.env.example` file contains both **Backend (MCP Server)** and **Frontend (Dashboard)** variables with detailed documentation. Minimal setup requires:
+
+**AWS Only (quickest start):**
 
 ```env
-# AWS
+# AWS Credentials
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=us-east-1
 
-# MCP Server
+# Frontend
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Backend
 MCP_PORT=8000
 MCP_LOG_LEVEL=INFO
+```
+
+**Full Multi-Cloud Setup:**
+
+```env
+# AWS
+AWS_ACCESS_KEY_ID=your_key
+AWS_SECRET_ACCESS_KEY=your_secret
+
+# Azure
+AZURE_SUBSCRIPTION_ID=your_subscription
+AZURE_TENANT_ID=your_tenant
+AZURE_CLIENT_ID=your_client_id
+AZURE_CLIENT_SECRET=your_client_secret
+
+# GCP
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/gcp-key.json
+
+# OCI (for deployment)
+OCI_CONFIG_FILE=~/.oci/config
+OCI_DB_HOST=your_db_host
+OCI_DB_USER=optiora_user
+OCI_DB_PASSWORD=secure_password
+
+# Claude AI (for GenAI Dashboard features)
+ANTHROPIC_API_KEY=your_anthropic_key
 ```
 
 **Full Multi-Cloud Configuration:**

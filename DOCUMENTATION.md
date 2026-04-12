@@ -126,6 +126,44 @@ pytest tests/ -v
 
 ---
 
+## ⚙️ **Configuration Structure**
+
+### Environment Variables (.env.example → .env)
+
+**Single Consolidated File:** All configuration lives in `.env.example` (at root)
+
+| Section | Purpose | Variables |
+|---------|---------|-----------|
+| **Frontend** | React Dashboard variables | `NEXT_PUBLIC_*` (prefixed for browser) |
+| **Backend** | MCP Server variables | Unprefixed (server-only) |
+| **Cloud Providers** | Multi-cloud credentials | `AWS_*`, `AZURE_*`, `GOOGLE_*`, `OCI_*` |
+| **Integrations** | 3rd-party services | `JIRA_*`, `SLACK_*`, `TEAMS_*`, `ANTHROPIC_*` |
+| **Database** | PostgreSQL connection | `OCI_DB_*` |
+
+**Setup:**
+```bash
+cp .env.example .env
+nano .env  # Fill in your credentials
+```
+
+### Dependency Management
+
+- **Backend:** `pyproject.toml` (Poetry - recommended)
+- **Frontend:** `package.json` (npm)
+- **Legacy:** No `requirements.txt` (use Poetry instead)
+
+### Configuration Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `.env.example` | Root | Master environment template (both backend + frontend) |
+| `pyproject.toml` | Root | Python dependencies + Poetry config |
+| `package.json` | dashboard/ | Node.js dependencies |
+| `.eslintrc.json` | dashboard/ | Frontend linting rules |
+| `.prettierrc.json` | dashboard/ | Frontend code formatting |
+
+---
+
 ## 🔄 **Documentation Update Workflow**
 
 When updating docs:
@@ -133,6 +171,12 @@ When updating docs:
 2. Update this INDEX if categories/entry points change
 3. Update README.md Quick Links if major structural changes
 4. Commit with message: `docs: update [document name]`
+
+**Project Structure:** The project has been cleaned and consolidated:
+- ✅ Single `.env.example` (replaces `dashboard/.env.local.example`)
+- ✅ Poetry for dependency management (replaces separate requirements.txt)
+- ✅ Configuration consolidated and documented
+- ✅ Frontend and Backend clearly separated by variable prefixes
 
 **Last Updated:** April 12, 2026  
 **Next Review:** June 12, 2026
