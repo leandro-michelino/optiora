@@ -18,29 +18,24 @@
 
 - ✅ **Production**: OCI (required)
 - ✅ **Staging**: OCI (recommended)
-- ❌ **Laptop or On-Premises**: Not supported
+- ❌ **Local/Docker**: Not supported (OCI-only model)
 
-→ See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for deployment setup
-
----
-
-📚 **[Browse All Documentation →](./DOCUMENTATION.md)** | Quick links below:
+→ See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete setup
 
 ---
 
-## 🎯 Quick Links
+## 📚 Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [📖 Setup Guide](./SETUP.md) | OCI deployment guide (one-click setup) |
-| [🏗️ Architecture](./ARCHITECTURE_COMPLETE.md) | System design & components |
-| [💵 Cost Estimate](./COST_ESTIMATE.md) | Deployment costs & ROI analysis |
-| [🧪 Testing Guide](./TESTING.md) | Run & write tests |
-| [🚀 Deployment](./OCI_DEPLOYMENT.md) | Production deployment on OCI |
-| [🔐 Credentials](./CREDENTIAL_MANAGEMENT.md) | Secure credential system |
-| [💰 Business Model](./MONETIZATION.md) | Pricing & revenue strategy |
-| [📊 Competitive Analysis](./COMPETITIVE_ANALYSIS.md) | Market positioning vs competitors |
-| [🎯 Roadmap](./ROADMAP.md) | Future features & timeline |
+| [🚀 DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Complete OCI deployment runbook |
+| [📖 SETUP.md](./SETUP.md) | Development environment & quick start |
+| [🏗️ ARCHITECTURE_COMPLETE.md](./ARCHITECTURE_COMPLETE.md) | OCI infrastructure & system design |
+| [💻 DASHBOARD.md](./DASHBOARD.md) | Frontend dashboard components & features |
+| [🔐 CREDENTIAL_MANAGEMENT.md](./CREDENTIAL_MANAGEMENT.md) | Secure credential handling & encryption |
+| [💵 COST_ESTIMATE.md](./COST_ESTIMATE.md) | Deployment costs & ROI analysis |
+| [🧪 TESTING.md](./TESTING.md) | Running & writing tests |
+| [📊 PROJECT_STATUS.md](./PROJECT_STATUS.md) | Current status & roadmap items |
 
 ---
 
