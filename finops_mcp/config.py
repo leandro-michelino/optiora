@@ -30,6 +30,7 @@ class Config:
     google_application_credentials: str = os.getenv(
         "GOOGLE_APPLICATION_CREDENTIALS", ""
     )
+    gcp_project_id: str = os.getenv("GCP_PROJECT_ID", "")
 
     # OCI (Oracle Cloud Infrastructure)
     # Used for: (1) hosting the MCP server, (2) analyzing OCI costs via Usage API
