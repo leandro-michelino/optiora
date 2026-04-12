@@ -1,0 +1,39 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "optiora"
+version = "0.1.0"
+description = "OptiOra - Multi-Cloud Cost Automation MCP deployed on OCI. Optimize costs across AWS, Azure, GCP, and OCI."
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry]
+name = "optiora"
+version = "0.1.0"
+description = "OptiOra - Multi-Cloud Cost Automation MCP"
+authors = ["Your Name <your.email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+mcp = "^0.4.0"
+boto3 = "^1.28.0"
+azure-identity = "^1.14.0"
+azure-mgmt-costmanagement = "^4.0.0"
+google-cloud-billing = "^1.13.0"
+oci = "^2.120.0"
+pydantic = "^2.0.0"
+python-dotenv = "^1.0.0"
+httpx = "^0.24.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+black = "^23.0.0"
+ruff = "^0.0.280"
+mypy = "^1.5.0"
+
+[tool.poetry.scripts]
+optiora = "finops_mcp.server:main"
