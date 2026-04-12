@@ -10,6 +10,7 @@ class CloudProvider(str, Enum):
     AWS = "aws"
     AZURE = "azure"
     GCP = "gcp"
+    OCI = "oci"
 
 
 class RecommendationType(str, Enum):

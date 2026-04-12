@@ -1,338 +1,316 @@
-# **OptiOra** — Multi-Cloud Cost Automation MCP
+# OptiOra
+## Multi-Cloud FinOps Optimization Platform
 
-A monetized **Model Context Protocol (MCP) server** for cloud cost optimization, anomaly detection, and automated cost-saving actions across **AWS, Azure, GCP, and OCI**.
+[![Tests](https://github.com/leandro-michelino/optiora/actions/workflows/deploy-oci.yml/badge.svg)](https://github.com/leandro-michelino/optiora/actions)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
 
-**Deployed on OCI** infrastructure for cost-effective, enterprise-grade self-hosting.
+**OptiOra** is a Model Context Protocol (MCP) server that provides unified cloud cost optimization across **AWS, Azure, GCP, and OCI**. It detects cost anomalies, generates ROI-ranked recommendations, and executes automated cost-saving actions.
 
-⚠️ **Key clarification:** OptiOra provides **unified FinOps analytics for AWS, Azure, GCP, and OCI** via a single MCP interface and React dashboard. OCI also serves as the hosting infrastructure.
-
-## 🎯 Business Model
-
-**Pricing tiers:**
-- **Starter:** $499/mo (single cloud, basic reporting)
-- **Professional:** $1,499/mo (multi-cloud, cost recommendations)
-- **Enterprise:** $5,000+/mo (automation, custom policies, dedicated support)
-
-**Revenue multiplier:** 15% of annual savings (after optimization recommendations implemented)
-
-## 📊 Key Features
-
-### Cost Monitoring
-- Real-time cost tracking across **AWS, Azure, GCP, and OCI**
-- Anomaly detection (sudden cost spikes, usage patterns)
-- Trend analysis and forecasting
-
-### Optimization Engine
-- Identify idle/underutilized resources
-- Reserved instance recommendations
-- Spot instance optimization
-- Storage tier optimization
-- Network cost reduction
-
-### Automated Actions
-- Create cost optimization tickets
-- Post findings to Slack/Teams
-- Execute pre-approved savings (auto-tagging, scheduling)
-- Generate compliance reports
-
-## 🏗️ Architecture
-
-**OptiOra is deployed on OCI infrastructure** but provides unified cost analytics for all clouds.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        User Dashboard                           │
-│                    (React + Next.js/Vite)                       │
-│         Multi-Cloud FinOps: AWS + Azure + GCP + OCI             │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-        ▼                   ▼                   ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ OptiOra MCP Server (Hosted on OCI)                              │
-│                                                                  │
-│  ┌──────────────┐  ┌────────────────┐  ┌─────────────────┐    │
-│  │ AWS Cost     │  │ Azure Cost     │  │ GCP Billing     │    │
-│  │ Explorer API │  │ Management API │  │ API             │    │
-│  └──────────────┘  └────────────────┘  └─────────────────┘    │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Core Processing (Python + ML)                           │  │
-│  │ • Anomaly Detection                                     │  │
-│  │ • Recommendations Engine                               │  │
-│  │ • Cost Action Execution                                │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │ OCI API Gateway (Authentication + Rate Limiting)        │  │
-│  │ MCP Protocol Endpoint (for Claude/ChatGPT)             │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-        ▼                   ▼                   ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
-│ OCI Compute  │  │ OCI Database │  │ OCI Object       │
-│ Instance     │  │ (PostgreSQL) │  │ Storage          │
-│ (Host MCP)   │  │ (Audit logs) │  │ (Backups, data)  │
-└──────────────┘  └──────────────┘  └──────────────────┘
-
-Multi-Cloud Cost Connectors → OptiOra MCP (on OCI) → Dashboard (React)
-```
-
-### **What runs where:**
-
-| Component | Deployed On | Purpose |
-|-----------|-------------|---------|
-| **OptiOra MCP Server** | OCI Compute | Multi-cloud cost analysis, anomaly detection, recommendations |
-| **React Dashboard** | Vercel/CloudFlare Pages | Multi-cloud cost visualization |
-| **Database** | OCI PostgreSQL | Customer data, audit logs, cost snapshots |
-| **File Storage** | OCI Object Storage | Historical data, exports, backups |
-
-### **Cloud Support:**
-✅ **AWS** — Analyzes costs via Cost Explorer API  
-✅ **Azure** — Analyzes costs via Cost Management API  
-✅ **GCP** — Analyzes costs via BigQuery Billing API  
-✅ **OCI** — Analyzes costs via Usage API + provides infrastructure  
-
-**OptiOra's unique value:** Unified MCP interface for all 4 clouds. OCI serves dual purpose as both infrastructure host and analyzed cloud provider.
-
-## 🔧 Setup
-
-### 1. Clone & Install
-```bash
-git clone https://github.com/yourname/finops-mcp.git
-cd finops-mcp
-poetry install
-```
-
-### 2. Configure Cloud Credentials
-
-Create a `.env` file:
-```
-# AWS
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
-AWS_REGION=us-east-1
-
-# Azure
-AZURE_SUBSCRIPTION_ID=your_subscription
-AZURE_TENANT_ID=your_tenant
-AZURE_CLIENT_ID=your_client
-AZURE_CLIENT_SECRET=your_secret
-
-# GCP
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-
-# MCP Configuration
-MCP_PORT=8000
-MCP_LOG_LEVEL=INFO
-```
-
-### 3. Run the Server
-```bash
-poetry run finops-mcp
-```
-
-## � Dashboard (Frontend)
-
-**Tech Stack Recommendation: React + Next.js**
-
-| Aspect | Choice | Why |
-|--------|--------|-----|
-| **Framework** | React 18 | Industry standard, large ecosystem |
-| **Meta-framework** | Next.js | Built-in API routes, SSR, easy deployment |
-| **Styling** | Tailwind CSS | Rapid UI development, low bundle size |
-| **Charts** | Recharts or Apache ECharts | React-native, interactive cost visualizations |
-| **State Management** | TanStack Query (React Query) | Efficient data fetching from MCP backend |
-| **Deployment** | Vercel or CloudFlare Pages | Global CDN, auto-scaling, free tier |
-
-### Dashboard Features
-
-**Multi-Cloud Cost Consolidation:**
-- Unified cost dashboard (AWS + Azure + GCP costs in one place)
-- Cost trends & forecasting
-- Anomaly alerts (red flags for unusual spend)
-
-**Optimization Recommendations:**
-- Cost-saving opportunities ranked by impact
-- ROI calculator (payback period for each recommendation)
-- One-click execution (send to MCP backend)
-
-**Audit & Compliance:**
-- Cost breakdown by team/department
-- Historical reports (PDF export)
-- Compliance tags & chargeback allocation
-
-**Integrations:**
-- Slack notifications for anomalies
-- Jira ticket creation for cost actions
-- Webhooks for custom workflows
-
-### Deployment
-
-**Option 1: Vercel (Recommended for MVP)**
-```bash
-# Deploy Next.js frontend to Vercel
-npm run build
-vercel deploy
-```
-- Cost: Free tier includes generous limits
-- URL: `https://optiora.vercel.app`
-
-**Option 2: CloudFlare Pages**
-```bash
-# Deploy static React build
-wrangler pages deploy build/
-```
-- Cost: Completely free
-- Auto-scales globally
-
-> **📘 Full Dashboard Guide:** See [DASHBOARD.md](DASHBOARD.md) for complete frontend architecture with code examples
+🚀 **Deployed on OCI Infrastructure** | 📊 **React Dashboard** | 🔌 **MCP Protocol** | 💰 **Multi-Cloud Support**
 
 ---
 
-## �🛠️ MCP Tools (Backend)
+## 🎯 Quick Links
 
-OptiOra exposes 6 core tools for multi-cloud cost management via MCP protocol:
+| Document | Purpose |
+|----------|---------|
+| [📖 Setup Guide](./SETUP.md) | Installation & configuration |
+| [🏗️ Architecture](./ARCHITECTURE_COMPLETE.md) | System design & components |
+| [🧪 Testing Guide](./TESTING.md) | Run & write tests |
+| [🤝 Contributing](./CONTRIBUTING.md) | Development workflow |
+| [🚀 Deployment](./OCI_DEPLOYMENT.md) | Production deployment |
+| [💰 Business Model](./MONETIZATION.md) | Pricing & revenue |
+| [🎯 Roadmap](./ROADMAP.md) | Future features |
 
-### **get_cost_summary**
-Returns total spend, top cost drivers, trends across AWS, Azure, GCP.
+---
 
-**Params:** `period` (day/week/month), `cloud_provider` (aws/azure/gcp/all), `filters`
+## Key Features
 
-### **detect_cost_anomalies**
-Identifies unusual cost patterns (spikes, sudden increases).
+### 📊 Multi-Cloud Cost Monitoring
+- **Real-time visibility** across AWS, Azure, GCP, and OCI
+- **Automatic cost aggregation** and normalization
+- **Trend analysis** and forecasting
+- **Historical tracking** with audit logs
 
-**Params:** `window_days` (default: 30), `sensitivity` (1-10), `cloud_provider`
+### 🚨 Anomaly Detection
+- **Statistical analysis** of cost patterns
+- **Configurable sensitivity** levels
+- **Confidence scoring** for accuracy
+- **Alert channels**: Slack, Teams, email
 
-### **get_optimization_recommendations**
-Suggests cost-saving actions with ROI estimates.
+### 💡 AI-Powered Recommendations
+- **ROI-ranked suggestions** (highest savings first)
+- **Difficulty scoring** (easy, medium, hard)
+- **Multi-type recommendations**:
+  - Reserved Instances (30-70% savings)
+  - Spot Instances (up to 90% savings)
+  - Idle resource cleanup
+  - Storage optimization
+  - Network optimization
 
-**Params:** `cloud_provider`, `min_savings_usd`, `recommendation_type` (reserved-instances/spot/idle-resources/storage)
+### ⚡ Automated Actions
+- **Cost action execution**: auto-tagging, scheduling, cleanup
+- **Ticket creation**: Jira, Azure DevOps
+- **Audit trail** of all actions
+- **Dry-run mode** for safety
 
-### **execute_cost_action**
-Applies cost optimizations (auto-tagging, scheduling, scaling).
+### 🎨 Interactive Dashboard
+- **Multi-cloud visualization** with Recharts
+- **Dark mode** support
+- **Responsive design** (mobile-friendly)
+- **Real-time updates** via WebSocket (optional)
 
-**Params:** `action_type`, `resource_ids`, `dry_run` (default: true)
+---
 
-### **get_cost_forecast**
-Predicts next 3/6/12-month spend based on historical data.
+## 🏗️ Architecture at a Glance
 
-**Params:** `months`, `adjust_for_growth` (percentage)
-
-### **create_cost_ticket**
-Creates ticket in Jira/Azure DevOps with recommendations.
-
-**Params:** `title`, `description`, `estimated_savings`, `priority`
-
-## 💰 Monetization Checklist
-
-- [ ] Authentication layer (API keys per customer)
-- [ ] Multi-tenant support
-- [ ] Usage metering (API calls, savings tracked)
-- [ ] Webhook integrations (Slack, Teams, webhooks)
-- [ ] Audit logging (compliance, SLA tracking)
-- [ ] Premium features (forecasting, automation, custom policies)
-- [ ] Upsell: % of savings tier above fixed price
-- [ ] Partner program (consultancies, platforms)
-
-## 🚀 Deployment
-
-### OCI-Native Deployment (Recommended)
-
-**1. Deploy to OCI Functions (Serverless)**
-```bash
-# Setup OCI CLI
-oci setup config
-
-# Deploy via OCI Functions
-fn deploy --app optiora-prod
+```
+┌─────────────────────────────────────────────────────┐
+│  React Dashboard (Vercel)                           │
+│  ├─ Cost Overview       ├─ Anomalies                │
+│  ├─ Multi-Cloud Breakdown  ├─ Recommendations      │
+│  └─ Settings           └─ Dark Mode                 │
+└────────────────┬────────────────────────────────────┘
+                 │ HTTPS API
+                 ▼
+        ┌────────────────────┐
+        │  MCP Server(OCI)   │
+        ├─ Cost Aggregation │
+        ├─ Anomaly Detection│
+        ├─ Recommendations  │
+        └─ Auto Actions     │
+                 │
+    ┌────┬─────┬─┴──┬────────┐
+    ▼    ▼     ▼    ▼        ▼
+   AWS Azure GCP  OCI  PostgreSQL
 ```
 
-**Pricing:** $0.0000002 per invocation + minimal function execution time
-- Ideal for: Event-driven anomaly detection, scheduled cost analysis
+**For details**, see [ARCHITECTURE_COMPLETE.md](./ARCHITECTURE_COMPLETE.md)
 
-**2. Deploy to OCI Compute (Always-On)**
+---
+
+## 🚀 Getting Started (5 Minutes)
+
+### Prerequisites
+- Python 3.10+ 
+- Node.js 18+
+- Cloud credentials (AWS, Azure, GCP, or OCI)
+
+### Backend Setup
+
 ```bash
-# Launch OCI Compute Instance (VM)
-# Run Docker container with code
-docker run -p 8000:8000 --env-file .env optiora-mcp
+# Clone and enter directory
+git clone https://github.com/leandro-michelino/optiora.git
+cd optiora
+
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure credentials
+cp .env.example .env
+nano .env  # Add your AWS/Azure/GCP/OCI keys
+
+# Run MCP server
+python -m finops_mcp.server
+# ✓ OptiOra MCP Server listening on port 8000
 ```
 
-**Pricing:** $0.055/hour (VM.Standard.E4.Flex 1 OCPU)
-- Ideal for: Real-time WebSocket support, high-frequency polling
+### Frontend Setup
 
-**3. Production Setup (Recommended)**
 ```bash
-# OCI Compute Instance (CPU + Memory)
-# OCI PostgreSQL (audit logs, customer data) — $0.15/hour
-# OCI Object Storage (historical data) — $0.0255/GB/month
-# OCI API Gateway (auth + throttling)
-# OCI Monitoring (logs, alerts)
+# In another terminal
+cd dashboard
+npm install
+npm run dev
+# ✓ Open http://localhost:3000
 ```
 
-### Cost Comparison
+### Run Tests
 
-| Component | Cost | Notes |
-|-----------|------|-------|
-| **OCI Compute** | $0.055/hour ($40/mo) | Single VM instance |
-| **OCI PostgreSQL** | $0.15/hour ($110/mo) | DB.Standard.E4.OCPU |
-| **OCI Object Storage** | ~$10/mo | 1 GB historical data |
-| **OCI Monitoring** | Free | Included tier |
-| **API Gateway** | Pay-per-request | ~$0.01 per 10K requests |
-| **Total (OCI)** | **~$160/mo** | All-inclusive multi-cloud |
-
-**vs AWS (same setup):**
-- ECS Fargate: $50/mo
-- RDS PostgreSQL: $200+/mo
-- S3: $10/mo
-- CloudWatch: $0–50/mo
-- **Total (AWS): ~$310–360/mo**
-
-**💰 OCI is 50% cheaper + integrated billing + native Oracle support**
-
-### Single-tenant (self-hosted):
 ```bash
-docker build -t optiora .
-docker run -p 8000:8000 --env-file .env optiora
+# All tests
+pytest tests/ -v
+# ✓ 33 passed in 0.XX s
 ```
 
-### Multi-tenant SaaS (OCI):
-- OCI Compute Clusters (auto-scaling)
-- OCI PostgreSQL (multi-schema isolation)
-- OCI Object Storage (per-customer folders)
-- OCI API Gateway (customer API keys)
+---
 
-## 🔐 Security Considerations
+## 📚 MCP Tools
 
-- **Credential rotation:** Cloud credentials rotated weekly
-- **Least privilege IAM:** Read-only access to cost APIs + limited action execution
-- **Audit trail:** All cost queries, recommendations, actions logged
-- **Rate limiting:** Per-customer API quotas
-- **Encryption:** TLS for all data in transit; encrypted at rest
+The server exposes 6 standardized MCP tools:
 
-## 📈 Go-to-Market
+| Tool | Input | Output |
+|------|-------|--------|
+| `get_cost_summary` | period, cloud_provider, filters | Total cost, trends, top services |
+| `detect_cost_anomalies` | sensitivity, providers | List of anomalies with confidence |
+| `get_recommendations` | min_savings, difficulty | Ranked cost optimization suggestions |
+| `forecast_costs` | period, growth_factor | Projected costs (3-12 months) |
+| `execute_action` | action_type, resource_id, params | Execution status, audit trail |
+| `create_ticket` | title, description, priority | Ticket ID, tracking link |
 
-1. **Phase 1:** Launch to VC fund portfolios (free trials for fast GTM)
-2. **Phase 2:** Reach out to managed service providers (MSPs) — they resell FinOps services
-3. **Phase 3:** GCP/AWS marketplace listings (30% take-rate)
-4. **Phase 4:** Partner with cloud optimization consultancies
+**Usage Example:**
 
-## 📝 Roadmap
+```python
+# Using MCP client (LLM like Claude)
+response = mcp_client.call_tool(
+    "get_cost_summary",
+    period="month",
+    cloud_provider="aws",
+    filters={"environment": "production"}
+)
+# Returns: {"total_cost_usd": 12450.50, "top_services": [...]}
+```
 
-- [ ] v0.1: AWS-only MVP (anomalies + basic recommendations)
-- [ ] v0.2: Azure + GCP support
-- [ ] v0.3: Automation action execution
-- [ ] v0.4: Multi-tenant SaaS platform
-- [ ] v0.5: Advanced ML forecasting + custom policies
+---
 
-## 📞 Support & Contributing
+## 💻 Tech Stack
 
-See CONTRIBUTING.md
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | React 18 + Next.js 14 + Tailwind CSS |
+| **Visualizations** | Recharts 3 + dark mode (next-themes) |
+| **Backend** | Python 3.14 + MCP 0.4 |
+| **Cloud SDKs** | boto3, azure-identity, google-cloud, oci |
+| **Database** | PostgreSQL 15+ (OCI hosted) |
+| **Hosting** | OCI Compute (backend) + Vercel (frontend) |
+| **Containers** | Docker + Docker Compose |
+| **CI/CD** | GitHub Actions |
+| **Testing** | pytest (33 tests, all passing) |
 
-## License
+---
 
-MIT
+## 📊 Test Coverage
+
+```
+test_aws_integration.py        ✓ 4 tests
+test_azure_gcp.py              ✓ 12 tests
+test_anomaly_recommendations   ✓ 6 tests
+test_oci_database.py           ✓ 7 tests
+test_tools.py                  ✓ 4 tests
+────────────────────────────────────────
+TOTAL:                         ✓ 33 tests passing
+```
+
+Run tests: `pytest tests/ -v`
+
+---
+
+## 🚀 Deployment Options
+
+### Local Development
+```bash
+npm run dev      # Frontend on :3000
+python -m finops_mcp.server  # Backend on :8000
+```
+
+### Docker
+```bash
+docker-compose up -d
+```
+
+### Production (OCI)
+```bash
+./deploy/deploy-oci.sh compute
+# See OCI_DEPLOYMENT.md for details
+```
+
+### Vercel (Frontend)
+```bash
+cd dashboard
+vercel
+```
+
+---
+
+## 💰 Business Model
+
+**OptiOra operates on a freemium model:**
+
+| Tier | Price | Features |
+|------|-------|----------|
+| **Free** | $0 | Single cloud, basic reporting |
+| **Professional** | $1,499/mo | Multi-cloud, recommendations, API access |
+| **Enterprise** | $5,000+/mo | Automation, custom policies, dedicated support |
+| **Revenue Multiplier** | 15% of annual savings | After recommendations implemented |
+
+---
+
+## 📈 Roadmap
+
+### Q2 2026
+- ✅ Multi-cloud cost aggregation (AWS, Azure, GCP, OCI)
+- ✅ Anomaly detection engine
+- ✅ Recommendation system
+- ✅ React dashboard
+- ⏳ User authentication
+
+### Q3 2026
+- Advanced ML forecasting
+- FinOps team collaboration features
+- Slack/Teams bot integration
+- Unit cost analysis
+
+### Q4 2026
+- Machine learning-based anomaly detection
+- Multi-tenant billing platform
+- Custom recommendation rules
+- Datadog/PagerDuty integration
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+**Areas to contribute:**
+- 🐛 Bug fixes
+- ✨ New features (e.g., new cloud providers)
+- 📚 Documentation improvements
+- 🧪 Test coverage
+- 🎨 UI/UX enhancements
+
+---
+
+## 📄 License
+
+OptiOra is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+
+---
+
+## 🔗 Resources
+
+- 📖 **[Setup Guide](./SETUP.md)** — Installation & configuration
+- 🏗️ **[Architecture](./ARCHITECTURE_COMPLETE.md)** — System design
+- 🧪 **[Testing](./TESTING.md)** — How to write & run tests
+- 🤝 **[Contributing](./CONTRIBUTING.md)** — Development workflow
+- 🚀 **[Deployment](./OCI_DEPLOYMENT.md)** — Production setup
+- 📊 **[GitHub Repository](https://github.com/leandro-michelino/optiora)**
+
+---
+
+## ❓ Support
+
+- 💬 **Discussion**: Open a [GitHub Discussion](https://github.com/leandro-michelino/optiora/discussions)
+- 🐛 **Bug Report**: Create a [GitHub Issue](https://github.com/leandro-michelino/optiora/issues)
+- 📧 **Email**: Contact maintainers via GitHub
+
+---
+
+## 🎯 Next Steps
+
+1. **Read**: [Setup.md](./SETUP.md) for installation
+2. **Run**: `pytest tests/ -v` to verify tests pass
+3. **Explore**: [ARCHITECTURE_COMPLETE.md](./ARCHITECTURE_COMPLETE.md) for system design
+4. **Contribute**: Check [Contributing.md](./CONTRIBUTING.md)
+
+---
+
+**Built with ❤️ for cloud cost optimization**
+
+*OptiOra — Intelligent Cloud Financial Operations*
