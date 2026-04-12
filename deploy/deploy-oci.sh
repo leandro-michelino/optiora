@@ -238,6 +238,7 @@ exec 2>&1
 
 echo "=== OptiOra Installation Starting ==="
 echo "Time: $(date)"
+echo "User: $(whoami)"
 
 # Update system
 echo "Updating system packages..."
@@ -245,50 +246,151 @@ apt-get update
 apt-get upgrade -y
 
 # Install Python 3.10+
-echo "Installing Python..."
-apt-get install -y python3.10 python3.10-venv python3-pip
+echo "Installing Python 3.10..."
+apt-get install -y python3.10 python3.10-venv python3-pip python3-dev
 
-# Install other dependencies
+# Install PostgreSQL client and other dependencies
 echo "Installing dependencies..."
-apt-get install -y git curl wget postgresql-client
+apt-get install -y git curl wget postgresql-client build-essential libssl-dev libffi-dev
+
+# Create application directory
+echo "Creating application directory..."
+mkdir -p /opt/optiora
+cd /opt/optiora
 
 # Clone repository
 echo "Cloning OptiOra repository..."
-cd /opt
-git clone https://github.com/leandro-michelino/optiora.git optiora
-cd optiora
+git clone https://github.com/leandro-michelino/optiora.git . || git pull
 
 # Create Python virtual environment
-echo "Setting up Python environment..."
+echo "Setting up Python virtual environment..."
 python3.10 -m venv venv
 source venv/bin/activate
+export PATH="$PWD/venv/bin:$PATH"
 
 # Install Python dependencies
-echo "Installing Python packages..."
-pip install --upgrade pip
+echo "Installing Python packages with Poetry..."
+pip install --upgrade pip setuptools wheel
 pip install poetry
-poetry install --no-interaction
+
+# Install project dependencies
+poetry install --no-interaction --no-dev 2>&1 || {
+    echo "Poetry install failed, trying pip..."
+    pip install mcp boto3 azure-identity azure-mgmt-costmanagement google-cloud-billing oci pydantic python-dotenv httpx
+}
 
 # Configure environment
 echo "Configuring environment..."
 if [ ! -f /opt/optiora/.env ]; then
     cp /opt/optiora/.env.example /opt/optiora/.env
-    echo "Created .env file (update with real credentials)"
+    echo "✓ Created .env file (IMPORTANT: Update with real cloud credentials)"
+    echo ""
+    echo "Edit /opt/optiora/.env with cloud provider credentials:"
+    echo "  - AWS_ACCESS_KEY_ID"
+    echo "  - AWS_SECRET_ACCESS_KEY"
+    echo "  - AZURE_SUBSCRIPTION_ID"
+    echo "  - AZURE_CLIENT_ID"
+    echo "  - AZURE_CLIENT_SECRET"
+    echo "  - GCP_PROJECT_ID"
+    echo "  - OCI_CONFIG_PROFILE"
 fi
 
-# Start MCP server
-echo "Starting MCP server..."
-nohup poetry run python -m finops_mcp.server > /var/log/optiora.log 2>&1 &
+# Create system service for MCP server
+echo "Setting up MCP server service..."
+cat > /etc/systemd/system/optiora-mcp.service << 'EOF'
+[Unit]
+Description=OptiOra MCP Server
+After=network.target
 
-# Wait for server to start
-sleep 5
-if curl -s http://localhost:8000/health > /dev/null; then
-    echo "=== OptiOra Installation Complete ==="
-    echo "Server running on port 8000"
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/optiora
+Environment="PATH=/opt/optiora/venv/bin"
+ExecStart=/opt/optiora/venv/bin/python -m finops_mcp.server
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/optiora-mcp.log
+StandardError=append:/var/log/optiora-mcp.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create system service for dashboard
+echo "Setting up Dashboard service..."
+cat > /etc/systemd/system/optiora-dashboard.service << 'EOF'
+[Unit]
+Description=OptiOra Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/optiora/dashboard
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/optiora-dashboard.log
+StandardError=append:/var/log/optiora-dashboard.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Install Node.js for dashboard
+echo "Installing Node.js 18..."
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash - 2>&1
+apt-get install -y nodejs
+
+# Install dashboard dependencies
+echo "Installing dashboard dependencies..."
+cd /opt/optiora/dashboard
+npm install --production
+
+# Enable services
+echo "Enabling services..."
+systemctl daemon-reload
+systemctl enable optiora-mcp.service
+systemctl enable optiora-dashboard.service
+
+# Start services
+echo "Starting OptiOra services..."
+systemctl start optiora-mcp.service
+systemctl start optiora-dashboard.service
+
+# Wait for services to start
+echo "Waiting for services to initialize..."
+sleep 10
+
+# Health check
+echo "Performing health checks..."
+if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+    echo "✓ MCP Server health check passed"
 else
-    echo "=== Failed to start OptiOra server ==="
-    exit 1
+    echo "⚠ MCP Server health check failed - check logs"
 fi
+
+if curl -s http://localhost:3000 > /dev/null 2>&1; then
+    echo "✓ Dashboard health check passed"
+else
+    echo "⚠ Dashboard health check failed - check logs"
+fi
+
+echo ""
+echo "=== OptiOra Installation Complete ==="
+echo "Time: $(date)"
+echo ""
+echo "Services running:"
+echo "  • MCP Server: http://localhost:8000"
+echo "  • Dashboard: http://localhost:3000"
+echo ""
+echo "Logs:"
+echo "  • MCP: tail -f /var/log/optiora-mcp.log"
+echo "  • Dashboard: tail -f /var/log/optiora-dashboard.log"
+echo "  • Setup: tail -f /var/log/optiora-setup.log"
+echo ""
+echo "IMPORTANT: Update /opt/optiora/.env with real cloud credentials!"
 USERDATA_EOF
 )
     
@@ -344,14 +446,24 @@ deploy_container() {
     log_info "  vCPU: $OCPU_COUNT"
     log_info "  Memory: ${MEMORY_GB}GB"
     
+    CONTAINER_NAME="${OCI_CONTAINER_NAME:-optiora-container}"
+    
     if [ "$DRY_RUN" == "true" ]; then
         log_warning "DRY RUN MODE - No changes will be made"
-        log_info "Would create container instance"
+        log_info "Would create container instance with:"
+        echo "  Name: $CONTAINER_NAME"
+        echo "  vCPU: $OCPU_COUNT"
+        echo "  Memory: ${MEMORY_GB}GB"
         return 0
     fi
     
-    log_error "Container deployment coming soon"
-    log_info "For now, use: ./deploy/deploy-oci.sh compute"
+    log_info "Note: Container deployment requires a pre-built Docker image"
+    log_info "Step 1: Build and push Docker image to OCI Registry"
+    log_info "Step 2: Use OCI Container Instances API to deploy"
+    log_info ""
+    log_info "For detailed instructions, see DEPLOYMENT_GUIDE.md"
+    log_error "Container deployment: Feature in progress"
+    log_info "Recommend using compute instance for now: ./deploy/deploy-oci.sh compute"
 }
 
 # Deploy to Kubernetes

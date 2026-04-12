@@ -292,31 +292,19 @@ python finops_mcp/scripts/init_db.py
 # 4. Start backend API
 python -m finops_mcp.api
 
-# 5. In another terminal, start frontend
-cd dashboard
-npm install
-npm run dev
-
-# 6. Open http://localhost:3000
-```
-
 #### OCI Production Deployment
-```bash
-# Follow: OCI_DEPLOYMENT.md (complete guide with all steps)
 
-# Quick summary:
-# 1. Create OCI account and configure CLI
-# 2. Set up networking (VCN, subnets, security groups)
-# 3. Create PostgreSQL database on OCI DBaaS
-# 4. Build and push Docker containers to OCI Registry
-# 5. Deploy containers to OCI Compute Instances
-# 6. Configure OCI Load Balancer (frontend + backend)
-# 7. Set up SSL/TLS with OCI Certificates
-# 8. Configure DNS to load balancer
+**Follow:** SETUP.md for complete deployment guide
 
-# Time estimate: 45-60 minutes
-# Cost: ~$50-100/month on always-free tier
-```
+**Quick summary:**
+1. Create OCI account and configure CLI
+2. Deploy using: `./deploy/deploy-oci.sh compute`
+3. Configure API Gateway URL
+4. Set up SSL/TLS certificates
+5. Configure DNS
+
+**Time estimate:** 20-30 minutes (automated)  
+**Cost:** ~$50-100/month on always-free tier
 
 ---
 
@@ -324,8 +312,7 @@ npm run dev
 
 ### Base URL
 ```
-https://api.optora.example.com  (Production)
-http://localhost:8000          (Development)
+https://api.optiora.oci.customer-oci.com  (Production)
 ```
 
 ### Authentication
@@ -558,7 +545,7 @@ Response:
 
 - **Deployment:** `OCI_DEPLOYMENT.md` (complete step-by-step guide)
 - **Architecture:** `ARCHITECTURE_COMPLETE.md` (diagrams and data flow)
-- **Setup:** `SETUP.md` (local development and testing)
+- **Setup:** `SETUP.md` (OCI deployment guide)
 - **API Reference:** This document + Swagger UI at `/api/docs`
 - **Code Examples:** `tests/` directory contains working examples
 

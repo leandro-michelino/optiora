@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Home, Zap } from 'lucide-react'
+import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Home, Zap, Grid } from 'lucide-react'
 
 export default function DashboardLayout({
   children,
@@ -14,6 +14,7 @@ export default function DashboardLayout({
 
   const mainNavItems = [
     { href: '/dashboard', label: 'Overview', icon: BarChart3 },
+    { href: '/dashboard/my-dashboards', label: 'My Dashboards', icon: Grid },
     { href: '/dashboard/costs', label: 'Cloud Costs', icon: Cloud },
   ]
 

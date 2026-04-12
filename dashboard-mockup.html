@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OptiOra - Multi-Cloud Cost Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 280px;
+            background: #1e293b;
+            border-right: 1px solid #334155;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: #3b82f6;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-item {
+            padding: 12px 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: #334155;
+        }
+
+        .nav-item.active {
+            background: #1e40af;
+            border-left-color: #3b82f6;
+            color: #fff;
+        }
+
+        .nav-icon {
+            font-size: 18px;
+        }
+
+        /* MAIN CONTENT */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .theme-toggle {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: #334155;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        /* CONTENT AREA */
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            border-color: #475569;
+            box-shadow: 0 10px 25px rgba(59, 130, 246, 0.1);
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .metric-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #3b82f6;
+        }
+
+        .metric-label {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .metric-change {
+            font-size: 12px;
+            margin-top: 10px;
+            padding: 5px 10px;
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .metric-change.negative {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
+        .chart-placeholder {
+            background: linear-gradient(135deg, #334155 0%, #475569 100%);
+            height: 300px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            font-size: 18px;
+            margin: 15px 0;
+        }
+
+        .chart-large {
+            height: 400px;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .table thead {
+            background: #0f172a;
+            border-bottom: 1px solid #334155;
+        }
+
+        .table th {
+            padding: 12px;
+            text-align: left;
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .table td {
+            padding: 12px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .table tbody tr:hover {
+            background: #334155;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        .badge-warning {
+            background: rgba(234, 179, 8, 0.2);
+            color: #eab308;
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .badge-info {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+
+        .button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .button-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .button-primary:hover {
+            background: #2563eb;
+        }
+
+        .button-secondary {
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+        }
+
+        .button-secondary:hover {
+            background: #475569;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #f1f5f9;
+        }
+
+        .alert {
+            background: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid #ef4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            gap: 12px;
+        }
+
+        .alert-icon {
+            font-size: 20px;
+            color: #ef4444;
+        }
+
+        .alert-content {
+            flex: 1;
+        }
+
+        .alert-title {
+            font-weight: 600;
+            color: #fca5a5;
+            margin-bottom: 3px;
+        }
+
+        .alert-message {
+            color: #fecaca;
+            font-size: 14px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 20px;
+            border-bottom: 1px solid #334155;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 0;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            color: #94a3b8;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+
+        .tab:hover {
+            color: #cbd5e1;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .calculator-section {
+            display: block;
+        }
+
+        @media (max-width: 1400px) {
+            .grid-4 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                height: auto;
+                display: flex;
+                gap: 10px;
+                overflow-x: auto;
+            }
+
+            .grid-2, .grid-4 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <div class="logo">
+                <span>📊</span>
+                <span>OptiOra</span>
+            </div>
+            
+            <div class="nav-item active" onclick="showPage('overview')">
+                <span class="nav-icon">🏠</span>
+                <span>Overview</span>
+            </div>
+            
+            <div class="nav-item" onclick="showPage('costs')">
+                <span class="nav-icon">💰</span>
+                <span>Costs</span>
+            </div>
+            
+            <div class="nav-item" onclick="showPage('anomalies')">
+                <span class="nav-icon">🚨</span>
+                <span>Anomalies</span>
+            </div>
+            
+            <div class="nav-item" onclick="showPage('recommendations')">
+                <span class="nav-icon">💡</span>
+                <span>Recommendations</span>
+            </div>
+            
+            <div class="nav-item" onclick="showPage('forecasting')">
+                <span class="nav-icon">📈</span>
+                <span>Forecasting</span>
+            </div>
+            
+            <div class="nav-item" onclick="showPage('ai-insights')">
+                <span class="nav-icon">🤖</span>
+                <span>AI Insights</span>
+            </div>
+            
+            <div class="nav-item" onclick="showPage('cost-advisor')">
+                <span class="nav-icon">💬</span>
+                <span>Cost Advisor</span>
+            </div>
+            
+            <!-- Cost Calculator - Coming Soon
+            <div class="nav-item" onclick="showPage('cost-calculator')">
+                <span class="nav-icon">🧮</span>
+                <span>Cost Calculator</span>
+            </div>
+            -->
+            
+            <div class="nav-item" onclick="showPage('custom-dashboards')">
+                <span class="nav-icon">📋</span>
+                <span>My Dashboards</span>
+            </div>
+            
+            <div class="nav-item" onclick="showPage('settings')">
+                <span class="nav-icon">⚙️</span>
+                <span>Settings</span>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT -->
+        <div class="main">
+            <!-- HEADER -->
+            <div class="header">
+                <div class="header-title" id="pageTitle">Overview</div>
+                <div class="header-actions">
+                    <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+                </div>
+            </div>
+
+            <!-- CONTENT AREA -->
+            <div class="content">
+                
+                <!-- OVERVIEW PAGE -->
+                <div id="overview-page">
+                    <!-- BUDGET ALERTS SECTION -->
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 class="section-title">💰 Budget Tracking & Alerts</h3>
+                            <button class="button button-secondary" onclick="exportData('pdf')" style="padding: 8px 15px; font-size: 13px;">📥 Export PDF</button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
+                            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 15px;">
+                                <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">AWS Budget</div>
+                                <div style="color: #3b82f6; font-size: 20px; font-weight: bold; margin-bottom: 8px;">$5,200 / $6,000</div>
+                                <div style="background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 5px;">
+                                    <div style="background: linear-gradient(90deg, #3b82f6, #22c55e); height: 100%; width: 87%;"></div>
+                                </div>
+                                <div style="color: #cbd5e1; font-size: 12px;">87% utilized | $800 remaining</div>
+                            </div>
+                            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 15px;">
+                                <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Azure Budget</div>
+                                <div style="color: #3b82f6; font-size: 20px; font-weight: bold; margin-bottom: 8px;">$2,850 / $3,500</div>
+                                <div style="background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 5px;">
+                                    <div style="background: linear-gradient(90deg, #eab308, #ef4444); height: 100%; width: 81%;"></div>
+                                </div>
+                                <div style="color: #fecaca; font-size: 12px;">⚠️ 81% utilized | $650 remaining</div>
+                            </div>
+                            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 15px;">
+                                <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">GCP Budget</div>
+                                <div style="color: #3b82f6; font-size: 20px; font-weight: bold; margin-bottom: 8px;">$1,920 / $2,500</div>
+                                <div style="background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 5px;">
+                                    <div style="background: linear-gradient(90deg, #3b82f6, #22c55e); height: 100%; width: 77%;"></div>
+                                </div>
+                                <div style="color: #cbd5e1; font-size: 12px;">77% utilized | $580 remaining</div>
+                            </div>
+                            <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #334155; border-radius: 12px; padding: 15px;">
+                                <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">OCI Budget</div>
+                                <div style="color: #3b82f6; font-size: 20px; font-weight: bold; margin-bottom: 8px;">$1,870 / $2,840</div>
+                                <div style="background: #334155; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 5px;">
+                                    <div style="background: linear-gradient(90deg, #3b82f6, #22c55e); height: 100%; width: 66%;"></div>
+                                </div>
+                                <div style="color: #cbd5e1; font-size: 12px;">✓ 66% utilized | $970 remaining</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; padding: 12px; background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; border-radius: 6px;">
+                            <div style="color: #fca5a5; font-weight: 600; font-size: 13px;">🔴 Alert: Azure budget approaching limit (81%)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid-4">
+                        <div class="metric-card">
+                            <div class="metric-value">$12,840</div>
+                            <div class="metric-label">Total Monthly Spend</div>
+                            <div class="metric-change negative">↑ 5.2% vs last month</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">$3,240</div>
+                            <div class="metric-label">Potential Savings</div>
+                            <div class="metric-change">↓ 25% of total cost</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">4</div>
+                            <div class="metric-label">Active Clouds</div>
+                            <div class="metric-change">AWS, Azure, GCP, OCI</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">78%</div>
+                            <div class="metric-label">Optimization Score</div>
+                            <div class="metric-change">↑ 12% improvement</div>
+                        </div>
+                    </div>
+
+                    <div class="grid-2">
+                        <div class="card">
+                            <h3 class="section-title">6-Month Cost Trend</h3>
+                            <div class="chart-placeholder">📊 Interactive Chart</div>
+                        </div>
+                        <div class="card">
+                            <h3 class="section-title">Cloud Distribution</h3>
+                            <div class="chart-placeholder">📊 Pie Chart</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="section-title">Top Recommendations</h3>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Recommendation</th>
+                                    <th>Cloud</th>
+                                    <th>Savings</th>
+                                    <th>Effort</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Switch to Reserved Instances</td>
+                                    <td>AWS</td>
+                                    <td>$2,100/mo</td>
+                                    <td><span class="badge badge-info">Low</span></td>
+                                    <td><span class="badge badge-success">Pending</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Optimize Storage Tiers</td>
+                                    <td>Azure</td>
+                                    <td>$840/mo</td>
+                                    <td><span class="badge badge-warning">Medium</span></td>
+                                    <td><span class="badge badge-success">Pending</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Reduce Compute Instances</td>
+                                    <td>GCP</td>
+                                    <td>$630/mo</td>
+                                    <td><span class="badge badge-danger">High</span></td>
+                                    <td><span class="badge badge-success">Pending</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- COSTS PAGE -->
+                <div id="costs-page" class="hidden">
+                    <div class="section-title">Multi-Cloud Cost Breakdown</div>
+                    
+                    <div class="tabs">
+                        <div class="tab active">All Clouds</div>
+                        <div class="tab">AWS</div>
+                        <div class="tab">Azure</div>
+                        <div class="tab">GCP</div>
+                        <div class="tab">OCI</div>
+                    </div>
+
+                    <div class="grid-2">
+                        <div class="card">
+                            <h3 class="section-title">Cost by Service</h3>
+                            <div class="chart-placeholder">📊 Bar Chart</div>
+                        </div>
+                        <div class="card">
+                            <h3 class="section-title">Competitor Comparison</h3>
+                            <div class="chart-placeholder">📊 Comparison Table</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="section-title">Detailed Breakdown</h3>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Cloud</th>
+                                    <th>Monthly Cost</th>
+                                    <th>% of Total</th>
+                                    <th>Trend</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Compute</td>
+                                    <td>AWS</td>
+                                    <td>$5,200</td>
+                                    <td>40.5%</td>
+                                    <td><span class="badge badge-danger">↑ 8%</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Storage</td>
+                                    <td>Azure</td>
+                                    <td>$2,100</td>
+                                    <td>16.3%</td>
+                                    <td><span class="badge badge-success">↓ 2%</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Data Transfer</td>
+                                    <td>GCP</td>
+                                    <td>$1,850</td>
+                                    <td>14.4%</td>
+                                    <td><span class="badge badge-danger">↑ 5%</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ANOMALIES PAGE -->
+                <div id="anomalies-page" class="hidden">
+                    <div class="section-title">Cost Anomalies & Alerts</div>
+                    
+                    <div class="alert">
+                        <div class="alert-icon">⚠️</div>
+                        <div class="alert-content">
+                            <div class="alert-title">Critical: Unusual compute spike detected</div>
+                            <div class="alert-message">AWS EC2 costs increased by 340% on April 10. Possible runaway instances. Recommended action: Review running instances.</div>
+                        </div>
+                    </div>
+
+                    <div class="alert">
+                        <div class="alert-icon">⚠️</div>
+                        <div class="alert-content">
+                            <div class="alert-title">Warning: Data transfer surge</div>
+                            <div class="alert-message">GCP egress bandwidth exceeded forecast by 45%. Recommended action: Check for data exfiltration.</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="section-title">Recent Anomalies</h3>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Service</th>
+                                    <th>Severity</th>
+                                    <th>Cost Impact</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Apr 10, 2026</td>
+                                    <td>AWS EC2</td>
+                                    <td><span class="badge badge-danger">Critical</span></td>
+                                    <td>+$1,250</td>
+                                    <td><span class="badge badge-warning">Investigating</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Apr 8, 2026</td>
+                                    <td>GCP Data Transfer</td>
+                                    <td><span class="badge badge-warning">Warning</span></td>
+                                    <td>+$340</td>
+                                    <td><span class="badge badge-success">Resolved</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- RECOMMENDATIONS PAGE -->
+                <div id="recommendations-page" class="hidden">
+                    <div class="section-title">Cost Optimization Recommendations</div>
+                    
+                    <div class="tabs">
+                        <div class="tab active">All</div>
+                        <div class="tab">Quick Wins</div>
+                        <div class="tab">Medium-term</div>
+                        <div class="tab">Long-term</div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="section-title">Quick Win - Reserved Instances (AWS)</h3>
+                        <p style="margin-bottom: 15px; color: #cbd5e1;">
+                            Switch 80% of on-demand EC2 instances to Reserved Instances for 1-year or 3-year terms.
+                        </p>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
+                            <div style="background: #334155; padding: 12px; border-radius: 8px;">
+                                <div style="color: #94a3b8; font-size: 12px;">Monthly Savings</div>
+                                <div style="color: #22c55e; font-size: 24px; font-weight: bold;">$2,100</div>
+                            </div>
+                            <div style="background: #334155; padding: 12px; border-radius: 8px;">
+                                <div style="color: #94a3b8; font-size: 12px;">Implementation Time</div>
+                                <div style="color: #3b82f6; font-size: 24px; font-weight: bold;">3 hrs</div>
+                            </div>
+                            <div style="background: #334155; padding: 12px; border-radius: 8px;">
+                                <div style="color: #94a3b8; font-size: 12px;">ROI %</div>
+                                <div style="color: #eab308; font-size: 24px; font-weight: bold;">340%</div>
+                            </div>
+                        </div>
+                        <button class="button button-primary">View Details</button>
+                    </div>
+
+                    <div class="card" style="margin-top: 20px;">
+                        <h3 class="section-title">Long-term - Reduce Database Instances (GCP)</h3>
+                        <p style="margin-bottom: 15px; color: #cbd5e1;">
+                            Consolidate redundant database instances into Cloud SQL with automated backups and failover.
+                        </p>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px;">
+                            <div style="background: #334155; padding: 12px; border-radius: 8px;">
+                                <div style="color: #94a3b8; font-size: 12px;">Monthly Savings</div>
+                                <div style="color: #22c55e; font-size: 24px; font-weight: bold;">$630</div>
+                            </div>
+                            <div style="background: #334155; padding: 12px; border-radius: 8px;">
+                                <div style="color: #94a3b8; font-size: 12px;">Implementation Time</div>
+                                <div style="color: #3b82f6; font-size: 24px; font-weight: bold;">1 week</div>
+                            </div>
+                            <div style="background: #334155; padding: 12px; border-radius: 8px;">
+                                <div style="color: #94a3b8; font-size: 12px;">ROI %</div>
+                                <div style="color: #eab308; font-size: 24px; font-weight: bold;">420%</div>
+                            </div>
+                        </div>
+                        <button class="button button-primary">View Details</button>
+                    </div>
+
+                    <div class="card" style="margin-top: 20px;">
+                        <h3 class="section-title">⚠️ URGENT: Capacity Scaling Alerts</h3>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
+                            <div style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 12px; border-radius: 8px;">
+                                <div style="color: #fca5a5; font-weight: 600; margin-bottom: 5px;">🔴 SCALE UP - AWS Compute</div>
+                                <div style="color: #fecaca; font-size: 13px;">CPU utilization: 87% | RAM: 92% full | Recommendation: Upgrade 50% of instances to next size tier (+$420/mo to prevent outages)</div>
+                            </div>
+                            <div style="background: rgba(234, 179, 8, 0.1); border-left: 4px solid #eab308; padding: 12px; border-radius: 8px;">
+                                <div style="color: #fef08a; font-weight: 600; margin-bottom: 5px;">🟡 OPTIMIZE - Azure Storage</div>
+                                <div style="color: #fde047; font-size: 13px;">76% storage utilization | Tier: Hot (60% utilized) | Recommendation: Move 30GB to Cool tier (-$180/mo)</div>
+                            </div>
+                            <div style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 12px; border-radius: 8px;">
+                                <div style="color: #86efac; font-weight: 600; margin-bottom: 5px;">🟢 HEALTHY - GCP Workload</div>
+                                <div style="color: #bbf7d0; font-size: 13px;">Utilization: 45% | Status: Well-provisioned | Recommendation: Maintain current config</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FORECASTING PAGE -->
+                <div id="forecasting-page" class="hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div class="section-title">12-Month Cost Forecasting & Scenarios</div>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="button button-secondary" onclick="exportData('csv')" style="padding: 8px 15px; font-size: 13px;">📥 Export CSV</button>
+                            <button class="button button-secondary" onclick="exportData('pdf')" style="padding: 8px 15px; font-size: 13px;">📥 Export PDF</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3 class="section-title">Cost Projection & What-If Scenarios</h3>
+                        <div class="chart-placeholder chart-large">📊 12-Month Forecast Chart with Scenario Lines</div>
+                    </div>
+
+                    <div class="card" style="margin-top: 20px;">
+                        <h3 class="section-title">Scenario Planning</h3>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                            <div style="background: #334155; padding: 20px; border-radius: 12px; border-left: 4px solid #3b82f6;">
+                                <div style="font-weight: 600; color: #3b82f6; margin-bottom: 15px;">📊 Baseline Scenario</div>
+                                <table style="width: 100%; font-size: 13px; color: #cbd5e1;">
+                                    <tr>
+                                        <td>Current Trend</td>
+                                        <td style="text-align: right; font-weight: 600;">+3.2% MoM</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid #475569;">
+                                        <td colspan="2" style="padding-bottom: 10px;">Assumes no changes</td>
+                                    </tr>
+                                    <tr>
+                                        <td>12-Month Total</td>
+                                        <td style="text-align: right; color: #ef4444; font-weight: 600;">$169,500</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Avg. Monthly</td>
+                                        <td style="text-align: right;">$14,125</td>
+                                    </tr>
+                                </table>
+                                <button class="button button-primary" style="width: 100%; margin-top: 15px; font-size: 12px;">View Details</button>
+                            </div>
+
+                            <div style="background: #334155; padding: 20px; border-radius: 12px; border-left: 4px solid #22c55e;">
+                                <div style="font-weight: 600; color: #22c55e; margin-bottom: 15px;">⚡ Aggressive Optimization</div>
+                                <table style="width: 100%; font-size: 13px; color: #cbd5e1;">
+                                    <tr>
+                                        <td>Growth Rate</td>
+                                        <td style="text-align: right; font-weight: 600;">-2.5% MoM</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid #475569;">
+                                        <td colspan="2" style="padding-bottom: 10px;">Apply all recommendations</td>
+                                    </tr>
+                                    <tr>
+                                        <td>12-Month Total</td>
+                                        <td style="text-align: right; color: #22c55e; font-weight: 600;">$124,260</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Avg. Monthly</td>
+                                        <td style="text-align: right;">$10,355</td>
+                                    </tr>
+                                </table>
+                                <button class="button button-primary" style="width: 100%; margin-top: 15px; font-size: 12px; background: #22c55e;">View Details</button>
+                            </div>
+
+                            <div style="background: #334155; padding: 20px; border-radius: 12px; border-left: 4px solid #eab308;">
+                                <div style="font-weight: 600; color: #eab308; margin-bottom: 15px;">🚀 Scaling Growth</div>
+                                <table style="width: 100%; font-size: 13px; color: #cbd5e1;">
+                                    <tr>
+                                        <td>Growth Rate</td>
+                                        <td style="text-align: right; font-weight: 600;">+8.5% MoM</td>
+                                    </tr>
+                                    <tr style="border-bottom: 1px solid #475569;">
+                                        <td colspan="2" style="padding-bottom: 10px;">Scale capacity +50%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>12-Month Total</td>
+                                        <td style="text-align: right; color: #ef4444; font-weight: 600;">$287,800</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Avg. Monthly</td>
+                                        <td style="text-align: right;">$23,983</td>
+                                    </tr>
+                                </table>
+                                <button class="button button-primary" style="width: 100%; margin-top: 15px; font-size: 12px; background: #eab308; color: #000;">View Details</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-2" style="margin-top: 20px;">
+                        <div class="card">
+                            <h3 class="section-title">Current Trajectory</h3>
+                            <table class="table" style="font-size: 14px;">
+                                <tr>
+                                    <td>Monthly Average</td>
+                                    <td style="text-align: right; color: #3b82f6; font-weight: bold;">$12,840</td>
+                                </tr>
+                                <tr>
+                                    <td>Growth Rate</td>
+                                    <td style="text-align: right; color: #ef4444;">+3.2% MoM</td>
+                                </tr>
+                                <tr>
+                                    <td>Peak Month (Apr)</td>
+                                    <td style="text-align: right;">$14,520</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid #334155;">
+                                    <td>Lowest Month (Jan)</td>
+                                    <td style="text-align: right;">$11,200</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>12-Month Total</strong></td>
+                                    <td style="text-align: right; color: #ef4444; font-weight: bold;">$169,500</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="card">
+                            <h3 class="section-title">Optimization Impact</h3>
+                            <table class="table" style="font-size: 14px;">
+                                <tr>
+                                    <td>If All Recommendations Applied</td>
+                                    <td style="text-align: right; color: #22c55e; font-weight: bold;">-$3,770/mo</td>
+                                </tr>
+                                <tr>
+                                    <td>New Monthly Baseline</td>
+                                    <td style="text-align: right; color: #3b82f6; font-weight: bold;">$9,070</td>
+                                </tr>
+                                <tr>
+                                    <td>Annual Savings</td>
+                                    <td style="text-align: right; color: #22c55e; font-weight: bold;">$45,240</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid #334155;">
+                                    <td>Payback Period</td>
+                                    <td style="text-align: right;">1-2 months</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>New 12-Month Total</strong></td>
+                                    <td style="text-align: right; color: #3b82f6; font-weight: bold;">$124,260</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card" style="margin-top: 20px;">
+                        <h3 class="section-title">Monthly Forecast Breakdown</h3>
+                        <table class="table" style="font-size: 13px;">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Baseline</th>
+                                    <th>Optimized</th>
+                                    <th>Growth Scenario</th>
+                                    <th>Monthly Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Jan 2026</td>
+                                    <td>$11,200</td>
+                                    <td>$9,100</td>
+                                    <td>$18,500</td>
+                                    <td>-12.5%</td>
+                                </tr>
+                                <tr>
+                                    <td>Feb 2026</td>
+                                    <td>$12,100</td>
+                                    <td>$9,300</td>
+                                    <td>$19,800</td>
+                                    <td>+2.1%</td>
+                                </tr>
+                                <tr>
+                                    <td>Mar 2026</td>
+                                    <td>$12,840</td>
+                                    <td>$9,250</td>
+                                    <td>$21,200</td>
+                                    <td>+3.2%</td>
+                                </tr>
+                                <tr>
+                                    <td>Apr 2026</td>
+                                    <td>$14,520</td>
+                                    <td>$9,470</td>
+                                    <td>$23,980</td>
+                                    <td>+8.5%</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="5" style="text-align: center; color: #94a3b8; padding: 10px;">... and 8 more months projected</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- AI INSIGHTS PAGE -->
+                <div id="ai-insights-page" class="hidden">
+                    <div class="section-title">AI-Powered Cost Analysis</div>
+                    
+                    <div class="card">
+                        <h3 class="section-title">💡 Claude AI Analysis</h3>
+                        <p style="color: #cbd5e1; margin-bottom: 15px; line-height: 1.8;">
+                            Your cloud spending shows a consistent upward trend (+5.2% MoM), primarily driven by increased compute resources on AWS. The anomaly detected on April 10 indicates a potential resource leak. I recommend implementing Reserved Instances immediately, which could save $2,100 monthly. Additionally, your GCP data transfer costs are 15% above industry benchmark - reviewing egress policies could help. Overall optimization potential: $3,770/month (29% reduction).
+                        </p>
+                        <div style="background: #334155; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                            <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Confidence Score</div>
+                            <div style="background: #1e293b; height: 20px; border-radius: 4px; overflow: hidden;">
+                                <div style="background: linear-gradient(90deg, #3b82f6, #22c55e); height: 100%; width: 87%; display: flex; align-items: center; justify-content: flex-end; padding-right: 5px; color: white; font-size: 11px;">87%</div>
+                            </div>
+                        </div>
+                        <button class="button button-primary">Get Detailed Report</button>
+                    </div>
+                </div>
+
+                <!-- COST ADVISOR PAGE -->
+                <div id="cost-advisor-page" class="hidden">
+                    <div class="section-title">Cost Advisor Chatbot</div>
+                    
+                    <div class="card" style="height: 500px; display: flex; flex-direction: column;">
+                        <div style="flex: 1; overflow-y: auto; border: 1px solid #334155; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #0f172a;">
+                            <div style="margin-bottom: 15px;">
+                                <div style="background: #1e293b; padding: 10px 15px; border-radius: 8px; display: inline-block; max-width: 70%;">
+                                    How can I reduce my AWS costs?
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 15px; text-align: right;">
+                                <div style="background: #1e40af; padding: 10px 15px; border-radius: 8px; display: inline-block; max-width: 70%; text-align: left;">
+                                    Based on your usage, I recommend: 1) Switch 80% of on-demand instances to Reserved Instances (save $2,100/mo), 2) Enable S3 Intelligent-Tiering, 3) Review and terminate unused resources. These changes could save you ~$2,400 monthly.
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 15px;">
+                                <div style="background: #1e293b; padding: 10px 15px; border-radius: 8px; display: inline-block; max-width: 70%;">
+                                    What about multi-region setup?
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="background: #1e40af; padding: 10px 15px; border-radius: 8px; display: inline-block; max-width: 70%; text-align: left;">
+                                    Multi-region deployment increases costs due to data transfer. If you need higher availability, consider: 1) Active-passive failover (minimal extra cost), 2) Regional load balancing, 3) Edge caching. I estimate +5% monthly cost for proper redundancy.
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" placeholder="Ask about your cloud costs..." style="flex: 1; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 12px 15px; border-radius: 8px; font-size: 14px;">
+                            <button class="button button-primary">Send</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- COST CALCULATOR PAGE -->
+                <div id="cost-calculator-page" class="hidden">
+                    <div class="section-title">Cloud Cost Calculator & Capacity Planner</div>
+                    
+                    <div class="tabs">
+                        <div class="tab active" onclick="switchCalculator('aws')">AWS</div>
+                        <div class="tab" onclick="switchCalculator('azure')">Azure</div>
+                        <div class="tab" onclick="switchCalculator('gcp')">GCP</div>
+                        <div class="tab" onclick="switchCalculator('oci')">OCI</div>
+                    </div>
+
+                    <!-- AWS CALCULATOR -->
+                    <div id="aws-calculator" class="calculator-section">
+                        <div class="card">
+                            <h3 class="section-title">AWS EC2 Instance Sizing</h3>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Region</label>
+                                    <select onchange="calculateAWS()" id="aws-region" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="us-east-1" selected>US East (N. Virginia) - $</option>
+                                        <option value="us-west-2">US West (Oregon) - $ (+2%)</option>
+                                        <option value="eu-west-1">EU (Ireland) - € (+8%)</option>
+                                        <option value="eu-central-1">EU (Frankfurt) - € (+12%)</option>
+                                        <option value="ap-southeast-1">Asia Pacific (Singapore) - $ (+15%)</option>
+                                        <option value="ap-northeast-1">Asia Pacific (Tokyo) - ¥ (+18%)</option>
+                                        <option value="ap-south-1">Asia Pacific (Mumbai) - ₹ (+10%)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Instance Type</label>
+                                    <select onchange="calculateAWS()" id="aws-instance" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="t3.medium" selected>t3.medium (2 vCPU, 4GB RAM)</option>
+                                        <option value="t3.large">t3.large (2 vCPU, 8GB RAM)</option>
+                                        <option value="m6i.large">m6i.large (2 vCPU, 8GB RAM)</option>
+                                        <option value="m6i.xlarge">m6i.xlarge (4 vCPU, 16GB RAM)</option>
+                                        <option value="c6i.large">c6i.large (2 vCPU, 4GB RAM)</option>
+                                        <option value="c6i.xlarge">c6i.xlarge (4 vCPU, 8GB RAM)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Instances Count</label>
+                                    <input type="number" id="aws-count" value="2" min="1" max="100" onchange="calculateAWS()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Storage (GB)</label>
+                                    <input type="number" id="aws-storage" value="100" min="1" onchange="calculateAWS()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Commitment</label>
+                                    <select onchange="calculateAWS()" id="aws-commitment" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="on-demand" selected>On-Demand</option>
+                                        <option value="1year">1-Year Reserved (30% save)</option>
+                                        <option value="3year">3-Year Reserved (50% save)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="background: #334155; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Monthly Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="aws-monthly">$284</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Annual Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="aws-annual">$3,408</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">With Commitment</div>
+                                        <div style="color: #22c55e; font-size: 28px; font-weight: bold;" id="aws-savings">$3,408</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="aws-recommendation" style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 15px; border-radius: 8px; color: #cbd5e1;">
+                                ✓ Your current configuration is well-optimized. Consider 1-Year Reserved Instances to save 30%.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AZURE CALCULATOR -->
+                    <div id="azure-calculator" class="calculator-section hidden">
+                        <div class="card">
+                            <h3 class="section-title">Azure Virtual Machine Sizing</h3>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Region</label>
+                                    <select onchange="calculateAzure()" id="azure-region" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="eastus" selected>East US - $</option>
+                                        <option value="westus2">West US 2 - $ (+0%)</option>
+                                        <option value="northeurope">North Europe - € (-3%)</option>
+                                        <option value="westeurope">West Europe - € (+5%)</option>
+                                        <option value="southeast asia">Southeast Asia - $ (+18%)</option>
+                                        <option value="japaneast">Japan East - ¥ (+20%)</option>
+                                        <option value="australiaeast">Australia East - A$ (+25%)</option>
+                                        <option value="centralindia">Central India - ₹ (−22%)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">VM Size</label>
+                                    <select onchange="calculateAzure()" id="azure-size" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="Standard_B2s" selected>B2s (2 vCPU, 4GB RAM)</option>
+                                        <option value="Standard_B4ms">B4ms (4 vCPU, 16GB RAM)</option>
+                                        <option value="Standard_D2s_v3">D2s v3 (2 vCPU, 8GB RAM)</option>
+                                        <option value="Standard_D4s_v3">D4s v3 (4 vCPU, 16GB RAM)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">VMs Count</label>
+                                    <input type="number" id="azure-count" value="2" min="1" max="100" onchange="calculateAzure()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Storage (GB)</label>
+                                    <input type="number" id="azure-storage" value="256" min="1" onchange="calculateAzure()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Commitment</label>
+                                    <select onchange="calculateAzure()" id="azure-commitment" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="pay-as-you-go" selected>Pay-As-You-Go</option>
+                                        <option value="1year">1-Year Reserved (25% save)</option>
+                                        <option value="3year">3-Year Reserved (40% save)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="background: #334155; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Monthly Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="azure-monthly">$156</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Annual Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="azure-annual">$1,872</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">With Commitment</div>
+                                        <div style="color: #22c55e; font-size: 28px; font-weight: bold;" id="azure-savings">$1,872</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="azure-recommendation" style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 15px; border-radius: 8px; color: #cbd5e1;">
+                                ✓ Your current configuration is well-optimized. Consider 1-Year Reserved VMs to save 25%.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GCP CALCULATOR -->
+                    <div id="gcp-calculator" class="calculator-section hidden">
+                        <div class="card">
+                            <h3 class="section-title">GCP Compute Engine Sizing</h3>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Region</label>
+                                    <select onchange="calculateGCP()" id="gcp-region" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="us-central1" selected>US Central 1 (Iowa) - $</option>
+                                        <option value="us-west1">US West 1 (Oregon) - $ (+5%)</option>
+                                        <option value="us-east1">US East 1 (S. Carolina) - $ (+3%)</option>
+                                        <option value="europe-west1">Europe West 1 (Belgium) - € (+10%)</option>
+                                        <option value="europe-north1">Europe North 1 (Finland) - € (−5%)</option>
+                                        <option value="asia-east1">Asia East 1 (Taiwan) - $ (+22%)</option>
+                                        <option value="asia-northeast1">Asia Northeast 1 (Tokyo) - ¥ (+25%)</option>
+                                        <option value="asia-south1">Asia South 1 (Mumbai) - ₹ (+15%)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Machine Type</label>
+                                    <select onchange="calculateGCP()" id="gcp-type" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="e2-medium" selected>e2-medium (2 vCPU, 4GB RAM)</option>
+                                        <option value="e2-standard-2">e2-standard-2 (2 vCPU, 8GB RAM)</option>
+                                        <option value="n2-standard-2">n2-standard-2 (2 vCPU, 8GB RAM)</option>
+                                        <option value="n2-standard-4">n2-standard-4 (4 vCPU, 16GB RAM)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Instances Count</label>
+                                    <input type="number" id="gcp-count" value="2" min="1" max="100" onchange="calculateGCP()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Storage (GB)</label>
+                                    <input type="number" id="gcp-storage" value="200" min="1" onchange="calculateGCP()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Commitment</label>
+                                    <select onchange="calculateGCP()" id="gcp-commitment" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="on-demand" selected>On-Demand</option>
+                                        <option value="1year">1-Year Commitment (25% save)</option>
+                                        <option value="3year">3-Year Commitment (50% save)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="background: #334155; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Monthly Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="gcp-monthly">$198</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Annual Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="gcp-annual">$2,376</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">With Commitment</div>
+                                        <div style="color: #22c55e; font-size: 28px; font-weight: bold;" id="gcp-savings">$2,376</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="gcp-recommendation" style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 15px; border-radius: 8px; color: #fca5a5;">
+                                ⚠️ Your data transfer costs are 45% above average. Recommendation: Review data pipeline or consider CDN for better distribution.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- OCI CALCULATOR -->
+                    <div id="oci-calculator" class="calculator-section hidden">
+                        <div class="card">
+                            <h3 class="section-title">OCI Compute Instance Sizing</h3>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Region</label>
+                                    <select onchange="calculateOCI()" id="oci-region" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="us-phoenix-1" selected>US Phoenix (Arizona) - $</option>
+                                        <option value="us-ashburn-1">US Ashburn (Virginia) - $ (+0%)</option>
+                                        <option value="ca-toronto-1">Canada (Toronto) - CAD (+2%)</option>
+                                        <option value="eu-frankfurt-1">EU (Frankfurt) - € (+8%)</option>
+                                        <option value="eu-zurich-1">EU (Zurich) - CHF (+5%)</option>
+                                        <option value="ap-singapore-1">Asia Pacific (Singapore) - SGD (+18%)</option>
+                                        <option value="ap-tokyo-1">Asia Pacific (Tokyo) - ¥ (+20%)</option>
+                                        <option value="ap-mumbai-1">Asia Pacific (Mumbai) - ₹ (+12%)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Shape</label>
+                                    <select onchange="calculateOCI()" id="oci-shape" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="VM.Standard.E4.Flex.2" selected>E4 Flex (2 OCPU, 16GB RAM)</option>
+                                        <option value="VM.Standard.E4.Flex.4">E4 Flex (4 OCPU, 32GB RAM)</option>
+                                        <option value="VM.Standard.A1.Flex.1">A1 Flex (1 OCPU, 6GB RAM)</option>
+                                        <option value="VM.Standard.A1.Flex.4">A1 Flex (4 OCPU, 24GB RAM)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Instances Count</label>
+                                    <input type="number" id="oci-count" value="2" min="1" max="100" onchange="calculateOCI()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Storage (GB)</label>
+                                    <input type="number" id="oci-storage" value="150" min="1" onchange="calculateOCI()" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                </div>
+                                <div>
+                                    <label style="color: #cbd5e1; display: block; margin-bottom: 8px; font-weight: 500;">Commitment</label>
+                                    <select onchange="calculateOCI()" id="oci-commitment" style="width: 100%; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px; border-radius: 6px;">
+                                        <option value="monthly" selected>Monthly</option>
+                                        <option value="annual">Annual (20% save)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="background: #334155; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Monthly Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="oci-monthly">$228</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">Annual Cost</div>
+                                        <div style="color: #3b82f6; font-size: 28px; font-weight: bold;" id="oci-annual">$2,736</div>
+                                    </div>
+                                    <div>
+                                        <div style="color: #94a3b8; font-size: 12px; margin-bottom: 5px;">With Commitment</div>
+                                        <div style="color: #22c55e; font-size: 28px; font-weight: bold;" id="oci-savings">$2,736</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="oci-recommendation" style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 15px; border-radius: 8px; color: #cbd5e1;">
+                                ✓ Excellent choice with Oracle. A1 Flex ARM instances offer 40% better cost-per-OCPU. Consider scaling to A1 Flex for additional savings.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SCALING RECOMMENDATIONS -->
+                    <div class="card" style="margin-top: 20px;">
+                        <h3 class="section-title">📊 Scaling & Capacity Recommendations</h3>
+                        <div style="display: grid; grid-template-columns: 1fr; gap: 15px;">
+                            <div style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 15px; border-radius: 8px;">
+                                <div style="font-weight: 600; color: #22c55e; margin-bottom: 8px;">Scale UP Recommended</div>
+                                <p style="color: #cbd5e1; margin-bottom: 10px;">Your CPU utilization is averaging 85% - consider scaling up to:</p>
+                                <ul style="color: #cbd5e1; margin-left: 20px;">
+                                    <li>AWS: m6i.xlarge (4 vCPU, 16GB RAM) for 2x capacity</li>
+                                    <li>Expected cost increase: +$180/mo | Performance gain: +100%</li>
+                                </ul>
+                            </div>
+                            <div style="background: rgba(59, 130, 246, 0.1); border-left: 4px solid #3b82f6; padding: 15px; border-radius: 8px;">
+                                <div style="font-weight: 600; color: #3b82f6; margin-bottom: 8px;">Cost Optimization</div>
+                                <p style="color: #cbd5e1; margin-bottom: 10px;">Switching to Reserved Instances would give you:</p>
+                                <ul style="color: #cbd5e1; margin-left: 20px;">
+                                    <li>3-Year Commitment: 50% discount on compute costs</li>
+                                    <li>Annual savings: $1,800+ across all clouds</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CUSTOM DASHBOARDS PAGE -->
+                <div id="custom-dashboards-page" class="hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div class="section-title">Department & Team Dashboards</div>
+                        <button class="button button-primary" onclick="createDashboard()">+ New Dashboard</button>
+                    </div>
+
+                    <div class="card" style="margin-bottom: 20px;">
+                        <h3 class="section-title">Your Dashboards</h3>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                            <!-- Engineering Dashboard -->
+                            <div style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); border: 1px solid #3b82f6; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.boxShadow='0 10px 25px rgba(59, 130, 246, 0.2)'" onmouseout="this.style.boxShadow='none'">
+                                <div style="font-weight: 600; color: #3b82f6; font-size: 16px; margin-bottom: 10px;">🛠️ Engineering</div>
+                                <p style="color: #cbd5e1; font-size: 13px; margin-bottom: 15px;">Compute, Database, and Infrastructure costs</p>
+                                <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                    <div style="color: #94a3b8; font-size: 11px; margin-bottom: 3px;">Monthly Budget</div>
+                                    <div style="color: #3b82f6; font-size: 18px; font-weight: bold;">$5,200</div>
+                                </div>
+                                <button class="button button-primary" style="width: 100%; font-size: 12px;">Open Dashboard</button>
+                            </div>
+
+                            <!-- Finance Dashboard -->
+                            <div style="background: linear-gradient(135deg, #1e3a1e 0%, #0f172a 100%); border: 1px solid #22c55e; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.boxShadow='0 10px 25px rgba(34, 197, 94, 0.2)'" onmouseout="this.style.boxShadow='none'">
+                                <div style="font-weight: 600; color: #22c55e; font-size: 16px; margin-bottom: 10px;">💼 Finance</div>
+                                <p style="color: #cbd5e1; font-size: 13px; margin-bottom: 15px;">Budget allocation and cost per department</p>
+                                <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                    <div style="color: #94a3b8; font-size: 11px; margin-bottom: 3px;">Monthly Budget</div>
+                                    <div style="color: #22c55e; font-size: 18px; font-weight: bold;">$12,840</div>
+                                </div>
+                                <button class="button button-primary" style="width: 100%; font-size: 12px; background: #22c55e;">Open Dashboard</button>
+                            </div>
+
+                            <!-- DevOps Dashboard -->
+                            <div style="background: linear-gradient(135deg, #3a2a1e 0%, #0f172a 100%); border: 1px solid #eab308; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.boxShadow='0 10px 25px rgba(234, 179, 8, 0.2)'" onmouseout="this.style.boxShadow='none'">
+                                <div style="font-weight: 600; color: #eab308; font-size: 16px; margin-bottom: 10px;">⚙️ DevOps/SRE</div>
+                                <p style="color: #cbd5e1; font-size: 13px; margin-bottom: 15px;">Infrastructure automation and cloud resources</p>
+                                <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                    <div style="color: #94a3b8; font-size: 11px; margin-bottom: 3px;">Monthly Budget</div>
+                                    <div style="color: #eab308; font-size: 18px; font-weight: bold;">$3,840</div>
+                                </div>
+                                <button class="button button-primary" style="width: 100%; font-size: 12px; background: #eab308; color: #000;">Open Dashboard</button>
+                            </div>
+
+                            <!-- Data Science Dashboard -->
+                            <div style="background: linear-gradient(135deg, #3a2e3a 0%, #0f172a 100%); border: 1px solid #a855f7; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.boxShadow='0 10px 25px rgba(168, 85, 247, 0.2)'" onmouseout="this.style.boxShadow='none'">
+                                <div style="font-weight: 600; color: #a855f7; font-size: 16px; margin-bottom: 10px;">🧠 Data Science</div>
+                                <p style="color: #cbd5e1; font-size: 13px; margin-bottom: 15px;">ML, compute clusters, and GPU resources</p>
+                                <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                    <div style="color: #94a3b8; font-size: 11px; margin-bottom: 3px;">Monthly Budget</div>
+                                    <div style="color: #a855f7; font-size: 18px; font-weight: bold;">$2,100</div>
+                                </div>
+                                <button class="button button-primary" style="width: 100%; font-size: 12px; background: #a855f7;">Open Dashboard</button>
+                            </div>
+
+                            <!-- Product Dashboard -->
+                            <div style="background: linear-gradient(135deg, #3a1e2e 0%, #0f172a 100%); border: 1px solid #ec4899; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.boxShadow='0 10px 25px rgba(236, 72, 153, 0.2)'" onmouseout="this.style.boxShadow='none'">
+                                <div style="font-weight: 600; color: #ec4899; font-size: 16px; margin-bottom: 10px;">🎯 Product</div>
+                                <p style="color: #cbd5e1; font-size: 13px; margin-bottom: 15px;">CDN, APIs, and product infrastructure</p>
+                                <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                    <div style="color: #94a3b8; font-size: 11px; margin-bottom: 3px;">Monthly Budget</div>
+                                    <div style="color: #ec4899; font-size: 18px; font-weight: bold;">$1,800</div>
+                                </div>
+                                <button class="button button-primary" style="width: 100%; font-size: 12px; background: #ec4899;">Open Dashboard</button>
+                            </div>
+
+                            <!-- Security Dashboard -->
+                            <div style="background: linear-gradient(135deg, #3a1e1e 0%, #0f172a 100%); border: 1px solid #ef4444; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.boxShadow='0 10px 25px rgba(239, 68, 68, 0.2)'" onmouseout="this.style.boxShadow='none'">
+                                <div style="font-weight: 600; color: #ef4444; font-size: 16px; margin-bottom: 10px;">🔒 Security</div>
+                                <p style="color: #cbd5e1; font-size: 13px; margin-bottom: 15px;">Compliance, monitoring, and security tools</p>
+                                <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                    <div style="color: #94a3b8; font-size: 11px; margin-bottom: 3px;">Monthly Budget</div>
+                                    <div style="color: #ef4444; font-size: 18px; font-weight: bold;">$920</div>
+                                </div>
+                                <button class="button button-primary" style="width: 100%; font-size: 12px; background: #ef4444;">Open Dashboard</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="section-title">Dashboard Features</h3>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                            <div style="padding: 15px; background: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; border-radius: 6px;">
+                                <div style="color: #3b82f6; font-weight: 600; margin-bottom: 8px;">📊 Custom Metrics</div>
+                                <p style="color: #cbd5e1; font-size: 13px;">Each dashboard tracks dept-specific KPIs</p>
+                            </div>
+                            <div style="padding: 15px; background: rgba(34, 197, 94, 0.1); border-left: 3px solid #22c55e; border-radius: 6px;">
+                                <div style="color: #22c55e; font-weight: 600; margin-bottom: 8px;">👥 Team Alerts</div>
+                                <p style="color: #cbd5e1; font-size: 13px;">Budget thresholds and anomaly alerts</p>
+                            </div>
+                            <div style="padding: 15px; background: rgba(168, 85, 247, 0.1); border-left: 3px solid #a855f7; border-radius: 6px;">
+                                <div style="color: #a855f7; font-weight: 600; margin-bottom: 8px;">📥 Quick Export</div>
+                                <p style="color: #cbd5e1; font-size: 13px;">Export reports in PDF/CSV formats</p>
+                            </div>
+                            <div style="padding: 15px; background: rgba(234, 179, 8, 0.1); border-left: 3px solid #eab308; border-radius: 6px;">
+                                <div style="color: #eab308; font-weight: 600; margin-bottom: 8px;">🔗 Shared Views</div>
+                                <p style="color: #cbd5e1; font-size: 13px;">Share dashboards with team members</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SETTINGS PAGE -->
+                <div id="settings-page" class="hidden">
+                    <div class="section-title">Settings & Configuration</div>
+                    
+                    <div class="card">
+                        <h3 class="section-title">Connected Cloud Providers</h3>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Provider</th>
+                                    <th>Status</th>
+                                    <th>Last Sync</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>AWS</td>
+                                    <td><span class="badge badge-success">✓ Connected</span></td>
+                                    <td>2 minutes ago</td>
+                                    <td><button class="button button-secondary" style="padding: 6px 12px; font-size: 12px;">Verify</button></td>
+                                </tr>
+                                <tr>
+                                    <td>Azure</td>
+                                    <td><span class="badge badge-success">✓ Connected</span></td>
+                                    <td>5 minutes ago</td>
+                                    <td><button class="button button-secondary" style="padding: 6px 12px; font-size: 12px;">Verify</button></td>
+                                </tr>
+                                <tr>
+                                    <td>GCP</td>
+                                    <td><span class="badge badge-success">✓ Connected</span></td>
+                                    <td>3 minutes ago</td>
+                                    <td><button class="button button-secondary" style="padding: 6px 12px; font-size: 12px;">Verify</button></td>
+                                </tr>
+                                <tr>
+                                    <td>OCI</td>
+                                    <td><span class="badge badge-success">✓ Connected</span></td>
+                                    <td>8 minutes ago</td>
+                                    <td><button class="button button-secondary" style="padding: 6px 12px; font-size: 12px;">Verify</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <button class="button button-primary" style="margin-top: 15px;">Add New Provider</button>
+                    </div>
+
+                    <div class="card" style="margin-top: 20px;">
+                        <h3 class="section-title">Preferences</h3>
+                        <div style="padding: 15px 0; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-weight: 500;">Email Notifications</div>
+                                <div style="color: #94a3b8; font-size: 14px;">Receive alerts about cost anomalies</div>
+                            </div>
+                            <input type="checkbox" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        </div>
+                        <div style="padding: 15px 0; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-weight: 500;">Weekly Summary</div>
+                                <div style="color: #94a3b8; font-size: 14px;">Receive weekly cost overview email</div>
+                            </div>
+                            <input type="checkbox" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        </div>
+                        <div style="padding: 15px 0; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <div style="font-weight: 500;">High-Priority Recommendations Only</div>
+                                <div style="color: #94a3b8; font-size: 14px;">Show only high-impact recommendations</div>
+                            </div>
+                            <input type="checkbox" style="width: 20px; height: 20px; cursor: pointer;">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showPage(pageName) {
+            // Hide all pages
+            const pages = document.querySelectorAll('[id$="-page"]');
+            pages.forEach(page => page.classList.add('hidden'));
+
+            // Show selected page
+            document.getElementById(pageName + '-page').classList.remove('hidden');
+
+            // Update header title
+            const titleMap = {
+                'overview': 'Overview',
+                'costs': 'Costs',
+                'anomalies': 'Anomalies',
+                'recommendations': 'Recommendations',
+                'forecasting': 'Forecasting',
+                'ai-insights': 'AI Insights',
+                'cost-advisor': 'Cost Advisor',
+                'custom-dashboards': 'My Dashboards',
+                'settings': 'Settings'
+            };
+            document.getElementById('pageTitle').textContent = titleMap[pageName];
+
+            // Update active nav item
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.closest('.nav-item').classList.add('active');
+        }
+
+        function toggleTheme() {
+            document.body.style.filter = document.body.style.filter === 'invert(1)' ? 'invert(0)' : 'invert(1)';
+        }
+
+        // COST CALCULATORS
+        function switchCalculator(cloud) {
+            // Hide all calculators
+            document.querySelectorAll('.calculator-section').forEach(calc => {
+                calc.classList.add('hidden');
+            });
+            
+            // Show selected calculator
+            document.getElementById(cloud + '-calculator').classList.remove('hidden');
+            
+            // Update active tab
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+
+        function calculateAWS() {
+            const region = document.getElementById('aws-region').value;
+            const instanceType = document.getElementById('aws-instance').value;
+            const count = parseInt(document.getElementById('aws-count').value) || 1;
+            const storage = parseInt(document.getElementById('aws-storage').value) || 100;
+            const commitment = document.getElementById('aws-commitment').value;
+
+            // Regional pricing multipliers (vs us-east-1)
+            const regionMultipliers = {
+                'us-east-1': 1.0, 'us-west-2': 1.02, 'eu-west-1': 1.08,
+                'eu-central-1': 1.12, 'ap-southeast-1': 1.15, 'ap-northeast-1': 1.18,
+                'ap-south-1': 1.10
+            };
+
+            // Simplified pricing for us-east-1
+            const instancePrices = {
+                't3.medium': 26.5, 't3.large': 53, 'm6i.large': 67, 'm6i.xlarge': 134,
+                'c6i.large': 67, 'c6i.xlarge': 134
+            };
+            
+            const regionMult = regionMultipliers[region] || 1.0;
+            const instanceCost = (instancePrices[instanceType] || 26.5) * count * regionMult;
+            const storageCost = (storage / 100) * 10 * regionMult;
+            let monthlyRaw = instanceCost + storageCost;
+            
+            const savingsMultiplier = commitment === '1year' ? 0.7 : commitment === '3year' ? 0.5 : 1;
+            const monthly = monthlyRaw * savingsMultiplier;
+            const annual = monthly * 12;
+
+            document.getElementById('aws-monthly').textContent = '$' + Math.round(monthly);
+            document.getElementById('aws-annual').textContent = '$' + Math.round(annual);
+            document.getElementById('aws-savings').textContent = '$' + Math.round(annual);
+
+            let rec = '✓ Your current configuration is cost-effective. ';
+            if (monthly > 400) {
+                rec = '⚠️ HIGH COST: Consider 1-Year Reserved Instances to save ' + Math.round((1 - savingsMultiplier) * 100) + '% or scale down instances.';
+            } else if (monthly < 100) {
+                rec = '✓ Budget-friendly. Consider 3-Year Reserved for additional 20% savings.';
+            }
+            document.getElementById('aws-recommendation').innerHTML = rec;
+        }
+
+        function calculateAzure() {
+            const region = document.getElementById('azure-region').value;
+            const vmSize = document.getElementById('azure-size').value;
+            const count = parseInt(document.getElementById('azure-count').value) || 1;
+            const storage = parseInt(document.getElementById('azure-storage').value) || 256;
+            const commitment = document.getElementById('azure-commitment').value;
+
+            // Regional pricing multipliers (vs eastus)
+            const regionMultipliers = {
+                'eastus': 1.0, 'westus2': 1.0, 'northeurope': 0.97,
+                'westeurope': 1.05, 'southeast asia': 1.18, 'japaneast': 1.20,
+                'australiaeast': 1.25, 'centralindia': 0.78
+            };
+
+            const vmPrices = {
+                'Standard_B2s': 35.5, 'Standard_B4ms': 75, 'Standard_D2s_v3': 95, 'Standard_D4s_v3': 190
+            };
+            
+            const regionMult = regionMultipliers[region] || 1.0;
+            const vmCost = (vmPrices[vmSize] || 35.5) * count * regionMult;
+            const storageCost = (storage / 1024) * 2 * regionMult;
+            let monthlyRaw = vmCost + storageCost;
+            
+            const savingsMultiplier = commitment === '1year' ? 0.75 : commitment === '3year' ? 0.6 : 1;
+            const monthly = monthlyRaw * savingsMultiplier;
+            const annual = monthly * 12;
+
+            document.getElementById('azure-monthly').textContent = '$' + Math.round(monthly);
+            document.getElementById('azure-annual').textContent = '$' + Math.round(annual);
+            document.getElementById('azure-savings').textContent = '$' + Math.round(annual);
+
+            let rec = '✓ Your current configuration is well-optimized. ';
+            if (monthly > 300) {
+                rec = '⚠️ SCALING RECOMMENDED: Consider B4ms with larger size to improve cost-per-performance ratio.';
+            }
+            document.getElementById('azure-recommendation').innerHTML = rec;
+        }
+
+        function calculateGCP() {
+            const region = document.getElementById('gcp-region').value;
+            const machineType = document.getElementById('gcp-type').value;
+            const count = parseInt(document.getElementById('gcp-count').value) || 1;
+            const storage = parseInt(document.getElementById('gcp-storage').value) || 200;
+            const commitment = document.getElementById('gcp-commitment').value;
+
+            // Regional pricing multipliers (vs us-central1)
+            const regionMultipliers = {
+                'us-central1': 1.0, 'us-west1': 1.05, 'us-east1': 1.03,
+                'europe-west1': 1.10, 'europe-north1': 0.95, 'asia-east1': 1.22,
+                'asia-northeast1': 1.25, 'asia-south1': 1.15
+            };
+
+            const machinePrices = {
+                'e2-medium': 24.5, 'e2-standard-2': 42, 'n2-standard-2': 58, 'n2-standard-4': 116
+            };
+            
+            const regionMult = regionMultipliers[region] || 1.0;
+            const machineCost = (machinePrices[machineType] || 24.5) * count * regionMult;
+            const storageCost = (storage / 100) * 8 * regionMult;
+            let monthlyRaw = machineCost + storageCost;
+            
+            const savingsMultiplier = commitment === '1year' ? 0.75 : commitment === '3year' ? 0.5 : 1;
+            const monthly = monthlyRaw * savingsMultiplier;
+            const annual = monthly * 12;
+
+            document.getElementById('gcp-monthly').textContent = '$' + Math.round(monthly);
+            document.getElementById('gcp-annual').textContent = '$' + Math.round(annual);
+            document.getElementById('gcp-savings').textContent = '$' + Math.round(annual);
+
+            let rec = '⚠️ SCALING UP NEEDED: Data transfer costs are high. Increase buffer to 3+ machines for better distribution.';
+            if (monthly < 200) {
+                rec = '✓ Budget-optimal configuration. No immediate changes needed.';
+            }
+            document.getElementById('gcp-recommendation').innerHTML = rec;
+        }
+
+        function calculateOCI() {
+            const region = document.getElementById('oci-region').value;
+            const shape = document.getElementById('oci-shape').value;
+            const count = parseInt(document.getElementById('oci-count').value) || 1;
+            const storage = parseInt(document.getElementById('oci-storage').value) || 150;
+            const commitment = document.getElementById('oci-commitment').value;
+
+            // Regional pricing multipliers (vs us-phoenix-1)
+            const regionMultipliers = {
+                'us-phoenix-1': 1.0, 'us-ashburn-1': 1.0, 'ca-toronto-1': 1.02,
+                'eu-frankfurt-1': 1.08, 'eu-zurich-1': 1.05, 'ap-singapore-1': 1.18,
+                'ap-tokyo-1': 1.20, 'ap-mumbai-1': 1.12
+            };
+
+            const shapePrices = {
+                'VM.Standard.E4.Flex.2': 45, 'VM.Standard.E4.Flex.4': 90,
+                'VM.Standard.A1.Flex.1': 12, 'VM.Standard.A1.Flex.4': 48
+            };
+            
+            const regionMult = regionMultipliers[region] || 1.0;
+            const shapeCost = (shapePrices[shape] || 45) * count * regionMult;
+            const storageCost = (storage / 100) * 5 * regionMult;
+            let monthlyRaw = shapeCost + storageCost;
+            
+            const savingsMultiplier = commitment === 'annual' ? 0.8 : 1;
+            const monthly = monthlyRaw * savingsMultiplier;
+            const annual = monthly * 12;
+
+            document.getElementById('oci-monthly').textContent = '$' + Math.round(monthly);
+            document.getElementById('oci-annual').textContent = '$' + Math.round(annual);
+            document.getElementById('oci-savings').textContent = '$' + Math.round(annual);
+
+            let rec = '✓ OCI pricing is competitive. Consider A1 Flex ARM instances for 40% better cost-per-OCPU ratio.';
+            if (monthly > 500) {
+                rec = '⚠️ SCALE UP WARNING: Your costs are high. Consider moving to A1.Flex shapes for significant savings.';
+            }
+            document.getElementById('oci-recommendation').innerHTML = rec;
+        }
+
+        // Initialize calculators on page load
+        window.addEventListener('load', () => {
+            calculateAWS();
+            calculateAzure();
+            calculateGCP();
+            calculateOCI();
+        });
+
+        // EXPORT FUNCTIONALITY
+        function exportData(format) {
+            if (format === 'csv') {
+                exportToCSV();
+            } else if (format === 'pdf') {
+                exportToPDF();
+            }
+        }
+
+        function exportToCSV() {
+            // Sample data for export
+            const csvContent = `Cloud Cost Analysis Report - OptiOra
+Generated: ${new Date().toLocaleDateString()}
+
+Monthly Costs by Cloud Provider
+Cloud,Current Month,Previous Month,Trend
+AWS,5200,4950,+5.0%
+Azure,2850,2760,+3.3%
+GCP,1920,1850,+3.8%
+OCI,1870,1840,+1.6%
+Total,11840,11400,+3.9%
+
+Top Services by Cost
+Service,Cloud,Monthly Cost,YTD Cost
+EC2 Instances,AWS,2100,8400
+Storage,Azure,1200,4800
+Data Transfer,GCP,840,3360
+Compute,OCI,720,2880
+
+Recommendations
+Priority,Service,Savings,Effort,Status
+1,Reserved Instances,2100,Low,Pending
+2,Storage Tiering,840,Medium,Pending
+3,Database Consolidation,630,High,Pending
+
+Budget Status
+Department,Budget,Used,Remaining,Utilization
+AWS,6000,5200,800,87%
+Azure,3500,2850,650,81%
+GCP,2500,1920,580,77%
+OCI,2840,1870,970,66%`;
+
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent));
+            element.setAttribute('download', 'cloud-cost-report.csv');
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+            
+            alert('✓ CSV export downloaded successfully!');
+        }
+
+        function exportToPDF() {
+            // Simulate PDF generation
+            alert('✓ PDF export feature coming soon!\n\nThe report would include:\n- Cost trends (6-month chart)\n- Department budgets\n- Top recommendations\n- Forecasting scenarios\n- Team dashboards summary');
+        }
+
+        function createDashboard() {
+            const name = prompt('Enter dashboard name (e.g., "Marketing Costs"):');
+            if (name) {
+                alert(`✓ Dashboard "${name}" created!\n\nYou can now:\n- Add custom metrics\n- Set budget alerts\n- Share with team members\n- Configure refresh schedule`);
+            }
+        }
+    </script>
+</body>
+</html>

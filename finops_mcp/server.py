@@ -187,7 +187,172 @@ TOOLS: list[Tool] = [
             "required": ["title", "description", "priority"],
         },
     ),
-]
+    Tool(
+        name="get_department_budgets",
+        description="Returns budget information and spending for different departments/cost centers.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "department": {
+                    "type": "string",
+                    "description": "Department name (e.g., 'Engineering', 'DataScience', 'Security')",
+                },
+                "include_forecast": {
+                    "type": "boolean",
+                    "description": "Include 3-month forecast (default: false)",
+                },
+            },
+        },
+    ),
+    Tool(
+        name="compare_optimization_scenarios",
+        description="Compares different optimization scenarios showing ROI, timeline, and risk.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "scenarios": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["conservative", "moderate", "aggressive", "aggressive-with-migration"]
+                    },
+                    "description": "Optimization scenarios to compare",
+                },
+                "cloud_provider": {
+                    "type": "string",
+                    "enum": ["aws", "azure", "gcp", "oci", "all"],
+                },
+                "current_monthly_spend": {
+                    "type": "number",
+                    "description": "Current monthly spend (USD) for baseline",
+                },
+            },
+            "required": ["scenarios", "cloud_provider"],
+        },
+    ),
+    Tool(
+        name="get_resource_tagging_report",
+        description="Analyzes resource tagging compliance and provides tagging recommendations.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "cloud_provider": {
+                    "type": "string",
+                    "enum": ["aws", "azure", "gcp", "oci", "all"],
+                },
+                "tag_keys": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tags to check (e.g., ['environment', 'department', 'cost-center'])",
+                },
+                "compliance_threshold": {
+                    "type": "number",
+                    "description": "Percentage threshold for compliance (0-100, default: 80)",
+                },
+            },
+            "required": ["cloud_provider"],
+        },
+    ),
+    Tool(
+        name="optimize_storage_costs",
+        description="Analyzes storage usage and recommends optimization strategies (tiering, compression, lifecycle policies).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "cloud_provider": {
+                    "type": "string",
+                    "enum": ["aws", "azure", "gcp", "oci", "all"],
+                },
+                "storage_type": {
+                    "type": "string",
+                    "enum": ["object-storage", "block-storage", "database", "archive", "all"],
+                    "description": "Type of storage to optimize",
+                },
+                "min_savings_usd": {
+                    "type": "number",
+                    "description": "Minimum annual savings opportunity threshold",
+                },
+            },
+            "required": ["cloud_provider"],
+        },
+    ),
+    Tool(
+        name="generate_cost_report",
+        description="Generates comprehensive cost analysis reports (PDF/CSV) for stakeholders.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "report_type": {
+                    "type": "string",
+                    "enum": ["executive-summary", "detailed-analysis", "department-breakdown", "cloud-comparison", "roi-analysis"],
+                    "description": "Type of report to generate",
+                },
+                "period": {
+                    "type": "string",
+                    "enum": ["month", "quarter", "year", "custom"],
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["pdf", "csv", "xlsx", "json"],
+                    "description": "Output format",
+                },
+                "include_recommendations": {
+                    "type": "boolean",
+                    "description": "Include optimization recommendations (default: true)",
+                },
+                "audience": {
+                    "type": "string",
+                    "enum": ["executive", "finance", "engineering", "operations"],
+                    "description": "Target audience for report",
+                },
+            },
+            "required": ["report_type", "format"],
+        },
+    ),
+    Tool(
+        name="get_cloud_commitments",
+        description="Returns information about cloud commitments (reserved instances, savings plans, committed use discounts).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "cloud_provider": {
+                    "type": "string",
+                    "enum": ["aws", "azure", "gcp", "oci", "all"],
+                },
+                "include_utilization": {
+                    "type": "boolean",
+                    "description": "Include current utilization rates (default: true)",
+                },
+                "show_opportunities": {
+                    "type": "boolean",
+                    "description": "Show additional commitment opportunities (default: true)",
+                },
+            },
+            "required": ["cloud_provider"],
+        },
+    ),
+    Tool(
+        name="get_rightsizing_opportunities",
+        description="Identifies over-provisioned or under-utilized resources that can be rightsized.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "cloud_provider": {
+                    "type": "string",
+                    "enum": ["aws", "azure", "gcp", "oci", "all"],
+                },
+                "resource_type": {
+                    "type": "string",
+                    "enum": ["compute", "database", "cache", "storage", "all"],
+                },
+                "min_savings_per_resource": {
+                    "type": "number",
+                    "description": "Minimum monthly savings threshold per resource",
+                },
+            },
+            "required": ["cloud_provider"],
+        },
+    ),
 
 
 @server.call_tool()
@@ -208,6 +373,20 @@ async def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[TextCon
             result = await recommendations.forecast_costs(arguments)
         elif name == "create_cost_ticket":
             result = await actions.create_ticket(arguments)
+        elif name == "get_department_budgets":
+            result = await recommendations.get_department_budgets(arguments)
+        elif name == "compare_optimization_scenarios":
+            result = await recommendations.compare_scenarios(arguments)
+        elif name == "get_resource_tagging_report":
+            result = await recommendations.get_tagging_report(arguments)
+        elif name == "optimize_storage_costs":
+            result = await recommendations.optimize_storage(arguments)
+        elif name == "generate_cost_report":
+            result = await recommendations.generate_report(arguments)
+        elif name == "get_cloud_commitments":
+            result = await recommendations.get_commitments(arguments)
+        elif name == "get_rightsizing_opportunities":
+            result = await recommendations.get_rightsizing(arguments)
         else:
             result = f"Unknown tool: {name}"
 

@@ -20,7 +20,7 @@
 - ✅ **Staging**: OCI (recommended)
 - ❌ **Local/Docker**: Not supported (OCI-only model)
 
-→ See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for complete setup
+→ See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete setup
 
 ---
 
@@ -28,14 +28,12 @@
 
 | Document | Purpose |
 |----------|---------|
-| [🚀 DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Complete OCI deployment runbook |
-| [📖 SETUP.md](./SETUP.md) | Development environment & quick start |
+| [🚀 DEPLOYMENT.md](./DEPLOYMENT.md) | Complete OCI deployment guide |
 | [🏗️ ARCHITECTURE_COMPLETE.md](./ARCHITECTURE_COMPLETE.md) | OCI infrastructure & system design |
 | [💻 DASHBOARD.md](./DASHBOARD.md) | Frontend dashboard components & features |
 | [🔐 CREDENTIAL_MANAGEMENT.md](./CREDENTIAL_MANAGEMENT.md) | Secure credential handling & encryption |
 | [💵 COST_ESTIMATE.md](./COST_ESTIMATE.md) | Deployment costs & ROI analysis |
 | [🧪 TESTING.md](./TESTING.md) | Running & writing tests |
-| [📊 PROJECT_STATUS.md](./PROJECT_STATUS.md) | Current status & roadmap items |
 
 ---
 
@@ -107,47 +105,62 @@
 ## 🚀 Getting Started (5 Minutes)
 
 ### Prerequisites
-- Python 3.10+ 
-- Node.js 18+
+- OCI account with CLI (v3.0+) configured
 - Cloud credentials (AWS, Azure, GCP, or OCI)
 
-### Backend Setup
+### Deploy to OCI
 
 ```bash
-# Clone and enter directory
+# Clone repository
 git clone https://github.com/leandro-michelino/optiora.git
 cd optiora
 
-# Deploy on OCI (see SETUP.md for details)
+# Deploy (fully automated)
+export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 chmod +x deploy/deploy-oci.sh
-./deploy/deploy-oci.sh
+./deploy/deploy-oci.sh compute
 
-# For development references, see:
-# - SETUP.md for OCI deployment
-# - OCI_DEPLOYMENT.md for infrastructure details
-
-# Run MCP server
-python -m finops_mcp.server
-# ✓ OptiOra MCP Server listening on port 8000
+# Deployment complete! Check status:
+./deploy/deploy-oci.sh status
 ```
 
-### Frontend Setup
+For detailed instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md)
 
-```bash
-# In another terminal
-cd dashboard
-npm install
-npm run dev
-# ✓ Open http://localhost:3000
-```
+---
 
-### Run Tests
+## ✅ Project Status
 
-```bash
-# All tests
-pytest tests/ -v
-# ✓ 33 passed in 0.XX s
-```
+**Last Updated:** April 12, 2026  
+**Status:** Production Ready for OCI Deployment
+
+### Completed
+
+- ✅ **Backend**: Python MCP server with 16 tools (100%)
+- ✅ **Frontend**: React dashboard with 8 pages (100%)
+- ✅ **Tests**: 33 tests passing (100%)
+- ✅ **Documentation**: Consolidated and cleaned
+- ✅ **Deployment**: OCI script automated and production-ready
+- ✅ **Architecture**: OCI infrastructure defined
+- ✅ **CI/CD**: GitHub Actions configured
+
+### Current Implementation
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| Cost aggregation | ✅ | AWS, Azure, GCP, OCI supported |
+| Anomaly detection | ✅ | Statistical analysis + confidence scoring |
+| Recommendations | ✅ | ROI-ranked, 12+ suggestion types |
+| Dashboard | ✅ | Multi-cloud visualization + dark mode |
+| Credentials | ✅ | Encrypted storage with validation |
+| Automated actions | ✅ | Cost optimization execution |
+| Deployment | ✅ | One-command OCI deployment |
+
+### What's Next
+
+- ⏳ User authentication & multi-tenant support
+- ⏳ Advanced ML forecasting (Q3 2026)
+- ⏳ Slack/Teams integration
+- ⏳ Custom cost rules engine
 
 ---
 
@@ -211,30 +224,16 @@ Run tests: `pytest tests/ -v`
 
 ---
 
-## 🚀 Deployment Options
+## 🚀 Deployment
 
-### Local Development
-```bash
-npm run dev      # Frontend on :3000
-python -m finops_mcp.server  # Backend on :8000
-```
+**OptiOra is OCI-only.** Deploy with one command:
 
-### Docker
-```bash
-docker-compose up -d
-```
-
-### Production (OCI)
 ```bash
 ./deploy/deploy-oci.sh compute
-# See OCI_DEPLOYMENT.md for details
+# See DEPLOYMENT.md for detailed setup
 ```
 
-### Vercel (Frontend)
-```bash
-cd dashboard
-vercel
-```
+For complete deployment guide, costs, troubleshooting, and scaling, see [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ---
 

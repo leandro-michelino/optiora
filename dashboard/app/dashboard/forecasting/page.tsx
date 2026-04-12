@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { TrendingUp, Calendar, Target, AlertCircle } from 'lucide-react';
+import { TrendingUp, Calendar, Target, AlertCircle, Download } from 'lucide-react';
 
 interface ForecastData {
   month: string;
@@ -17,6 +17,35 @@ interface ScenarioData {
   annualSavings: number;
   implementation: string;
   color: string;
+}
+
+function downloadScenarioCSV(scenario: ScenarioData, forecastData: ForecastData[]) {
+  const csvContent = `${scenario.name} Scenario - Cost Forecast Report
+Generated: ${new Date().toISOString().split('T')[0]}
+
+Scenario Details
+Name,${scenario.name}
+Description,${scenario.description}
+Annual Savings,$${scenario.annualSavings.toLocaleString()}
+Implementation Timeline,${scenario.implementation}
+
+Month-by-Month Projection
+Month,Baseline Spend,Optimized Spend,Current Spend
+${forecastData.map((row) => `${row.month},$${row.baseline.toLocaleString()},$${row.optimized.toLocaleString()},$${row.current.toLocaleString()}`).join('\n')}
+
+Summary
+Total Baseline Annual Cost,$${forecastData.reduce((sum, row) => sum + row.baseline, 0).toLocaleString()}
+Total Optimized Annual Cost,$${forecastData.reduce((sum, row) => sum + row.optimized, 0).toLocaleString()}
+Total Annual Savings,$${scenario.annualSavings.toLocaleString()}
+Savings Percentage,${scenario.annualSavings > 0 ? ((scenario.annualSavings / (forecastData.reduce((sum, row) => sum + row.baseline, 0) * 12)) * 100).toFixed(1) : 0}%`;
+
+  const element = document.createElement('a');
+  element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent));
+  element.setAttribute('download', `forecast-${scenario.name.toLowerCase().replace(/\s/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`);
+  element.style.display = 'none';
+  document.body.appendChild(element);
+  element.click();
+  document.body.removeChild(element);
 }
 
 export default function PredictiveAnalyticsPage() {
@@ -92,14 +121,23 @@ export default function PredictiveAnalyticsPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-3">
-          <TrendingUp className="w-10 h-10 text-emerald-600" />
-          Predictive Cost Analytics
-        </h1>
-        <p className="text-slate-600 dark:text-slate-400">
-          AI-powered 12-month cost forecasting based on your historical patterns
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-3">
+            <TrendingUp className="w-10 h-10 text-emerald-600" />
+            Predictive Cost Analytics
+          </h1>
+          <p className="text-slate-600 dark:text-slate-400">
+            AI-powered 12-month cost forecasting based on your historical patterns
+          </p>
+        </div>
+        <button
+          onClick={() => downloadScenarioCSV(scenarios[selectedScenario], forecastData)}
+          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition"
+        >
+          <Download className="w-4 h-4" />
+          Export CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

@@ -68,27 +68,13 @@ See [OCI_DEPLOYMENT.md](../OCI_DEPLOYMENT.md) for details.
 
 ---
 
-### For Development Reference Only
-
-If developing locally for testing (not supported for production):
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server  
-npm run dev
-
-# Open http://localhost:3000 in your browser
-```
-
 ### Environment Setup
 
 The dashboard uses environment variables defined in the root `.env.example`:
 
 ```env
-# MCP Backend API URL (production: set via OCI deployment)
-NEXT_PUBLIC_API_URL=http://localhost:8000
+# MCP Backend API URL (set via OCI deployment)
+NEXT_PUBLIC_API_URL=https://api.optiora.oci.customer-oci.com
 ```
 
 ## API Integration
