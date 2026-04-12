@@ -1,24 +1,41 @@
-# OptiOra Dashboard — Frontend Architecture
+# OptiOra Dashboard — Frontend Architecture (OCI-Hosted)
 
 ## Overview
 
-The **OptiOra Dashboard** is a **React + Next.js** web application that visualizes multi-cloud FinOps data for AWS, Azure, and GCP costs.
+The **OptiOra Dashboard** is a **React + Next.js** web application that visualizes multi-cloud FinOps data for AWS, Azure, GCP, and OCI costs.
 
-**Important:** The dashboard runs independently from the OCI-hosted MCP server. It fetches data from the MCP backend via REST API.
+**Important:** The dashboard and MCP server are **both hosted on OCI infrastructure**. The dashboard fetches data from the OCI-hosted MCP backend via REST API over HTTPS.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  OptiOra Dashboard (React + Next.js)            │
-│  Hosted: Vercel / CloudFlare Pages / S3+CDN     │
-│  URL: https://optiora.yourcompany.com           │
-└──────────────────┬──────────────────────────────┘
-                   │ HTTPS API Calls
-                   ▼
-┌─────────────────────────────────────────────────┐
-│  OptiOra MCP Server (Python)                    │
-│  Hosted: OCI Compute / OCI Functions            │
-│  Endpoint: https://api.optiora.io               │
+│  ORACLE CLOUD INFRASTRUCTURE (OCI)              │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  ┌─────────────────────────────────────────┐   │
+│  │  OptiOra Dashboard (React + Next.js)    │   │
+│  │  Hosted: OCI App Service / Containers   │   │
+│  │  Port: 443 (HTTPS)                      │   │
+│  │  URL: https://optiora.apigateway...     │   │
+│  └───────────────────┬─────────────────────┘   │
+│                      │ HTTPS API Calls         │
+│                      ▼                         │
+│  ┌─────────────────────────────────────────┐   │
+│  │  OptiOra MCP Server (Python)            │   │
+│  │  Hosted: OCI Compute / Container        │   │
+│  │  Port: 8000 (HTTPS)                     │   │
+│  │  Database: OCI PostgreSQL DBaaS         │   │
+│  └─────────────────╥─────────────────────┘   │
+│                    ║                         │
+│      ┌─────────────╫─────────────┬─────────┐ │
+│      │             ║             │         │ │
+│      ▼             ▼             ▼         ▼ │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐ ┌─────────┐
+│  │ AWS     │  │ Azure   │  │ GCP     │ │ OCI     │
+│  │ Costs   │  │ Costs   │  │ Costs   │ │ Costs   │
+│  └─────────┘  └─────────┘  └─────────┘ └─────────┘
+│                                                 │
 └─────────────────────────────────────────────────┘
+```
                    │
     ┌──────────────┼──────────────┐
     │              │              │
@@ -38,27 +55,26 @@ The **OptiOra Dashboard** is a **React + Next.js** web application that visualiz
 {
   "framework": "React 18",
   "meta-framework": "Next.js 14+",
-  "styling": "Tailwind CSS",
-  "ui-components": "Shadcn/ui or Headless UI",
-  "charts": "Recharts (lightweight) or Apache ECharts (advanced)",
-  "state": "TanStack Query (React Query)",
-  "forms": "React Hook Form",
-  "tables": "TanStack React Table",
-  "auth": "NextAuth.js or Auth0",
-  "api": "Fetch / Axios",
+  "styling": "Tailwind CSS 4",
+  "charts": "Recharts (lightweight charts for cost visualization)",
+  "state": "TanStack Query (React Query for API data)",
+  "icons": "Lucide React",
+  "api": "Axios for MCP backend communication",
+  "validation": "Zod for type-safe data validation",
   "testing": "Vitest + React Testing Library",
-  "deployment": "Vercel or CloudFlare Pages"
+  "deployment": "OCI App Service or OCI Container Instances",
+  "infrastructure": "Oracle Cloud Infrastructure (OCI)"
 }
 ```
 
-### Why React + Next.js?
+### Why React + Next.js on OCI?
 
 | Feature | Benefit |
-|---------|---------|
+|---------|----------|
 | **React** | Reusable components, fast UI updates, huge ecosystem |
-| **Next.js** | Built-in API routes (proxy to MCP), SSR/SSG, file-based routing, auto-deployment |
-| **Vercel** | Free hosting tier, global CDN, auto-scales, integrates with Next.js |
-| **Tailwind** | Rapid prototyping, low bundle size, dark mode built-in |
+| **Next.js** | SSR/SSG, file-based routing, API routes for backend calls, optimized builds |
+| **OCI** | Enterprise-grade infrastructure, same region as backend & database, SLA-backed |
+| **Tailwind CSS** | Rapid prototyping, low bundle size, dark mode built-in |
 | **Recharts** | React-native charting, lightweight (critical for cost dashboards) |
 
 ---
@@ -490,13 +506,34 @@ describe('CostTrend', () => {
 ## Next Steps
 
 1. ✅ Create Next.js project: `npx create-next-app@latest optiora-dashboard`
-2. ✅ Install Tailwind CSS & UI library (Shadcn)
+2. ✅ Install Tailwind CSS & UI components (Lucide React)
 3. ✅ Setup API client & React Query hooks
-4. ✅ Build dashboard pages (home, costs, anomalies, recommendations)
-5. ✅ Integrate with MCP backend (REST API calls)
-6. ✅ Deploy to Vercel
-7. ✅ Setup authentication (NextAuth or Auth0)
+4. ✅ Build dashboard pages (home, costs, anomalies, recommendations, settings)
+5. ✅ Integrate with MCP backend (REST API calls via Axios)
+6. ✅ Deploy to OCI (via `./deploy/deploy-oci.sh`)
+7. ✅ Setup authentication (session tokens with MCP backend)
 
 ---
 
-**Ready to build the dashboard? Start with `npx create-next-app@latest optiora-dashboard` 🚀**
+## Deployment to OCI
+
+The dashboard is deployed as part of the unified OCI infrastructure:
+
+```bash
+# From project root
+chmod +x deploy/deploy-oci.sh
+./deploy/deploy-oci.sh
+```
+
+This will:
+- ✅ Build Next.js production bundle
+- ✅ Create OCI Container Instance
+- ✅ Configure OCI API Gateway
+- ✅ Enable HTTPS/SSL certificates
+- ✅ Deploy alongside MCP backend
+
+See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) and [SETUP.md](./SETUP.md) for details.
+
+---
+
+**Ready to build the dashboard? The deployment is handled by OCI infrastructure automation 🚀**
