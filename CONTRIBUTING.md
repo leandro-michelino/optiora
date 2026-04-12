@@ -2,7 +2,30 @@
 
 Thank you for contributing to OptiOra! This guide explains how to set up your development environment, make changes, and submit contributions.
 
-## 🚀 Quick Start for Contributors
+---
+
+## ⚠️ Critical Rule: Local Dev vs Production
+
+**Your laptop = Local development ONLY**
+- ✅ Write code, test features, run tests
+- ✅ Use test/staging credentials
+- ✅ Use sample data (NOT production customer data)
+
+**OCI = Production ONLY**
+- ✅ Customer deployments MUST use OCI
+- ❌ Never run production on your laptop
+- ❌ Never store production credentials locally
+- ❌ Never connect to production databases from your laptop
+
+**Why?**
+- Laptop is unreliable (crashes, reboots, network issues)
+- Customer data must be encrypted and isolated
+- 24/7 availability requires OCI infrastructure
+- SLA compliance demands professional hosting
+
+**When deploying:** Always use [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md)
+
+---
 
 ### 1. Fork & Clone
 
@@ -20,8 +43,13 @@ cd optiora
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (using Poetry - recommended)
+poetry install
+poetry shell
+
+# Or quick install with pip
+pip install --upgrade pip
+pip install mcp boto3 azure-identity azure-mgmt-costmanagement google-cloud-billing oci pydantic python-dotenv httpx pytest pytest-asyncio
 
 # Test it works
 pytest tests/ -v

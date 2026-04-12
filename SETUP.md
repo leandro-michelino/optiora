@@ -1,20 +1,79 @@
 # Setup & Installation Guide for OptiOra
 
-Complete step-by-step guide to set up OptiOra locally or in production.
+⚠️ **IMPORTANT:** This guide covers **LOCAL DEVELOPMENT ONLY**. 
+
+**PRODUCTION MUST ALWAYS RUN ON OCI.** Never run OptiOra in production from your laptop or personal machines. 
+→ See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for production deployment.
+
+---
+
+Complete step-by-step guide to set up OptiOra locally for development and testing.
 
 ---
 
 ## Table of Contents
 
-1. [Local Development](#local-development)
-2. [Production Deployment (OCI)](#production-deployment)
-3. [Docker Deployment](#docker-deployment)
-4. [Environment Configuration](#environment-configuration)
-5. [Troubleshooting](#troubleshooting)
+1. [⚠️ Important: Local vs Production](#important-local-vs-production)
+2. [Local Development](#local-development)
+3. [Production Deployment (OCI)](#production-deployment-oci-required)
+4. [Docker Deployment](#docker-deployment)
+5. [Environment Configuration](#environment-configuration)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Local Development
+## ⚠️ Important: Local vs Production
+
+### ✅ Local Development (Your Laptop)
+
+**Use for:**
+- Writing and testing code
+- Debugging features
+- Running unit tests
+- Exploring the codebase
+
+**Limitations:**
+- Not suitable for customers
+- Single point of failure (your laptop)
+- No backup or disaster recovery
+- Unreliable/slow for multi-cloud API calls
+- Data not persisted if machine reboots
+
+**How to run:**
+```bash
+poetry install
+cp .env.example .env
+nano .env  # Fill in credentials
+python -m finops_mcp.server
+# Terminal 2: cd dashboard && npm run dev
+```
+
+### 🚫 NEVER Production (Your Laptop)
+
+**DO NOT:**
+- Connect production customer credentials/data to local .env
+- Run `npm run build && npm run start` on your laptop
+- Deploy customers to your local machine
+- Store customer data on your laptop
+- Leave laptop running 24/7 as a server
+
+### ✅ Production ONLY (OCI)
+
+**Always use OCI for:**
+- Customer-facing deployments
+- Handling real cost data
+- Running 24/7 monitoring
+- Storing encrypted credentials
+- Backup and disaster recovery
+- High availability and SLA compliance
+
+**How to run:** See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) - complete step-by-step guide
+
+---
+
+## Local Development (Your Laptop - Dev/Testing Only)
+
+**Before you start:** Make sure you understand the [Local vs Production](#important-local-vs-production) distinction above.
 
 ### Prerequisites
 
@@ -236,7 +295,9 @@ pytest tests/ -v
 
 ---
 
-## Production Deployment
+## Production Deployment (OCI Required - NOT Your Laptop)
+
+⚠️ **MANDATORY:** OptiOra production must ALWAYS run on OCI. Never run production from your laptop.
 
 ### Prerequisites for OCI Deployment
 

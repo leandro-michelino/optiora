@@ -10,6 +10,20 @@
 
 🚀 **Deployed on OCI Infrastructure** | 📊 **React Dashboard** | 🔌 **MCP Protocol** | 💰 **Multi-Cloud Support**
 
+---
+
+## ⚠️ IMPORTANT: Production Deployment Policy
+
+**OptiOra production MUST ALWAYS run on OCI. Never run production from your laptop or personal machines.**
+
+- ✅ **Local Development** (your laptop): Coding, testing, debugging
+- ❌ **Production** (your laptop): Never allowed
+- ✅ **Production** (OCI): Always required
+
+→ See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md) for production setup (mandatory)
+
+---
+
 📚 **[Browse All Documentation →](./DOCUMENTATION.md)** | Quick links below:
 
 ---

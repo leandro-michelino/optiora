@@ -4,6 +4,30 @@ Complete guide to all OptiOra documentation. Start with your use case:
 
 ---
 
+## 🚨 **Deployment Policy (Critical)**
+
+### MANDATORY RULE: Production on OCI Only
+
+| Environment | Location | Status | Use Case |
+|-----------|----------|--------|----------|
+| **Development** | Your laptop | ✅ Allowed | Coding, testing, debugging |
+| **Staging** | OCI | ✅ Allowed | Pre-production testing |
+| **Production** | OCI | ✅ **REQUIRED** | Customer deployments |
+| **Production** | Your laptop | ❌ **FORBIDDEN** | Never allowed |
+
+**Why?**
+- Your laptop is unreliable (crashes, reboots, network interruptions)
+- Customer data must be encrypted, isolated, and backed up
+- Production requires 24/7 uptime and SLA compliance
+- OCI provides infrastructure-grade reliability
+
+**Implementation:**
+- Local .env files: DEV/TEST credentials ONLY
+- OCI deployment: See [OCI_DEPLOYMENT.md](./OCI_DEPLOYMENT.md)
+- Code check: Server logs warnings if production config on local machine
+
+---
+
 ## 🎯 **For First-Time Users**
 
 | Order | Document | Time | What You'll Learn |

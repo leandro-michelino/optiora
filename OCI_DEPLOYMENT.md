@@ -1,5 +1,22 @@
 # OptiOra OCI Self-Hosted Deployment Guide
 
+## 🚨 MANDATORY: PRODUCTION MUST RUN ON OCI
+
+**This guide is REQUIRED for any production deployment.**
+
+- ❌ **NEVER** run OptiOra in production from your laptop
+- ❌ **NEVER** run OptiOra in production from personal machines
+- ✅ **ALWAYS** deploy to OCI for production workloads
+- ✅ **ALWAYS** use this guide for customer deployments
+
+**Why?**
+- Laptop is unreliable (crashes, reboots, network interruptions)
+- Customer data must be in secure, backed-up environments
+- Running 24/7 requires uptime SLA
+- Credentials must be encrypted and isolated from personal devices
+
+---
+
 ## Overview
 
 Complete guide to deploy OptiOra **entirely on Oracle Cloud Infrastructure** with:

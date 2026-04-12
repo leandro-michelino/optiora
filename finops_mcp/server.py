@@ -220,7 +220,33 @@ async def handle_tool_call(name: str, arguments: dict[str, Any]) -> list[TextCon
 
 async def main():
     """Start the OptiOra MCP server."""
+    import platform
+    
     logger.info("Starting OptiOra MCP server (deployed on OCI)...")
+    logger.info("=" * 80)
+    
+    # Check deployment environment
+    is_local_dev = config.deployment_type in ["docker", "local", "development"]
+    is_production = os.getenv("ENVIRONMENT", "").lower() in ["production", "prod"]
+    
+    if is_production and is_local_dev:
+        logger.warning("=" * 80)
+        logger.warning("⚠️  WARNING: Production configuration detected on local deployment!")
+        logger.warning("=" * 80)
+        logger.warning("OptiOra production MUST run on OCI, not locally.")
+        logger.warning("This setup is only for development/testing.")
+        logger.warning("=" * 80)
+    
+    current_machine = platform.node()
+    logger.info(f"Running on machine: {current_machine}")
+    logger.info(f"Deployment type: {config.deployment_type}")
+    
+    if config.deployment_type in ["docker", "local", "development"]:
+        logger.info("✅ Local development mode (suitable for coding/testing)")
+    else:
+        logger.info("✅ Production mode (OCI deployment)")
+    
+    logger.info("=" * 80)
 
     # Register tools
     for tool in TOOLS:
