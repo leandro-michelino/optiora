@@ -8,7 +8,7 @@ import os
 
 from .orm_models import init_db
 from .auth_routes import router as auth_router
-from .api import app as api_router  # Import existing API if it's already a FastAPI instance
+from .api import router as api_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,8 +57,7 @@ async def health_check():
 
 # Include routers
 app.include_router(auth_router)
-
-# TODO: Include existing API routes when api.py is refactored to use FastAPI instance
+app.include_router(api_router)
 
 
 # Error handlers

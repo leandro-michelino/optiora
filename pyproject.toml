@@ -36,7 +36,6 @@ psycopg2-binary = "^2.9.0"
 python-jose = {version = "^3.3.0", extras = ["cryptography"]}
 passlib = {version = "^1.7.4", extras = ["bcrypt"]}
 python-multipart = "^0.0.6"
-pyjwt = "^2.8.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.0.0"

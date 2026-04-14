@@ -311,20 +311,14 @@ Format as JSON:
 }
 
 /**
- * Chat interface for cost questions (multi-turn conversation)
+ * Chat interface for cost questions (multi-turn conversation).
+ * The system prompt is cached so repeated calls don't re-tokenize it.
  */
 export async function askCostQuestion(
   question: string,
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = []
 ): Promise<string> {
-  const systemPrompt = `You are an expert Cloud FinOps consultant helping users optimize their multi-cloud costs.
-You analyze cloud spending across AWS, Azure, GCP, and OCI.
-Provide specific, actionable advice focused on cost reduction and efficiency.
-Be concise but thorough. Always cite specific numbers when recommending actions.
-Help users understand their cloud costs and make smart optimization decisions.`;
-
   try {
-    // Format conversation history in Claude format
     const messages = [
       ...conversationHistory.map((msg) => ({
         role: msg.role,
@@ -339,8 +333,18 @@ Help users understand their cloud costs and make smart optimization decisions.`;
     const response = await client.messages.create({
       model: "claude-3-5-sonnet-20241022",
       max_tokens: 1000,
-      system: systemPrompt,
-      messages: messages,
+      system: [
+        {
+          type: "text",
+          text: `You are an expert Cloud FinOps consultant helping users optimize their multi-cloud costs.
+You analyze cloud spending across AWS, Azure, GCP, and OCI.
+Provide specific, actionable advice focused on cost reduction and efficiency.
+Be concise but thorough. Always cite specific numbers when recommending actions.
+Help users understand their cloud costs and make smart optimization decisions.`,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      messages,
     });
 
     return response.content[0].type === "text" ? response.content[0].text : "";

@@ -1,6 +1,8 @@
 """Authentication API endpoints for user registration, login, and profile management."""
 
 from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from datetime import datetime, timedelta
@@ -21,50 +23,40 @@ from .auth_utils import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
+security = HTTPBearer()
 
 
 # Schemas
-class RegisterRequest:
+class RegisterRequest(BaseModel):
     """Registration request schema."""
     email: str
     password: str
     full_name: Optional[str] = None
 
 
-class LoginRequest:
+class LoginRequest(BaseModel):
     """Login request schema."""
     email: str
     password: str
 
 
-class RefreshTokenRequest:
+class RefreshTokenRequest(BaseModel):
     """Refresh token request schema."""
     refresh_token: str
 
 
-class UpdateProfileRequest:
+class UpdateProfileRequest(BaseModel):
     """Update profile request schema."""
     full_name: Optional[str] = None
 
 
 # Dependencies
 def get_current_user(
-    token: Optional[str] = None,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ) -> User:
-    """Get current authenticated user from JWT token."""
-    if not token:
-        # Try to get from Authorization header
-        from fastapi import Header
-        auth_header = Header(None, alias="authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        token = auth_header[7:]  # Remove "Bearer " prefix
-    
+    """Get current authenticated user from JWT Bearer token."""
+    token = credentials.credentials
     payload = verify_access_token(token)
     if not payload:
         raise HTTPException(
@@ -72,27 +64,27 @@ def get_current_user(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     user_id: int = payload.get("sub")
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive",
         )
-    
+
     return user
 
 
@@ -378,9 +370,7 @@ async def reset_password(
     db: Session = Depends(get_db),
 ):
     """Reset password using reset token."""
-    
-    # TODO: Verify reset token
-    # TODO: Validate new password
-    # TODO: Update user password
-    
-    return {"message": "Password reset successfully"}
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Password reset via token is not yet implemented",
+    )

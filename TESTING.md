@@ -1,271 +1,100 @@
 # Testing Guide for OptiOra
 
-## Test Suite Overview
+## Current Status
 
-OptiOra includes **33 comprehensive tests** covering all backend components.
+The automated test suite was removed in commit `d129b13` (April 14 2026) to reduce
+maintenance overhead during the current development phase.
 
-```
-tests/
-├── test_aws_integration.py          (4 tests)
-│   ├─ test_get_cost_summary_no_credentials
-│   ├─ test_get_cost_summary_with_mock_boto3
-│   ├─ test_get_cost_summary_period_calculation
-│   └─ test_config_validation
-│
-├── test_azure_gcp.py                (12 tests)
-│   ├─ test_azure_cost_summary_no_credentials
-│   ├─ test_azure_cost_summary_structure
-│   ├─ test_azure_all_periods
-│   ├─ test_azure_forecast
-│   ├─ test_azure_mock_data_structure
-│   ├─ test_gcp_cost_summary_no_credentials
-│   ├─ test_gcp_cost_summary_structure
-│   ├─ test_gcp_all_periods
-│   ├─ test_gcp_forecast
-│   ├─ test_gcp_mock_data_structure
-│   └─ test_multi_cloud_forecast_comparison
-│
-├── test_anomaly_recommendations.py  (6 tests)
-│   ├─ test_detect_anomalies_basic
-│   ├─ test_detect_anomalies_all_providers
-│   ├─ test_detect_anomalies_sensitivity_levels
-│   ├─ test_get_recommendations_basic
-│   ├─ test_get_recommendations_by_type
-│   └─ test_get_recommendations_min_savings_filter
-│
-├── test_oci_database.py             (7 tests)
-│   ├─ test_oci_cost_summary_no_credentials
-│   ├─ test_oci_cost_summary_mock_data
-│   ├─ test_oci_cost_summary_all_periods
-│   ├─ test_database_schema_valid
-│   ├─ test_database_migrations
-│   ├─ test_database_tables_in_schema
-│   └─ test_database_indexes_defined
-│
-└── test_tools.py                    (4 tests)
-    ├─ test_get_recommendations
-    ├─ test_detect_anomalies
-    ├─ test_forecast_costs
-    └─ test_execute_action_dry_run
-```
-
-## Running Tests
-
-Tests are executed automatically as part of the OCI deployment pipeline via GitHub Actions.
-
-### Manual Test Execution
-
-To run tests locally for development:
-
-```bash
-# Connect to OCI Compute Instance
-ssh ubuntu@your-instance-ip
-
-# Run test suite
-cd /opt/optiora
-python -m pytest tests/ -v
-
-# Run with coverage reporting
-python -m pytest tests/ -v --cov=finops_mcp --cov-report=html
-```
-
-### Run Specific Test File
-
-```bash
-# Test AWS integration
-python -m pytest tests/test_aws_integration.py -v
-
-# Test Azure & GCP
-python -m pytest tests/test_azure_gcp.py -v
-
-# Test anomalies and recommendations
-python -m pytest tests/test_anomaly_recommendations.py -v
-
-# Test OCI and database
-python -m pytest tests/test_oci_database.py -v
-```
-
-### Run Specific Test
-
-```bash
-# Run a single test
-python -m pytest tests/test_aws_integration.py::test_config_validation -v
-
-# Run tests matching pattern
-python -m pytest tests/ -k "anomaly" -v
-
-# Run with detailed output
-python -m pytest tests/ -vv --tb=long
-```
-
-## Test Categories
-
-### 1. Integration Tests (No Credentials Required)
-
-These tests verify behavior when cloud credentials are not available:
-
-```bash
-pytest tests/ -k "no_credentials" -v
-```
-
-**What They Test:**
-- Mock data generation works correctly
-- Cost structure is valid JSON
-- All required fields present
-
-### 2. Mock Data Tests
-
-Verify that fallback mock data is structurally correct:
-
-```bash
-pytest tests/ -k "mock_data" -v
-```
-
-### 3. Database Tests
-
-Test PostgreSQL schema, migrations, and table definitions:
-
-```bash
-pytest tests/test_oci_database.py -v
-```
-
-### 4. Multi-Cloud Tests
-
-Test cost comparison and aggregation across clouds:
-
-```bash
-pytest tests/test_azure_gcp.py::test_multi_cloud_forecast_comparison -v
-```
-
-## Writing New Tests
-
-### Test Template
-
-```python
-import pytest
-from finops_mcp.tools import your_module
-
-class TestYourFeature:
-    """Test suite for your feature."""
-    
-    @pytest.fixture
-    def setup(self):
-        """Set up test fixtures."""
-        return {"test_data": "value"}
-    
-    def test_something(self, setup):
-        """Test description."""
-        result = your_module.your_function(setup["test_data"])
-        assert result is not None
-        assert result["status"] == "success"
-    
-    def test_error_handling(self):
-        """Test error path."""
-        with pytest.raises(ValueError):
-            your_module.your_function(None)
-```
-
-### Running Your Test
-
-```bash
-pytest tests/test_your_file.py::TestYourFeature::test_something -v
-```
-
-## Continuous Integration
-
-GitHub Actions automatically runs tests on:
-- Every push to `main` branch
-- Pull requests
-- Manual workflow dispatch
-
-### CI Configuration
-
-See `.github/workflows/deploy-oci.yml`:
-
-```yaml
-- name: Run tests
-  run: |
-    docker run --rm \
-      ${{ env.IMAGE_NAME }}:${{ github.sha }} \
-      python -m pytest tests/ -v
-```
-
-Tests must pass before deployment to OCI.
-
-## Test Coverage
-
-### Current Coverage
-
-```
-test_aws_integration.py       ██████░░░░ 60%
-test_azure_gcp.py             ████████░░ 80%
-test_anomaly_recommendations  ██████████ 100%
-test_oci_database.py          ████████░░ 80%
-test_tools.py                 ██████░░░░ 60%
-
-Total Coverage:               ~74%
-Target Coverage:              >80%
-```
-
-### Increasing Coverage
-
-1. Add tests for error paths
-2. Test edge cases (empty data, extreme values)
-3. Test multi-threaded scenarios
-4. Test database transaction rollback
-
-## Debugging Tests
-
-### Enable Debug Output
-
-```bash
-# Show print statements
-pytest tests/ -v -s
-
-# Show variables in assertions
-pytest tests/ -vv --tb=short
-```
-
-### Debug Single Test
-
-```bash
-# Run with Python debugger
-pytest tests/test_file.py::test_name --pdb
-
-# Drop into debugger on failure
-pytest tests/test_file.py::test_name --pdb --pdbcls=IPython.terminal.debugger:TerminalPdb
-```
-
-### Verbose Error Output
-
-```bash
-pytest tests/ --tb=long --showlocals
-```
-
-## Performance Testing
-
-(Optional) Benchmark slow operations:
-
-```bash
-# Pytest benchmark plugin
-pip install pytest-benchmark
-
-# Run benchmarks
-pytest tests/ --benchmark-only
-```
-
-## Test Maintenance
-
-- **Update Tests**: When changing API contracts
-- **Remove Tests**: When removing features
-- **Add Tests**: When fixing bugs (regression test first)
-- **Refactor Tests**: Keep DRY (don't repeat yourself)
+**There are no automated tests in this repository at this time.**
 
 ---
 
-**All 33 tests should pass before committing code!**
+## Test Coverage Targets (for when tests are re-introduced)
+
+| Module                                | Target coverage | Notes                        |
+| ------------------------------------- | --------------- | ---------------------------- |
+| `finops_mcp/tools/aws_costs.py`       | ≥ 70%           | Mock boto3 Cost Explorer     |
+| `finops_mcp/tools/azure_costs.py`     | ≥ 70%           | Mock Azure SDK               |
+| `finops_mcp/tools/gcp_costs.py`       | ≥ 70%           | Mock GCP billing client      |
+| `finops_mcp/tools/oci_costs.py`       | ≥ 70%           | Mock OCI Usage API           |
+| `finops_mcp/tools/anomalies.py`       | ≥ 90%           | Pure logic — easy to cover   |
+| `finops_mcp/tools/recommendations.py` | ≥ 85%           | ROI ranking logic            |
+| `finops_mcp/auth_routes.py`           | ≥ 80%           | Auth endpoints               |
+| `finops_mcp/api.py`                   | ≥ 75%           | Credential & scanning routes |
+
+---
+
+## Suggested Test Structure (when re-introduced)
+
+```text
+tests/
+├── __init__.py
+├── conftest.py                      # Shared fixtures (test DB, mock clients)
+├── test_aws_costs.py                # AWS Cost Explorer integration
+├── test_azure_gcp_costs.py          # Azure & GCP cost integrations
+├── test_oci_costs.py                # OCI Usage API
+├── test_anomalies.py                # Statistical anomaly detection
+├── test_recommendations.py          # ROI-ranked recommendations
+├── test_auth.py                     # Register / login / refresh / logout
+└── test_api.py                      # Credential & scanning endpoints
+```
+
+### Recommended tooling
+
+```toml
+# pyproject.toml additions
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^4.1.0"
+httpx = "^0.27.0"   # for TestClient with async FastAPI apps
+```
+
+### Run tests (once re-introduced)
 
 ```bash
-# Pre-commit hook suggestion
-pytest tests/ -v || exit 1
+# All tests with coverage
+pytest tests/ -v --cov=finops_mcp --cov-report=term-missing
+
+# Single module
+pytest tests/test_anomalies.py -v
+
+# Filter by name
+pytest tests/ -k "auth" -v
 ```
+
+### Test template
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from finops_mcp.app import app
+
+client = TestClient(app)
+
+
+class TestYourFeature:
+    def test_something(self):
+        response = client.get("/api/v1/health")
+        assert response.status_code == 200
+
+    def test_error_path(self):
+        response = client.post("/api/v1/credentials/validate", json={"provider": "unknown"})
+        assert response.status_code == 400
+```
+
+---
+
+## Manual Verification
+
+Until automated tests are restored, verify functionality manually after each change:
+
+1. **Backend health** — `curl http://localhost:8000/health`
+2. **API docs** — open `http://localhost:8000/docs` (FastAPI auto-generated Swagger UI)
+3. **Auth flow** — register → login → refresh → logout via Swagger UI
+4. **Credential validation** — submit a real or clearly-invalid credential set
+5. **Frontend** — `cd dashboard && npm run dev`, then open `http://localhost:3000`
+
+---
+
+*Tests should be re-introduced before any production deployment to OCI.*
