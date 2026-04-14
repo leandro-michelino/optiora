@@ -6,7 +6,12 @@ import { CostChart } from '@/components/CostChart'
 import { ServiceBreakdown } from '@/components/ServiceBreakdown'
 import { MetricCard } from '@/components/MetricCard'
 import { fetchCosts } from '@/lib/api'
-import { DollarSign, TrendingUp, AlertCircle, Target, AlertTriangle, CheckCircle2, Download, Eye } from 'lucide-react'
+import { DollarSign, TrendingUp, AlertCircle, Target, AlertTriangle, Download, Eye } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Progress, ProgressTrack, ProgressIndicator, ProgressLabel, ProgressValue } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
 
 interface CostData {
   totalCost: number
@@ -132,29 +137,26 @@ export default function DashboardPage() {
       </div>
 
       {/* Critical Alert - Azure Budget Exceeded */}
-      <div className="p-4 bg-red-50 dark:bg-red-950/20 border-2 border-red-400 dark:border-red-600 rounded-lg">
-        <div className="flex items-start gap-4">
-          <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-1" />
-          <div className="flex-1">
-            <h3 className="font-bold text-red-900 dark:text-red-100 mb-1">
-              🔵 CRITICAL: Azure Budget Exceeded by $350
-            </h3>
-            <p className="text-sm text-red-800 dark:text-red-200 mb-3">
-              Azure spending has exceeded the monthly budget. Current: <strong>$3,850</strong> / Budget: <strong>$3,500</strong> (110% utilized)
-            </p>
-            <div className="flex gap-2 flex-wrap">
-              <Link href="/dashboard/anomalies" className="px-3 py-1 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 inline-flex items-center gap-1">
-                <AlertCircle className="w-4 h-4" />
-                View Anomalies
-              </Link>
-              <Link href="/dashboard/recommendations" className="px-3 py-1 bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100 rounded text-sm font-medium hover:bg-red-200 inline-flex items-center gap-1">
-                <Target className="w-4 h-4" />
-                Get Recommendations
-              </Link>
-            </div>
+      <Alert variant="destructive" className="border-2 border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-950/20">
+        <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+        <AlertTitle className="text-red-900 dark:text-red-100 font-bold flex items-center gap-2">
+          CRITICAL: Azure Budget Exceeded by $350
+          <Badge variant="destructive" className="ml-1">110% utilized</Badge>
+        </AlertTitle>
+        <AlertDescription className="text-red-800 dark:text-red-200 mt-1">
+          Azure spending has exceeded the monthly budget. Current: <strong>$3,850</strong> / Budget: <strong>$3,500</strong>
+          <div className="flex gap-2 flex-wrap mt-3">
+            <Link href="/dashboard/anomalies" className="px-3 py-1 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 inline-flex items-center gap-1">
+              <AlertCircle className="w-4 h-4" />
+              View Anomalies
+            </Link>
+            <Link href="/dashboard/recommendations" className="px-3 py-1 bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100 rounded text-sm font-medium hover:bg-red-200 inline-flex items-center gap-1">
+              <Target className="w-4 h-4" />
+              Get Recommendations
+            </Link>
           </div>
-        </div>
-      </div>
+        </AlertDescription>
+      </Alert>
 
       {/* Metrics Grid */}
       <div className="grid md:grid-cols-4 gap-6">
@@ -185,58 +187,58 @@ export default function DashboardPage() {
       </div>
 
       {/* Budget Progress Bars */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-            Cloud Budget Status
-          </h2>
-          <Link href="/dashboard/settings" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-            Edit Budgets
-          </Link>
-        </div>
-        <div className="space-y-6">
-          {budgets.map((budget, idx) => (
-            <div key={idx}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">{budget.icon}</span>
-                  <div>
-                    <p className="font-medium text-slate-900 dark:text-white">
-                      {budget.cloud}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      ${budget.current.toLocaleString()} / ${budget.budget.toLocaleString()} budget
-                    </p>
+      <Card>
+        <CardHeader className="border-b pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl font-semibold">Cloud Budget Status</CardTitle>
+            <Link href="/dashboard/settings" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+              Edit Budgets
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="space-y-6">
+            {budgets.map((budget, idx) => (
+              <div key={idx}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{budget.icon}</span>
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-white">{budget.cloud}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        ${budget.current.toLocaleString()} / ${budget.budget.toLocaleString()} budget
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className={`font-bold ${
-                    budget.status === 'critical'
-                      ? 'text-red-600 dark:text-red-400'
-                      : budget.status === 'warning'
-                        ? 'text-yellow-600 dark:text-yellow-400'
-                        : 'text-green-600 dark:text-green-400'
-                  }`}>
+                  <Badge
+                    variant={budget.status === 'critical' ? 'destructive' : budget.status === 'warning' ? 'outline' : 'secondary'}
+                    className={budget.status === 'ok' ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400' : ''}
+                  >
                     {budget.percentage.toFixed(1)}%
-                  </p>
+                  </Badge>
                 </div>
+                <Progress
+                  value={Math.min(budget.percentage, 100)}
+                  className="w-full"
+                >
+                  <ProgressTrack className="h-3">
+                    <ProgressIndicator
+                      className={
+                        budget.status === 'critical'
+                          ? 'bg-gradient-to-r from-red-500 to-red-600'
+                          : budget.status === 'warning'
+                            ? 'bg-gradient-to-r from-yellow-500 to-yellow-600'
+                            : 'bg-gradient-to-r from-green-500 to-green-600'
+                      }
+                    />
+                  </ProgressTrack>
+                </Progress>
+                {idx < budgets.length - 1 && <Separator className="mt-6" />}
               </div>
-              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    budget.status === 'critical'
-                      ? 'bg-gradient-to-r from-red-500 to-red-600'
-                      : budget.status === 'warning'
-                        ? 'bg-gradient-to-r from-yellow-500 to-yellow-600'
-                        : 'bg-gradient-to-r from-green-500 to-green-600'
-                  }`}
-                  style={{ width: `${Math.min(budget.percentage, 100)}%` }}
-                ></div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Quick Actions */}
       <div className="grid md:grid-cols-3 gap-4">
@@ -270,52 +272,50 @@ export default function DashboardPage() {
 
       {/* Charts */}
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 card">
-          <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-white">
-            Cost Trend (Last 12 Months)
-          </h2>
-          <CostChart />
-        </div>
+        <Card className="lg:col-span-2">
+          <CardHeader className="border-b pb-4">
+            <CardTitle className="text-xl font-semibold">Cost Trend (Last 12 Months)</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <CostChart />
+          </CardContent>
+        </Card>
 
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-white">
-            Service Breakdown
-          </h2>
-          <ServiceBreakdown />
-        </div>
+        <Card>
+          <CardHeader className="border-b pb-4">
+            <CardTitle className="text-xl font-semibold">Service Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <ServiceBreakdown />
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Recent Activity */}
-      <div className="card">
-        <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-white">
-          Recent Insights
-        </h2>
-        <div className="space-y-4">
-          <div className="flex gap-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-            <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-yellow-900 dark:text-yellow-100">
-                Unusual activity detected
-              </p>
-              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+      {/* Recent Insights */}
+      <Card>
+        <CardHeader className="border-b pb-4">
+          <CardTitle className="text-xl font-semibold">Recent Insights</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="space-y-4">
+            <Alert className="border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <AlertTitle className="text-yellow-900 dark:text-yellow-100">Unusual activity detected</AlertTitle>
+              <AlertDescription className="text-yellow-800 dark:text-yellow-200">
                 AWS compute costs increased 15% week-over-week
-              </p>
-            </div>
-          </div>
+              </AlertDescription>
+            </Alert>
 
-          <div className="flex gap-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-            <Target className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-green-900 dark:text-green-100">
-                Optimization opportunity
-              </p>
-              <p className="text-sm text-green-800 dark:text-green-200">
+            <Alert className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+              <Target className="h-4 w-4 text-green-600" />
+              <AlertTitle className="text-green-900 dark:text-green-100">Optimization opportunity</AlertTitle>
+              <AlertDescription className="text-green-800 dark:text-green-200">
                 Reserve instances could save $2,340/month on AWS
-              </p>
-            </div>
+              </AlertDescription>
+            </Alert>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

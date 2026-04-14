@@ -68,8 +68,10 @@
 - **Dry-run mode** for safety
 
 ### 🎨 Interactive Dashboard
-- **Multi-cloud visualization** with Recharts
-- **Dark mode** support
+
+- **shadcn/ui** component system — KPI cards, alerts, progress bars, tables, badges
+- **Multi-cloud visualization** with shadcn Charts (built on Recharts)
+- **Dark mode** support via `next-themes`
 - **Responsive design** (mobile-friendly)
 - **Real-time updates** via WebSocket (optional)
 

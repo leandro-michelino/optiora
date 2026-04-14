@@ -53,26 +53,54 @@ The **OptiOra Dashboard** is a **React + Next.js** web application that visualiz
 ### Frontend (React)
 ```json
 {
-  "framework": "React 18",
-  "meta-framework": "Next.js 14+",
-  "styling": "Tailwind CSS 4",
-  "charts": "Recharts (lightweight charts for cost visualization)",
-  "state": "TanStack Query (React Query for API data)",
+  "framework": "React 19.2",
+  "meta-framework": "Next.js 16 (App Router)",
+  "ui-system": "shadcn/ui (base-nova style, Radix + Base UI primitives)",
+  "styling": "Tailwind CSS 4 with CSS custom properties",
+  "charts": "shadcn Charts + Recharts (area, pie, bar — themed via CSS variables)",
   "icons": "Lucide React",
   "api": "Axios for MCP backend communication",
   "validation": "Zod for type-safe data validation",
-  "testing": "Vitest + React Testing Library",
+  "theme": "next-themes (dark / light / system)",
   "deployment": "OCI App Service or OCI Container Instances",
   "infrastructure": "Oracle Cloud Infrastructure (OCI)"
 }
 ```
 
+### shadcn/ui Component Library
+
+shadcn/ui was chosen as the dashboard UI system because it is:
+
+- **Next.js native** — created by the Vercel team, designed for App Router
+- **Tailwind CSS native** — no conflicting style layers
+- **Built on Recharts** — the chart component reuses the existing `recharts` dependency
+- **Copy-owned** — components live in `components/ui/` and are fully customizable
+
+#### Installed Components
+
+| Component | Usage in OptiOra |
+| --------- | ---------------- |
+| `Card` / `CardHeader` / `CardContent` | All dashboard panels, metric tiles |
+| `Alert` / `AlertTitle` / `AlertDescription` | Budget exceeded alerts, AI insights |
+| `Badge` | Budget status labels (critical / warning / ok) |
+| `Progress` / `ProgressTrack` / `ProgressIndicator` | Cloud budget utilization bars |
+| `Table` | Cost breakdown tables, anomaly lists |
+| `Separator` | Section dividers within cards |
+| `Chart` / `ChartContainer` / `ChartTooltip` | Themed wrappers for Recharts area & pie charts |
+| `Button` | Action buttons across the app |
+
+#### CSS Variables (theming)
+
+All shadcn/ui colors are driven by CSS custom properties defined in `app/globals.css`.
+Both light and dark themes are supported via the `.dark` class toggled by `next-themes`.
+
 ### Why React + Next.js on OCI?
 
 | Feature | Benefit |
 |---------|----------|
-| **React** | Reusable components, fast UI updates, huge ecosystem |
-| **Next.js** | SSR/SSG, file-based routing, API routes for backend calls, optimized builds |
+| **React 19** | Reusable components, fast UI updates, huge ecosystem |
+| **Next.js 16** | SSR/SSG, App Router, API routes for backend calls, optimized builds |
+| **shadcn/ui** | Production-ready dashboard components, zero bundle overhead, Tailwind-native |
 | **OCI** | Enterprise-grade infrastructure, same region as backend & database, SLA-backed |
 | **Tailwind CSS** | Rapid prototyping, low bundle size, dark mode built-in |
 | **Recharts** | React-native charting, lightweight (critical for cost dashboards) |

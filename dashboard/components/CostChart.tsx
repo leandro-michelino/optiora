@@ -6,10 +6,9 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   Legend,
 } from 'recharts'
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 
 const data = [
   { month: 'Jan', aws: 4200, azure: 2400, gcp: 1800, oci: 1200 },
@@ -26,9 +25,16 @@ const data = [
   { month: 'Dec', aws: 5800, azure: 3600, gcp: 2500, oci: 1600 },
 ]
 
+const chartConfig = {
+  aws:   { label: 'AWS',   color: '#f59e0b' },
+  azure: { label: 'Azure', color: '#3b82f6' },
+  gcp:   { label: 'GCP',   color: '#ef4444' },
+  oci:   { label: 'OCI',   color: '#10b981' },
+} satisfies ChartConfig
+
 export function CostChart() {
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <ChartContainer config={chartConfig} className="h-[300px] w-full">
       <AreaChart data={data}>
         <defs>
           <linearGradient id="colorAws" x1="0" y1="0" x2="0" y2="1">
@@ -49,15 +55,21 @@ export function CostChart() {
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="month" />
-        <YAxis />
-        <Tooltip />
+        <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+        <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              formatter={(value) => [`$${Number(value).toLocaleString()}`, '']}
+            />
+          }
+        />
         <Legend />
-        <Area type="monotone" dataKey="aws" stroke="#f59e0b" fillOpacity={1} fill="url(#colorAws)" />
+        <Area type="monotone" dataKey="aws"   stroke="#f59e0b" fillOpacity={1} fill="url(#colorAws)" />
         <Area type="monotone" dataKey="azure" stroke="#3b82f6" fillOpacity={1} fill="url(#colorAzure)" />
-        <Area type="monotone" dataKey="gcp" stroke="#ef4444" fillOpacity={1} fill="url(#colorGcp)" />
-        <Area type="monotone" dataKey="oci" stroke="#10b981" fillOpacity={1} fill="url(#colorOci)" />
+        <Area type="monotone" dataKey="gcp"   stroke="#ef4444" fillOpacity={1} fill="url(#colorGcp)" />
+        <Area type="monotone" dataKey="oci"   stroke="#10b981" fillOpacity={1} fill="url(#colorOci)" />
       </AreaChart>
-    </ResponsiveContainer>
+    </ChartContainer>
   )
 }
