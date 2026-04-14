@@ -98,6 +98,8 @@ Set `NEXT_PUBLIC_API_URL` if backend is not local:
 export NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
+If the backend is down, the dashboard overview pages fall back to mock data; credential and scanning flows require a live backend. Access tokens expire in ~30 minutes; refresh tokens are stored but not yet auto-used by the UI (re-login may be needed after expiry).
+
 ## Deploy to OCI
 
 ```bash
@@ -126,6 +128,7 @@ terraform plan \
 ```
 
 This baseline enforces laptop-CIDR access controls and OCI naming conventions.
+Egress and route table are also scoped to laptop_cidr; to allow package downloads/outbound updates during provisioning, change the route/egress destination to `0.0.0.0/0` while keeping ingress locked to your allowlist.
 
 ## Quality Checks
 

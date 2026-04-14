@@ -63,8 +63,9 @@ Cards/charts/components render normalized API response data
 
 ## Operational Notes
 
-- If backend is unavailable, `dashboard/lib/api.ts` falls back to safe defaults for overview pages.
+- If backend is unavailable, `dashboard/lib/api.ts` falls back to safe defaults for overview pages; credentials and scanning pages require live backend.
 - Settings pages call backend directly and require backend availability.
 - AI chat route returns a clear configuration message when `ANTHROPIC_API_KEY` is not set.
+- Access tokens expire in ~30 minutes; refresh tokens are stored but not yet used by the UI—users may need to re-login after expiry.
 - `npm run type-check` and `npm run lint` should pass before deployment.
 - `npm run build` should pass before OCI deployment.

@@ -17,6 +17,28 @@ This folder contains an OCI network baseline designed for strict access control.
 
 The current route and egress are also restricted to `laptop_cidr`. This is very restrictive and may block package downloads and normal outbound traffic from OCI instances.
 
+If you need package installs or outbound updates during provisioning, you can relax egress and routing:
+
+```hcl
+resource "oci_core_route_table" "public" {
+  # ...
+  route_rules {
+    destination       = "0.0.0.0/0"   # was laptop_cidr
+    network_entity_id = oci_core_internet_gateway.main.id
+  }
+}
+
+resource "oci_core_security_list" "public" {
+  # ...
+  egress_security_rules {
+    protocol    = "all"
+    destination = "0.0.0.0/0"        # was laptop_cidr
+  }
+}
+```
+
+Ingress should stay laptop-scoped (or VPN/allowlist) to avoid exposing API/UI.
+
 ## Usage
 
 ```bash

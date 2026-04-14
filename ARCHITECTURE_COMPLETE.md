@@ -37,6 +37,31 @@ This document reflects the deployable architecture in this repository as of Apri
       └──────────────────┘
 ```
 
+### Auth + Token (runtime)
+
+```text
+Login form -> POST /auth/login
+    -> Access token (30m) + Refresh token (7d, hashed in DB)
+    -> UI stores both in localStorage (refresh currently unused)
+
+Subsequent API calls
+    -> Authorization: Bearer <access>
+    -> /auth/profile enforces active user
+    -> Logout revokes all refresh tokens for the user
+```
+
+### Dashboard Data Fetch Path
+
+```text
+Dashboard UI (Next.js client)
+  |-- /api/v1/costs | /anomalies | /recommendations
+  |   -> Backend aggregates provider tool results
+  |   -> UI falls back to mock data if backend unavailable
+  |
+  |-- Credential flows -> /api/v1/credentials/*
+  |-- Scanning flows   -> /api/v1/scanning/* (background task + DB state)
+```
+
 ## 2) OCI Deployment Topology
 
 ```text
@@ -124,6 +149,7 @@ Progress + results to UI
 - API health/version and app metadata are consistent (`0.1.0` in current codebase).
 - Dashboard can run without Anthropic key; AI chat returns a configuration message instead of crashing.
 - Cloud-cost provider tools still include fallback/mock behavior when SDK/config is missing.
+- Frontend keeps refresh tokens but does not yet use them; sessions expire when the 30m access token expires (re-login required).
 
 ## 7) Terraform Security Baseline (Plan-Only)
 
@@ -142,4 +168,6 @@ Security List ingress:
   API  8000   <- laptop_cidr/32
 
 No 0.0.0.0/0 ingress is defined.
+Egress and route table are also pinned to laptop_cidr; this blocks typical outbound package downloads.
+To relax for install/updates, set destination to 0.0.0.0/0 and broaden egress in security list.
 ```
