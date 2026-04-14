@@ -2,6 +2,10 @@
 
 Multi-cloud FinOps platform with a FastAPI backend and Next.js dashboard.
 
+## Dashboard Preview
+
+![OptiOra Dashboard Preview](dashboard/public/dashboard-preview.png)
+
 ## What This Repo Contains
 
 - `finops_mcp/`: Python backend (FastAPI, auth, credential management, scan workflow, dashboard APIs)
