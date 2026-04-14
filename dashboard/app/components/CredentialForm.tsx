@@ -3,14 +3,14 @@
 import React, { useState } from 'react';
 import { AlertCircle, CheckCircle, Loader, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 
 interface CredentialFormProps {
-  customerId: string;
   onSubmit: (provider: string, credentials: Record<string, string>) => Promise<void>;
 }
 
-const CredentialForm: React.FC<CredentialFormProps> = ({ customerId, onSubmit }) => {
+const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>('aws');
   const [loading, setLoading] = useState(false);
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
@@ -53,7 +53,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ customerId, onSubmit })
         ociForm;
 
       // Step 1: Validate credentials
-      const validateRes = await fetch(backendUrl('/api/v1/credentials/validate'), {
+      const validateRes = await authorizedFetch(backendUrl('/api/v1/credentials/validate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -66,28 +66,32 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ customerId, onSubmit })
 
       if (!validateRes.ok || !validateData.is_valid) {
         setValidationStatus('invalid');
-        setValidationMessage(validateData.message || 'Credential validation failed');
+        setValidationMessage(validateData.detail || validateData.message || 'Credential validation failed');
         return;
       }
 
       setValidationStatus('valid');
-      setValidationMessage('✓ Credentials validated! Cost data this month: $' + (validateData.test_cost_usd || '0.00'));
+      setValidationMessage(
+        validateData.test_cost_usd !== null && validateData.test_cost_usd !== undefined
+          ? `Credentials validated. Cost data this month: $${validateData.test_cost_usd}`
+          : 'Credentials validated successfully.',
+      );
 
       // Step 2: Store credentials
       await new Promise(resolve => setTimeout(resolve, 1500)); // Brief delay for UX
       
-      const storeRes = await fetch(backendUrl('/api/v1/credentials/add'), {
+      const storeRes = await authorizedFetch(backendUrl('/api/v1/credentials/add'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer_id: customerId,
           provider: selectedProvider,
           ...credentials
         })
       });
 
       if (!storeRes.ok) {
-        throw new Error('Failed to store credentials');
+        const storeData = await storeRes.json().catch(() => ({}));
+        throw new Error(storeData?.detail || 'Failed to store credentials');
       }
 
       // Success - trigger next step

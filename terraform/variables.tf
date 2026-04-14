@@ -50,3 +50,8 @@ variable "laptop_cidr" {
   type        = string
 }
 
+variable "egress_cidr" {
+  description = "Destination CIDR for outbound traffic from the public subnet."
+  type        = string
+  default     = "0.0.0.0/0"
+}

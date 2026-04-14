@@ -1,71 +1,66 @@
 # Dashboard Architecture and Integration
 
-## Overview
+The dashboard is a Next.js application in `dashboard/` that talks to the FastAPI backend over HTTP.
 
-The dashboard is a Next.js application (`dashboard/`) that consumes the FastAPI backend over HTTP.
+## Backend URL Resolution
 
-Base API URL is controlled by:
+Preferred env:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-If `NEXT_PUBLIC_API_URL` is not set, the dashboard auto-resolves the backend as:
-- browser protocol + current hostname + `:8000`
-- example: `http://<current-host>:8000`
+Fallback behavior when the env var is unset:
+
+```text
+window.location.protocol + "//" + window.location.hostname + ":8000"
+```
+
+That fallback is useful for simple VM deployments where the dashboard and API share one host.
 
 ## Integration Map
 
 ```text
 Next.js UI
   |
-  +--> /auth/* (login/register/profile/logout)
-  |
-  +--> /api/v1/costs
-  +--> /api/v1/anomalies
-  +--> /api/v1/recommendations
-  |
-  +--> /api/v1/credentials/*
-  +--> /api/v1/scanning/*
+  +--> /auth/*                        (login/register/profile/logout/refresh)
+  +--> /api/v1/costs                 (overview + cost pages)
+  +--> /api/v1/anomalies             (anomaly pages)
+  +--> /api/v1/recommendations       (recommendation pages)
+  +--> /api/v1/credentials/*         (settings workflow)
+  +--> /api/v1/scanning/*            (approval + progress workflow)
 ```
 
 ## Key Frontend Modules
 
-- `dashboard/lib/backend-url.ts` -> single source for backend URL construction
-- `dashboard/lib/auth-context.tsx` -> auth/session state and user profile
-- `dashboard/lib/api.ts` -> cost/anomaly/recommendation API client
-- `dashboard/app/dashboard/settings/page.tsx` -> credentials + scan setup flow
+- `dashboard/lib/backend-url.ts`: backend URL resolution
+- `dashboard/lib/auth-context.tsx`: session state and profile loading
+- `dashboard/lib/auth-fetch.ts`: authenticated fetch + refresh retry
+- `dashboard/lib/api.ts`: dashboard overview API client
+- `dashboard/app/dashboard/settings/page.tsx`: credentials + scan setup flow
 
-## Page Responsibilities
-
-- `dashboard/app/dashboard/page.tsx` -> top-level overview cards/charts
-- `dashboard/app/dashboard/costs/page.tsx` -> detailed cost comparison and service breakdown
-- `dashboard/app/dashboard/anomalies/page.tsx` -> anomaly-focused view
-- `dashboard/app/dashboard/recommendations/page.tsx` -> optimization recommendation view
-- `dashboard/app/dashboard/settings/page.tsx` -> cloud credentials and scan controls
-
-## Runtime Sequence (ASCII)
+## Runtime Sequence
 
 ```text
 User opens dashboard
    |
    v
-AuthContext checks local token
+AuthProvider checks access / refresh token
    |
-   +--> GET /auth/profile (if token exists)
+   +--> GET /auth/profile
+   +--> if 401, POST /auth/refresh and retry
    |
    v
 Dashboard pages call /api/v1/* endpoints
    |
    v
-Cards/charts/components render normalized API response data
+Charts/cards/settings render normalized API data
 ```
 
 ## Operational Notes
 
-- If backend is unavailable, `dashboard/lib/api.ts` falls back to safe defaults for overview pages; credentials and scanning pages require live backend.
-- Settings pages call backend directly and require backend availability.
-- AI chat route returns a clear configuration message when `ANTHROPIC_API_KEY` is not set.
-- Access tokens expire in ~30 minutes; refresh tokens are stored but not yet used by the UI—users may need to re-login after expiry.
-- `npm run type-check` and `npm run lint` should pass before deployment.
-- `npm run build` should pass before OCI deployment.
+- Overview pages can fall back to safe mock data if the backend is down.
+- Settings and auth flows require a live backend.
+- Protected calls use bearer auth and retry once with `/auth/refresh`.
+- AI chat returns a configuration message when `ANTHROPIC_API_KEY` is not set.
+- `npm run type-check`, `npm run lint`, and `npm run build` are required before deployment.

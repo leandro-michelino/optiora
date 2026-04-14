@@ -13,3 +13,7 @@ output "allowed_ingress_cidr" {
   description = "Ingress is restricted to this laptop CIDR."
 }
 
+output "egress_cidr" {
+  value       = var.egress_cidr
+  description = "Outbound traffic destination CIDR for the public subnet."
+}

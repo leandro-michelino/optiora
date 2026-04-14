@@ -310,6 +310,7 @@ sync_local_project() {
         --exclude="__pycache__" \
         --exclude="dashboard/node_modules" \
         --exclude="dashboard/.next" \
+        --exclude="dashboard/tsconfig.tsbuildinfo" \
         --exclude="optiora.db" \
         .
 
@@ -362,7 +363,7 @@ echo "=== OptiOra setup started: $(date) ==="
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y python3 python3-venv python3-pip python3-dev build-essential libssl-dev libffi-dev curl wget postgresql-client
+apt-get install -y python3 python3-venv python3-pip python3-dev build-essential libssl-dev libffi-dev curl wget openssl postgresql-client
 
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
@@ -371,18 +372,24 @@ if [ ! -f "$APP_DIR/.env" ]; then
     cp "$APP_DIR/.env.example" "$APP_DIR/.env"
 fi
 
-if ! grep -q '^SECRET_KEY=' "$APP_DIR/.env"; then
-    echo "SECRET_KEY=$(openssl rand -hex 32)" >> "$APP_DIR/.env"
+ensure_env_value() {
+    local key="$1"
+    local value="$2"
+    if grep -q "^${key}=" "$APP_DIR/.env"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$APP_DIR/.env"
+    else
+        echo "${key}=${value}" >> "$APP_DIR/.env"
+    fi
+}
+
+current_secret="$(grep '^SECRET_KEY=' "$APP_DIR/.env" | tail -1 | cut -d'=' -f2- || true)"
+if [ -z "$current_secret" ] || [ "$current_secret" = "replace_with_random_64_char_hex" ] || [ "$current_secret" = "your-secret-key-change-in-production" ]; then
+    ensure_env_value "SECRET_KEY" "$(openssl rand -hex 32)"
 fi
-if ! grep -q '^FRONTEND_URL=' "$APP_DIR/.env"; then
-    echo "FRONTEND_URL=http://${PUBLIC_IP}:3000" >> "$APP_DIR/.env"
-fi
-if ! grep -q '^NEXT_PUBLIC_API_URL=' "$APP_DIR/.env"; then
-    echo "NEXT_PUBLIC_API_URL=http://${PUBLIC_IP}:8000" >> "$APP_DIR/.env"
-fi
-if ! grep -q '^PORT=' "$APP_DIR/.env"; then
-    echo "PORT=8000" >> "$APP_DIR/.env"
-fi
+ensure_env_value "FRONTEND_URL" "http://${PUBLIC_IP}:3000"
+ensure_env_value "NEXT_PUBLIC_API_URL" "http://${PUBLIC_IP}:8000"
+ensure_env_value "PORT" "8000"
+ensure_env_value "UVICORN_RELOAD" "false"
 
 if [ ! -d "$APP_DIR/venv" ]; then
     python3 -m venv "$APP_DIR/venv"

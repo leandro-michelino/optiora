@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-This document reflects the deployable architecture in this repository as of April 14, 2026.
+This document reflects the repository state as of April 14, 2026.
 
 ## 1) Runtime Topology
 
@@ -11,19 +11,19 @@ This document reflects the deployable architecture in this repository as of Apri
                        │ HTTPS
                        v
 ┌────────────────────────────────────────────┐
-│        Next.js Dashboard (port 3000)      │
-│  - Auth flows                              │
-│  - Costs/anomalies/recommendations         │
-│  - Credential and scanning setup           │
+│        Next.js Dashboard (port 3000)       │
+│  - auth/session handling                    │
+│  - cost, anomaly, recommendation views      │
+│  - credentials + scan setup                 │
 └──────────────────────┬─────────────────────┘
-                       │ REST
+                       │ REST + Bearer JWT
                        v
 ┌────────────────────────────────────────────┐
-│         FastAPI Backend (port 8000)       │
-│  /auth/*                                   │
-│  /api/v1/credentials/*                     │
-│  /api/v1/scanning/*                        │
-│  /api/v1/costs|anomalies|recommendations   │
+│         FastAPI Backend (port 8000)        │
+│  /auth/*                                    │
+│  /api/v1/credentials/*                      │
+│  /api/v1/scanning/*                         │
+│  /api/v1/costs|anomalies|recommendations    │
 └───────────────┬─────────────────┬──────────┘
                 │                 │
                 │ SQLAlchemy      │ Cloud SDK clients
@@ -31,96 +31,32 @@ This document reflects the deployable architecture in this repository as of Apri
       ┌──────────────────┐   ┌───────────────────────┐
       │ SQLite/Postgres  │   │ AWS/Azure/GCP/OCI APIs│
       │ - users          │   │ cost + usage endpoints │
-      │ - refresh tokens │   └───────────────────────┘
+      │ - orgs + roles   │   └───────────────────────┘
+      │ - refresh tokens │
       │ - credentials    │
       │ - scan state     │
       └──────────────────┘
 ```
 
-### Auth + Token (runtime)
+## 2) Auth + Session Flow
 
 ```text
 Login form -> POST /auth/login
-    -> Access token (30m) + Refresh token (7d, hashed in DB)
-    -> UI stores both in localStorage (refresh currently unused)
+    -> access token (30m)
+    -> refresh token (7d, hashed in DB)
+    -> dashboard stores both in localStorage
 
-Subsequent API calls
+Protected dashboard request
     -> Authorization: Bearer <access>
-    -> /auth/profile enforces active user
-    -> Logout revokes all refresh tokens for the user
+    -> if 401, dashboard calls POST /auth/refresh
+    -> retries request with fresh access token
+
+Logout
+    -> POST /auth/logout
+    -> all refresh tokens for the user are revoked
 ```
 
-### Dashboard Data Fetch Path
-
-```text
-Dashboard UI (Next.js client)
-  |-- /api/v1/costs | /anomalies | /recommendations
-  |   -> Backend aggregates provider tool results
-  |   -> UI falls back to mock data if backend unavailable
-  |
-  |-- Credential flows -> /api/v1/credentials/*
-  |-- Scanning flows   -> /api/v1/scanning/* (background task + DB state)
-```
-
-## 2) OCI Deployment Topology
-
-```text
-OCI Compute VM
-├── /opt/optiora
-│   ├── finops_mcp/            # FastAPI code
-│   ├── dashboard/             # Next.js code + built output
-│   ├── .env                   # runtime environment
-│   └── venv/                  # Python virtual environment
-├── systemd
-│   ├── optiora-api.service
-│   └── optiora-dashboard.service
-└── logs
-    ├── /var/log/optiora-api.log
-    ├── /var/log/optiora-dashboard.log
-    └── /var/log/optiora-setup.log
-```
-
-## 3) Laptop-Controlled Deploy Flow
-
-```text
-Developer Laptop
-   |
-   | ./deploy/deploy-oci.sh compute
-   v
-OCI CLI provisions/starts VM
-   |
-   | tar + scp of LOCAL workspace snapshot
-   v
-VM receives /tmp/optiora-deploy.tar.gz
-   |
-   | unpack -> /opt/optiora
-   | pip install -e /opt/optiora
-   | npm ci && npm run build
-   v
-systemd restart (API + Dashboard)
-```
-
-No Git clone and no CI trigger is required for deployment.
-
-## 4) Auth + Token Flow
-
-```text
-POST /auth/login
-   |
-   v
-Password verification (bcrypt)
-   |
-   v
-Issue access + refresh JWT
-   |
-   v
-Store refresh token hash in DB
-   |
-   v
-Client uses Bearer access token for /auth/profile and protected API calls
-```
-
-## 5) Credential + Scan Flow
+## 3) Credential + Scan Flow
 
 ```text
 Dashboard Settings
@@ -131,27 +67,101 @@ Provider API probe
    |
    | POST /api/v1/credentials/add
    v
-Persist sanitized credential metadata
+Persist sanitized credential metadata only
    |
    | POST /api/v1/scanning/approve
    | POST /api/v1/scanning/start
    v
-Background scan run stored in scan_runs
+Background scan run recorded in scan_runs
    |
    | GET /api/v1/scanning/{scan_id}/progress
    v
-Progress + results to UI
+Progress + results returned to dashboard
 ```
 
-## 6) Operational Notes
+Server-side customer scoping:
 
-- Backend startup fails fast if DB initialization fails.
-- API health/version and app metadata are consistent (`0.1.0` in current codebase).
-- Dashboard can run without Anthropic key; AI chat returns a configuration message instead of crashing.
-- Cloud-cost provider tools still include fallback/mock behavior when SDK/config is missing.
-- Frontend keeps refresh tokens but does not yet use them; sessions expire when the 30m access token expires (re-login required).
+```text
+JWT subject (user.id)
+   |
+   v
+customer_id := "user-<id>"
+   |
+   v
+credentials / scans stored and queried with server-derived scope
+```
 
-## 7) Terraform Security Baseline (Plan-Only)
+The client no longer controls the persisted customer scope.
+
+## 4) Environment + Configuration Loading
+
+```text
+python -m finops_mcp.app
+   |
+   v
+finops_mcp/__init__.py loads .env
+   |
+   +--> auth_utils reads SECRET_KEY
+   +--> orm_models resolves DATABASE_URL
+   +--> provider tools read cloud credentials
+```
+
+Database resolution order:
+
+```text
+DATABASE_URL (preferred)
+   |
+   | if blank
+   v
+OCI_DB_HOST + OCI_DB_USER + OCI_DB_PASSWORD (+ OCI_DB_NAME / OCI_DB_PORT)
+   |
+   | if incomplete
+   v
+sqlite:///./optiora.db
+```
+
+## 5) OCI Deployment Topology
+
+```text
+OCI Compute VM
+├── /opt/optiora
+│   ├── finops_mcp/            # FastAPI code
+│   ├── dashboard/             # Next.js app
+│   ├── .env                   # runtime environment
+│   └── venv/                  # Python virtualenv
+├── systemd
+│   ├── optiora-api.service
+│   └── optiora-dashboard.service
+└── logs
+    ├── /var/log/optiora-api.log
+    ├── /var/log/optiora-dashboard.log
+    └── /var/log/optiora-setup.log
+```
+
+Remote deploy flow:
+
+```text
+Developer laptop
+   |
+   | ./deploy/deploy-oci.sh compute
+   v
+OCI CLI provisions/starts VM
+   |
+   | tar + scp of LOCAL workspace snapshot
+   v
+VM receives /tmp/optiora-deploy.tar.gz
+   |
+   | unpack -> /opt/optiora
+   | force FRONTEND_URL=http://<public-ip>:3000
+   | force NEXT_PUBLIC_API_URL=http://<public-ip>:8000
+   | replace placeholder SECRET_KEY if needed
+   | pip install -e /opt/optiora
+   | npm ci && npm run build
+   v
+systemd restart (API + Dashboard)
+```
+
+## 6) Terraform Network Baseline
 
 ```text
 terraform plan
@@ -162,12 +172,22 @@ terraform plan
    +--> Security List
    +--> Public Subnet
 
-Security List ingress:
-  SSH    22   <- laptop_cidr/32
-  UI   3000   <- laptop_cidr/32
-  API  8000   <- laptop_cidr/32
+Ingress:
+  SSH    22   <- laptop_cidr
+  UI   3000   <- laptop_cidr
+  API  8000   <- laptop_cidr
 
-No 0.0.0.0/0 ingress is defined.
-Egress and route table are also pinned to laptop_cidr; this blocks typical outbound package downloads.
-To relax for install/updates, set destination to 0.0.0.0/0 and broaden egress in security list.
+Egress:
+  all traffic -> egress_cidr
+  default     -> 0.0.0.0/0
 ```
+
+This keeps inbound access laptop-scoped while still allowing package installation and provider API egress by default.
+
+## 7) Operational Notes
+
+- Backend startup fails fast if DB initialization fails.
+- Credential validation returns troubleshooting details but never persists raw secrets.
+- Dashboard overview pages can fall back to safe mock data when backend data is unavailable.
+- AI chat degrades cleanly when `ANTHROPIC_API_KEY` is not configured.
+- Password strength is enforced on both the frontend and backend.

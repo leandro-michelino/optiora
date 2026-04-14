@@ -3,6 +3,8 @@ region         = "us-phoenix-1"
 
 # Restrict ingress to your laptop public IP only.
 laptop_cidr = "79.112.21.102/32"
+# Keep outbound access open by default so the VM can install packages and reach cloud APIs.
+egress_cidr = "0.0.0.0/0"
 
 project_code = "optiora"
 environment  = "prod"
@@ -11,4 +13,3 @@ name_suffix  = "001"
 
 vcn_cidr           = "10.50.0.0/16"
 public_subnet_cidr = "10.50.1.0/24"
-

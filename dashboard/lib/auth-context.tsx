@@ -3,6 +3,13 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import {
+  authorizedFetch,
+  clearStoredTokens,
+  getStoredAccessToken,
+  getStoredRefreshToken,
+  storeTokens,
+} from "@/lib/auth-fetch";
 import { backendUrl } from "@/lib/backend-url";
 
 interface AuthUser {
@@ -25,13 +32,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function getAccessToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return localStorage.getItem("access_token");
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,23 +39,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = Boolean(user);
 
-  const loadProfile = async (token: string) => {
-    const response = await axios.get<AuthUser>(backendUrl("/auth/profile"), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    setUser(response.data);
+  const loadProfile = async () => {
+    const response = await authorizedFetch(backendUrl("/auth/profile"));
+    if (!response.ok) {
+      throw new Error("Failed to load profile");
+    }
+    const data = (await response.json()) as AuthUser;
+    setUser(data);
   };
 
   useEffect(() => {
     const init = async () => {
       try {
-        const token = getAccessToken();
-        if (token) {
-          await loadProfile(token);
+        if (!getStoredAccessToken() && !getStoredRefreshToken()) {
+          setUser(null);
+          return;
         }
+        await loadProfile();
       } catch {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
+        clearStoredTokens();
         setUser(null);
       } finally {
         setLoading(false);
@@ -72,9 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refresh_token: string;
       }>(backendUrl("/auth/login"), { email, password });
 
-      localStorage.setItem("access_token", response.data.access_token);
-      localStorage.setItem("refresh_token", response.data.refresh_token);
-      await loadProfile(response.data.access_token);
+      storeTokens(response.data.access_token, response.data.refresh_token);
+      await loadProfile();
     } catch (error: any) {
       const message =
         error?.response?.data?.detail || "Login failed. Check your credentials.";
@@ -98,19 +99,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      const token = getAccessToken();
-      if (token) {
-        await axios.post(
-          backendUrl("/auth/logout"),
-          {},
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-      }
+      await authorizedFetch(backendUrl("/auth/logout"), {
+        method: "POST",
+      });
     } catch {
       // Best-effort logout.
     } finally {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
+      clearStoredTokens();
       setUser(null);
       router.push("/login");
     }

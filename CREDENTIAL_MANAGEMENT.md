@@ -1,35 +1,37 @@
 # Credential Management
 
-This project validates cloud credentials and persists credential metadata for each customer/provider pair.
+OptiOra validates cloud credentials and stores only sanitized metadata needed for the dashboard workflow.
 
-## Scope
+## Supported Providers
 
-- Validate: AWS, Azure, GCP, OCI
-- Store: provider + customer mapping, validity status, test timestamp, message
-- List/Delete: full CRUD for dashboard settings workflow
-- Customer scoping: dashboard uses authenticated user identity-derived `customer_id` (no hardcoded demo identifier)
+- AWS
+- Azure
+- GCP
+- OCI
 
 ## Data Path
 
 ```text
-Dashboard Settings
+Authenticated dashboard user
   |
-  +--> POST /api/v1/credentials/validate
-  |      - provider-specific API probe
+  | POST /api/v1/credentials/validate
+  v
+Provider-specific API probe
   |
-  +--> POST /api/v1/credentials/add
-         - persists credential record metadata
-         - marks provider active and valid
+  | POST /api/v1/credentials/add
+  v
+Store sanitized metadata in credential_records
 ```
 
 ## Storage Model
 
-Credential metadata is persisted in `credential_records` via SQLAlchemy model `CredentialRecord`.
-Raw cloud secrets are not persisted; credentials are sanitized before save.
+Credentials are persisted in `credential_records`.
+
+Stored fields:
 
 - `customer_id`
 - `provider`
-- `credential_json` (sanitized metadata only, no raw secrets)
+- `credential_json`
 - `is_active`
 - `is_valid`
 - `validation_message`
@@ -37,16 +39,34 @@ Raw cloud secrets are not persisted; credentials are sanitized before save.
 - `created_at`
 - `updated_at`
 
+## What Is Not Stored
+
+- AWS secret access keys
+- Azure client secrets
+- raw GCP service account JSON
+- OCI private keys or config secrets
+
+The backend masks or summarizes credential payloads before writing them to the database.
+
+## Customer Scoping
+
+```text
+JWT user -> server derives customer_id -> DB lookup/write
+```
+
+- the client may no longer choose an arbitrary `customer_id`
+- credentials and scans are scoped to the authenticated user identity
+
 ## Security Notes
 
-- Validation errors are returned to client for troubleshooting.
-- Auth is JWT-based for user sessions.
-- For production, use encrypted disks/volumes and least-privilege IAM on the OCI host.
-- If you need long-lived secret storage, integrate KMS/Vault before enabling automated actions that require secret reuse.
+- Credential validation is authenticated.
+- Validation errors are returned for troubleshooting, but raw secrets are not persisted.
+- For production, use encrypted volumes and least-privilege cloud IAM roles.
+- If you need long-lived secret reuse for automation, integrate Vault/KMS before enabling write actions.
 
 ## Related Endpoints
 
 - `POST /api/v1/credentials/validate`
 - `POST /api/v1/credentials/add`
-- `GET /api/v1/credentials?customer_id=...`
-- `DELETE /api/v1/credentials/{provider}?customer_id=...`
+- `GET /api/v1/credentials`
+- `DELETE /api/v1/credentials/{provider}`

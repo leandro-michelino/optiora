@@ -78,7 +78,7 @@ def create_access_token(
     
     expire = datetime.utcnow() + expires_delta
     to_encode = {
-        "sub": user_id,
+        "sub": str(user_id),
         "email": email,
         "org_id": org_id,
         "role": role,
@@ -94,7 +94,7 @@ def create_refresh_token(user_id: int, email: str) -> str:
     """Create JWT refresh token."""
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode = {
-        "sub": user_id,
+        "sub": str(user_id),
         "email": email,
         "type": "refresh",
         "exp": expire,

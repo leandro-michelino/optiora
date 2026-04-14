@@ -13,20 +13,17 @@ Default URL: `http://localhost:3000`
 
 ## Backend URL
 
-Set backend base URL via:
+Preferred env:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-The dashboard uses this for:
+If unset, the dashboard falls back to:
 
-- `/auth/*`
-- `/api/v1/costs`
-- `/api/v1/anomalies`
-- `/api/v1/recommendations`
-- `/api/v1/credentials/*`
-- `/api/v1/scanning/*`
+```text
+<current browser protocol>://<current hostname>:8000
+```
 
 ## Checks
 
@@ -35,3 +32,9 @@ npm run type-check
 npm run lint
 npm run build
 ```
+
+## Notes
+
+- protected requests use bearer auth and refresh-token retry
+- overview pages can fall back to safe mock data
+- settings/auth flows require a live backend

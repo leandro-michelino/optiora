@@ -2,9 +2,6 @@
 
 import os
 from dataclasses import dataclass
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 @dataclass
@@ -39,6 +36,7 @@ class Config:
     oci_region: str = os.getenv("OCI_REGION", "us-phoenix-1")
 
     # OCI Database (PostgreSQL for audit logs)
+    database_url: str = os.getenv("DATABASE_URL", "")
     oci_db_host: str = os.getenv("OCI_DB_HOST", "")
     oci_db_port: int = int(os.getenv("OCI_DB_PORT", "5432"))
     oci_db_user: str = os.getenv("OCI_DB_USER", "")

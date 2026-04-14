@@ -1,48 +1,34 @@
-# Terraform (Plan-Only Baseline)
+# Terraform Network Baseline
 
-This folder contains an OCI network baseline designed for strict access control.
+This folder contains the OCI network baseline used by OptiOra.
 
 ## Design Intent
 
-- OCI naming pattern:
+- OCI naming convention:
   - `vcn-<project>-<env>-<region>-<suffix>`
   - `igw-<project>-<env>-<region>-<suffix>`
   - `rt-public-<project>-<env>-<region>-<suffix>`
   - `sl-public-<project>-<env>-<region>-<suffix>`
   - `subnet-public-<project>-<env>-<region>-<suffix>`
-- Ingress is restricted to `laptop_cidr` only.
-- No `0.0.0.0/0` is used in ingress rules.
+- ingress is restricted to `laptop_cidr`
+- outbound traffic is controlled by `egress_cidr`
 
-## Important Tradeoff
+## Defaults
 
-The current route and egress are also restricted to `laptop_cidr`. This is very restrictive and may block package downloads and normal outbound traffic from OCI instances.
+- `laptop_cidr`: required, used for SSH/UI/API ingress
+- `egress_cidr`: defaults to `0.0.0.0/0`
 
-If you need package installs or outbound updates during provisioning, you can relax egress and routing:
+That default keeps the subnet usable for:
 
-```hcl
-resource "oci_core_route_table" "public" {
-  # ...
-  route_rules {
-    destination       = "0.0.0.0/0"   # was laptop_cidr
-    network_entity_id = oci_core_internet_gateway.main.id
-  }
-}
+- package installation during provisioning
+- OCI/API egress
+- dashboard/backend dependency installation
 
-resource "oci_core_security_list" "public" {
-  # ...
-  egress_security_rules {
-    protocol    = "all"
-    destination = "0.0.0.0/0"        # was laptop_cidr
-  }
-}
-```
-
-Ingress should stay laptop-scoped (or VPN/allowlist) to avoid exposing API/UI.
+If you want a more restrictive outbound policy, override `egress_cidr`.
 
 ## Usage
 
 ```bash
-cd terraform
 terraform init
 terraform validate
 terraform plan \
@@ -51,5 +37,22 @@ terraform plan \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 
-`terraform apply` is intentionally not part of this workflow unless explicitly requested.
+Example with restricted egress:
 
+```bash
+terraform plan \
+  -var="compartment_id=<your_compartment_ocid>" \
+  -var="laptop_cidr=<your_public_ip>/32" \
+  -var="egress_cidr=<trusted-egress-cidr>"
+```
+
+`terraform apply` is intentionally not part of the default workflow unless explicitly requested.
+
+## Topology
+
+```text
+VCN
+└── Public Subnet
+    ├── Ingress: 22, 3000, 8000 <- laptop_cidr
+    └── Egress: all -> egress_cidr
+```

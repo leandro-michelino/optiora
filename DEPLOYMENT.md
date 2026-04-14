@@ -1,41 +1,41 @@
 # OptiOra Deployment Guide (OCI)
 
-This project is deployed as two services on an OCI compute instance:
+This repository deploys two services onto one OCI compute instance:
 
-- `optiora-api.service` -> FastAPI backend (`:8000`)
-- `optiora-dashboard.service` -> Next.js dashboard (`:3000`)
+- `optiora-api.service` -> FastAPI backend on `:8000`
+- `optiora-dashboard.service` -> Next.js dashboard on `:3000`
 
-Deployment is laptop-driven: `deploy/deploy-oci.sh` packages your current local workspace and pushes it to OCI over SSH/SCP. It does not pull from Git or require CI/CD triggers.
+Deployment is laptop-driven. `deploy/deploy-oci.sh` packages the current local workspace, uploads it over SSH/SCP, installs dependencies on the VM, and restarts the services.
 
 ## Prerequisites
 
 - OCI CLI installed and configured (`oci setup config`)
 - `OCI_COMPARTMENT_ID` exported
-- SSH access allowed to created instance
+- SSH keypair available locally
+- outbound access from the VM to package registries and cloud APIs
 
-## Local Preflight (Recommended)
+## Local Preflight
 
 ```bash
 python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
+python3 -m compileall finops_mcp
+
 cd dashboard
 npm run type-check
 npm run lint
 npm run build
 ```
 
-## Terraform Plan-Only (Optional, Network Baseline)
+Optional Terraform baseline:
 
 ```bash
-cd terraform
-terraform init
-terraform validate
-terraform plan \
+terraform -chdir=../terraform init
+terraform -chdir=../terraform validate
+terraform -chdir=../terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
   -var="region=us-phoenix-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
-
-This baseline uses OCI naming conventions and restricts ingress to `laptop_cidr` only.
 
 ## Quick Deploy
 
@@ -45,18 +45,28 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh status
 ```
 
-Re-run `./deploy/deploy-oci.sh compute` any time you change code locally; the script re-packages your current local files and redeploys them to the VM.
+Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
+
+## What The Deploy Script Fixes Automatically
+
+- creates `.env` from `.env.example` if missing
+- rewrites `FRONTEND_URL` to `http://<instance-ip>:3000`
+- rewrites `NEXT_PUBLIC_API_URL` to `http://<instance-ip>:8000`
+- replaces placeholder `SECRET_KEY` values with a generated secret
+- builds the dashboard after the remote env has been corrected
+
+Those rewrites matter because the dashboard is browser-executed; leaving `NEXT_PUBLIC_API_URL=http://localhost:8000` would break the deployed UI.
 
 ## Command Reference
 
 ```bash
-./deploy/deploy-oci.sh compute     # Deploy / redeploy
-./deploy/deploy-oci.sh status      # Show instance + public IP
-./deploy/deploy-oci.sh logs        # Print SSH/log tail instructions
-./deploy/deploy-oci.sh stop        # Stop compute instance
-./deploy/deploy-oci.sh start       # Start compute instance
-./deploy/deploy-oci.sh restart     # Reboot compute instance
-./deploy/deploy-oci.sh destroy     # Terminate instance
+./deploy/deploy-oci.sh compute
+./deploy/deploy-oci.sh status
+./deploy/deploy-oci.sh logs
+./deploy/deploy-oci.sh stop
+./deploy/deploy-oci.sh start
+./deploy/deploy-oci.sh restart
+./deploy/deploy-oci.sh destroy
 ```
 
 ## Environment Variables
@@ -73,12 +83,13 @@ OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/id_ed25519
 OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/id_ed25519.pub
 ```
 
-Optional backend runtime variables:
+Optional runtime values copied into the remote `.env`:
 
 ```env
-PORT=8000
-UVICORN_RELOAD=false
-FRONTEND_URL=http://<instance-ip>:3000
+DATABASE_URL=
+SECRET_KEY=
+ANTHROPIC_API_KEY=
+OCI_CONFIG_FILE=
 ```
 
 ## Post-Deployment Validation
@@ -86,15 +97,17 @@ FRONTEND_URL=http://<instance-ip>:3000
 ```bash
 curl http://<instance-ip>:8000/health
 curl http://<instance-ip>:8000/api/v1/info
+curl http://<instance-ip>:3000
 ```
 
-Check services on host:
+On the VM:
 
 ```bash
 sudo systemctl status optiora-api
 sudo systemctl status optiora-dashboard
 sudo tail -f /var/log/optiora-api.log
 sudo tail -f /var/log/optiora-dashboard.log
+sudo tail -f /var/log/optiora-setup.log
 ```
 
 ## Troubleshooting
@@ -102,33 +115,35 @@ sudo tail -f /var/log/optiora-dashboard.log
 ### API unhealthy
 
 1. `sudo journalctl -u optiora-api -n 100 --no-pager`
-2. Confirm env file exists: `/opt/optiora/.env`
-3. Validate Python deps in venv: `/opt/optiora/venv/bin/pip list`
+2. Confirm `/opt/optiora/.env` exists and has a non-placeholder `SECRET_KEY`
+3. Confirm backend deps exist: `/opt/optiora/venv/bin/pip list`
+4. Check DB config: `DATABASE_URL` or `OCI_DB_*`
 
 ### Dashboard unreachable
 
 1. `sudo journalctl -u optiora-dashboard -n 100 --no-pager`
-2. Ensure Node installed on instance (`node -v`, `npm -v`)
-3. Confirm service starts from `/opt/optiora/dashboard`
+2. Confirm `NEXT_PUBLIC_API_URL` in `/opt/optiora/.env` points to the VM public IP
+3. Ensure `node -v` and `npm -v` work on the instance
 
 ### Credential validation failures
 
-1. Re-check provider credentials and required permissions
-2. Ensure outbound access to cloud provider APIs
+1. Re-check provider permissions and region/subscription/project values
+2. Confirm outbound egress from the subnet to the cloud provider APIs
 3. Use `/api/v1/credentials/validate` response details for root cause
 
-## Deployment Architecture (ASCII)
+## Deployment Architecture
 
 ```text
-OCI Compute VM
+Developer Laptop
+   |
+   | deploy/deploy-oci.sh compute
+   v
+OCI VM
 ├── /opt/optiora
-│   ├── finops_mcp (FastAPI app)
-│   └── dashboard (Next.js app)
-├── systemd
-│   ├── optiora-api.service
-│   └── optiora-dashboard.service
-└── logs
-    ├── /var/log/optiora-api.log
-    ├── /var/log/optiora-dashboard.log
-    └── /var/log/optiora-setup.log
+│   ├── finops_mcp
+│   ├── dashboard
+│   ├── .env
+│   └── venv
+├── optiora-api.service
+└── optiora-dashboard.service
 ```

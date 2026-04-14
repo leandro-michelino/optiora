@@ -1,29 +1,62 @@
 """Database models for OptiOra with SQLAlchemy ORM."""
 
-from sqlalchemy import (
-    create_engine,
-    Column,
-    Integer,
-    Float,
-    String,
-    DateTime,
-    Boolean,
-    ForeignKey,
-    Enum,
-    Text,
-    UniqueConstraint,
-)
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
-from datetime import datetime
 import enum
 import os
+from datetime import datetime
+from urllib.parse import quote_plus
 
-# Database URL from environment or default
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./optiora.db")
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+)
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
-# For production PostgreSQL, use:
-# DATABASE_URL = "postgresql://user:password@localhost/optiora"
+
+def _is_placeholder(value: str) -> bool:
+    """Treat common example values as unset so local startup stays on SQLite."""
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    return (
+        normalized.startswith("your_")
+        or normalized.startswith("replace_")
+        or normalized.endswith(".example.com")
+        or "oraclevcn.com" in normalized
+    )
+
+
+def _resolve_database_url() -> str:
+    """Support explicit DATABASE_URL or derive PostgreSQL from OCI DB settings."""
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        return database_url
+
+    db_host = os.getenv("OCI_DB_HOST", "").strip()
+    db_user = os.getenv("OCI_DB_USER", "").strip()
+    db_password = os.getenv("OCI_DB_PASSWORD", "").strip()
+    db_name = os.getenv("OCI_DB_NAME", "optiora").strip() or "optiora"
+    db_port = os.getenv("OCI_DB_PORT", "5432").strip() or "5432"
+
+    if not any(_is_placeholder(value) for value in [db_host, db_user, db_password]):
+        return (
+            "postgresql+psycopg2://"
+            f"{quote_plus(db_user)}:{quote_plus(db_password)}@"
+            f"{db_host}:{db_port}/{quote_plus(db_name)}"
+        )
+
+    return "sqlite:///./optiora.db"
+
+
+DATABASE_URL = _resolve_database_url()
 
 engine = create_engine(
     DATABASE_URL,

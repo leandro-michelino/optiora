@@ -22,7 +22,7 @@ resource "oci_core_route_table" "public" {
   display_name   = "rt-public-${local.name_prefix}"
 
   route_rules {
-    destination       = var.laptop_cidr
+    destination       = var.egress_cidr
     network_entity_id = oci_core_internet_gateway.main.id
   }
 }
@@ -34,7 +34,7 @@ resource "oci_core_security_list" "public" {
 
   egress_security_rules {
     protocol    = "all"
-    destination = var.laptop_cidr
+    destination = var.egress_cidr
   }
 
   ingress_security_rules {

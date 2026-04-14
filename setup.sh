@@ -7,6 +7,7 @@ AUTO_INSTALL_TOOLS="${AUTO_INSTALL_TOOLS:-false}"
 SKIP_BACKEND=false
 SKIP_DASHBOARD=false
 SKIP_TERRAFORM=false
+PYTHON_CMD=""
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -28,6 +29,33 @@ log_warn() {
 
 log_err() {
   echo -e "${RED}[ERROR]${NC} $1"
+}
+
+python_supported() {
+  local cmd="$1"
+  "$cmd" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] < (3, 14) else 1)' \
+    >/dev/null 2>&1
+}
+
+resolve_python_cmd() {
+  local candidates=("python3" "python3.13" "python3.12" "python3.11" "python3.10")
+  local version
+
+  for candidate in "${candidates[@]}"; do
+    if ! command -v "$candidate" >/dev/null 2>&1; then
+      continue
+    fi
+
+    if python_supported "$candidate"; then
+      PYTHON_CMD="$candidate"
+      version="$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
+      log_ok "Using ${candidate} (${version}) for backend setup"
+      return 0
+    fi
+  done
+
+  log_err "No supported Python interpreter found. OptiOra currently supports Python 3.10 through 3.13."
+  exit 1
 }
 
 usage() {
@@ -153,9 +181,15 @@ setup_backend() {
   cd "${ROOT_DIR}"
 
   if [[ ! -d ".venv" ]]; then
-    python3 -m venv .venv
+    "${PYTHON_CMD}" -m venv .venv
     log_ok "Created virtual environment at .venv"
   else
+    if ! .venv/bin/python -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] < (3, 14) else 1)' >/dev/null 2>&1; then
+      local venv_version
+      venv_version=$(.venv/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")' 2>/dev/null || echo "unknown")
+      log_err "Existing .venv uses unsupported Python ${venv_version}. Remove .venv and rerun setup."
+      exit 1
+    fi
     log_ok "Virtual environment already exists"
   fi
 
@@ -205,6 +239,7 @@ main() {
   ensure_tool node node "Dashboard runtime"
   ensure_tool npm node "Dashboard package manager"
   ensure_tool jq jq "Utility used by deployment scripts"
+  resolve_python_cmd
 
   log_info "Checking optional deployment tools..."
   check_optional_tool oci oci-cli "OCI provisioning and deployment"

@@ -8,6 +8,7 @@ from sqlalchemy import and_
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+import re
 
 from .orm_models import User, Organization, UserOrganization, RefreshToken, get_db, UserRole
 from .auth_utils import (
@@ -25,6 +26,9 @@ from .auth_utils import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 security = HTTPBearer()
+
+
+PASSWORD_SPECIAL_CHARS = "!@#$%^&*"
 
 
 # Schemas
@@ -52,6 +56,26 @@ class UpdateProfileRequest(BaseModel):
 
 
 # Dependencies
+def _normalize_email(email: str) -> str:
+    """Normalize email addresses for consistent storage and lookup."""
+    return email.strip().lower()
+
+
+def _validate_password_strength(password: str) -> Optional[str]:
+    """Keep server-side password rules aligned with the dashboard signup flow."""
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain uppercase letter"
+    if not re.search(r"[a-z]", password):
+        return "Password must contain lowercase letter"
+    if not re.search(r"\d", password):
+        return "Password must contain a number"
+    if not any(char in PASSWORD_SPECIAL_CHARS for char in password):
+        return "Password must contain special character (!@#$%^&*)"
+    return None
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
@@ -100,63 +124,71 @@ def get_current_user(
 @router.post("/register", response_model=UserSchema, status_code=status.HTTP_201_CREATED)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
     """Register a new user."""
-    
+    normalized_email = _normalize_email(str(request.email))
+
     # Validate email not already taken
-    existing_user = db.query(User).filter(User.email == request.email).first()
+    existing_user = db.query(User).filter(User.email == normalized_email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-    
+
     # Validate password strength
-    if len(request.password) < 8:
+    password_error = _validate_password_strength(request.password)
+    if password_error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters",
+            detail=password_error,
         )
-    
-    # Create user
-    user = User(
-        email=request.email,
-        password_hash=hash_password(request.password),
-        full_name=request.full_name or "",
-        is_active=True,
-    )
-    
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    
-    # Create default organization for user
-    org = Organization(
-        name=f"{request.full_name or request.email.split('@')[0]}'s Organization",
-        owner_id=user.id,
-    )
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    
-    # Add user to organization as owner
-    user_org = UserOrganization(
-        user_id=user.id,
-        organization_id=org.id,
-        role=UserRole.OWNER,
-    )
-    db.add(user_org)
-    db.commit()
-    
-    logger.info(f"User registered: {user.email}")
-    
+
+    try:
+        # Create user and default organization atomically to avoid orphaned users.
+        user = User(
+            email=normalized_email,
+            password_hash=hash_password(request.password),
+            full_name=(request.full_name or "").strip(),
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
+
+        org_owner_name = request.full_name or normalized_email.split("@")[0]
+        org = Organization(
+            name=f"{org_owner_name}'s Organization",
+            owner_id=user.id,
+        )
+        db.add(org)
+        db.flush()
+
+        user_org = UserOrganization(
+            user_id=user.id,
+            organization_id=org.id,
+            role=UserRole.OWNER,
+        )
+        db.add(user_org)
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        logger.exception("User registration failed for %s", normalized_email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create account",
+        )
+
+    logger.info("User registered: %s", user.email)
+
     return user
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest, db: Session = Depends(get_db)):
     """Authenticate user and return JWT tokens."""
-    
+    normalized_email = _normalize_email(str(request.email))
+
     # Find user by email
-    user = db.query(User).filter(User.email == request.email).first()
+    user = db.query(User).filter(User.email == normalized_email).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -211,7 +243,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
     user.last_login = datetime.utcnow()
     db.commit()
     
-    logger.info(f"User logged in: {user.email}")
+    logger.info("User logged in: %s", user.email)
     
     return TokenResponse(
         access_token=access_token,
@@ -224,7 +256,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     """Refresh access token using refresh token."""
-    
+
     # Verify refresh token
     payload = verify_refresh_token(request.refresh_token)
     if not payload:
@@ -233,7 +265,13 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
             detail="Invalid or expired refresh token",
         )
     
-    user_id: int = payload.get("sub")
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token subject",
+        )
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
@@ -298,7 +336,7 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     db.add(new_rt_obj)
     db.commit()
     
-    logger.info(f"Token refreshed for user: {user.email}")
+    logger.info("Token refreshed for user: %s", user.email)
     
     return TokenResponse(
         access_token=access_token,
@@ -329,7 +367,7 @@ async def update_profile(
     db.commit()
     db.refresh(current_user)
     
-    logger.info(f"Profile updated for user: {current_user.email}")
+    logger.info("Profile updated for user: %s", current_user.email)
     
     return current_user
 
@@ -348,7 +386,7 @@ async def logout(
     
     db.commit()
     
-    logger.info(f"User logged out: {current_user.email}")
+    logger.info("User logged out: %s", current_user.email)
     
     return {"message": "Logged out successfully"}
 
@@ -356,15 +394,15 @@ async def logout(
 @router.post("/password-reset-request")
 async def request_password_reset(email: str, db: Session = Depends(get_db)):
     """Request password reset using email verification."""
-    
-    user = db.query(User).filter(User.email == email).first()
+    normalized_email = _normalize_email(email)
+    user = db.query(User).filter(User.email == normalized_email).first()
     if not user:
         # Don't reveal if email exists
         return {"message": "If email exists, password reset link sent"}
     
     # TODO: Send password reset email with OTP or link
     # For now, just acknowledge the request
-    logger.info(f"Password reset requested for: {email}")
+    logger.info("Password reset requested for: %s", normalized_email)
     
     return {"message": "If email exists, password reset link sent"}
 

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Trash2, Loader } from 'lucide-react';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
+import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 import { useAuth } from '@/lib/auth-context';
 
@@ -23,19 +24,29 @@ interface ScanApprovalConfig {
 
 export default function SettingsPage() {
   const { user } = useAuth()
-  const customerId = user ? `user-${user.id}` : 'anonymous'
   const [storedCredentials, setStoredCredentials] = useState<StoredCredential[]>([])
   const [loadingCredentials, setLoadingCredentials] = useState(true)
   const [scanningApprovalStep, setScanningApprovalStep] = useState(false)
   const [approvedProviders, setApprovedProviders] = useState<string[]>([])
 
   useEffect(() => {
-    loadCredentials()
-  }, [customerId])
+    if (!user) {
+      setStoredCredentials([])
+      setLoadingCredentials(false)
+      return
+    }
+
+    setLoadingCredentials(true)
+    void loadCredentials()
+  }, [user?.id])
 
   const loadCredentials = async () => {
+    if (!user) {
+      return
+    }
+
     try {
-      const res = await fetch(backendUrl(`/api/v1/credentials?customer_id=${encodeURIComponent(customerId)}`))
+      const res = await authorizedFetch(backendUrl('/api/v1/credentials'))
       if (res.ok) {
         const data = await res.json()
         setStoredCredentials(data.credentials || [])
@@ -61,8 +72,8 @@ export default function SettingsPage() {
     if (!confirm(`Delete ${provider.toUpperCase()} credentials?`)) return
 
     try {
-      const res = await fetch(
-        backendUrl(`/api/v1/credentials/${provider}?customer_id=${encodeURIComponent(customerId)}`),
+      const res = await authorizedFetch(
+        backendUrl(`/api/v1/credentials/${provider}`),
         {
           method: 'DELETE'
         }
@@ -78,22 +89,18 @@ export default function SettingsPage() {
 
   const handleScanningApproved = async (config: ScanApprovalConfig) => {
     try {
-      const res = await fetch(backendUrl('/api/v1/scanning/approve'), {
+      const res = await authorizedFetch(backendUrl('/api/v1/scanning/approve'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: customerId,
-          ...config
-        })
+        body: JSON.stringify(config)
       })
 
       if (res.ok) {
         // Directly start the scan
-        const scanRes = await fetch(backendUrl('/api/v1/scanning/start'), {
+        const scanRes = await authorizedFetch(backendUrl('/api/v1/scanning/start'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            customer_id: customerId,
             providers: approvedProviders
           })
         })
@@ -129,7 +136,7 @@ export default function SettingsPage() {
           {/* Add Credentials Section */}
           <div>
             <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Add Cloud Provider</h2>
-            <CredentialForm customerId={customerId} onSubmit={handleCredentialSubmitted} />
+            <CredentialForm onSubmit={handleCredentialSubmitted} />
           </div>
 
           {/* Scanning Approval Section */}
@@ -270,7 +277,7 @@ export default function SettingsPage() {
             </label>
             <input
               type="email"
-              value="user@example.com"
+              value={user?.email || ''}
               disabled
               className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-400"
             />
@@ -278,16 +285,16 @@ export default function SettingsPage() {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              API Key
+              Session Status
             </label>
             <div className="flex gap-2">
               <input
                 type="password"
-                value="••••••••••••••••"
+                value="Token managed by backend"
                 disabled
                 className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-400"
               />
-              <button className="btn-secondary">Regenerate</button>
+              <button className="btn-secondary" disabled>Managed</button>
             </div>
           </div>
         </div>

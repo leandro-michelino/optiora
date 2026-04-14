@@ -12,11 +12,12 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from .auth_routes import get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
-from .orm_models import SessionLocal, get_db
+from .orm_models import SessionLocal, User, get_db
 from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, recommendations
 from .tools import azure_costs, gcp_costs, oci_costs
@@ -72,7 +73,7 @@ class CredentialResponse(BaseModel):
 
 
 class ScanningApprovalRequest(BaseModel):
-    customer_id: str
+    customer_id: Optional[str] = None
     auto_remediate: bool = False
     scan_frequency: str = "daily"
     notification_email: Optional[str] = None
@@ -89,7 +90,7 @@ class ScanningPermissionResponse(BaseModel):
 
 
 class StartScanRequest(BaseModel):
-    customer_id: str
+    customer_id: Optional[str] = None
     providers: Optional[List[str]] = None
 
 
@@ -165,6 +166,26 @@ def _safe_json_load(raw: str, default: Dict[str, Any]) -> Dict[str, Any]:
         return default
 
 
+def _customer_id_for_user(current_user: User) -> str:
+    """Derive the persisted customer scope from the authenticated user."""
+    return f"user-{current_user.id}"
+
+
+def _resolve_customer_id(
+    current_user: User,
+    requested_customer_id: Optional[str] = None,
+) -> str:
+    """Reject mismatched customer scopes and return the server-derived identifier."""
+    derived_customer_id = _customer_id_for_user(current_user)
+    normalized_requested = str(requested_customer_id or "").strip()
+    if normalized_requested and normalized_requested != derived_customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="customer_id must match the authenticated user scope",
+        )
+    return derived_customer_id
+
+
 async def _cost_summary_for_provider(provider: str, period: str = "month") -> Dict[str, Any]:
     params = {"period": period, "cloud_provider": provider}
     if provider == "aws":
@@ -181,8 +202,12 @@ async def _cost_summary_for_provider(provider: str, period: str = "month") -> Di
 
 
 @router.post("/credentials/validate", response_model=CredentialResponse)
-async def validate_credentials(payload: Dict[str, Any]) -> CredentialResponse:
+async def validate_credentials(
+    payload: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+) -> CredentialResponse:
     """Validate cloud credentials without storing them."""
+    _ = current_user
     try:
         credential = _parse_credential_payload(payload)
         result = _run_validation(credential)
@@ -198,13 +223,14 @@ async def validate_credentials(payload: Dict[str, Any]) -> CredentialResponse:
 async def add_credentials(
     payload: Dict[str, Any],
     credential_manager: CredentialManager = Depends(get_credential_manager),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Validate and store credentials metadata."""
     try:
-        customer_id = str(payload.get("customer_id", "")).strip()
-        if not customer_id:
-            raise ValueError("customer_id is required")
-
+        customer_id = _resolve_customer_id(
+            current_user=current_user,
+            requested_customer_id=payload.get("customer_id"),
+        )
         credential_payload = {k: v for k, v in payload.items() if k != "customer_id"}
         credential = _parse_credential_payload(credential_payload)
         validation = _run_validation(credential)
@@ -239,11 +265,13 @@ async def add_credentials(
 
 @router.get("/credentials")
 async def list_credentials(
-    customer_id: str,
+    customer_id: Optional[str] = None,
     credential_manager: CredentialManager = Depends(get_credential_manager),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        return credential_manager.list_credentials(customer_id)
+        scoped_customer_id = _resolve_customer_id(current_user, customer_id)
+        return credential_manager.list_credentials(scoped_customer_id)
     except Exception as exc:
         logger.exception("Failed to list credentials")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -252,11 +280,13 @@ async def list_credentials(
 @router.delete("/credentials/{provider}")
 async def delete_credentials(
     provider: str,
-    customer_id: str,
+    customer_id: Optional[str] = None,
     credential_manager: CredentialManager = Depends(get_credential_manager),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        deleted = credential_manager.delete_credentials(customer_id, provider)
+        scoped_customer_id = _resolve_customer_id(current_user, customer_id)
+        deleted = credential_manager.delete_credentials(scoped_customer_id, provider)
         if not deleted:
             raise HTTPException(status_code=404, detail="Credential not found")
         return {
@@ -273,19 +303,21 @@ async def delete_credentials(
 
 @router.post("/scanning/request-approval")
 async def request_scanning_approval(
-    customer_id: str,
     providers: List[str],
     notification_email: str,
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
+    current_user: User = Depends(get_current_user),
+    customer_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
+        scoped_customer_id = _resolve_customer_id(current_user, customer_id)
         scanning_manager.create_permission_request(
-            customer_id=customer_id,
+            customer_id=scoped_customer_id,
             providers=providers,
             notification_email=notification_email,
         )
         approval_request = scanning_manager.request_approval(
-            customer_id=customer_id,
+            customer_id=scoped_customer_id,
             providers=providers,
         )
         return {
@@ -294,7 +326,7 @@ async def request_scanning_approval(
             "action_required": True,
             "approve_url": approval_request["approve_url"],
             "providers": providers,
-            "customer_id": customer_id,
+            "customer_id": scoped_customer_id,
         }
     except Exception as exc:
         logger.exception("Failed to request approval")
@@ -305,10 +337,12 @@ async def request_scanning_approval(
 async def approve_scanning(
     approval: ScanningApprovalRequest,
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
+    current_user: User = Depends(get_current_user),
 ) -> ScanningPermissionResponse:
     try:
+        customer_id = _resolve_customer_id(current_user, approval.customer_id)
         approved = scanning_manager.approve_scanning(
-            customer_id=approval.customer_id,
+            customer_id=customer_id,
             auto_remediate=approval.auto_remediate,
             scan_frequency=approval.scan_frequency,
         )
@@ -328,11 +362,13 @@ async def approve_scanning(
 
 @router.get("/scanning/permission", response_model=ScanningPermissionResponse)
 async def get_scanning_permission(
-    customer_id: str,
+    customer_id: Optional[str] = None,
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
+    current_user: User = Depends(get_current_user),
 ) -> ScanningPermissionResponse:
     try:
-        permission = scanning_manager.get_permission_status(customer_id)
+        scoped_customer_id = _resolve_customer_id(current_user, customer_id)
+        permission = scanning_manager.get_permission_status(scoped_customer_id)
         return ScanningPermissionResponse(**permission)
     except Exception as exc:
         logger.exception("Failed to get permission status")
@@ -341,11 +377,13 @@ async def get_scanning_permission(
 
 @router.post("/scanning/pause")
 async def pause_scanning(
-    customer_id: str,
+    customer_id: Optional[str] = None,
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        return scanning_manager.pause_scanning(customer_id)
+        scoped_customer_id = _resolve_customer_id(current_user, customer_id)
+        return scanning_manager.pause_scanning(scoped_customer_id)
     except Exception as exc:
         logger.exception("Failed to pause scanning")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -353,11 +391,13 @@ async def pause_scanning(
 
 @router.post("/scanning/resume")
 async def resume_scanning(
-    customer_id: str,
+    customer_id: Optional[str] = None,
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        return scanning_manager.resume_scanning(customer_id)
+        scoped_customer_id = _resolve_customer_id(current_user, customer_id)
+        return scanning_manager.resume_scanning(scoped_customer_id)
     except Exception as exc:
         logger.exception("Failed to resume scanning")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -368,9 +408,11 @@ async def start_scan(
     scan_request: StartScanRequest,
     background_tasks: BackgroundTasks,
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
+    current_user: User = Depends(get_current_user),
 ) -> ScanProgressResponse:
     try:
-        permission = scanning_manager.get_permission_status(scan_request.customer_id)
+        customer_id = _resolve_customer_id(current_user, scan_request.customer_id)
+        permission = scanning_manager.get_permission_status(customer_id)
         if permission["state"] not in [ScanningState.APPROVED.value, ScanningState.RUNNING.value]:
             raise HTTPException(
                 status_code=403,
@@ -381,18 +423,18 @@ async def start_scan(
         if not providers_to_scan:
             providers_to_scan = ["aws", "azure", "gcp", "oci"]
 
-        scan_id = f"scan_{scan_request.customer_id}_{int(datetime.utcnow().timestamp())}"
-        scanning_manager.create_scan_run(scan_id, scan_request.customer_id, providers_to_scan)
+        scan_id = f"scan_{customer_id}_{int(datetime.utcnow().timestamp())}"
+        scanning_manager.create_scan_run(scan_id, customer_id, providers_to_scan)
         background_tasks.add_task(
             _run_cost_analysis,
             scan_id=scan_id,
-            customer_id=scan_request.customer_id,
+            customer_id=customer_id,
             providers=providers_to_scan,
         )
 
         return ScanProgressResponse(
             scan_id=scan_id,
-            customer_id=scan_request.customer_id,
+            customer_id=customer_id,
             state=ScanningState.RUNNING.value,
             progress=0,
             providers=providers_to_scan,
@@ -409,9 +451,12 @@ async def start_scan(
 async def get_scan_progress(
     scan_id: str,
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
+    current_user: User = Depends(get_current_user),
 ) -> ScanProgressResponse:
     row = scanning_manager.get_scan_run(scan_id)
     if row is None:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if row["customer_id"] != _customer_id_for_user(current_user):
         raise HTTPException(status_code=404, detail="Scan not found")
     return ScanProgressResponse(
         scan_id=row["scan_id"],

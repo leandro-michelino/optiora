@@ -2,10 +2,35 @@
 
 ## Backend
 
-Current repo verification is primarily static/runtime checks:
+Static verification:
 
 ```bash
 python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
+python3 -m compileall finops_mcp
+```
+
+Once backend dependencies are installed:
+
+```bash
+source .venv/bin/activate
+python -m finops_mcp.app
+```
+
+Use Python `3.10` to `3.13` for backend runtime/setup.
+
+Smoke endpoints:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/info
+```
+
+Auth smoke flow:
+
+```bash
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"StrongPass1!","full_name":"Test User"}'
 ```
 
 ## Frontend
@@ -17,16 +42,14 @@ npm run lint
 npm run build
 ```
 
-## Smoke Checks (Running System)
+## Terraform
 
 ```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/api/v1/info
-curl http://localhost:8000/api/v1/costs
+terraform -chdir=terraform validate
 ```
 
 ## Notes
 
-- Automated backend unit/integration test suites are not yet restored in this repo.
-- Before production rollout, add API tests for auth, credential workflow, and scan progress.
-- Frontend production build (`npm run build`) is a required deploy gate.
+- This repo currently relies on compile/build/smoke verification rather than a restored backend unit-test suite.
+- If you add backend tests later, prioritize auth, credential scoping, scan approval, and refresh-token flows.
+- Frontend production build is a required deployment gate.
