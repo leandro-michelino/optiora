@@ -14,6 +14,12 @@ Deployed on OCI Infrastructure | React Dashboard | MCP Protocol | Multi-Cloud Su
 
 ---
 
+## Dashboard Preview
+
+![OptiOra Dashboard](dashboard/public/dashboard-preview.png)
+
+---
+
 > **OCI-Only Deployment**
 >
 > OptiOra is deployed exclusively on Oracle Cloud Infrastructure (OCI).
