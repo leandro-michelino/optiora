@@ -57,6 +57,20 @@ FastAPI Backend (port 8000)
 
 ## Local Development
 
+### One-command setup
+
+```bash
+./setup.sh
+```
+
+Optional: install missing system tools with Homebrew automatically:
+
+```bash
+./setup.sh --auto-install-tools
+```
+
+This script bootstraps backend dependencies, dashboard dependencies, and Terraform init/validate.
+
 ### Backend
 
 ```bash
