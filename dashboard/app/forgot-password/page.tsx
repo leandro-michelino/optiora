@@ -18,14 +18,21 @@ export default function ForgotPasswordPage() {
 
     try {
       const response = await fetch(
-        backendUrl(`/auth/password-reset-request?email=${encodeURIComponent(email)}`),
-        { method: "POST" },
+        backendUrl("/auth/password-reset-request"),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        },
       );
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data?.detail || "Failed to submit password reset request");
       }
-      setMessage(data?.message || "If the email exists, a reset link will be sent.");
+      const resetHint = data?.reset_token
+        ? ` Local reset token: ${data.reset_token}`
+        : "";
+      setMessage(`${data?.message || "If the email exists, a reset link will be sent."}${resetHint}`);
     } catch (err: any) {
       setError(err?.message || "Failed to submit password reset request");
     } finally {
@@ -83,8 +90,13 @@ export default function ForgotPasswordPage() {
             Back to login
           </Link>
         </p>
+        <p className="mt-3 text-center text-slate-400 text-sm">
+          Already have a token?{" "}
+          <Link href="/reset-password" className="text-blue-400 hover:text-blue-300 font-medium">
+            Reset password
+          </Link>
+        </p>
       </div>
     </div>
   );
 }
-

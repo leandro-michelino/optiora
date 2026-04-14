@@ -13,6 +13,7 @@ This document reflects the repository state as of April 14, 2026.
 ┌────────────────────────────────────────────┐
 │        Next.js Dashboard (port 3000)       │
 │  - auth/session handling                    │
+│  - password reset request/completion        │
 │  - command center + operations readiness    │
 │  - costs, forecast, analytics, AI advisor   │
 │  - credentials + scan setup                 │
@@ -25,7 +26,7 @@ This document reflects the repository state as of April 14, 2026.
 │  /api/v1/credentials/*                      │
 │  /api/v1/scanning/*                         │
 │  /api/v1/costs|anomalies|recommendations    │
-│  /api/v1/forecast|analytics                 │
+│  /api/v1/forecast|analytics|diagnostics     │
 └───────────────┬─────────────────┬──────────┘
                 │                 │
                 │ SQLAlchemy      │ Cloud SDK clients
@@ -35,6 +36,7 @@ This document reflects the repository state as of April 14, 2026.
       │ - users          │   │ cost + usage endpoints │
       │ - orgs + roles   │   └───────────────────────┘
       │ - refresh tokens │
+      │ - reset tokens   │
       │ - credentials    │
       │ - scan state     │
       └──────────────────┘
@@ -68,6 +70,7 @@ GenAI is used for explanation and planning through the dashboard advisor. Saving
 
 ```text
 Login form -> POST /auth/login
+    -> per-IP/email rate limit
     -> access token (30m)
     -> refresh token (7d, hashed in DB)
     -> dashboard stores both in localStorage
@@ -80,7 +83,16 @@ Protected dashboard request
 Logout
     -> POST /auth/logout
     -> all refresh tokens for the user are revoked
+
+Password reset
+    -> POST /auth/password-reset-request
+    -> reset token stored as SHA-256 hash with expiry
+    -> POST /auth/password-reset
+    -> password hash updated
+    -> all refresh tokens for the user are revoked
 ```
+
+Production note: token storage is still localStorage-based. Moving session tokens to secure HTTP-only cookies remains a next-phase hardening item once the final deployment front door is fixed.
 
 ## 3) Credential + Scan Flow
 
@@ -118,6 +130,16 @@ credentials / scans stored and queried with server-derived scope
 ```
 
 The client no longer controls the persisted customer scope.
+
+Provider diagnostics:
+
+```text
+GET /api/v1/provider-diagnostics
+   |
+   +--> checks required environment settings
+   +--> returns configured/missing status by AWS, Azure, GCP, OCI
+   +--> never returns secret values
+```
 
 ## 4) Environment + Configuration Loading
 

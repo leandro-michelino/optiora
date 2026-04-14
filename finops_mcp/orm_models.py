@@ -105,6 +105,11 @@ class User(Base):
     # Relationships
     user_organizations = relationship("UserOrganization", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship(
+        "PasswordResetToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email})>"
@@ -179,6 +184,23 @@ class RefreshToken(Base):
     
     def __repr__(self):
         return f"<RefreshToken(user_id={self.user_id}, revoked={self.is_revoked})>"
+
+
+class PasswordResetToken(Base):
+    """One-time password reset tokens stored as deterministic hashes."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="password_reset_tokens")
+
+    def __repr__(self):
+        return f"<PasswordResetToken(user_id={self.user_id}, used={self.used_at is not None})>"
 
 
 class StoredCredential(Base):

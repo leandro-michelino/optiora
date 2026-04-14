@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .auth_routes import get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
+from .config import Config
 from .orm_models import SessionLocal, User, get_db
 from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, finops_analytics, recommendations
@@ -105,6 +106,14 @@ class ScanProgressResponse(BaseModel):
     total_resources: int = 0
     anomalies_found: int = 0
     savings_identified: float = 0.0
+
+
+class ProviderDiagnostic(BaseModel):
+    provider: str
+    configured: bool
+    required_settings: List[str]
+    missing_settings: List[str]
+    recommendation: str
 
 
 def get_credential_manager(db: Session = Depends(get_db)) -> CredentialManager:
@@ -226,6 +235,70 @@ async def _cost_context(period: str = "month", cloud_provider: str = "all") -> D
     }
 
 
+def _setting_missing(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return True
+    return text.startswith("your_") or text.startswith("replace_") or "example.com" in text
+
+
+def _provider_diagnostics() -> List[ProviderDiagnostic]:
+    config = Config()
+    requirements = {
+        "aws": {
+            "settings": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"],
+            "values": [
+                config.aws_access_key_id,
+                config.aws_secret_access_key,
+                config.aws_region,
+            ],
+        },
+        "azure": {
+            "settings": [
+                "AZURE_SUBSCRIPTION_ID",
+                "AZURE_TENANT_ID",
+                "AZURE_CLIENT_ID",
+                "AZURE_CLIENT_SECRET",
+            ],
+            "values": [
+                config.azure_subscription_id,
+                config.azure_tenant_id,
+                config.azure_client_id,
+                config.azure_client_secret,
+            ],
+        },
+        "gcp": {
+            "settings": ["GOOGLE_APPLICATION_CREDENTIALS", "GCP_PROJECT_ID"],
+            "values": [config.google_application_credentials, config.gcp_project_id],
+        },
+        "oci": {
+            "settings": ["OCI_CONFIG_FILE", "OCI_PROFILE", "OCI_REGION"],
+            "values": [config.oci_config_file, config.oci_profile, config.oci_region],
+        },
+    }
+
+    diagnostics: List[ProviderDiagnostic] = []
+    for provider, detail in requirements.items():
+        settings = detail["settings"]
+        values = detail["values"]
+        missing = [setting for setting, value in zip(settings, values) if _setting_missing(value)]
+        configured = not missing
+        diagnostics.append(
+            ProviderDiagnostic(
+                provider=provider,
+                configured=configured,
+                required_settings=settings,
+                missing_settings=missing,
+                recommendation=(
+                    "Ready for live billing API calls."
+                    if configured
+                    else f"Configure {', '.join(missing)} before enabling live {provider.upper()} cost collection."
+                ),
+            )
+        )
+    return diagnostics
+
+
 @router.post("/credentials/validate", response_model=CredentialResponse)
 async def validate_credentials(
     payload: Dict[str, Any],
@@ -297,6 +370,8 @@ async def list_credentials(
     try:
         scoped_customer_id = _resolve_customer_id(current_user, customer_id)
         return credential_manager.list_credentials(scoped_customer_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Failed to list credentials")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -353,6 +428,8 @@ async def request_scanning_approval(
             "providers": providers,
             "customer_id": scoped_customer_id,
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Failed to request approval")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -380,6 +457,8 @@ async def approve_scanning(
             created_at=approved["created_at"],
             approved_at=approved["approved_at"],
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Failed to approve scanning")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -395,6 +474,8 @@ async def get_scanning_permission(
         scoped_customer_id = _resolve_customer_id(current_user, customer_id)
         permission = scanning_manager.get_permission_status(scoped_customer_id)
         return ScanningPermissionResponse(**permission)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Failed to get permission status")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -409,6 +490,8 @@ async def pause_scanning(
     try:
         scoped_customer_id = _resolve_customer_id(current_user, customer_id)
         return scanning_manager.pause_scanning(scoped_customer_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Failed to pause scanning")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -423,6 +506,8 @@ async def resume_scanning(
     try:
         scoped_customer_id = _resolve_customer_id(current_user, customer_id)
         return scanning_manager.resume_scanning(scoped_customer_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("Failed to resume scanning")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -642,6 +727,13 @@ async def dashboard_analytics(cloud_provider: str = "all") -> Dict[str, Any]:
     return result
 
 
+@router.get("/provider-diagnostics", response_model=List[ProviderDiagnostic])
+async def provider_diagnostics(current_user: User = Depends(get_current_user)) -> List[ProviderDiagnostic]:
+    """Return provider readiness checks without exposing secret values."""
+    _ = current_user
+    return _provider_diagnostics()
+
+
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
     return {
@@ -666,6 +758,7 @@ async def api_info() -> Dict[str, Any]:
             "finops_analytics": True,
             "forecasting": True,
             "genai_advisor": True,
+            "provider_diagnostics": True,
         },
     }
 

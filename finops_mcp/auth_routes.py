@@ -1,16 +1,26 @@
 """Authentication API endpoints for user registration, login, and profile management."""
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Dict, List, Optional
 import logging
+import os
 import re
+import secrets
 
-from .orm_models import User, Organization, UserOrganization, RefreshToken, get_db, UserRole
+from .orm_models import (
+    User,
+    Organization,
+    UserOrganization,
+    RefreshToken,
+    PasswordResetToken,
+    get_db,
+    UserRole,
+)
 from .auth_utils import (
     hash_password,
     verify_password,
@@ -29,6 +39,12 @@ security = HTTPBearer()
 
 
 PASSWORD_SPECIAL_CHARS = "!@#$%^&*"
+PASSWORD_RESET_TOKEN_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_MINUTES", "30"))
+PASSWORD_RESET_RETURN_TOKEN = os.getenv(
+    "PASSWORD_RESET_RETURN_TOKEN",
+    os.getenv("ENVIRONMENT", "development").lower() != "production",
+)
+_RATE_LIMIT_BUCKETS: Dict[str, List[datetime]] = {}
 
 
 # Schemas
@@ -55,6 +71,33 @@ class UpdateProfileRequest(BaseModel):
     full_name: Optional[str] = None
 
 
+class PasswordResetRequest(BaseModel):
+    """Password reset request schema."""
+    email: EmailStr
+
+
+class PasswordResetResponse(BaseModel):
+    """Password reset request response."""
+    message: str
+    reset_token: Optional[str] = None
+    expires_in_minutes: Optional[int] = None
+
+
+class ResetPasswordRequest(BaseModel):
+    """Password reset completion schema."""
+    reset_token: str
+    new_password: str
+
+
+class OrganizationMembershipResponse(BaseModel):
+    """Authenticated user's organization membership."""
+    id: int
+    name: str
+    role: str
+    plan: str
+    is_active: bool
+
+
 # Dependencies
 def _normalize_email(email: str) -> str:
     """Normalize email addresses for consistent storage and lookup."""
@@ -74,6 +117,39 @@ def _validate_password_strength(password: str) -> Optional[str]:
     if not any(char in PASSWORD_SPECIAL_CHARS for char in password):
         return "Password must contain special character (!@#$%^&*)"
     return None
+
+
+def _client_ip(request: Request) -> str:
+    """Resolve a rate-limit client key from standard proxy headers."""
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
+def _check_rate_limit(key: str, limit: int, window_seconds: int) -> None:
+    """In-process fixed-window rate limiting for auth abuse protection."""
+    now = datetime.utcnow()
+    window_start = now - timedelta(seconds=window_seconds)
+    attempts = [
+        timestamp for timestamp in _RATE_LIMIT_BUCKETS.get(key, []) if timestamp > window_start
+    ]
+    if len(attempts) >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Please try again later.",
+        )
+    attempts.append(now)
+    _RATE_LIMIT_BUCKETS[key] = attempts
+
+
+def _should_return_reset_token() -> bool:
+    """Expose reset tokens only for local/dev flows without a mail provider."""
+    if isinstance(PASSWORD_RESET_RETURN_TOKEN, bool):
+        return PASSWORD_RESET_RETURN_TOKEN
+    return str(PASSWORD_RESET_RETURN_TOKEN).strip().lower() in {"1", "true", "yes"}
 
 
 def get_current_user(
@@ -183,9 +259,14 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, db: Session = Depends(get_db)):
+async def login(
+    payload: LoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """Authenticate user and return JWT tokens."""
-    normalized_email = _normalize_email(str(request.email))
+    normalized_email = _normalize_email(str(payload.email))
+    _check_rate_limit(f"login:{_client_ip(request)}:{normalized_email}", limit=8, window_seconds=900)
 
     # Find user by email
     user = db.query(User).filter(User.email == normalized_email).first()
@@ -196,7 +277,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
         )
     
     # Verify password
-    if not verify_password(request.password, user.password_hash):
+    if not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -391,30 +472,118 @@ async def logout(
     return {"message": "Logged out successfully"}
 
 
-@router.post("/password-reset-request")
-async def request_password_reset(email: str, db: Session = Depends(get_db)):
-    """Request password reset using email verification."""
-    normalized_email = _normalize_email(email)
+@router.get("/organizations", response_model=list[OrganizationMembershipResponse])
+async def list_organizations(current_user: User = Depends(get_current_user)):
+    """List organizations available to the authenticated user."""
+    memberships: list[OrganizationMembershipResponse] = []
+    for membership in current_user.user_organizations:
+        org = membership.organization
+        if org is None:
+            continue
+        memberships.append(
+            OrganizationMembershipResponse(
+                id=org.id,
+                name=org.name,
+                role=membership.role.value,
+                plan=org.plan.value,
+                is_active=org.is_active,
+            )
+        )
+    return memberships
+
+
+@router.get("/organization", response_model=OrganizationMembershipResponse)
+async def get_primary_organization(current_user: User = Depends(get_current_user)):
+    """Return the user's primary organization membership."""
+    memberships = await list_organizations(current_user)
+    if not memberships:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No organization found")
+    return memberships[0]
+
+
+@router.post("/password-reset-request", response_model=PasswordResetResponse)
+async def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Create a one-time password reset token without revealing account existence."""
+    normalized_email = _normalize_email(str(payload.email))
+    _check_rate_limit(f"password-reset:{_client_ip(request)}:{normalized_email}", 5, 3600)
+
     user = db.query(User).filter(User.email == normalized_email).first()
     if not user:
         # Don't reveal if email exists
-        return {"message": "If email exists, password reset link sent"}
-    
-    # TODO: Send password reset email with OTP or link
-    # For now, just acknowledge the request
+        return PasswordResetResponse(message="If email exists, password reset link sent")
+
+    now = datetime.utcnow()
+    db.query(PasswordResetToken).filter(
+        and_(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+    ).update({"used_at": now}, synchronize_session=False)
+
+    reset_token = secrets.token_urlsafe(32)
+    reset_record = PasswordResetToken(
+        user_id=user.id,
+        token_hash=hash_token(reset_token),
+        expires_at=now + timedelta(minutes=PASSWORD_RESET_TOKEN_MINUTES),
+    )
+    db.add(reset_record)
+    db.commit()
+
     logger.info("Password reset requested for: %s", normalized_email)
-    
-    return {"message": "If email exists, password reset link sent"}
+
+    response = PasswordResetResponse(
+        message="If email exists, password reset link sent",
+        expires_in_minutes=PASSWORD_RESET_TOKEN_MINUTES,
+    )
+    if _should_return_reset_token():
+        response.reset_token = reset_token
+    return response
 
 
 @router.post("/password-reset")
 async def reset_password(
-    reset_token: str,
-    new_password: str,
+    payload: ResetPasswordRequest,
     db: Session = Depends(get_db),
 ):
     """Reset password using reset token."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Password reset via token is not yet implemented",
+    password_error = _validate_password_strength(payload.new_password)
+    if password_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=password_error)
+
+    token_hash = hash_token(payload.reset_token)
+    reset_record = db.query(PasswordResetToken).filter(
+        and_(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > datetime.utcnow(),
+        )
+    ).first()
+    if not reset_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token is invalid or expired",
+        )
+
+    user = db.query(User).filter(User.id == reset_record.user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token is invalid or expired",
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+    user.updated_at = datetime.utcnow()
+    reset_record.used_at = datetime.utcnow()
+    db.query(RefreshToken).filter(RefreshToken.user_id == user.id).update(
+        {"is_revoked": True},
+        synchronize_session=False,
     )
+    db.commit()
+
+    logger.info("Password reset completed for: %s", user.email)
+    return {"message": "Password reset successfully"}

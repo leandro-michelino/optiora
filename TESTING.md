@@ -18,6 +18,20 @@ python -m finops_mcp.app
 
 Use Python `3.10` to `3.13` for backend runtime/setup.
 
+Regression tests:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Current backend coverage includes:
+
+- registration, login, refresh-token rotation, and organization membership reads
+- password reset request/completion with one-time reset tokens
+- refresh-token revocation after password reset
+- customer scope rejection for mismatched `customer_id`
+- login rate limiting after repeated failures
+
 Smoke endpoints:
 
 ```bash
@@ -50,6 +64,6 @@ terraform -chdir=terraform validate
 
 ## Notes
 
-- This repo currently relies on compile/build/smoke verification rather than a restored backend unit-test suite.
-- If you add backend tests later, prioritize auth, credential scoping, scan approval, and refresh-token flows.
+- Backend tests require the Python dependencies from `pyproject.toml`.
+- Next test expansion should prioritize credential CRUD with mocked provider validators and scan approval/progress flows.
 - Frontend production build is a required deployment gate.

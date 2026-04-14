@@ -74,6 +74,8 @@ The dashboard is the main workspace for:
 - Credential and scanning endpoints are authenticated and derive their persisted `customer_id` from the JWT user identity.
 - The dashboard automatically retries protected requests with `/auth/refresh` when the access token has expired.
 - Raw cloud secrets are validated but not persisted; only sanitized metadata is stored.
+- Password reset uses one-time hashed reset tokens, revokes refresh tokens after completion, and rate-limits reset/login attempts.
+- Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
 
 ## Core API Surface
@@ -84,8 +86,11 @@ The dashboard is the main workspace for:
 - `POST /auth/refresh`
 - `GET /auth/profile`
 - `PUT /auth/profile`
+- `GET /auth/organization`
+- `GET /auth/organizations`
 - `POST /auth/logout`
 - `POST /auth/password-reset-request`
+- `POST /auth/password-reset`
 - `POST /api/v1/credentials/validate`
 - `POST /api/v1/credentials/add`
 - `GET /api/v1/credentials`
@@ -100,6 +105,7 @@ The dashboard is the main workspace for:
 - `GET /api/v1/recommendations`
 - `GET /api/v1/forecast`
 - `GET /api/v1/analytics`
+- `GET /api/v1/provider-diagnostics`
 - `GET /api/v1/info`
 
 ## Local Development
@@ -195,6 +201,7 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ```bash
 python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
 python3 -m compileall finops_mcp
+python3 -m unittest discover -s tests
 
 cd dashboard
 npm run type-check

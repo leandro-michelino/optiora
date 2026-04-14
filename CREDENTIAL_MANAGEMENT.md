@@ -51,16 +51,32 @@ The backend masks or summarizes credential payloads before writing them to the d
 ## Customer Scoping
 
 ```text
-JWT user -> server derives customer_id -> DB lookup/write
+JWT user -> organization membership -> server derives customer_id -> DB lookup/write
 ```
 
 - the client may no longer choose an arbitrary `customer_id`
 - credentials and scans are scoped to the authenticated user identity
+- organization membership endpoints expose the current tenant context for future org switching
+
+## Provider Diagnostics
+
+`GET /api/v1/provider-diagnostics` checks whether the required environment settings are present for AWS, Azure, GCP, and OCI.
+
+The response reports:
+
+- provider name
+- configured or missing status
+- required setting names
+- missing setting names
+- operational recommendation
+
+Secret values are never returned.
 
 ## Security Notes
 
 - Credential validation is authenticated.
 - Validation errors are returned for troubleshooting, but raw secrets are not persisted.
+- Provider diagnostics expose configuration names only, not credential values.
 - For production, use encrypted volumes and least-privilege cloud IAM roles.
 - If you need long-lived secret reuse for automation, integrate Vault/KMS before enabling write actions.
 
@@ -70,3 +86,4 @@ JWT user -> server derives customer_id -> DB lookup/write
 - `POST /api/v1/credentials/add`
 - `GET /api/v1/credentials`
 - `DELETE /api/v1/credentials/{provider}`
+- `GET /api/v1/provider-diagnostics`

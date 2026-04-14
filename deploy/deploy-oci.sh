@@ -388,6 +388,9 @@ ensure_env_value "FRONTEND_URL" "http://${PUBLIC_IP}:3000"
 ensure_env_value "NEXT_PUBLIC_API_URL" "http://${PUBLIC_IP}:8000"
 ensure_env_value "PORT" "8000"
 ensure_env_value "UVICORN_RELOAD" "false"
+ensure_env_value "ENVIRONMENT" "production"
+ensure_env_value "PASSWORD_RESET_RETURN_TOKEN" "false"
+ensure_env_value "PASSWORD_RESET_TOKEN_MINUTES" "30"
 
 if [ ! -d "$APP_DIR/venv" ]; then
     python3 -m venv "$APP_DIR/venv"
