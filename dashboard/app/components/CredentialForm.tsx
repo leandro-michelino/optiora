@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle, Loader, Plus } from 'lucide-react';
+import { AlertCircle, CheckCircle, ExternalLink, Info, Loader, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
@@ -10,12 +10,91 @@ interface CredentialFormProps {
   onSubmit: (provider: string, credentials: Record<string, string>) => Promise<void>;
 }
 
+// Per-provider setup guidance shown inside each form section.
+const PROVIDER_HELP = {
+  aws: {
+    summary: 'OptiOra needs read-only access to AWS Cost Explorer and EC2/EBS resource metadata.',
+    steps: [
+      'Open the AWS console → IAM → Users → Create user.',
+      'Attach the managed policy ReadOnlyAccess, or create a custom policy with at minimum: ce:GetCostAndUsage, ec2:DescribeInstances, ec2:DescribeVolumes.',
+      'Under Security credentials → Access keys → Create access key.',
+      'Copy the Access Key ID and Secret Access Key — they are shown only once.',
+    ],
+    docLabel: 'IAM user guide',
+    docHref: 'https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html',
+  },
+  azure: {
+    summary: 'OptiOra uses a Service Principal with Cost Management Reader access to read billing and resource data.',
+    steps: [
+      'Open Azure Portal → Microsoft Entra ID → App registrations → New registration.',
+      'Note the Application (client) ID and Directory (tenant) ID.',
+      'Under Certificates & secrets → New client secret → copy the value immediately.',
+      'Go to Subscriptions → your subscription → Access control (IAM) → Add role assignment.',
+      'Assign the Cost Management Reader role to the App registration you created.',
+    ],
+    docLabel: 'Service Principal guide',
+    docHref: 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/assign-access-acm-data',
+  },
+  gcp: {
+    summary: 'OptiOra reads GCP billing data via BigQuery export. A Service Account with Billing Account Viewer and BigQuery User is required.',
+    steps: [
+      'Enable Billing Export to BigQuery in the GCP console → Billing → Billing export.',
+      'Go to IAM & Admin → Service Accounts → Create Service Account.',
+      'Grant the service account: Billing Account Viewer (on the billing account) and BigQuery Data Viewer + BigQuery Job User (on the project).',
+      'Create a key: Service Account → Keys → Add key → JSON. Download the file.',
+      'Paste the full contents of the JSON key file into the field below.',
+    ],
+    docLabel: 'BigQuery billing export guide',
+    docHref: 'https://cloud.google.com/billing/docs/how-to/export-data-bigquery',
+  },
+  oci: {
+    summary: 'OptiOra reads OCI cost and usage data via the Usage API using the local OCI CLI config file on the server.',
+    steps: [
+      'Install the OCI CLI on the server: bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)"',
+      'Run oci setup config and follow the prompts — this creates ~/.oci/config.',
+      'The user/API key must have the policy: Allow group <YourGroup> to read usage-reports in tenancy.',
+      'Enter the path to the config file (default: ~/.oci/config) and the profile name (default: DEFAULT).',
+    ],
+    docLabel: 'OCI Usage API guide',
+    docHref: 'https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/usagereportsoverview.htm',
+  },
+} as const;
+
+type Provider = keyof typeof PROVIDER_HELP;
+
+function ProviderHelp({ provider }: { provider: Provider }) {
+  const help = PROVIDER_HELP[provider];
+  return (
+    <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm">
+      <div className="flex items-start gap-2 mb-2">
+        <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+        <p className="text-blue-800 font-medium">{help.summary}</p>
+      </div>
+      <ol className="ml-6 mt-2 space-y-1 list-decimal text-blue-700">
+        {help.steps.map((step, i) => (
+          <li key={i} className="text-xs leading-relaxed">{step}</li>
+        ))}
+      </ol>
+      <a
+        href={help.docHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 mt-3 text-xs text-blue-600 hover:underline"
+      >
+        <ExternalLink className="w-3 h-3" />
+        {help.docLabel}
+      </a>
+    </div>
+  );
+}
+
 const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>('aws');
-  const [loading, setLoading] = useState(false);
-  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
+  const [validating, setValidating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid' | 'saved'>('idle');
   const [validationMessage, setValidationMessage] = useState('');
-  
+
   const [awsForm, setAwsForm] = useState({
     access_key_id: '',
     secret_access_key: '',
@@ -39,69 +118,69 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
     profile: 'DEFAULT'
   });
 
-  const handleValidateAndStore = async (e: React.FormEvent) => {
+  const currentCredentials = () =>
+    selectedProvider === 'aws' ? awsForm :
+    selectedProvider === 'azure' ? azureForm :
+    selectedProvider === 'gcp' ? gcpForm :
+    ociForm;
+
+  // Reset validation when provider or form changes.
+  const resetValidation = () => {
+    if (validationStatus !== 'idle') setValidationStatus('idle');
+    setValidationMessage('');
+  };
+
+  const handleValidate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setValidating(true);
     setValidationStatus('validating');
-    setValidationMessage('Testing credentials...');
-
+    setValidationMessage('Connecting to provider API…');
     try {
-      const credentials = 
-        selectedProvider === 'aws' ? awsForm :
-        selectedProvider === 'azure' ? azureForm :
-        selectedProvider === 'gcp' ? gcpForm :
-        ociForm;
-
-      // Step 1: Validate credentials
-      const validateRes = await authorizedFetch(backendUrl('/api/v1/credentials/validate'), {
+      const res = await authorizedFetch(backendUrl('/api/v1/credentials/validate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: selectedProvider,
-          ...credentials
-        })
+        body: JSON.stringify({ provider: selectedProvider, ...currentCredentials() }),
       });
-
-      const validateData = await validateRes.json();
-
-      if (!validateRes.ok || !validateData.is_valid) {
+      const data = await res.json();
+      if (!res.ok || !data.is_valid) {
         setValidationStatus('invalid');
-        setValidationMessage(validateData.detail || validateData.message || 'Credential validation failed');
+        setValidationMessage(data.detail || data.message || 'Credential validation failed.');
         return;
       }
-
       setValidationStatus('valid');
       setValidationMessage(
-        validateData.test_cost_usd !== null && validateData.test_cost_usd !== undefined
-          ? `Credentials validated. Cost data this month: $${validateData.test_cost_usd}`
-          : 'Credentials validated successfully.',
+        data.test_cost_usd != null
+          ? `Connection successful. MTD cost: $${data.test_cost_usd}. ${data.message || ''}`
+          : data.message || 'Connection successful.',
       );
+    } catch (err) {
+      setValidationStatus('invalid');
+      setValidationMessage(err instanceof Error ? err.message : 'Unexpected error during validation.');
+    } finally {
+      setValidating(false);
+    }
+  };
 
-      // Step 2: Store credentials
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Brief delay for UX
-      
-      const storeRes = await authorizedFetch(backendUrl('/api/v1/credentials/add'), {
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await authorizedFetch(backendUrl('/api/v1/credentials/add'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider: selectedProvider,
-          ...credentials
-        })
+        body: JSON.stringify({ provider: selectedProvider, ...currentCredentials() }),
       });
-
-      if (!storeRes.ok) {
-        const storeData = await storeRes.json().catch(() => ({}));
-        throw new Error(storeData?.detail || 'Failed to store credentials');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.detail || 'Failed to save credentials.');
       }
-
-      // Success - trigger next step
-      await onSubmit(selectedProvider, credentials);
-
-    } catch (error) {
+      setValidationStatus('saved');
+      setValidationMessage(`${selectedProvider.toUpperCase()} credentials saved successfully.`);
+      await onSubmit(selectedProvider, currentCredentials());
+    } catch (err) {
       setValidationStatus('invalid');
-      setValidationMessage(error instanceof Error ? error.message : 'An error occurred');
+      setValidationMessage(err instanceof Error ? err.message : 'An error occurred while saving.');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -117,17 +196,17 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleValidateAndStore} className="space-y-6">
-          
+        <form onSubmit={handleValidate} className="space-y-6">
+
           {/* Provider Selection */}
           <div>
             <label className="block text-sm font-medium mb-3">Cloud Provider</label>
             <div className="grid grid-cols-2 gap-3 mb-6">
-              {['aws', 'azure', 'gcp', 'oci'].map(provider => (
+              {(['aws', 'azure', 'gcp', 'oci'] as const).map(provider => (
                 <button
                   key={provider}
                   type="button"
-                  onClick={() => setSelectedProvider(provider)}
+                  onClick={() => { setSelectedProvider(provider); resetValidation(); }}
                   className={`p-3 rounded-lg border-2 transition-all ${
                     selectedProvider === provider
                       ? 'border-blue-500 bg-blue-50'
@@ -143,6 +222,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           {/* AWS Form */}
           {selectedProvider === 'aws' && (
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+              <ProviderHelp provider="aws" />
               <div>
                 <label className="block text-sm font-medium mb-1">Access Key ID</label>
                 <input
@@ -181,6 +261,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           {/* Azure Form */}
           {selectedProvider === 'azure' && (
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+              <ProviderHelp provider="azure" />
               <div>
                 <label className="block text-sm font-medium mb-1">Subscription ID</label>
                 <input
@@ -231,6 +312,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           {/* GCP Form */}
           {selectedProvider === 'gcp' && (
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+              <ProviderHelp provider="gcp" />
               <div>
                 <label className="block text-sm font-medium mb-1">Project ID</label>
                 <input
@@ -259,6 +341,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           {/* OCI Form */}
           {selectedProvider === 'oci' && (
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+              <ProviderHelp provider="oci" />
               <div>
                 <label className="block text-sm font-medium mb-1">Config File Path</label>
                 <input
@@ -283,27 +366,50 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
             </div>
           )}
 
-          {/* Validation Status */}
+          {/* Validation / Save status banner */}
           {validationStatus !== 'idle' && (
-            <div className={`p-3 rounded-lg flex items-center gap-2 ${
+            <div className={`p-3 rounded-lg flex items-start gap-2 text-sm ${
               validationStatus === 'validating' ? 'bg-blue-50 text-blue-700' :
-              validationStatus === 'valid' ? 'bg-green-50 text-green-700' :
+              validationStatus === 'valid'      ? 'bg-green-50 text-green-700' :
+              validationStatus === 'saved'      ? 'bg-green-100 text-green-800' :
               'bg-red-50 text-red-700'
             }`}>
-              {validationStatus === 'validating' && <Loader className="w-4 h-4 animate-spin" />}
-              {validationStatus === 'valid' && <CheckCircle className="w-4 h-4" />}
-              {validationStatus === 'invalid' && <AlertCircle className="w-4 h-4" />}
+              {validationStatus === 'validating' && <Loader className="w-4 h-4 animate-spin mt-0.5 shrink-0" />}
+              {(validationStatus === 'valid' || validationStatus === 'saved') && <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+              {validationStatus === 'invalid'   && <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
               <span>{validationMessage}</span>
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-          >
-            {loading ? 'Validating...' : 'Validate & Store Credentials'}
-          </button>
+          {/* Action buttons */}
+          <div className="flex gap-3">
+            {/* Test Connection — always available, submits the form */}
+            <button
+              type="submit"
+              disabled={validating || saving}
+              className="flex-1 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            >
+              {validating ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader className="w-4 h-4 animate-spin" /> Testing…
+                </span>
+              ) : 'Test Connection'}
+            </button>
+
+            {/* Save Credentials — enabled only after a successful test */}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={validationStatus !== 'valid' || saving}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
+            >
+              {saving ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader className="w-4 h-4 animate-spin" /> Saving…
+                </span>
+              ) : 'Save Credentials'}
+            </button>
+          </div>
         </form>
       </CardContent>
     </Card>

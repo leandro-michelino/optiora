@@ -87,27 +87,34 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
 
 
 async def get_forecast(params: dict[str, Any]) -> str:
-    """Forecast OCI costs based on historical trend."""
+    """Forecast OCI costs using the current month's actual spend as the baseline."""
     months = params.get("months", 3)
     growth = params.get("growth_percent", 5)
-    
+
+    summary_raw = await get_cost_summary({"period": "month"})
+    summary = json.loads(summary_raw)
+
+    if "error" in summary:
+        return json.dumps({"error": summary["error"], "cloud_provider": "oci"})
+
+    base_monthly = summary.get("total_cost_usd", 0.0)
+    if base_monthly <= 0:
+        return json.dumps({"error": "No OCI cost data available for the current month", "cloud_provider": "oci"})
+
     forecast = []
-    base_monthly = 400.0
-    
     for m in range(1, months + 1):
         projected = base_monthly * (1 + growth / 100) ** (m / 12)
-        forecast.append({
-            "month": m,
-            "projected_cost_usd": round(projected, 2)
-        })
-    
+        forecast.append({"month": m, "projected_cost_usd": round(projected, 2)})
+
     total_projected = sum(f["projected_cost_usd"] for f in forecast)
-    
+
     return json.dumps({
         "cloud_provider": "oci",
+        "base_monthly_usd": round(base_monthly, 2),
+        "data_source": "live",
         "forecast_months": months,
         "growth_adjustment_percent": growth,
         "forecast": forecast,
         "total_projected_cost_usd": round(total_projected, 2),
-        "confidence_interval": "±10%"
+        "confidence_interval": "±10%",
     })

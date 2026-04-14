@@ -39,7 +39,7 @@ class CredentialValidator:
         try:
             import boto3
 
-            client = boto3.client(
+            ce_client = boto3.client(
                 "ce",
                 aws_access_key_id=access_key_id,
                 aws_secret_access_key=secret_access_key,
@@ -49,7 +49,7 @@ class CredentialValidator:
             start = datetime.utcnow().date().replace(day=1)
             end = datetime.utcnow().date() + timedelta(days=1)  # end date is exclusive
 
-            response = client.get_cost_and_usage(
+            response = ce_client.get_cost_and_usage(
                 TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
                 Granularity="MONTHLY",
                 Metrics=["UnblendedCost"],
@@ -61,10 +61,57 @@ class CredentialValidator:
                     response["ResultsByTime"][0]["Total"]["UnblendedCost"]["Amount"]
                 )
 
+            # Probe additional permissions and report which are available.
+            permissions_verified: list[str] = ["ce:GetCostAndUsage"]
+
+            ec2_client = boto3.client(
+                "ec2",
+                aws_access_key_id=access_key_id,
+                aws_secret_access_key=secret_access_key,
+                region_name=region,
+            )
+            try:
+                ec2_client.describe_instances(MaxResults=5)
+                permissions_verified.append("ec2:DescribeInstances")
+            except Exception:
+                pass
+
+            try:
+                ec2_client.describe_volumes(MaxResults=5)
+                permissions_verified.append("ec2:DescribeVolumes")
+            except Exception:
+                pass
+
+            try:
+                ce_client.get_savings_plans_purchase_recommendation(
+                    SavingsPlansType="COMPUTE_SP",
+                    TermInYears="ONE_YEAR",
+                    PaymentOption="NO_UPFRONT",
+                    LookbackPeriodInDays="THIRTY_DAYS",
+                )
+                permissions_verified.append("ce:GetSavingsPlansPurchaseRecommendation")
+            except Exception:
+                pass
+
+            try:
+                ce_client.get_reservation_purchase_recommendation(
+                    Service="Amazon Elastic Compute Cloud - Compute",
+                    LookbackPeriodInDays="THIRTY_DAYS",
+                    TermInYears="ONE_YEAR",
+                    PaymentOption="NO_UPFRONT",
+                )
+                permissions_verified.append("ce:GetReservationPurchaseRecommendation")
+            except Exception:
+                pass
+
+            message = (
+                f"AWS credentials validated. Permissions confirmed: {', '.join(permissions_verified)}"
+            )
+
             return CredentialStatus(
                 provider="aws",
                 is_valid=True,
-                message="AWS credentials validated successfully",
+                message=message,
                 test_cost_usd=round(total_cost, 2),
                 tested_at=datetime.utcnow().isoformat(),
             )
@@ -105,12 +152,39 @@ class CredentialValidator:
                     "aggregation": {"totalCost": {"name": "PreTaxCost", "function": "Sum"}},
                 },
             }
-            client.query.usage(scope, query)
+            result = client.query.usage(scope, query)
+
+            # Extract MTD cost total from the query result rows.
+            total_cost = 0.0
+            if hasattr(result, "rows") and result.rows:
+                for row in result.rows:
+                    if len(row) >= 2:
+                        try:
+                            total_cost += float(row[1]) if row[1] else 0.0
+                        except (TypeError, ValueError):
+                            pass
+
+            permissions_verified = ["Microsoft.CostManagement/query/action"]
+
+            # Probe resource manager read access.
+            try:
+                from azure.mgmt.resource import ResourceManagementClient
+
+                rm_client = ResourceManagementClient(credential, subscription_id)
+                list(rm_client.resource_groups.list())
+                permissions_verified.append("Microsoft.Resources/resourceGroups/read")
+            except Exception:
+                pass
+
+            message = (
+                f"Azure credentials validated. Permissions confirmed: {', '.join(permissions_verified)}"
+            )
 
             return CredentialStatus(
                 provider="azure",
                 is_valid=True,
-                message="Azure credentials validated successfully",
+                message=message,
+                test_cost_usd=round(total_cost, 2) if total_cost > 0 else None,
                 tested_at=datetime.utcnow().isoformat(),
             )
         except Exception as exc:
@@ -129,19 +203,55 @@ class CredentialValidator:
         service_account_json: Dict[str, Any],
     ) -> CredentialStatus:
         try:
-            from google.cloud import billing_v1
             from google.oauth2 import service_account
 
             credentials = service_account.Credentials.from_service_account_info(
                 service_account_json
             )
-            client = billing_v1.CloudBillingClient(credentials=credentials)
-            list(client.list_billing_accounts(page_size=1))
+
+            permissions_verified: list[str] = []
+
+            # Primary probe: billing account read access.
+            try:
+                from google.cloud import billing_v1
+
+                billing_client = billing_v1.CloudBillingClient(credentials=credentials)
+                list(billing_client.list_billing_accounts(page_size=1))
+                permissions_verified.append("billing.accounts.list")
+            except Exception as exc:
+                raise exc  # billing access is required; re-raise
+
+            # Secondary probe: BigQuery read access (needed for billing export queries).
+            try:
+                from google.cloud import bigquery
+
+                bq_client = bigquery.Client(
+                    project=project_id, credentials=credentials
+                )
+                list(bq_client.list_datasets(max_results=1))
+                permissions_verified.append("bigquery.datasets.list")
+            except Exception:
+                pass
+
+            # Tertiary probe: project IAM read.
+            try:
+                from google.cloud import resourcemanager_v3
+
+                rm_client = resourcemanager_v3.ProjectsClient(credentials=credentials)
+                rm_client.get_project(name=f"projects/{project_id}")
+                permissions_verified.append("resourcemanager.projects.get")
+            except Exception:
+                pass
+
+            message = (
+                f"GCP credentials validated for project {project_id}. "
+                f"Permissions confirmed: {', '.join(permissions_verified)}"
+            )
 
             return CredentialStatus(
                 provider="gcp",
                 is_valid=True,
-                message=f"GCP credentials validated successfully for project {project_id}",
+                message=message,
                 tested_at=datetime.utcnow().isoformat(),
             )
         except Exception as exc:
@@ -161,21 +271,56 @@ class CredentialValidator:
     ) -> CredentialStatus:
         try:
             import oci
+            from datetime import date
 
-            config = oci.config.from_file(config_file, profile)
-            usage_client = oci.usage_api.UsageapiClient(config)
+            oci_config = oci.config.from_file(config_file, profile)
+            tenancy_id = oci_config["tenancy"]
+
+            usage_client = oci.usage_api.UsageapiClient(oci_config)
+
+            # Use the current month-to-date window so we get a real cost figure.
+            today = date.today()
+            start = datetime(today.year, today.month, 1)
+            end = datetime(today.year, today.month, today.day, 23, 59, 59)
+
             request = oci.usage_api.models.RequestSummarizedUsagesDetails(
-                tenant_id=config["tenancy"],
+                tenant_id=tenancy_id,
+                time_usage_started=start,
+                time_usage_ended=end,
                 granularity="MONTHLY",
             )
-            usage_client.request_summarized_usages(
+            response = usage_client.request_summarized_usages(
                 request_summarized_usages_details=request
+            )
+
+            # Extract MTD cost total from the response items.
+            total_cost = 0.0
+            for item in (response.data.items or []):
+                try:
+                    total_cost += float(item.computed_amount or 0)
+                except (TypeError, ValueError):
+                    pass
+
+            permissions_verified = ["oci:usage-api:RequestSummarizedUsages"]
+
+            # Secondary probe: identity tenancy read.
+            try:
+                identity_client = oci.identity.IdentityClient(oci_config)
+                identity_client.get_tenancy(tenancy_id=tenancy_id)
+                permissions_verified.append("oci:identity:GetTenancy")
+            except Exception:
+                pass
+
+            message = (
+                f"OCI credentials validated. "
+                f"Permissions confirmed: {', '.join(permissions_verified)}"
             )
 
             return CredentialStatus(
                 provider="oci",
                 is_valid=True,
-                message="OCI credentials validated successfully",
+                message=message,
+                test_cost_usd=round(total_cost, 2) if total_cost > 0 else None,
                 tested_at=datetime.utcnow().isoformat(),
             )
         except Exception as exc:

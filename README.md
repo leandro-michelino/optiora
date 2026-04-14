@@ -5,13 +5,11 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 ## Dashboard Preview
 
 <p align="center">
-  <a href="dashboard/public/dashboard-preview.png">
-    <img
-      src="dashboard/public/dashboard-preview.png"
-      alt="OptiOra dashboard preview showing multi-cloud cost, anomaly, recommendation, and savings views"
-      width="900"
-    />
-  </a>
+  <img
+    src="dashboard/public/optiora-animated.svg"
+    alt="OptiOra animated dashboard — cycling through cost overview, anomaly detection, recommendations, and AI cost advisor"
+    width="900"
+  />
 </p>
 
 The dashboard is the main workspace for:
@@ -42,28 +40,26 @@ The dashboard is the main workspace for:
                          v
 ┌──────────────────────────────────────────────┐
 │          Next.js Dashboard (port 3000)       │
-│  - login / signup / profile                  │
-│  - cost views and AI chat                    │
+│  - cost views and AI advisor chat            │
 │  - credential + scan setup                   │
+│  - anomaly detection and recommendations     │
 └────────────────────────┬─────────────────────┘
-                         │ REST + Bearer JWT
+                         │ REST
                          v
 ┌──────────────────────────────────────────────┐
 │           FastAPI Backend (port 8000)        │
-│  /auth/*                                     │
 │  /api/v1/credentials/*                       │
 │  /api/v1/scanning/*                          │
 │  /api/v1/costs|anomalies|recommendations     │
+│  /api/v1/provider-diagnostics                │
 └───────────────┬──────────────────┬───────────┘
                 │                  │
                 │ SQLAlchemy       │ Cloud SDK / APIs
                 v                  v
       ┌──────────────────┐   ┌───────────────────────┐
       │ SQLite/Postgres  │   │ AWS / Azure / GCP / OCI│
-      │ - users          │   │ cost + usage endpoints │
-      │ - org mapping    │   └───────────────────────┘
-      │ - refresh tokens │
-      │ - credentials    │
+      │ - org mapping    │   │ cost + usage endpoints │
+      │ - credentials    │   └───────────────────────┘
       │ - scan runs      │
       └──────────────────┘
 ```
@@ -71,26 +67,14 @@ The dashboard is the main workspace for:
 ## Key Behavior
 
 - `.env` is loaded automatically when the backend package is imported.
-- Credential and scanning endpoints are authenticated and derive their persisted `customer_id` from the JWT user identity.
-- The dashboard automatically retries protected requests with `/auth/refresh` when the access token has expired.
-- Raw cloud secrets are validated but not persisted; only sanitized metadata is stored.
-- Password reset uses one-time hashed reset tokens, revokes refresh tokens after completion, and rate-limits reset/login attempts.
+- Raw cloud secrets are validated server-side but not persisted; only sanitized metadata is stored.
 - Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
+- Forecasts, anomaly detection, and recommendations are all driven from live provider cost data — no hardcoded baselines.
 
 ## Core API Surface
 
 - `GET /health`
-- `POST /auth/register`
-- `POST /auth/login`
-- `POST /auth/refresh`
-- `GET /auth/profile`
-- `PUT /auth/profile`
-- `GET /auth/organization`
-- `GET /auth/organizations`
-- `POST /auth/logout`
-- `POST /auth/password-reset-request`
-- `POST /auth/password-reset`
 - `POST /api/v1/credentials/validate`
 - `POST /api/v1/credentials/add`
 - `GET /api/v1/credentials`

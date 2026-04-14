@@ -9,5 +9,15 @@ optiora_api_url: "http://{{ ansible_host }}:{{ optiora_api_port }}"
 optiora_manage_source: false
 optiora_remote_archive: /tmp/optiora-deploy.tar.gz
 optiora_install_nginx: false
+
+# --- nginx / TLS settings (only used when optiora_install_nginx: true) ---
+# Set optiora_domain to the public FQDN for certbot. Leave blank to serve
+# plain HTTP on port 80 (useful for staging with no DNS yet).
+optiora_domain: ""
+optiora_certbot_email: ""
+# When true and optiora_domain is set, install certbot and request a Let's
+# Encrypt cert. When false nginx runs plain HTTP only.
+optiora_enable_tls: false
+
 optiora_health_retries: 12
 optiora_health_delay: 5

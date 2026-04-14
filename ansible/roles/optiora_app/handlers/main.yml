@@ -11,3 +11,8 @@
   ansible.builtin.systemd:
     name: optiora-dashboard.service
     state: restarted
+
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded

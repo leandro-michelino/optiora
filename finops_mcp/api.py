@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .auth_routes import get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
 from .config import Config
-from .orm_models import SessionLocal, User, get_db
+from .orm_models import SessionLocal, User, CostSnapshot, get_db
 from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, finops_analytics, recommendations
 from .tools import azure_costs, gcp_costs, oci_costs
@@ -764,25 +764,63 @@ async def api_info() -> Dict[str, Any]:
 
 
 async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str]) -> None:
-    """Background task for a lightweight scan simulation."""
+    """
+    Background scan: fetch live cost data per provider, persist CostSnapshot
+    rows for historical trend analysis, then mark the scan run complete.
+    """
     db = SessionLocal()
     scanning_manager = ScanningManager(db)
     try:
         total_resources = 0
         anomalies_found = 0
         savings_identified = 0.0
+        now = datetime.utcnow()
 
         for provider in providers:
             summary = await _cost_summary_for_provider(provider, "month")
-            if "error" not in summary:
-                total_resources += 100
-                savings_identified += float(summary.get("total_cost_usd", 0) or 0) * 0.08
+            if "error" in summary:
+                continue
 
-        anomalies_result = _safe_json_load(
-            await anomalies.detect_anomalies({"cloud_provider": "all"}),
-            {},
-        )
-        anomalies_found = int(anomalies_result.get("anomalies_found", 0) or 0)
+            total_cost = float(summary.get("total_cost_usd", 0) or 0)
+            total_resources += 100
+            provider_savings = total_cost * 0.08
+            savings_identified += provider_savings
+
+            # Fetch anomalies and recommendations for this provider to embed in snapshot.
+            anomaly_raw = await anomalies.detect_anomalies({"cloud_provider": provider})
+            anomaly_data = _safe_json_load(anomaly_raw, {})
+            provider_anomalies = int(anomaly_data.get("anomalies_found", 0) or 0)
+            anomalies_found += provider_anomalies
+
+            rec_raw = await recommendations.get_recommendations({
+                "cloud_provider": provider,
+                "current_monthly_spend": total_cost,
+            })
+
+            # Derive period bounds from summary if available.
+            try:
+                period_start = datetime.fromisoformat(summary["start_date"]) if "start_date" in summary else None
+                period_end = datetime.fromisoformat(summary["end_date"]) if "end_date" in summary else None
+            except (ValueError, TypeError):
+                period_start = period_end = None
+
+            snapshot = CostSnapshot(
+                scan_id=scan_id,
+                customer_id=customer_id,
+                provider=provider,
+                period_start=period_start,
+                period_end=period_end,
+                total_cost_usd=total_cost,
+                savings_identified_usd=provider_savings,
+                anomalies_count=provider_anomalies,
+                top_services_json=json.dumps(summary.get("top_services", [])),
+                anomalies_json=anomaly_raw,
+                recommendations_json=rec_raw,
+                captured_at=now,
+            )
+            db.add(snapshot)
+
+        db.commit()
 
         scanning_manager.complete_scan_run(
             scan_id=scan_id,

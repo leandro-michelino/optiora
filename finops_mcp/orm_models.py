@@ -292,8 +292,51 @@ class ScanRunRecord(Base):
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
 
+    snapshots = relationship("CostSnapshot", back_populates="scan_run", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f"<ScanRunRecord(scan_id={self.scan_id}, state={self.state})>"
+
+
+class CostSnapshot(Base):
+    """
+    Historical cost model persisted at the end of each scan run.
+
+    One row per provider per scan, capturing the full cost breakdown and key
+    FinOps metrics so trend analysis and historical comparison are possible
+    without re-querying the cloud providers.
+    """
+
+    __tablename__ = "cost_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scan_id = Column(String(255), ForeignKey("scan_runs.scan_id"), nullable=False, index=True)
+    customer_id = Column(String(255), index=True, nullable=False)
+    provider = Column(String(50), nullable=False, index=True)  # aws | azure | gcp | oci
+
+    # Period covered by this snapshot (from the cost summary call).
+    period_start = Column(DateTime, nullable=True)
+    period_end = Column(DateTime, nullable=True)
+
+    # Aggregate metrics.
+    total_cost_usd = Column(Float, nullable=False, default=0.0)
+    savings_identified_usd = Column(Float, nullable=False, default=0.0)
+    anomalies_count = Column(Integer, nullable=False, default=0)
+
+    # Full JSON blobs for drill-down.
+    top_services_json = Column(Text, nullable=True)   # [{"service": ..., "cost_usd": ...}, ...]
+    anomalies_json = Column(Text, nullable=True)       # detect_anomalies result
+    recommendations_json = Column(Text, nullable=True) # get_recommendations result
+
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    scan_run = relationship("ScanRunRecord", back_populates="snapshots")
+
+    def __repr__(self):
+        return (
+            f"<CostSnapshot(scan_id={self.scan_id}, provider={self.provider}, "
+            f"cost=${self.total_cost_usd:.2f})>"
+        )
 
 
 # Dependency
