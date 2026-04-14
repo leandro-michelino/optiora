@@ -51,3 +51,9 @@ dashboard/tsconfig.tsbuildinfo
 
 # Root Node artifacts (if any)
 node_modules/
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars

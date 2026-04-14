@@ -124,3 +124,22 @@ Progress + results to UI
 - API health/version and app metadata are consistent (`0.1.0` in current codebase).
 - Dashboard can run without Anthropic key; AI chat returns a configuration message instead of crashing.
 - Cloud-cost provider tools still include fallback/mock behavior when SDK/config is missing.
+
+## 7) Terraform Security Baseline (Plan-Only)
+
+```text
+terraform plan
+   |
+   +--> VCN
+   +--> Internet Gateway
+   +--> Route Table
+   +--> Security List
+   +--> Public Subnet
+
+Security List ingress:
+  SSH    22   <- laptop_cidr/32
+  UI   3000   <- laptop_cidr/32
+  API  8000   <- laptop_cidr/32
+
+No 0.0.0.0/0 ingress is defined.
+```

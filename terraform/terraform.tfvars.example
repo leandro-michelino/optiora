@@ -1,0 +1,14 @@
+compartment_id = "ocid1.compartment.oc1..your_compartment_ocid"
+region         = "us-phoenix-1"
+
+# Restrict ingress to your laptop public IP only.
+laptop_cidr = "79.112.21.102/32"
+
+project_code = "optiora"
+environment  = "prod"
+region_code  = "phx"
+name_suffix  = "001"
+
+vcn_cidr           = "10.50.0.0/16"
+public_subnet_cidr = "10.50.1.0/24"
+

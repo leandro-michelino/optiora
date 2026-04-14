@@ -11,6 +11,7 @@ Multi-cloud FinOps platform with a FastAPI backend and Next.js dashboard.
 - `finops_mcp/`: Python backend (FastAPI, auth, credential management, scan workflow, dashboard APIs)
 - `dashboard/`: Next.js dashboard UI
 - `deploy/deploy-oci.sh`: OCI compute deployment automation
+- `terraform/`: OCI network baseline (plan-only workflow)
 - `ARCHITECTURE_COMPLETE.md`: current architecture and ASCII diagrams
 - `DEPLOYMENT.md`: operational deployment runbook
 
@@ -98,6 +99,20 @@ The deploy script provisions:
 
 Deployment control is fully local: the script uploads your current laptop workspace snapshot to OCI and deploys from that snapshot, without cloning from Git.
 
+## Terraform (Plan Only)
+
+```bash
+cd terraform
+terraform init
+terraform validate
+terraform plan \
+  -var="compartment_id=<your_compartment_ocid>" \
+  -var="region=us-phoenix-1" \
+  -var="laptop_cidr=<your_public_ip>/32"
+```
+
+This baseline enforces laptop-CIDR access controls and OCI naming conventions.
+
 ## Quality Checks
 
 ```bash
@@ -120,11 +135,12 @@ npm run build
 
 ## Documentation
 
-- [Architecture](/Users/leandromichelino/Desktop/Oracle/Github/newproject/ARCHITECTURE_COMPLETE.md)
-- [Deployment](/Users/leandromichelino/Desktop/Oracle/Github/newproject/DEPLOYMENT.md)
-- [Dashboard](/Users/leandromichelino/Desktop/Oracle/Github/newproject/DASHBOARD.md)
-- [Credential Management](/Users/leandromichelino/Desktop/Oracle/Github/newproject/CREDENTIAL_MANAGEMENT.md)
-- [Testing](/Users/leandromichelino/Desktop/Oracle/Github/newproject/TESTING.md)
+- [Architecture](ARCHITECTURE_COMPLETE.md)
+- [Deployment](DEPLOYMENT.md)
+- [Dashboard](DASHBOARD.md)
+- [Credential Management](CREDENTIAL_MANAGEMENT.md)
+- [Testing](TESTING.md)
+- [Terraform](terraform/README.md)
 
 ## License
 

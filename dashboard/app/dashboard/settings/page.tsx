@@ -5,6 +5,7 @@ import { Trash2, Loader } from 'lucide-react';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
 import { backendUrl } from '@/lib/backend-url';
+import { useAuth } from '@/lib/auth-context';
 
 
 interface StoredCredential {
@@ -14,7 +15,15 @@ interface StoredCredential {
   last_tested?: string
 }
 
+interface ScanApprovalConfig {
+  scan_frequency: 'hourly' | 'daily' | 'weekly'
+  auto_remediate: boolean
+  notification_email: string
+}
+
 export default function SettingsPage() {
+  const { user } = useAuth()
+  const customerId = user ? `user-${user.id}` : 'anonymous'
   const [storedCredentials, setStoredCredentials] = useState<StoredCredential[]>([])
   const [loadingCredentials, setLoadingCredentials] = useState(true)
   const [scanningApprovalStep, setScanningApprovalStep] = useState(false)
@@ -22,11 +31,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadCredentials()
-  }, [])
+  }, [customerId])
 
   const loadCredentials = async () => {
     try {
-      const res = await fetch(backendUrl('/api/v1/credentials?customer_id=demo'))
+      const res = await fetch(backendUrl(`/api/v1/credentials?customer_id=${encodeURIComponent(customerId)}`))
       if (res.ok) {
         const data = await res.json()
         setStoredCredentials(data.credentials || [])
@@ -52,9 +61,12 @@ export default function SettingsPage() {
     if (!confirm(`Delete ${provider.toUpperCase()} credentials?`)) return
 
     try {
-      const res = await fetch(backendUrl(`/api/v1/credentials/${provider}?customer_id=demo`), {
-        method: 'DELETE'
-      })
+      const res = await fetch(
+        backendUrl(`/api/v1/credentials/${provider}?customer_id=${encodeURIComponent(customerId)}`),
+        {
+          method: 'DELETE'
+        }
+      )
 
       if (res.ok) {
         await loadCredentials()
@@ -64,13 +76,13 @@ export default function SettingsPage() {
     }
   }
 
-  const handleScanningApproved = async (config: any) => {
+  const handleScanningApproved = async (config: ScanApprovalConfig) => {
     try {
       const res = await fetch(backendUrl('/api/v1/scanning/approve'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer_id: 'demo',
+          customer_id: customerId,
           ...config
         })
       })
@@ -81,7 +93,7 @@ export default function SettingsPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            customer_id: 'demo',
+            customer_id: customerId,
             providers: approvedProviders
           })
         })
@@ -117,7 +129,7 @@ export default function SettingsPage() {
           {/* Add Credentials Section */}
           <div>
             <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Add Cloud Provider</h2>
-            <CredentialForm onSubmit={handleCredentialSubmitted} />
+            <CredentialForm customerId={customerId} onSubmit={handleCredentialSubmitted} />
           </div>
 
           {/* Scanning Approval Section */}

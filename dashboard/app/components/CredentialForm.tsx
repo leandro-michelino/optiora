@@ -6,10 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { backendUrl } from '@/lib/backend-url';
 
 interface CredentialFormProps {
+  customerId: string;
   onSubmit: (provider: string, credentials: Record<string, string>) => Promise<void>;
 }
 
-const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
+const CredentialForm: React.FC<CredentialFormProps> = ({ customerId, onSubmit }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>('aws');
   const [loading, setLoading] = useState(false);
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
@@ -79,7 +80,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer_id: 'demo', // In production, use real customer ID
+          customer_id: customerId,
           provider: selectedProvider,
           ...credentials
         })

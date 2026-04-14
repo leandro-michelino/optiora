@@ -2,27 +2,32 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth-context";
+import { backendUrl } from "@/lib/backend-url";
 
-export default function LoginPage() {
-  const router = useRouter();
-  const { login } = useAuth();
+export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setMessage("");
     setLoading(true);
 
     try {
-      await login(email, password);
-      router.push("/dashboard");
+      const response = await fetch(
+        backendUrl(`/auth/password-reset-request?email=${encodeURIComponent(email)}`),
+        { method: "POST" },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || "Failed to submit password reset request");
+      }
+      setMessage(data?.message || "If the email exists, a reset link will be sent.");
     } catch (err: any) {
-      setError(err.message || "Login failed. Please try again.");
+      setError(err?.message || "Failed to submit password reset request");
     } finally {
       setLoading(false);
     }
@@ -31,9 +36,16 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
       <div className="w-full max-w-md p-8 bg-slate-800 rounded-lg shadow-lg border border-slate-700">
-        <h1 className="text-3xl font-bold text-white mb-2">OptiOra</h1>
-        <p className="text-slate-400 mb-8">Sign in to your account</p>
+        <h1 className="text-3xl font-bold text-white mb-2">Forgot Password</h1>
+        <p className="text-slate-400 mb-8">
+          Enter your account email and we will trigger a password reset request.
+        </p>
 
+        {message && (
+          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded text-emerald-300 text-sm">
+            {message}
+          </div>
+        )}
         {error && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
             {error}
@@ -56,51 +68,23 @@ export default function LoginPage() {
             />
           </div>
 
-          <div>
-            <div className="flex justify-between items-center mb-2">
-              <label htmlFor="password" className="block text-sm font-medium text-slate-300">
-                Password
-              </label>
-              <Link
-                href="/forgot-password"
-                className="text-sm text-blue-400 hover:text-blue-300"
-              >
-                Forgot?
-              </Link>
-            </div>
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="••••••••"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
-
           <button
             type="submit"
             disabled={loading}
             className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white font-medium rounded transition-colors"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Submitting..." : "Request Password Reset"}
           </button>
         </form>
 
         <p className="mt-6 text-center text-slate-400 text-sm">
-          Don't have an account?{" "}
-          <Link href="/signup" className="text-blue-400 hover:text-blue-300 font-medium">
-            Create one
+          Remembered your password?{" "}
+          <Link href="/login" className="text-blue-400 hover:text-blue-300 font-medium">
+            Back to login
           </Link>
         </p>
-
-        <div className="mt-8 pt-6 border-t border-slate-700">
-          <p className="text-xs text-slate-500 text-center">
-            Tip: if this is your first time, create an account from the sign-up page.
-          </p>
-        </div>
       </div>
     </div>
   );
 }
+

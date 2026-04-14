@@ -23,6 +23,20 @@ npm run lint
 npm run build
 ```
 
+## Terraform Plan-Only (Optional, Network Baseline)
+
+```bash
+cd terraform
+terraform init
+terraform validate
+terraform plan \
+  -var="compartment_id=<your_compartment_ocid>" \
+  -var="region=us-phoenix-1" \
+  -var="laptop_cidr=<your_public_ip>/32"
+```
+
+This baseline uses OCI naming conventions and restricts ingress to `laptop_cidr` only.
+
 ## Quick Deploy
 
 ```bash

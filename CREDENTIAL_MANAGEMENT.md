@@ -7,6 +7,7 @@ This project validates cloud credentials and persists credential metadata for ea
 - Validate: AWS, Azure, GCP, OCI
 - Store: provider + customer mapping, validity status, test timestamp, message
 - List/Delete: full CRUD for dashboard settings workflow
+- Customer scoping: dashboard uses authenticated user identity-derived `customer_id` (no hardcoded demo identifier)
 
 ## Data Path
 
