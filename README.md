@@ -1,7 +1,6 @@
 # OptiOra
 ## Multi-Cloud FinOps Optimization Platform
 
-[![Tests](https://github.com/leandro-michelino/optiora/actions/workflows/deploy-oci.yml/badge.svg)](https://github.com/leandro-michelino/optiora/actions)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
