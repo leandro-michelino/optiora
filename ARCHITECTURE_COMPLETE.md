@@ -13,7 +13,8 @@ This document reflects the repository state as of April 14, 2026.
 ┌────────────────────────────────────────────┐
 │        Next.js Dashboard (port 3000)       │
 │  - auth/session handling                    │
-│  - cost, anomaly, recommendation views      │
+│  - command center + operations readiness    │
+│  - costs, forecast, analytics, AI advisor   │
 │  - credentials + scan setup                 │
 └──────────────────────┬─────────────────────┘
                        │ REST + Bearer JWT
@@ -24,6 +25,7 @@ This document reflects the repository state as of April 14, 2026.
 │  /api/v1/credentials/*                      │
 │  /api/v1/scanning/*                         │
 │  /api/v1/costs|anomalies|recommendations    │
+│  /api/v1/forecast|analytics                 │
 └───────────────┬─────────────────┬──────────┘
                 │                 │
                 │ SQLAlchemy      │ Cloud SDK clients
@@ -37,6 +39,30 @@ This document reflects the repository state as of April 14, 2026.
       │ - scan state     │
       └──────────────────┘
 ```
+
+## 1.1) FinOps Analytics Flow
+
+```text
+Provider billing APIs
+   |
+   | cost summaries by provider/service
+   v
+FastAPI cost context
+   |
+   +--> /api/v1/costs              current spend and provider mix
+   +--> /api/v1/recommendations    deterministic savings opportunities
+   +--> /api/v1/analytics          waste, risk, maturity, unit metrics
+   +--> /api/v1/forecast           12-month seasonal trend scenarios
+   |
+   v
+Next.js dashboard
+   |
+   +--> Command Center             operational view
+   +--> Forecasting                baseline/conservative/balanced/aggressive
+   +--> AI Insights                deterministic findings + GenAI advisor link
+```
+
+GenAI is used for explanation and planning through the dashboard advisor. Savings math remains deterministic and inspectable.
 
 ## 2) Auth + Session Flow
 
@@ -138,7 +164,35 @@ OCI Compute VM
     └── /var/log/optiora-setup.log
 ```
 
-Remote deploy flow:
+Terraform plus Ansible flow:
+
+```text
+Developer laptop
+   |
+   | terraform plan/apply
+   v
+OCI network baseline
+   |
+   +--> VCN
+   +--> Internet Gateway
+   +--> Route Table
+   +--> Security List
+   +--> Public Subnet
+   |
+   | ansible-playbook
+   v
+OCI VM runtime
+   |
+   +--> OS packages + Node.js
+   +--> Python virtualenv + backend package
+   +--> dashboard npm ci + build
+   +--> /opt/optiora/.env
+   +--> optiora-api.service
+   +--> optiora-dashboard.service
+   +--> HTTP health checks
+```
+
+Laptop-driven script flow:
 
 ```text
 Developer laptop
@@ -184,10 +238,12 @@ Egress:
 
 This keeps inbound access laptop-scoped while still allowing package installation and provider API egress by default.
 
+Terraform intentionally stops at network primitives. Host configuration belongs to Ansible or the one-command deployment script.
+
 ## 7) Operational Notes
 
 - Backend startup fails fast if DB initialization fails.
 - Credential validation returns troubleshooting details but never persists raw secrets.
-- Dashboard overview pages can fall back to safe mock data when backend data is unavailable.
+- Dashboard pages mark partial/fallback data explicitly when backend data is unavailable.
 - AI chat degrades cleanly when `ANTHROPIC_API_KEY` is not configured.
 - Password strength is enforced on both the frontend and backend.

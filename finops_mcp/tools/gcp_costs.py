@@ -28,8 +28,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             from google.cloud import bigquery
             from google.oauth2 import service_account
         except ImportError:
-            logger.warning("GCP SDK not available, returning mock data")
-            return _mock_cost_summary(period)
+            logger.warning("GCP SDK not available")
+            return json.dumps({"error": "GCP SDK not available", "cloud_provider": "gcp"})
         
         # Load GCP credentials
         credentials = service_account.Credentials.from_service_account_file(
@@ -98,25 +98,6 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Error fetching GCP costs: {str(e)}")
         return json.dumps({"error": str(e), "cloud_provider": "gcp"})
-
-
-def _mock_cost_summary(period: str) -> str:
-    """Return mock GCP cost data."""
-    return json.dumps({
-        "period": period,
-        "start_date": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"),
-        "end_date": datetime.now().strftime("%Y-%m-%d"),
-        "total_cost_usd": 550.00,
-        "top_services": [
-            {"service": "Compute Engine", "cost_usd": 300.00},
-            {"service": "Cloud Storage", "cost_usd": 120.00},
-            {"service": "BigQuery", "cost_usd": 80.00},
-            {"service": "Cloud SQL", "cost_usd": 50.00},
-        ],
-        "currency": "USD",
-        "cloud_provider": "gcp",
-        "note": "Mock data - GCP SDK not available",
-    })
 
 
 async def get_forecast(params: dict[str, Any]) -> str:

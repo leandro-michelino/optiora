@@ -34,7 +34,7 @@ terraform init
 terraform validate
 terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
-  -var="region=us-phoenix-1" \
+  -var="region=af-johannesburg-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 

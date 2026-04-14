@@ -19,7 +19,7 @@ from .auth_routes import get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
 from .orm_models import SessionLocal, User, get_db
 from .scanning import ScanningManager, ScanningState
-from .tools import anomalies, aws_costs, recommendations
+from .tools import anomalies, aws_costs, finops_analytics, recommendations
 from .tools import azure_costs, gcp_costs, oci_costs
 from . import __version__
 
@@ -199,6 +199,31 @@ async def _cost_summary_for_provider(provider: str, period: str = "month") -> Di
     else:
         return {"error": f"Unsupported provider: {provider}"}
     return _safe_json_load(raw, {"error": "Invalid tool response"})
+
+
+async def _cost_context(period: str = "month", cloud_provider: str = "all") -> Dict[str, Any]:
+    providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
+    breakdown: Dict[str, Dict[str, float]] = {}
+    total_cost = 0.0
+
+    for provider in providers:
+        summary = await _cost_summary_for_provider(provider, period)
+        cost = float(summary.get("total_cost_usd", 0) or 0)
+        total_cost += cost
+        breakdown[provider] = {"cost": round(cost, 2), "percentage": 0.0}
+
+    if total_cost > 0:
+        for provider in breakdown:
+            breakdown[provider]["percentage"] = round(
+                (breakdown[provider]["cost"] / total_cost) * 100, 1
+            )
+
+    return {
+        "period": period,
+        "cloud_provider": cloud_provider,
+        "total_cost": round(total_cost, 2),
+        "breakdown": breakdown,
+    }
 
 
 @router.post("/credentials/validate", response_model=CredentialResponse)
@@ -475,21 +500,7 @@ async def get_scan_progress(
 @router.get("/dashboard/costs")
 @router.get("/costs")
 async def dashboard_costs(period: str = "month", cloud_provider: str = "all") -> Dict[str, Any]:
-    providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
-    breakdown: Dict[str, Dict[str, float]] = {}
-    total_cost = 0.0
-
-    for provider in providers:
-        summary = await _cost_summary_for_provider(provider, period)
-        cost = float(summary.get("total_cost_usd", 0) or 0)
-        total_cost += cost
-        breakdown[provider] = {"cost": round(cost, 2), "percentage": 0.0}
-
-    if total_cost > 0:
-        for provider in breakdown:
-            breakdown[provider]["percentage"] = round(
-                (breakdown[provider]["cost"] / total_cost) * 100, 1
-            )
+    context = await _cost_context(period, cloud_provider)
 
     anomalies_result = _safe_json_load(
         await anomalies.detect_anomalies({"cloud_provider": cloud_provider}),
@@ -505,11 +516,11 @@ async def dashboard_costs(period: str = "month", cloud_provider: str = "all") ->
     ) / 12
 
     return {
-        "totalCost": round(total_cost, 2),
+        "totalCost": context["total_cost"],
         "trend": 0.0,
         "anomalies": int(anomalies_result.get("anomalies_found", 0) or 0),
         "potentialSavings": round(potential_savings, 2),
-        "breakdown": breakdown,
+        "breakdown": context["breakdown"],
     }
 
 
@@ -540,8 +551,15 @@ async def dashboard_anomalies(cloud_provider: str = "all") -> List[Dict[str, Any
 @router.get("/dashboard/recommendations")
 @router.get("/recommendations")
 async def dashboard_recommendations(cloud_provider: str = "all") -> List[Dict[str, Any]]:
+    context = await _cost_context("month", cloud_provider)
     result = _safe_json_load(
-        await recommendations.get_recommendations({"cloud_provider": cloud_provider}),
+        await recommendations.get_recommendations(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
         {},
     )
     rows = result.get("recommendations", [])
@@ -566,6 +584,64 @@ async def dashboard_recommendations(cloud_provider: str = "all") -> List[Dict[st
     return mapped
 
 
+@router.get("/forecast")
+async def dashboard_forecast(
+    months: int = 12,
+    cloud_provider: str = "all",
+) -> Dict[str, Any]:
+    context = await _cost_context("month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_forecast(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "fallback_monthly_spend": 0,
+            }
+        ),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics")
+async def dashboard_analytics(cloud_provider: str = "all") -> Dict[str, Any]:
+    context = await _cost_context("month", cloud_provider)
+    anomalies_result = _safe_json_load(
+        await anomalies.detect_anomalies({"cloud_provider": cloud_provider}),
+        {},
+    )
+    recommendations_result = _safe_json_load(
+        await recommendations.get_recommendations(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    monthly_savings = (
+        float(recommendations_result.get("total_potential_savings_annual_usd", 0) or 0) / 12
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_analytics(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "anomalies": int(anomalies_result.get("anomalies_found", 0) or 0),
+                "monthly_savings": monthly_savings,
+            }
+        ),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
     return {
@@ -587,6 +663,9 @@ async def api_info() -> Dict[str, Any]:
             "credential_validation": True,
             "scanning_permissions": True,
             "dashboard_endpoints": True,
+            "finops_analytics": True,
+            "forecasting": True,
+            "genai_advisor": True,
         },
     }
 

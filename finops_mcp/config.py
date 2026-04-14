@@ -33,7 +33,7 @@ class Config:
     # Used for: (1) hosting the API backend, (2) analyzing OCI costs via Usage API
     oci_config_file: str = os.getenv("OCI_CONFIG_FILE", "")
     oci_profile: str = os.getenv("OCI_PROFILE", "DEFAULT")
-    oci_region: str = os.getenv("OCI_REGION", "us-phoenix-1")
+    oci_region: str = os.getenv("OCI_REGION", "af-johannesburg-1")
 
     # OCI Database (PostgreSQL for audit logs)
     database_url: str = os.getenv("DATABASE_URL", "")

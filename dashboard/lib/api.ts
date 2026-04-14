@@ -7,23 +7,24 @@ import {
   CredentialListResponse,
   ScanningPermission,
   ScanStartResponse,
+  ForecastResponse,
+  FinOpsAnalyticsResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
 
 const DEFAULT_TIMEOUT_MS = 10000
 
-// Mock data fallback
-const mockCostData = {
-  totalCost: 12450.50,
-  trend: 8.2,
-  anomalies: 3,
-  potentialSavings: 2340.00,
+const safeFallbackCostData = {
+  totalCost: 0,
+  trend: 0,
+  anomalies: 0,
+  potentialSavings: 0,
   breakdown: {
-    aws: { cost: 5200, percentage: 41.8 },
-    azure: { cost: 3400, percentage: 27.3 },
-    gcp: { cost: 2350, percentage: 18.9 },
-    oci: { cost: 1500, percentage: 12.0 },
+    aws: { cost: 0, percentage: 0 },
+    azure: { cost: 0, percentage: 0 },
+    gcp: { cost: 0, percentage: 0 },
+    oci: { cost: 0, percentage: 0 },
   },
 }
 
@@ -65,14 +66,14 @@ async function requestJson<T>(
 
 /**
  * Fetch cost data from backend
- * Falls back to mock data if API is unavailable
+ * Falls back to an explicit zero-cost baseline if API is unavailable.
  */
 export async function fetchCosts(): Promise<CostResponse> {
   try {
     return await requestJson<CostResponse>('/api/v1/costs', {}, { authenticated: false })
   } catch (error) {
-    console.warn('Failed to fetch costs from backend, using mock data', error)
-    return mockCostData as CostResponse
+    console.warn('Failed to fetch costs from backend, using safe fallback data', error)
+    return safeFallbackCostData as CostResponse
   }
 }
 
@@ -129,4 +130,20 @@ export async function startScan(providers?: string[]): Promise<ScanStartResponse
     method: 'POST',
     body: JSON.stringify({ providers }),
   })
+}
+
+export async function fetchForecast(months = 12): Promise<ForecastResponse> {
+  return requestJson<ForecastResponse>(
+    `/api/v1/forecast?months=${encodeURIComponent(String(months))}`,
+    {},
+    { authenticated: false },
+  )
+}
+
+export async function fetchFinOpsAnalytics(): Promise<FinOpsAnalyticsResponse> {
+  return requestJson<FinOpsAnalyticsResponse>(
+    '/api/v1/analytics',
+    {},
+    { authenticated: false },
+  )
 }

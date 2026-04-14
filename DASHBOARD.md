@@ -27,6 +27,8 @@ Next.js UI
   +--> /api/v1/costs                 (overview + cost pages)
   +--> /api/v1/anomalies             (anomaly pages)
   +--> /api/v1/recommendations       (recommendation pages)
+  +--> /api/v1/forecast              (predictive analytics)
+  +--> /api/v1/analytics             (risk, waste, maturity metrics)
   +--> /api/v1/credentials/*         (settings workflow)
   +--> /api/v1/scanning/*            (approval + progress workflow)
 ```
@@ -36,8 +38,10 @@ Next.js UI
 - `dashboard/lib/backend-url.ts`: backend URL resolution
 - `dashboard/lib/auth-context.tsx`: session state and profile loading
 - `dashboard/lib/auth-fetch.ts`: authenticated fetch + refresh retry
-- `dashboard/lib/api.ts`: dashboard overview API client
+- `dashboard/lib/api.ts`: typed dashboard API client with timeouts
 - `dashboard/app/dashboard/settings/page.tsx`: credentials + scan setup flow
+- `dashboard/app/dashboard/operations/page.tsx`: operational readiness checks
+- `dashboard/app/dashboard/forecasting/page.tsx`: forecast scenarios from backend analytics
 
 ## Runtime Sequence
 
@@ -59,7 +63,9 @@ Charts/cards/settings render normalized API data
 
 ## Operational Notes
 
-- Overview pages can fall back to safe mock data if the backend is down.
+- Overview pages mark partial or fallback data explicitly if the backend is down.
+- Forecasting consumes `/api/v1/forecast` rather than client-side random simulation.
+- AI Insights consumes `/api/v1/analytics` and `/api/v1/recommendations`; GenAI is used for advisor explanations and rollout plans.
 - Settings and auth flows require a live backend.
 - Protected calls use bearer auth and retry once with `/auth/refresh`.
 - AI chat returns a configuration message when `ANTHROPIC_API_KEY` is not set.

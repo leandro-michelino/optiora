@@ -27,8 +27,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             from azure.mgmt.costmanagement import CostManagementClient
             from azure.mgmt.costmanagement.models import QueryDefinition
         except ImportError:
-            logger.warning("Azure SDK not available, returning mock data")
-            return _mock_cost_summary(period)
+            logger.warning("Azure SDK not available")
+            return json.dumps({"error": "Azure SDK not available", "cloud_provider": "azure"})
         
         # Create credentials
         credential = ClientSecretCredential(
@@ -117,25 +117,6 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Error fetching Azure costs: {str(e)}")
         return json.dumps({"error": str(e), "cloud_provider": "azure"})
-
-
-def _mock_cost_summary(period: str) -> str:
-    """Return mock Azure cost data."""
-    return json.dumps({
-        "period": period,
-        "start_date": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"),
-        "end_date": datetime.now().strftime("%Y-%m-%d"),
-        "total_cost_usd": 650.00,
-        "top_services": [
-            {"service": "Virtual Machines", "cost_usd": 350.00},
-            {"service": "Storage", "cost_usd": 150.00},
-            {"service": "SQL Database", "cost_usd": 100.00},
-            {"service": "App Service", "cost_usd": 50.00},
-        ],
-        "currency": "USD",
-        "cloud_provider": "azure",
-        "note": "Mock data - Azure SDK not available",
-    })
 
 
 async def get_forecast(params: dict[str, Any]) -> str:

@@ -29,13 +29,13 @@ This roadmap reflects the current repository state, not an earlier pre-auth prot
 - expose organization switcher and team-management flows
 - align credential ownership with organization boundaries where needed
 
-### 4. Replace placeholder provider logic
+### 4. Replace remaining provider fallback logic
 
-- remove mock/fallback data paths once live provider integrations are fully wired
+- remove SDK fallback data paths once live provider integrations are fully wired
 - add provider-specific permission diagnostics and richer recommendations
 
 ## Nice-To-Have
 
 - reverse-proxy / TLS front door for the OCI deployment
 - managed database migration path for higher concurrency
-- deeper FinOps analytics and forecasting models
+- persisted historical cost models after scan results are stored

@@ -58,7 +58,7 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 - Credential and scanning endpoints are authenticated and derive their persisted `customer_id` from the JWT user identity.
 - The dashboard automatically retries protected requests with `/auth/refresh` when the access token has expired.
 - Raw cloud secrets are validated but not persisted; only sanitized metadata is stored.
-- The dashboard overview pages can still fall back to safe mock data if the backend is unavailable.
+- Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
 
 ## Core API Surface
 
@@ -82,6 +82,8 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 - `GET /api/v1/costs`
 - `GET /api/v1/anomalies`
 - `GET /api/v1/recommendations`
+- `GET /api/v1/forecast`
+- `GET /api/v1/analytics`
 - `GET /api/v1/info`
 
 ## Local Development
@@ -155,7 +157,7 @@ terraform -chdir=terraform init
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
-  -var="region=us-phoenix-1" \
+  -var="region=af-johannesburg-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 

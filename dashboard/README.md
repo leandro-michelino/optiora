@@ -36,5 +36,5 @@ npm run build
 ## Notes
 
 - protected requests use bearer auth and refresh-token retry
-- overview pages can fall back to safe mock data
+- overview pages mark partial or fallback data explicitly
 - settings/auth flows require a live backend

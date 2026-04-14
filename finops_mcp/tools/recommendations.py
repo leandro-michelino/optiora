@@ -8,6 +8,54 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+PROVIDER_SERVICE_MIX = {
+    "aws": [
+        ("EC2", "reserved-instances", 0.16, "Increase Savings Plans or RI coverage for steady compute."),
+        ("EBS", "idle-resources", 0.05, "Remove unattached volumes and old snapshots."),
+        ("S3", "storage-optimization", 0.04, "Move cold objects to lower-cost lifecycle tiers."),
+    ],
+    "azure": [
+        ("Virtual Machines", "reserved-instances", 0.14, "Use reservations for stable VM families."),
+        ("Managed Disks", "idle-resources", 0.05, "Delete unattached disks and stale snapshots."),
+        ("Storage", "storage-optimization", 0.04, "Apply lifecycle management to cool/archive tiers."),
+    ],
+    "gcp": [
+        ("Compute Engine", "committed-use", 0.13, "Add committed-use discounts for baseline workloads."),
+        ("Persistent Disk", "idle-resources", 0.05, "Remove orphaned disks and stale snapshots."),
+        ("Cloud Storage", "storage-optimization", 0.04, "Move old objects to Nearline or Archive."),
+    ],
+    "oci": [
+        ("Compute", "rightsizing", 0.11, "Right-size flexible shapes using observed utilization."),
+        ("Block Volume", "idle-resources", 0.04, "Clean unattached volumes and expired backups."),
+        ("Object Storage", "storage-optimization", 0.03, "Move infrequently accessed data to archive storage."),
+    ],
+}
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _cost_breakdown(params: dict[str, Any], cloud_provider: str) -> dict[str, float]:
+    raw = params.get("cost_breakdown") or {}
+    if raw:
+        result = {}
+        for provider, details in raw.items():
+            if isinstance(details, dict):
+                result[provider] = _safe_float(details.get("cost"))
+            else:
+                result[provider] = _safe_float(details)
+        return result
+
+    current_spend = _safe_float(params.get("current_monthly_spend"), 0.0)
+    if cloud_provider == "all":
+        return {"aws": current_spend * 0.4, "azure": current_spend * 0.25, "gcp": current_spend * 0.2, "oci": current_spend * 0.15}
+    return {cloud_provider: current_spend}
+
+
 async def get_recommendations(params: dict[str, Any]) -> str:
     """
     Generate cost optimization recommendations.
@@ -19,53 +67,29 @@ async def get_recommendations(params: dict[str, Any]) -> str:
         min_savings = params.get("min_savings_usd", 100)
         rec_type = params.get("recommendation_type", "all")
 
-        # Placeholder: Real implementation analyzes 12-month history
-        recommendations_list = [
-            {
-                "id": "rec-001",
-                "type": "reserved-instances",
-                "service": "EC2",
-                "description": "Purchase 1-year RIs for m5.xlarge in us-east-1",
-                "current_annual_spend": 15000,
-                "savings_annual_usd": 4500,
-                "payback_months": 3,
-                "severity": "high",
-                "roi_percent": 300,
-            },
-            {
-                "id": "rec-002",
-                "type": "spot-instances",
-                "service": "EC2",
-                "description": "Convert non-critical compute (12% usage) to spot instances",
-                "current_annual_spend": 8000,
-                "savings_annual_usd": 6400,
-                "payback_months": 1,
-                "severity": "high",
-                "roi_percent": 800,
-            },
-            {
-                "id": "rec-003",
-                "type": "idle-resources",
-                "service": "RDS",
-                "description": "Delete 5 unattached database snapshots (no recent backups restored)",
-                "current_annual_spend": 1200,
-                "savings_annual_usd": 1200,
-                "payback_months": 0,
-                "severity": "medium",
-                "roi_percent": float('inf'),
-            },
-            {
-                "id": "rec-004",
-                "type": "storage-optimization",
-                "service": "S3",
-                "description": "Move 500 GB cold data to Glacier (12+ months old, never accessed)",
-                "current_annual_spend": 11500,
-                "savings_annual_usd": 2300,
-                "payback_months": 1,
-                "severity": "medium",
-                "roi_percent": 200,
-            },
-        ]
+        breakdown = _cost_breakdown(params, cloud_provider)
+        recommendations_list = []
+        for provider, monthly_spend in breakdown.items():
+            if monthly_spend <= 0:
+                continue
+            service_mix = PROVIDER_SERVICE_MIX.get(provider, PROVIDER_SERVICE_MIX["aws"])
+            for index, (service, recommendation_type, savings_rate, description) in enumerate(service_mix, start=1):
+                annual_spend = monthly_spend * 12
+                savings_annual = annual_spend * savings_rate
+                recommendations_list.append(
+                    {
+                        "id": f"{provider}-rec-{index:03d}",
+                        "type": recommendation_type,
+                        "service": service,
+                        "description": f"{provider.upper()}: {description}",
+                        "current_annual_spend": round(annual_spend, 2),
+                        "savings_annual_usd": round(savings_annual, 2),
+                        "payback_months": 1 if recommendation_type in {"idle-resources", "storage-optimization"} else 3,
+                        "severity": "high" if savings_rate >= 0.10 else "medium",
+                        "roi_percent": round(savings_rate * 1000, 0),
+                        "confidence": "high" if monthly_spend > 0 else "low",
+                    }
+                )
 
         # Filter by type
         if rec_type != "all":

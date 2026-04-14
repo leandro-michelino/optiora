@@ -16,7 +16,6 @@ import {
   Server,
   ShieldCheck,
   Target,
-  TrendingUp,
 } from 'lucide-react'
 import { CostChart, CostTrendPoint } from '@/components/CostChart'
 import { ServiceBreakdown, ServiceBreakdownPoint } from '@/components/ServiceBreakdown'

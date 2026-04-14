@@ -6,27 +6,7 @@ variable "compartment_id" {
 variable "region" {
   description = "OCI region."
   type        = string
-  default     = "us-phoenix-1"
-}
-
-variable "oci_tenancy_ocid" {
-  description = "OCI tenancy OCID used by the Terraform provider."
-  type        = string
-}
-
-variable "oci_user_ocid" {
-  description = "OCI user OCID used by the Terraform provider."
-  type        = string
-}
-
-variable "oci_fingerprint" {
-  description = "Fingerprint for the OCI API signing key."
-  type        = string
-}
-
-variable "oci_private_key_path" {
-  description = "Local path to the OCI API private key matching oci_fingerprint."
-  type        = string
+  default     = "af-johannesburg-1"
 }
 
 variable "project_code" {
@@ -44,7 +24,7 @@ variable "environment" {
 variable "region_code" {
   description = "Short region code used in naming."
   type        = string
-  default     = "phx"
+  default     = "jnb"
 }
 
 variable "name_suffix" {

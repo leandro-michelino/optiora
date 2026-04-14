@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Cloud, TrendingUp, TrendingDown, Share2, Download, AlertCircle, CheckCircle2, Zap } from 'lucide-react'
+import { fetchCosts } from '@/lib/api'
 
 interface Service {
   name: string
@@ -79,62 +80,40 @@ export default function CostsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Mock data for cloud costs with trends
-    setLoading(false)
-    setCosts([
-      {
-        cloud: 'AWS',
-        cost: 5200,
-        lastMonth: 4800,
-        savingsPotential: 1200,
-        services: [
-          { name: 'EC2', cost: 2100, trend: 5, lastMonth: 2000 },
-          { name: 'S3', cost: 800, trend: -3, lastMonth: 825 },
-          { name: 'RDS', cost: 1500, trend: 8, lastMonth: 1390 },
-          { name: 'Lambda', cost: 800, trend: 2, lastMonth: 785 },
-        ],
-      },
-      {
-        cloud: 'Azure',
-        cost: 3400,
-        lastMonth: 3200,
-        savingsPotential: 680,
-        services: [
-          { name: 'Virtual Machines', cost: 1800, trend: -2, lastMonth: 1835 },
-          { name: 'App Service', cost: 900, trend: 4, lastMonth: 865 },
-          { name: 'Storage', cost: 500, trend: 1, lastMonth: 495 },
-          { name: 'SQL Database', cost: 200, trend: 0, lastMonth: 200 },
-        ],
-      },
-      {
-        cloud: 'GCP',
-        cost: 2350,
-        lastMonth: 2100,
-        savingsPotential: 470,
-        services: [
-          { name: 'Compute Engine', cost: 1200, trend: 12, lastMonth: 1070 },
-          { name: 'BigQuery', cost: 650, trend: 5, lastMonth: 620 },
-          { name: 'Cloud Storage', cost: 350, trend: -1, lastMonth: 354 },
-          { name: 'Cloud SQL', cost: 150, trend: 3, lastMonth: 145 },
-        ],
-      },
-      {
-        cloud: 'OCI',
-        cost: 1500,
-        lastMonth: 1400,
-        savingsPotential: 300,
-        services: [
-          { name: 'Compute', cost: 800, trend: 7, lastMonth: 747 },
-          { name: 'Storage', cost: 400, trend: 2, lastMonth: 392 },
-          { name: 'Database', cost: 300, trend: 0, lastMonth: 300 },
-        ],
-      },
-    ])
+    async function loadCosts() {
+      try {
+        const data = await fetchCosts()
+        const providerRows = Object.entries(data.breakdown).map(([provider, value]) => {
+          const lastMonth = value.cost / (1 + (data.trend || 0) / 100)
+          return {
+            cloud: provider.toUpperCase(),
+            cost: value.cost,
+            lastMonth: Number.isFinite(lastMonth) ? Math.round(lastMonth) : value.cost,
+            savingsPotential: Math.round(data.potentialSavings * (value.percentage / 100)),
+            services: [
+              {
+                name: `${provider.toUpperCase()} billing`,
+                cost: value.cost,
+                trend: data.trend,
+                lastMonth: Number.isFinite(lastMonth) ? Math.round(lastMonth) : value.cost,
+              },
+            ],
+          }
+        })
+        setCosts(providerRows)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void loadCosts()
   }, [])
 
   const totalCost = costs.reduce((sum, c) => sum + c.cost, 0)
   const totalLastMonth = costs.reduce((sum, c) => sum + c.lastMonth, 0)
-  const totalTrend = parseFloat(((totalCost - totalLastMonth) / totalLastMonth * 100).toFixed(1))
+  const totalTrend = totalLastMonth > 0
+    ? parseFloat(((totalCost - totalLastMonth) / totalLastMonth * 100).toFixed(1))
+    : 0
   const totalSavingsPotential = costs.reduce((sum, c) => sum + c.savingsPotential, 0)
 
   const chartData = costs.map(c => ({

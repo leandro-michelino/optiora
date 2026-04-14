@@ -22,7 +22,7 @@ NC='\033[0m'
 
 # Configuration
 DEPLOYMENT_TYPE=${1:-"compute"}
-REGION=${OCI_REGION:-"us-phoenix-1"}
+REGION=${OCI_REGION:-"af-johannesburg-1"}
 COMPARTMENT_ID=${OCI_COMPARTMENT_ID:-}
 INSTANCE_NAME=${OCI_INSTANCE_NAME:-"optiora-api"}
 SHAPE=${OCI_SHAPE:-"VM.Standard.E4.Flex"}
@@ -87,15 +87,13 @@ ${YELLOW}COMMANDS:${NC}
     start                Start deployed compute instance
     restart              Reboot deployed compute instance
     destroy              Remove deployment (WARNING: irreversible)
-    container            Placeholder
-    kubernetes           Placeholder
     --help               Show this help message
 
 ${YELLOW}REQUIRED ENV:${NC}
     OCI_COMPARTMENT_ID   Target compartment OCID
 
 ${YELLOW}COMMON ENV:${NC}
-    OCI_REGION                 Region (default: us-phoenix-1)
+    OCI_REGION                 Region (default: af-johannesburg-1)
     OCI_INSTANCE_NAME          VM display name (default: optiora-api)
     OCI_SHAPE                  VM shape (default: VM.Standard.E4.Flex)
     OCI_OCPU_COUNT             vCPU count (default: 2)
@@ -686,18 +684,6 @@ destroy_deployment() {
     log_success "Deployment destroyed"
 }
 
-deploy_container() {
-    log_step "Container Deployment"
-    log_warning "Container deployment is not implemented yet."
-    log_info "Use compute deployment: ./deploy/deploy-oci.sh compute"
-}
-
-deploy_kubernetes() {
-    log_step "Kubernetes Deployment"
-    log_warning "Kubernetes deployment is not implemented yet."
-    log_info "Use compute deployment: ./deploy/deploy-oci.sh compute"
-}
-
 main() {
     echo "============================================================"
     echo "OptiOra OCI Deployment"
@@ -735,14 +721,6 @@ main() {
         destroy)
             check_prerequisites
             destroy_deployment
-            ;;
-        container)
-            check_prerequisites
-            deploy_container
-            ;;
-        kubernetes)
-            check_prerequisites
-            deploy_kubernetes
             ;;
         *)
             log_error "Unknown command: $DEPLOYMENT_TYPE"

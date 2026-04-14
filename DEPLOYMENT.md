@@ -36,7 +36,7 @@ terraform -chdir=../terraform init
 terraform -chdir=../terraform validate
 terraform -chdir=../terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
-  -var="region=us-phoenix-1" \
+  -var="region=af-johannesburg-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 
@@ -82,7 +82,7 @@ Those rewrites matter because the dashboard is browser-executed; leaving `NEXT_P
 ## Environment Variables
 
 ```env
-OCI_REGION=us-phoenix-1
+OCI_REGION=af-johannesburg-1
 OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex
