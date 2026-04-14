@@ -4,7 +4,23 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 
 ## Dashboard Preview
 
-![OptiOra Dashboard Preview](dashboard/public/dashboard-preview.png)
+<p align="center">
+  <a href="dashboard/public/dashboard-preview.png">
+    <img
+      src="dashboard/public/dashboard-preview.png"
+      alt="OptiOra dashboard preview showing multi-cloud cost, anomaly, recommendation, and savings views"
+      width="900"
+    />
+  </a>
+</p>
+
+The dashboard is the main workspace for:
+
+- multi-cloud cost overview across AWS, Azure, GCP, and OCI
+- provider connection and scan readiness checks
+- anomaly detection and optimization recommendations
+- deterministic forecasting with baseline, conservative, balanced, and aggressive scenarios
+- GenAI-assisted cost advisor conversations when `ANTHROPIC_API_KEY` is configured
 
 ## Repository Layout
 
