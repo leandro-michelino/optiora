@@ -1,109 +1,51 @@
 # OptiOra Architecture
 
-This document reflects the current standard deployment architecture (FastAPI + Next.js).
+This document reflects the deployable architecture in this repository as of April 14, 2026.
 
-## 1) System Overview
+## 1) Runtime Topology
 
 ```text
-┌──────────────────────────────────────────────────────────────┐
-│                        End Users                            │
-└───────────────────────────────┬──────────────────────────────┘
-                                │
-                                │ HTTPS
-                                v
-┌──────────────────────────────────────────────────────────────┐
-│                   Next.js Dashboard (:3000)                 │
-│  - Auth pages (login/signup)                                │
-│  - Overview, costs, anomalies, recommendations              │
-│  - Settings (credentials + scanning workflow)               │
-└───────────────────────────────┬──────────────────────────────┘
-                                │ REST API
-                                v
-┌──────────────────────────────────────────────────────────────┐
-│                    FastAPI Backend (:8000)                  │
-│  /auth/*                                                    │
-│  /api/v1/credentials/*                                      │
-│  /api/v1/scanning/*                                         │
-│  /api/v1/costs | /anomalies | /recommendations             │
-└───────────────┬───────────────────────────────┬──────────────┘
-                │                               │
-                │ SQLAlchemy                    │ Provider SDKs
-                v                               v
-      ┌───────────────────────┐      ┌──────────────────────────┐
-      │ SQLite/PostgreSQL DB  │      │ AWS / Azure / GCP / OCI │
-      │ - users               │      │ cost and usage APIs      │
-      │ - tokens              │      └──────────────────────────┘
-      │ - credential records  │
-      │ - scanning state      │
-      └───────────────────────┘
+┌────────────────────────────────────────────┐
+│                 End Users                  │
+└──────────────────────┬─────────────────────┘
+                       │ HTTPS
+                       v
+┌────────────────────────────────────────────┐
+│        Next.js Dashboard (port 3000)      │
+│  - Auth flows                              │
+│  - Costs/anomalies/recommendations         │
+│  - Credential and scanning setup           │
+└──────────────────────┬─────────────────────┘
+                       │ REST
+                       v
+┌────────────────────────────────────────────┐
+│         FastAPI Backend (port 8000)       │
+│  /auth/*                                   │
+│  /api/v1/credentials/*                     │
+│  /api/v1/scanning/*                        │
+│  /api/v1/costs|anomalies|recommendations   │
+└───────────────┬─────────────────┬──────────┘
+                │                 │
+                │ SQLAlchemy      │ Cloud SDK clients
+                v                 v
+      ┌──────────────────┐   ┌───────────────────────┐
+      │ SQLite/Postgres  │   │ AWS/Azure/GCP/OCI APIs│
+      │ - users          │   │ cost + usage endpoints │
+      │ - refresh tokens │   └───────────────────────┘
+      │ - credentials    │
+      │ - scan state     │
+      └──────────────────┘
 ```
 
-## 2) Request Flow (Dashboard Data)
+## 2) OCI Deployment Topology
 
 ```text
-Dashboard page load
-   |
-   | GET /api/v1/costs
-   v
-FastAPI router
-   |
-   | calls provider summary tools (AWS/Azure/GCP/OCI)
-   | + anomaly/recommendation engines
-   v
-Aggregated response
-   |
-   v
-Dashboard charts/cards rendered
-```
-
-## 3) Auth Flow
-
-```text
-POST /auth/login
-   |
-   v
-Validate password hash
-   |
-   v
-Issue access + refresh JWT
-   |
-   v
-Store deterministic refresh token hash in DB
-   |
-   v
-Client stores tokens and fetches /auth/profile
-```
-
-## 4) Credential + Scan Setup Flow
-
-```text
-Settings page
-   |
-   | POST /api/v1/credentials/validate
-   v
-Provider-specific credential check
-   |
-   | POST /api/v1/credentials/add
-   v
-Persist credential metadata
-   |
-   | POST /api/v1/scanning/approve
-   | POST /api/v1/scanning/start
-   v
-Background scan run created
-   |
-   | GET /api/v1/scanning/{scan_id}/progress
-   v
-Progress + results
-```
-
-## 5) OCI Deployment Topology
-
-```text
-OCI Compute Instance
+OCI Compute VM
 ├── /opt/optiora
-│   ├── finops_mcp/
-│   └── dashboard/
+│   ├── finops_mcp/            # FastAPI code
+│   ├── dashboard/             # Next.js code + built output
+│   ├── .env                   # runtime environment
+│   └── venv/                  # Python virtual environment
 ├── systemd
 │   ├── optiora-api.service
 │   └── optiora-dashboard.service
@@ -113,9 +55,72 @@ OCI Compute Instance
     └── /var/log/optiora-setup.log
 ```
 
-## 6) Design Notes
+## 3) Laptop-Controlled Deploy Flow
 
-- API and dashboard are independently restartable.
-- Backend supports partial provider availability (returns provider-level errors while preserving response shape).
-- Scan workflow is stateful and persisted, so scan progress endpoint can return real run status.
-- Tool modules currently mix live-provider calls and fallback/mock behavior; responses are normalized at API layer.
+```text
+Developer Laptop
+   |
+   | ./deploy/deploy-oci.sh compute
+   v
+OCI CLI provisions/starts VM
+   |
+   | tar + scp of LOCAL workspace snapshot
+   v
+VM receives /tmp/optiora-deploy.tar.gz
+   |
+   | unpack -> /opt/optiora
+   | pip install -e /opt/optiora
+   | npm ci && npm run build
+   v
+systemd restart (API + Dashboard)
+```
+
+No Git clone and no CI trigger is required for deployment.
+
+## 4) Auth + Token Flow
+
+```text
+POST /auth/login
+   |
+   v
+Password verification (bcrypt)
+   |
+   v
+Issue access + refresh JWT
+   |
+   v
+Store refresh token hash in DB
+   |
+   v
+Client uses Bearer access token for /auth/profile and protected API calls
+```
+
+## 5) Credential + Scan Flow
+
+```text
+Dashboard Settings
+   |
+   | POST /api/v1/credentials/validate
+   v
+Provider API probe
+   |
+   | POST /api/v1/credentials/add
+   v
+Persist sanitized credential metadata
+   |
+   | POST /api/v1/scanning/approve
+   | POST /api/v1/scanning/start
+   v
+Background scan run stored in scan_runs
+   |
+   | GET /api/v1/scanning/{scan_id}/progress
+   v
+Progress + results to UI
+```
+
+## 6) Operational Notes
+
+- Backend startup fails fast if DB initialization fails.
+- API health/version and app metadata are consistent (`0.1.0` in current codebase).
+- Dashboard can run without Anthropic key; AI chat returns a configuration message instead of crashing.
+- Cloud-cost provider tools still include fallback/mock behavior when SDK/config is missing.

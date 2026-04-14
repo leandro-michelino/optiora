@@ -13,13 +13,14 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Union, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
 from .orm_models import SessionLocal, get_db
 from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, recommendations
 from .tools import azure_costs, gcp_costs, oci_costs
+from . import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -524,7 +525,7 @@ async def dashboard_recommendations(cloud_provider: str = "all") -> List[Dict[st
 async def health_check() -> Dict[str, Any]:
     return {
         "status": "healthy",
-        "version": "1.0.0",
+        "version": __version__,
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -533,7 +534,7 @@ async def health_check() -> Dict[str, Any]:
 async def api_info() -> Dict[str, Any]:
     return {
         "name": "OptiOra API",
-        "version": "1.0.0",
+        "version": __version__,
         "description": "Cloud Cost Optimization Platform",
         "supported_providers": ["aws", "azure", "gcp", "oci"],
         "features": {

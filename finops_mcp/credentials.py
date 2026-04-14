@@ -6,7 +6,7 @@ Validates provider credentials and stores credential metadata in the local DB.
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -205,6 +205,7 @@ class CredentialManager:
     ) -> Dict[str, Any]:
         provider = provider.lower()
         now = datetime.utcnow()
+        sanitized_credentials = self._sanitize_credentials(provider, credentials)
 
         record = (
             self.db.query(CredentialRecord)
@@ -219,7 +220,7 @@ class CredentialManager:
             record = CredentialRecord(
                 customer_id=customer_id,
                 provider=provider,
-                credential_json=json.dumps(credentials),
+                credential_json=json.dumps(sanitized_credentials),
                 is_active=is_active,
                 is_valid=validation.is_valid if validation else False,
                 validation_message=validation.message if validation else None,
@@ -229,7 +230,7 @@ class CredentialManager:
             )
             self.db.add(record)
         else:
-            record.credential_json = json.dumps(credentials)
+            record.credential_json = json.dumps(sanitized_credentials)
             record.is_active = is_active
             if validation:
                 record.is_valid = validation.is_valid
@@ -252,6 +253,56 @@ class CredentialManager:
             "created_at": record.created_at.isoformat(),
             "status": "stored",
         }
+
+    @staticmethod
+    def _mask_value(value: Any, show_last: int = 4) -> str:
+        if value is None:
+            return ""
+        text = str(value)
+        if len(text) <= show_last:
+            return "*" * len(text)
+        return f"{'*' * max(len(text) - show_last, 4)}{text[-show_last:]}"
+
+    def _sanitize_credentials(self, provider: str, credentials: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist only non-sensitive metadata; never store raw secrets."""
+        if provider == "aws":
+            return {
+                "access_key_id_masked": self._mask_value(credentials.get("access_key_id")),
+                "region": str(credentials.get("region") or "us-east-1"),
+            }
+
+        if provider == "azure":
+            return {
+                "subscription_id": str(credentials.get("subscription_id") or ""),
+                "tenant_id": str(credentials.get("tenant_id") or ""),
+                "client_id_masked": self._mask_value(credentials.get("client_id")),
+                "has_client_secret": bool(credentials.get("client_secret")),
+            }
+
+        if provider == "gcp":
+            service_account = credentials.get("service_account_json")
+            email = ""
+            if isinstance(service_account, str):
+                try:
+                    service_account = json.loads(service_account)
+                except Exception:
+                    service_account = {}
+            if isinstance(service_account, dict):
+                email = str(service_account.get("client_email") or "")
+
+            return {
+                "project_id": str(credentials.get("project_id") or ""),
+                "service_account_email": email,
+                "has_service_account_json": bool(credentials.get("service_account_json")),
+            }
+
+        if provider == "oci":
+            return {
+                "config_file": str(credentials.get("config_file") or ""),
+                "profile": str(credentials.get("profile") or "DEFAULT"),
+            }
+
+        return {"provider": provider, "stored_fields": sorted(credentials.keys())}
 
     def list_credentials(self, customer_id: str) -> Dict[str, Any]:
         records = (

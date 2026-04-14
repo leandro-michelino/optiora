@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Cloud, TrendingUp, TrendingDown, Share2, Download, AlertCircle, CheckCircle2, Zap } from 'lucide-react'
 
 interface Service {
@@ -77,8 +77,6 @@ const competitorData: CompetitorComparison[] = [
 export default function CostsPage() {
   const [costs, setCosts] = useState<CostData[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedCloud, setSelectedCloud] = useState<string | null>(null)
-  const [timeRange, setTimeRange] = useState('month')
 
   useEffect(() => {
     // Mock data for cloud costs with trends

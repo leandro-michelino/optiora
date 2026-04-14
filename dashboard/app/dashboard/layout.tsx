@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Home, Zap, Grid, LogOut } from 'lucide-react'
+import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut } from 'lucide-react'
 
 function DashboardLayoutContent({
   children,

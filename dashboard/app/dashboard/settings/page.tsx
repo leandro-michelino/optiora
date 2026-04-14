@@ -38,7 +38,8 @@ export default function SettingsPage() {
     }
   }
 
-  const handleCredentialSubmitted = async (provider: string, credentials: Record<string, string>) => {
+  const handleCredentialSubmitted = async (provider: string, _credentials: Record<string, string>) => {
+    void _credentials
     // After validation & storage, show scanning approval step
     setApprovedProviders([provider])
     setScanningApprovalStep(true)

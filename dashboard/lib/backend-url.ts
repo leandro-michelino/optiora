@@ -1,7 +1,24 @@
-const RAW_BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+function normalizeBaseUrl(rawUrl: string): string {
+  return rawUrl.replace(/\/+$/, "");
+}
 
-export const BACKEND_URL = RAW_BACKEND_URL.replace(/\/+$/, "");
+function browserDefaultApiUrl(): string {
+  if (typeof window === "undefined") {
+    return "http://localhost:8000";
+  }
+  return `${window.location.protocol}//${window.location.hostname}:8000`;
+}
+
+export function resolveBackendUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (fromEnv) {
+    return normalizeBaseUrl(fromEnv);
+  }
+  return normalizeBaseUrl(browserDefaultApiUrl());
+}
+
+export const BACKEND_URL = resolveBackendUrl();
 
 export function backendUrl(path: string): string {
-  return `${BACKEND_URL}/${path.replace(/^\/+/, "")}`;
+  return `${resolveBackendUrl()}/${path.replace(/^\/+/, "")}`;
 }

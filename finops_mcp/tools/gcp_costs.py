@@ -21,11 +21,12 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         
         if not config.google_application_credentials:
             return json.dumps({"error": "GCP not configured (GOOGLE_APPLICATION_CREDENTIALS not set)"})
+        if not config.gcp_project_id:
+            return json.dumps({"error": "GCP not configured (GCP_PROJECT_ID not set)"})
         
         try:
             from google.cloud import bigquery
             from google.oauth2 import service_account
-            import json as json_lib
         except ImportError:
             logger.warning("GCP SDK not available, returning mock data")
             return _mock_cost_summary(period)
@@ -57,8 +58,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         FROM
             `{config.gcp_project_id}.billing.gcp_billing_export_v1_*`
         WHERE
-            PARSE_DATE('%Y%m%d', usage_start_time) >= '{start_date}'
-            AND PARSE_DATE('%Y%m%d', usage_start_time) <= '{end_date}'
+            DATE(usage_start_time) >= DATE('{start_date}')
+            AND DATE(usage_start_time) <= DATE('{end_date}')
         GROUP BY
             service_name
         ORDER BY

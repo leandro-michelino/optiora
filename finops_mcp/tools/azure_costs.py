@@ -25,7 +25,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         try:
             from azure.identity import ClientSecretCredential
             from azure.mgmt.costmanagement import CostManagementClient
-            from azure.mgmt.costmanagement.models import QueryDefinition, QueryGrouping, QueryFilter
+            from azure.mgmt.costmanagement.models import QueryDefinition
         except ImportError:
             logger.warning("Azure SDK not available, returning mock data")
             return _mock_cost_summary(period)
@@ -52,7 +52,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             start_date = end_date - timedelta(days=365)
         
         # Build query
-        scope = f"subscriptions/{config.azure_subscription_id}"
+        scope = f"/subscriptions/{config.azure_subscription_id}"
         
         query_def = QueryDefinition(
             type="Usage",

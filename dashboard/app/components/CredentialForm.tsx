@@ -108,7 +108,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           Add Cloud Credentials
         </CardTitle>
         <CardDescription>
-          Your credentials are encrypted and stored securely. We never store plaintext secrets.
+          Credentials are validated server-side; only non-sensitive metadata is persisted for dashboard workflows.
         </CardDescription>
       </CardHeader>
       <CardContent>

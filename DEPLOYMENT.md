@@ -5,11 +5,23 @@ This project is deployed as two services on an OCI compute instance:
 - `optiora-api.service` -> FastAPI backend (`:8000`)
 - `optiora-dashboard.service` -> Next.js dashboard (`:3000`)
 
+Deployment is laptop-driven: `deploy/deploy-oci.sh` packages your current local workspace and pushes it to OCI over SSH/SCP. It does not pull from Git or require CI/CD triggers.
+
 ## Prerequisites
 
 - OCI CLI installed and configured (`oci setup config`)
 - `OCI_COMPARTMENT_ID` exported
 - SSH access allowed to created instance
+
+## Local Preflight (Recommended)
+
+```bash
+python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
+cd dashboard
+npm run type-check
+npm run lint
+npm run build
+```
 
 ## Quick Deploy
 
@@ -18,6 +30,8 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
 ```
+
+Re-run `./deploy/deploy-oci.sh compute` any time you change code locally; the script re-packages your current local files and redeploys them to the VM.
 
 ## Command Reference
 
@@ -40,6 +54,9 @@ OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex
 OCI_OCPU_COUNT=2
 OCI_MEMORY_GB=8
+OCI_SUBNET_ID=ocid1.subnet.oc1...
+OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/id_ed25519
+OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/id_ed25519.pub
 ```
 
 Optional backend runtime variables:

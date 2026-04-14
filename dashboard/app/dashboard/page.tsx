@@ -10,7 +10,7 @@ import { DollarSign, TrendingUp, AlertCircle, Target, AlertTriangle, Download, E
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress, ProgressTrack, ProgressIndicator, ProgressLabel, ProgressValue } from '@/components/ui/progress'
+import { Progress, ProgressTrack, ProgressIndicator } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 
 interface CostData {

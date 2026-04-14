@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { TrendingUp, Calendar, Target, AlertCircle, Download } from 'lucide-react';
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { TrendingUp, Target, AlertCircle, Download } from 'lucide-react';
 
 interface ForecastData {
   month: string;
@@ -86,7 +86,7 @@ export default function PredictiveAnalyticsPage() {
       let currentOptimized = 45000;
       let currentCost = 45000;
 
-      months.forEach((month, idx) => {
+      months.forEach((month) => {
         currentBaseline = currentBaseline * (1 + Math.random() * 0.03 - 0.015); // ±1.5% variance
         currentCost = currentBaseline * (1 + (Math.random() * 0.05 - 0.025)); // More variance
         currentOptimized = currentBaseline * 0.6; // 40% reduction

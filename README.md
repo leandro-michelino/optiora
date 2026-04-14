@@ -27,7 +27,7 @@ Next.js Dashboard (port 3000)
 FastAPI Backend (port 8000)
   |
   +--> Auth + JWT
-  +--> Credential Validation/Storage
+  +--> Credential Validation/Metadata Storage
   +--> Scanning Workflow
   +--> Dashboard Data APIs (/api/v1/costs|anomalies|recommendations)
   |
@@ -52,6 +52,7 @@ FastAPI Backend (port 8000)
 - `GET /api/v1/costs`
 - `GET /api/v1/anomalies`
 - `GET /api/v1/recommendations`
+- `GET /api/v1/info`
 
 ## Local Development
 
@@ -95,6 +96,8 @@ The deploy script provisions:
 - `optiora-api.service` (FastAPI on port 8000)
 - `optiora-dashboard.service` (Next.js on port 3000)
 
+Deployment control is fully local: the script uploads your current laptop workspace snapshot to OCI and deploys from that snapshot, without cloning from Git.
+
 ## Quality Checks
 
 ```bash
@@ -105,7 +108,15 @@ python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
 cd dashboard
 npm run type-check
 npm run lint
+npm run build
 ```
+
+## Deployment Readiness Checklist
+
+- `deploy/deploy-oci.sh compute` completes without errors
+- `curl http://<instance-ip>:8000/health` returns healthy status
+- `curl http://<instance-ip>:8000/api/v1/info` returns API metadata
+- `systemctl status optiora-api optiora-dashboard` is `active (running)` on the VM
 
 ## Documentation
 

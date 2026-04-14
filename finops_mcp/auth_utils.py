@@ -38,7 +38,7 @@ class TokenPayload(BaseModel):
     iat: datetime
 
 
-class User (BaseModel):
+class User(BaseModel):
     """User response schema."""
     id: int
     email: str

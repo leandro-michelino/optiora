@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 import { Grid, TrendingUp, Users, Database, Cloud, Zap, BarChart3 } from 'lucide-react'
 
@@ -93,7 +92,6 @@ const departmentDashboards: Dashboard[] = [
 ]
 
 export default function MyDashboardsPage() {
-  const [selectedFilter, setSelectedFilter] = useState<string | null>(null)
   const totalSpending = departmentDashboards.reduce((sum, d) => sum + d.spending, 0)
   const avgTrend = (departmentDashboards.reduce((sum, d) => sum + d.trend, 0) / departmentDashboards.length).toFixed(1)
 

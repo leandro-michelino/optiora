@@ -10,6 +10,10 @@ Base API URL is controlled by:
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
+If `NEXT_PUBLIC_API_URL` is not set, the dashboard auto-resolves the backend as:
+- browser protocol + current hostname + `:8000`
+- example: `http://<current-host>:8000`
+
 ## Integration Map
 
 ```text
@@ -61,4 +65,6 @@ Cards/charts/components render normalized API response data
 
 - If backend is unavailable, `dashboard/lib/api.ts` falls back to safe defaults for overview pages.
 - Settings pages call backend directly and require backend availability.
+- AI chat route returns a clear configuration message when `ANTHROPIC_API_KEY` is not set.
 - `npm run type-check` and `npm run lint` should pass before deployment.
+- `npm run build` should pass before OCI deployment.

@@ -23,11 +23,12 @@ Dashboard Settings
 
 ## Storage Model
 
-Credential metadata is persisted in `credential_records` via SQLAlchemy model `CredentialRecord`:
+Credential metadata is persisted in `credential_records` via SQLAlchemy model `CredentialRecord`.
+Raw cloud secrets are not persisted; credentials are sanitized before save.
 
 - `customer_id`
 - `provider`
-- `credential_json`
+- `credential_json` (sanitized metadata only, no raw secrets)
 - `is_active`
 - `is_valid`
 - `validation_message`
@@ -39,7 +40,8 @@ Credential metadata is persisted in `credential_records` via SQLAlchemy model `C
 
 - Validation errors are returned to client for troubleshooting.
 - Auth is JWT-based for user sessions.
-- For production, secrets-at-rest should be encrypted with a managed key system (KMS/Vault). Current implementation stores serialized credential payload and should be hardened before handling sensitive production credentials.
+- For production, use encrypted disks/volumes and least-privilege IAM on the OCI host.
+- If you need long-lived secret storage, integrate KMS/Vault before enabling automated actions that require secret reuse.
 
 ## Related Endpoints
 

@@ -29,3 +29,4 @@ curl http://localhost:8000/api/v1/costs
 
 - Automated backend unit/integration test suites are not yet restored in this repo.
 - Before production rollout, add API tests for auth, credential workflow, and scan progress.
+- Frontend production build (`npm run build`) is a required deploy gate.

@@ -1,14 +1,23 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+function getAnthropicClient(): Anthropic {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY is not configured');
+  }
+  return new Anthropic({ apiKey });
+}
 
 export async function askCostQuestion(
   message: string,
   conversationHistory: any[] = []
 ): Promise<string> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return 'AI assistant is not configured yet. Set ANTHROPIC_API_KEY on the server to enable chat.';
+  }
+
   try {
+    const anthropic = getAnthropicClient();
     const messages = [
       ...conversationHistory.map(h => ({
         role: h.role as 'user' | 'assistant',
@@ -21,7 +30,7 @@ export async function askCostQuestion(
     ];
 
     const response = await anthropic.messages.create({
-      model: 'claude-3-sonnet-20240229',
+      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest',
       max_tokens: 1000,
       messages: messages,
       system: `You are an AI assistant specializing in cloud cost optimization and FinOps.

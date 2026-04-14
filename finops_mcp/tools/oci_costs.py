@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any
 from datetime import datetime, timedelta
+import os
 from finops_mcp.config import Config
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             from oci.usage_api import UsageapiClient
             
             # Initialize OCI client
-            oci_config = oci.config.from_file(config.oci_config_file, config.oci_profile)
+            config_path = os.path.expanduser(config.oci_config_file)
+            oci_config = oci.config.from_file(config_path, config.oci_profile)
             usage_client = UsageapiClient(oci_config)
             tenancy_id = oci_config["tenancy"]
         except ImportError:
@@ -58,7 +60,11 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         services = {}
         
         for item in response.data.items:
-            service_name = item.tags.get("service", "Unknown") if item.tags else "Unknown"
+            service_name = (
+                getattr(item, "service", None)
+                or (item.tags.get("service") if item.tags else None)
+                or "Unknown"
+            )
             cost = float(item.computed_amount or 0)
             services[service_name] = services.get(service_name, 0) + cost
             total_cost += cost
