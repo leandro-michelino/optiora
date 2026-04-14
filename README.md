@@ -208,7 +208,7 @@ terraform -chdir=../terraform validate
 
 - [Architecture](ARCHITECTURE_COMPLETE.md)
 - [Deployment](DEPLOYMENT.md)
-- [Dashboard](DASHBOARD.md)
+- [Dashboard Architecture](DASHBOARD.md)
 - [Credential Management](CREDENTIAL_MANAGEMENT.md)
 - [Testing](TESTING.md)
 - [Terraform](terraform/README.md)

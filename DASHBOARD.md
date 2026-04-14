@@ -18,6 +18,16 @@ window.location.protocol + "//" + window.location.hostname + ":8000"
 
 That fallback is useful for simple VM deployments where the dashboard and API share one host.
 
+## Run Locally
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+Default URL: `http://localhost:3000`
+
 ## Integration Map
 
 ```text
