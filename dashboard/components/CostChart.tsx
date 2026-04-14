@@ -10,7 +10,12 @@ import {
 } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 
-const data = [
+export interface CostTrendPoint {
+  month: string
+  [provider: string]: string | number
+}
+
+const defaultData: CostTrendPoint[] = [
   { month: 'Jan', aws: 4200, azure: 2400, gcp: 1800, oci: 1200 },
   { month: 'Feb', aws: 4500, azure: 2600, gcp: 1900, oci: 1300 },
   { month: 'Mar', aws: 4800, azure: 2800, gcp: 2100, oci: 1400 },
@@ -32,7 +37,7 @@ const chartConfig = {
   oci:   { label: 'OCI',   color: '#10b981' },
 } satisfies ChartConfig
 
-export function CostChart() {
+export function CostChart({ data = defaultData }: { data?: CostTrendPoint[] }) {
   return (
     <ChartContainer config={chartConfig} className="h-[300px] w-full">
       <AreaChart data={data}>

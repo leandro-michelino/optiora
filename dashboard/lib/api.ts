@@ -1,13 +1,17 @@
-import axios from 'axios'
-import { CostResponse, AnomalyResponse, RecommendationResponse } from './types'
-import { BACKEND_URL } from './backend-url'
+import {
+  CostResponse,
+  AnomalyResponse,
+  RecommendationResponse,
+  ApiHealth,
+  ApiInfo,
+  CredentialListResponse,
+  ScanningPermission,
+  ScanStartResponse,
+} from './types'
+import { backendUrl } from './backend-url'
+import { authorizedFetch } from './auth-fetch'
 
-const api = axios.create({
-  baseURL: BACKEND_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-})
+const DEFAULT_TIMEOUT_MS = 10000
 
 // Mock data fallback
 const mockCostData = {
@@ -23,14 +27,49 @@ const mockCostData = {
   },
 }
 
+async function requestJson<T>(
+  path: string,
+  init: RequestInit = {},
+  options: { authenticated?: boolean; timeoutMs?: number } = {},
+): Promise<T> {
+  const controller = new AbortController()
+  const timeout = globalThis.setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  )
+
+  try {
+    const headers = new Headers(init.headers)
+    headers.set('Content-Type', 'application/json')
+
+    const requestInit: RequestInit = {
+      ...init,
+      headers,
+      signal: controller.signal,
+    }
+    const url = backendUrl(path)
+    const response = options.authenticated === false
+      ? await fetch(url, requestInit)
+      : await authorizedFetch(url, requestInit)
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      throw new Error(detail || `Request failed with ${response.status}`)
+    }
+
+    return await response.json() as T
+  } finally {
+    globalThis.clearTimeout(timeout)
+  }
+}
+
 /**
  * Fetch cost data from backend
  * Falls back to mock data if API is unavailable
  */
 export async function fetchCosts(): Promise<CostResponse> {
   try {
-    const response = await api.get('/api/v1/costs')
-    return response.data
+    return await requestJson<CostResponse>('/api/v1/costs', {}, { authenticated: false })
   } catch (error) {
     console.warn('Failed to fetch costs from backend, using mock data', error)
     return mockCostData as CostResponse
@@ -42,8 +81,7 @@ export async function fetchCosts(): Promise<CostResponse> {
  */
 export async function fetchAnomalies(): Promise<AnomalyResponse[]> {
   try {
-    const response = await api.get('/api/v1/anomalies')
-    return response.data
+    return await requestJson<AnomalyResponse[]>('/api/v1/anomalies', {}, { authenticated: false })
   } catch (error) {
     console.warn('Failed to fetch anomalies, using empty list', error)
     return []
@@ -55,12 +93,40 @@ export async function fetchAnomalies(): Promise<AnomalyResponse[]> {
  */
 export async function fetchRecommendations(): Promise<RecommendationResponse[]> {
   try {
-    const response = await api.get('/api/v1/recommendations')
-    return response.data
+    return await requestJson<RecommendationResponse[]>(
+      '/api/v1/recommendations',
+      {},
+      { authenticated: false },
+    )
   } catch (error) {
     console.warn('Failed to fetch recommendations, using empty list', error)
     return []
   }
 }
 
-export default api
+export async function fetchApiHealth(): Promise<ApiHealth> {
+  return requestJson<ApiHealth>('/health', {}, { authenticated: false, timeoutMs: 5000 })
+}
+
+export async function fetchApiInfo(): Promise<ApiInfo> {
+  return requestJson<ApiInfo>('/api/v1/info', {}, { authenticated: false, timeoutMs: 5000 })
+}
+
+export async function fetchCredentials(): Promise<CredentialListResponse> {
+  return requestJson<CredentialListResponse>('/api/v1/credentials')
+}
+
+export async function fetchScanningPermission(): Promise<ScanningPermission | null> {
+  try {
+    return await requestJson<ScanningPermission>('/api/v1/scanning/permission')
+  } catch {
+    return null
+  }
+}
+
+export async function startScan(providers?: string[]): Promise<ScanStartResponse> {
+  return requestJson<ScanStartResponse>('/api/v1/scanning/start', {
+    method: 'POST',
+    body: JSON.stringify({ providers }),
+  })
+}

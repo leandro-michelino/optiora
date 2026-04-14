@@ -5,9 +5,10 @@ This roadmap reflects the current repository state, not an earlier pre-auth prot
 ## Implemented
 
 - FastAPI backend with auth, refresh-token rotation, credential metadata storage, and scan-state tracking
-- Next.js dashboard with protected routes, login/signup flows, and credential/scanning setup
+- Next.js dashboard with protected routes, login/signup flows, credential/scanning setup, and operations readiness checks
 - laptop-driven OCI compute deployment
 - Terraform OCI network baseline
+- Ansible host provisioning for runtime packages, environment, systemd services, dashboard build, and health checks
 
 ## High-Priority Next Steps
 
@@ -35,6 +36,6 @@ This roadmap reflects the current repository state, not an earlier pre-auth prot
 
 ## Nice-To-Have
 
-- managed database migration path for higher concurrency
 - reverse-proxy / TLS front door for the OCI deployment
+- managed database migration path for higher concurrency
 - deeper FinOps analytics and forecasting models

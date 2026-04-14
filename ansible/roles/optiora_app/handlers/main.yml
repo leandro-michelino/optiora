@@ -1,0 +1,13 @@
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart optiora api
+  ansible.builtin.systemd:
+    name: optiora-api.service
+    state: restarted
+
+- name: Restart optiora dashboard
+  ansible.builtin.systemd:
+    name: optiora-dashboard.service
+    state: restarted

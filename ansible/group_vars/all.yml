@@ -1,0 +1,13 @@
+optiora_app_dir: /opt/optiora
+optiora_app_user: optiora
+optiora_api_port: 8000
+optiora_dashboard_port: 3000
+optiora_python_bin: python3
+optiora_node_major: 20
+optiora_frontend_url: "http://{{ ansible_host }}:{{ optiora_dashboard_port }}"
+optiora_api_url: "http://{{ ansible_host }}:{{ optiora_api_port }}"
+optiora_manage_source: false
+optiora_remote_archive: /tmp/optiora-deploy.tar.gz
+optiora_install_nginx: false
+optiora_health_retries: 12
+optiora_health_delay: 5

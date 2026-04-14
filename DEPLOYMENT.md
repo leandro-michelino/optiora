@@ -5,7 +5,10 @@ This repository deploys two services onto one OCI compute instance:
 - `optiora-api.service` -> FastAPI backend on `:8000`
 - `optiora-dashboard.service` -> Next.js dashboard on `:3000`
 
-Deployment is laptop-driven. `deploy/deploy-oci.sh` packages the current local workspace, uploads it over SSH/SCP, installs dependencies on the VM, and restarts the services.
+Deployment can be done two ways:
+
+- `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services.
+- Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime.
 
 ## Prerequisites
 
@@ -35,6 +38,13 @@ terraform -chdir=../terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
   -var="region=us-phoenix-1" \
   -var="laptop_cidr=<your_public_ip>/32"
+```
+
+Optional Ansible host provisioning:
+
+```bash
+cp ansible/inventory.example.yml ansible/inventory.yml
+ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ```
 
 ## Quick Deploy
@@ -136,7 +146,9 @@ sudo tail -f /var/log/optiora-setup.log
 ```text
 Developer Laptop
    |
-   | deploy/deploy-oci.sh compute
+   | Terraform network baseline
+   | Ansible host provisioning
+   | or deploy/deploy-oci.sh compute
    v
 OCI VM
 ├── /opt/optiora

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut } from 'lucide-react'
+import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut, Activity } from 'lucide-react'
 
 function DashboardLayoutContent({
   children,
@@ -28,6 +28,7 @@ function DashboardLayoutContent({
   ]
 
   const otherNavItems = [
+    { href: '/dashboard/operations', label: 'Operations', icon: Activity },
     { href: '/dashboard/anomalies', label: 'Anomalies', icon: AlertTriangle },
     { href: '/dashboard/recommendations', label: 'Recommendations', icon: Lightbulb },
     { href: '/dashboard/settings', label: 'Settings', icon: Settings },

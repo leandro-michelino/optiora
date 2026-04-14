@@ -10,6 +10,7 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 
 - `finops_mcp/`: FastAPI backend, auth, credential workflows, scan state, provider integrations
 - `dashboard/`: Next.js dashboard UI
+- `ansible/`: host provisioning and application runtime configuration
 - `deploy/deploy-oci.sh`: laptop-driven OCI compute deployment
 - `terraform/`: OCI network baseline
 - `ARCHITECTURE_COMPLETE.md`: full architecture and ASCII diagrams
@@ -145,7 +146,9 @@ Deployment script behavior:
 - replaces placeholder JWT secrets with a generated value
 - installs backend + dashboard dependencies and starts systemd services
 
-## Terraform Baseline
+## Terraform + Ansible Baseline
+
+Terraform is intentionally limited to OCI networking primitives. Ansible owns host package installation, runtime `.env` rendering, dashboard builds, systemd units, and health checks.
 
 ```bash
 terraform -chdir=terraform init
@@ -161,6 +164,13 @@ Security defaults:
 - ingress locked to `laptop_cidr`
 - egress defaults to `0.0.0.0/0` so provisioning and cloud API access work out of the box
 - override `egress_cidr` if you want a more restrictive outbound policy
+
+Ansible provisioning:
+
+```bash
+cp ansible/inventory.example.yml ansible/inventory.yml
+ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
+```
 
 ## Verification
 
@@ -184,6 +194,7 @@ terraform -chdir=../terraform validate
 - [Credential Management](CREDENTIAL_MANAGEMENT.md)
 - [Testing](TESTING.md)
 - [Terraform](terraform/README.md)
+- [Ansible](ansible/README.md)
 - [Roadmap](ROADMAP.md)
 
 ## License

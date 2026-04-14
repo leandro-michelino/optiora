@@ -1,6 +1,6 @@
 # Terraform Network Baseline
 
-This folder contains the OCI network baseline used by OptiOra.
+This folder contains the OCI network baseline used by OptiOra. It does not provision the application runtime; Ansible owns host setup and service configuration.
 
 ## Design Intent
 
@@ -12,6 +12,7 @@ This folder contains the OCI network baseline used by OptiOra.
   - `subnet-public-<project>-<env>-<region>-<suffix>`
 - ingress is restricted to `laptop_cidr`
 - outbound traffic is controlled by `egress_cidr`
+- compute bootstrap, packages, `.env`, builds, and systemd are handled by `../ansible`
 
 ## Defaults
 
@@ -46,7 +47,7 @@ terraform plan \
   -var="egress_cidr=<trusted-egress-cidr>"
 ```
 
-`terraform apply` is intentionally not part of the default workflow unless explicitly requested.
+`terraform apply` is intentionally not part of the default workflow unless explicitly requested. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning.
 
 ## Topology
 

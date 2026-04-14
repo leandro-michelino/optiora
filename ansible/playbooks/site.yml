@@ -1,0 +1,5 @@
+- name: Provision OptiOra application host
+  hosts: optiora
+  become: true
+  roles:
+    - optiora_app

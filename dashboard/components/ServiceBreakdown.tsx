@@ -3,11 +3,18 @@
 import { PieChart, Pie, Cell, Legend } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
 
-const data = [
-  { name: 'aws',   label: 'AWS',   value: 42 },
+export interface ServiceBreakdownPoint {
+  name: string
+  label: string
+  value: number
+  cost?: number
+}
+
+const defaultData: ServiceBreakdownPoint[] = [
+  { name: 'aws', label: 'AWS', value: 42 },
   { name: 'azure', label: 'Azure', value: 27 },
-  { name: 'gcp',   label: 'GCP',   value: 19 },
-  { name: 'oci',   label: 'OCI',   value: 12 },
+  { name: 'gcp', label: 'GCP', value: 19 },
+  { name: 'oci', label: 'OCI', value: 12 },
 ]
 
 const COLORS = ['#f59e0b', '#3b82f6', '#ef4444', '#10b981']
@@ -19,12 +26,14 @@ const chartConfig = {
   oci:   { label: 'OCI',   color: '#10b981' },
 } satisfies ChartConfig
 
-export function ServiceBreakdown() {
+export function ServiceBreakdown({ data = defaultData }: { data?: ServiceBreakdownPoint[] }) {
+  const chartData = data.length > 0 ? data : defaultData
+
   return (
     <ChartContainer config={chartConfig} className="h-[250px] w-full">
       <PieChart>
         <Pie
-          data={data}
+          data={chartData}
           cx="50%"
           cy="50%"
           labelLine={false}
@@ -32,14 +41,19 @@ export function ServiceBreakdown() {
           outerRadius={80}
           dataKey="value"
         >
-          {data.map((entry, index) => (
+          {chartData.map((entry, index) => (
             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
           ))}
         </Pie>
         <ChartTooltip
           content={
             <ChartTooltipContent
-              formatter={(value, name, item) => [`${value}%`, item.payload?.label ?? name]}
+              formatter={(value, name, item) => [
+                item.payload?.cost
+                  ? `$${Number(item.payload.cost).toLocaleString()}`
+                  : `${Number(value).toFixed(1)}%`,
+                item.payload?.label ?? name,
+              ]}
             />
           }
         />
