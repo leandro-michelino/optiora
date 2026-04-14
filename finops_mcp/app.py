@@ -1,5 +1,6 @@
 """Main FastAPI application for OptiOra."""
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -71,11 +72,15 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-if __name__ == "__main__":
-    import uvicorn
+def main() -> None:
+    """Run the FastAPI backend with uvicorn."""
     uvicorn.run(
         "finops_mcp.app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
     )
+
+
+if __name__ == "__main__":
+    main()

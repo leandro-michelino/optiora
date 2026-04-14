@@ -2,10 +2,12 @@
 
 from datetime import datetime, timedelta
 from typing import Optional
+import hashlib
+import os
+
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
-import os
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
@@ -57,6 +59,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+def hash_token(token: str) -> str:
+    """Return deterministic hash for token persistence/lookup."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 # JWT utilities
 def create_access_token(
     user_id: int,
@@ -98,7 +105,7 @@ def create_refresh_token(user_id: int, email: str) -> str:
     return encoded_jwt
 
 
-def decode_token(token: str) -> dict:
+def decode_token(token: str) -> Optional[dict]:
     """Decode and validate JWT token."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

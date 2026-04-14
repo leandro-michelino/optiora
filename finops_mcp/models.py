@@ -1,4 +1,4 @@
-"""Data models for FinOps MCP."""
+"""Data models for OptiOra FinOps."""
 
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -111,4 +111,4 @@ class Customer:
     cloud_providers: List[CloudProvider]
     created_date: str
     annual_savings_total: float = 0.0
-    mcp_enabled: bool = True
+    api_enabled: bool = True

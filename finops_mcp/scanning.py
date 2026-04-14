@@ -1,165 +1,203 @@
-"""
-Scanning Permission Management
-Handles customer consent before cost analysis begins
-"""
+"""Scanning permission and job state management."""
 
+import json
 import logging
-from typing import Optional
-from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import List, Optional
 
+from .orm_models import ScanRunRecord, ScanningPermissionRecord
 
 logger = logging.getLogger(__name__)
 
 
 class ScanningState(str, Enum):
-    """States of the scanning permission process."""
-    INITIALIZED = "initialized"  # Customer just connected credentials
-    PENDING_APPROVAL = "pending_approval"  # Waiting for customer to approve
-    APPROVED = "approved"  # Customer approved scanning
-    RUNNING = "running"  # Scanning is active
-    PAUSED = "paused"  # Scanning paused by customer
-    COMPLETED = "completed"  # Scan finished
+    """States of the scanning process."""
 
-
-@dataclass
-class ScanningPermission:
-    """Customer's scanning permission and preferences."""
-    customer_id: str
-    state: ScanningState
-    providers: list  # ["aws", "azure", "gcp", "oci"]
-    scan_frequency: str  # "hourly", "daily", "weekly"
-    auto_remediate: bool  # Automatically apply recommended actions
-    notification_email: str
-    created_at: datetime
-    approved_at: Optional[datetime] = None
-    last_scan_at: Optional[datetime] = None
+    INITIALIZED = "initialized"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class ScanningManager:
-    """Manages customer scanning permissions and preferences."""
-    
+    """Persist scanning permission and scan run status."""
+
     def __init__(self, db_session):
-        """Initialize with database session."""
         self.db = db_session
-    
+
     def create_permission_request(
         self,
         customer_id: str,
-        providers: list,
-        notification_email: str
+        providers: List[str],
+        notification_email: str,
     ) -> dict:
-        """Create new scanning permission request after credentials validated."""
-        try:
-            logger.info(f"Creating scanning permission for {customer_id}")
-            
-            permission = {
-                'customer_id': customer_id,
-                'state': ScanningState.PENDING_APPROVAL,
-                'providers': providers,
-                'scan_frequency': 'daily',  # Default
-                'auto_remediate': False,  # Default: disabled
-                'notification_email': notification_email,
-                'created_at': datetime.now().isoformat(),
-                'approved_at': None,
-                'last_scan_at': None
-            }
-            
-            return permission
-        
-        except Exception as e:
-            logger.error(f"Failed to create scanning permission: {str(e)}")
-            raise
-    
-    def request_approval(
-        self,
-        customer_id: str,
-        providers: list
-    ) -> dict:
-        """Send approval request to customer."""
-        try:
-            logger.info(f"Requesting approval from {customer_id}")
-            
-            return {
-                'customer_id': customer_id,
-                'message': f'Ready to scan {", ".join(providers)} for cost optimization',
-                'action_required': True,
-                'approve_url': f'/dashboard/scanning/approve?customer_id={customer_id}'
-            }
-        
-        except Exception as e:
-            logger.error(f"Failed to request approval: {str(e)}")
-            raise
-    
+        providers = sorted({p.lower() for p in providers})
+        record = (
+            self.db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        if record is None:
+            record = ScanningPermissionRecord(
+                customer_id=customer_id,
+                state=ScanningState.PENDING_APPROVAL.value,
+                providers_json=json.dumps(providers),
+                scan_frequency="daily",
+                auto_remediate=False,
+                notification_email=notification_email,
+            )
+            self.db.add(record)
+        else:
+            record.state = ScanningState.PENDING_APPROVAL.value
+            record.providers_json = json.dumps(providers)
+            record.notification_email = notification_email
+            record.updated_at = datetime.utcnow()
+
+        self.db.commit()
+        return self.get_permission_status(customer_id)
+
+    def request_approval(self, customer_id: str, providers: List[str]) -> dict:
+        return {
+            "customer_id": customer_id,
+            "message": f"Ready to scan {', '.join(providers)} for cost optimization",
+            "action_required": True,
+            "approve_url": f"/dashboard/settings?customer_id={customer_id}",
+        }
+
     def approve_scanning(
         self,
         customer_id: str,
         auto_remediate: bool = False,
-        scan_frequency: str = 'daily'
+        scan_frequency: str = "daily",
     ) -> dict:
-        """Customer approves scanning to begin."""
-        try:
-            logger.info(f"Approving scanning for {customer_id}")
-            logger.info(f"Configuration: auto_remediate={auto_remediate}, frequency={scan_frequency}")
-            
-            return {
-                'customer_id': customer_id,
-                'state': ScanningState.APPROVED,
-                'scan_frequency': scan_frequency,
-                'auto_remediate': auto_remediate,
-                'approved_at': datetime.now().isoformat(),
-                'message': 'Scanning approved and will begin shortly'
-            }
-        
-        except Exception as e:
-            logger.error(f"Failed to approve scanning: {str(e)}")
-            raise
-    
+        record = (
+            self.db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        if record is None:
+            record = ScanningPermissionRecord(
+                customer_id=customer_id,
+                state=ScanningState.APPROVED.value,
+                providers_json="[]",
+                scan_frequency=scan_frequency,
+                auto_remediate=auto_remediate,
+                approved_at=datetime.utcnow(),
+            )
+            self.db.add(record)
+        else:
+            record.state = ScanningState.APPROVED.value
+            record.scan_frequency = scan_frequency
+            record.auto_remediate = auto_remediate
+            record.approved_at = datetime.utcnow()
+            record.updated_at = datetime.utcnow()
+
+        self.db.commit()
+        return self.get_permission_status(customer_id)
+
     def pause_scanning(self, customer_id: str) -> dict:
-        """Customer pauses scanning."""
-        try:
-            logger.info(f"Pausing scanning for {customer_id}")
-            
-            return {
-                'customer_id': customer_id,
-                'state': ScanningState.PAUSED,
-                'paused_at': datetime.now().isoformat(),
-                'message': 'Scanning paused'
-            }
-        
-        except Exception as e:
-            logger.error(f"Failed to pause scanning: {str(e)}")
-            raise
-    
+        return self._update_state(customer_id, ScanningState.PAUSED)
+
     def resume_scanning(self, customer_id: str) -> dict:
-        """Customer resumes scanning."""
-        try:
-            logger.info(f"Resuming scanning for {customer_id}")
-            
-            return {
-                'customer_id': customer_id,
-                'state': ScanningState.RUNNING,
-                'resumed_at': datetime.now().isoformat(),
-                'message': 'Scanning resumed'
-            }
-        
-        except Exception as e:
-            logger.error(f"Failed to resume scanning: {str(e)}")
-            raise
-    
+        return self._update_state(customer_id, ScanningState.RUNNING)
+
     def get_permission_status(self, customer_id: str) -> dict:
-        """Get current scanning permission status."""
-        try:
+        record = (
+            self.db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        if record is None:
             return {
-                'customer_id': customer_id,
-                'state': ScanningState.PENDING_APPROVAL,
-                'providers': [],
-                'scan_frequency': 'daily',
-                'auto_remediate': False,
-                'created_at': datetime.now().isoformat()
+                "customer_id": customer_id,
+                "state": ScanningState.INITIALIZED.value,
+                "providers": [],
+                "scan_frequency": "daily",
+                "auto_remediate": False,
+                "created_at": datetime.utcnow().isoformat(),
+                "approved_at": None,
             }
-        
-        except Exception as e:
-            logger.error(f"Failed to get permission status: {str(e)}")
-            raise
+
+        return {
+            "customer_id": record.customer_id,
+            "state": record.state,
+            "providers": json.loads(record.providers_json or "[]"),
+            "scan_frequency": record.scan_frequency,
+            "auto_remediate": bool(record.auto_remediate),
+            "created_at": record.created_at.isoformat(),
+            "approved_at": record.approved_at.isoformat() if record.approved_at else None,
+        }
+
+    def create_scan_run(self, scan_id: str, customer_id: str, providers: List[str]) -> None:
+        row = ScanRunRecord(
+            scan_id=scan_id,
+            customer_id=customer_id,
+            state=ScanningState.RUNNING.value,
+            providers_json=json.dumps(providers),
+            progress=0,
+        )
+        self.db.add(row)
+        self.db.commit()
+
+    def get_scan_run(self, scan_id: str) -> Optional[dict]:
+        row = self.db.query(ScanRunRecord).filter(ScanRunRecord.scan_id == scan_id).first()
+        if row is None:
+            return None
+        return {
+            "scan_id": row.scan_id,
+            "customer_id": row.customer_id,
+            "state": row.state,
+            "progress": row.progress,
+            "providers": json.loads(row.providers_json or "[]"),
+            "started_at": row.started_at,
+            "completed_at": row.completed_at,
+            "total_resources": row.total_resources,
+            "anomalies_found": row.anomalies_found,
+            "savings_identified": float(row.savings_identified),
+            "error_message": row.error_message,
+        }
+
+    def complete_scan_run(
+        self,
+        scan_id: str,
+        progress: int,
+        total_resources: int,
+        anomalies_found: int,
+        savings_identified: float,
+    ) -> None:
+        row = self.db.query(ScanRunRecord).filter(ScanRunRecord.scan_id == scan_id).first()
+        if row is None:
+            return
+        row.state = ScanningState.COMPLETED.value
+        row.progress = progress
+        row.total_resources = total_resources
+        row.anomalies_found = anomalies_found
+        row.savings_identified = float(savings_identified)
+        row.completed_at = datetime.utcnow()
+        self.db.commit()
+
+    def fail_scan_run(self, scan_id: str, error_message: str) -> None:
+        row = self.db.query(ScanRunRecord).filter(ScanRunRecord.scan_id == scan_id).first()
+        if row is None:
+            return
+        row.state = ScanningState.FAILED.value
+        row.error_message = error_message
+        row.completed_at = datetime.utcnow()
+        self.db.commit()
+
+    def _update_state(self, customer_id: str, state: ScanningState) -> dict:
+        record = (
+            self.db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        if record is None:
+            raise ValueError("Scanning permission not found for customer")
+        record.state = state.value
+        record.updated_at = datetime.utcnow()
+        self.db.commit()
+        return self.get_permission_status(customer_id)

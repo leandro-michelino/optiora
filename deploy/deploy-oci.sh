@@ -29,7 +29,7 @@ NC='\033[0m' # No Color
 DEPLOYMENT_TYPE=${1:-"compute"}
 REGION=${OCI_REGION:-"us-phoenix-1"}
 COMPARTMENT_ID=${OCI_COMPARTMENT_ID}
-INSTANCE_NAME=${OCI_INSTANCE_NAME:-"optiora-mcp"}
+INSTANCE_NAME=${OCI_INSTANCE_NAME:-"optiora-api"}
 SHAPE=${OCI_SHAPE:-"VM.Standard.E4.Flex"}
 OCPU_COUNT=${OCI_OCPU_COUNT:-"2"}
 MEMORY_GB=${OCI_MEMORY_GB:-"8"}
@@ -114,6 +114,9 @@ ${YELLOW}COMMANDS:${NC}
     compute              Deploy to OCI Compute Instance (default)
     container            Deploy as OCI Container Instance (serverless)
     kubernetes           Deploy to OKE cluster (requires existing cluster)
+    stop                 Stop deployed compute instance
+    start                Start deployed compute instance
+    restart              Reboot deployed compute instance
     status               Check current deployment status
     logs                 View deployment logs
     destroy              Remove deployment (WARNING: irreversible)
@@ -122,7 +125,7 @@ ${YELLOW}COMMANDS:${NC}
 ${YELLOW}ENVIRONMENT VARIABLES:${NC}
     OCI_REGION           Oracle Cloud region (default: us-phoenix-1)
     OCI_COMPARTMENT_ID   Target compartment OCID (REQUIRED)
-    OCI_INSTANCE_NAME    VM display name (default: optiora-mcp)
+    OCI_INSTANCE_NAME    VM display name (default: optiora-api)
     OCI_SHAPE            VM shape (default: VM.Standard.E4.Flex)
     OCI_OCPU_COUNT       vCPU count (default: 2)
     OCI_MEMORY_GB        Memory in GB (default: 8)
@@ -139,10 +142,51 @@ ${YELLOW}EXAMPLES:${NC}
     ./deploy/deploy-oci.sh status
 
 ${YELLOW}DOCUMENTATION:${NC}
-    See OCI_DEPLOYMENT.md for detailed setup instructions
-    See SETUP.md for complete deployment guide
+    See DEPLOYMENT.md for detailed setup instructions
+    See README.md for complete project guide
 
 EOF
+}
+
+# Resolve current instance id by configured display name
+get_instance_id() {
+    local instance
+    instance=$(oci compute instance list \
+        --compartment-id "$COMPARTMENT_ID" \
+        --region "$REGION" \
+        --query "data[?\"display-name\" == '$INSTANCE_NAME'] | [0]" \
+        2>/dev/null || echo "null")
+
+    if [ "$instance" == "null" ] || [ -z "$instance" ]; then
+        echo ""
+        return 1
+    fi
+
+    echo "$instance" | grep -o '"id": "[^"]*' | cut -d'"' -f4
+    return 0
+}
+
+# Control instance power state
+instance_action() {
+    local action="$1"
+    local wait_state="$2"
+    local instance_id
+
+    instance_id=$(get_instance_id) || {
+        log_error "No deployment found with name: $INSTANCE_NAME"
+        return 1
+    }
+
+    log_info "Applying action '$action' to instance $instance_id..."
+    oci compute instance action \
+        --instance-id "$instance_id" \
+        --action "$action" \
+        --region "$REGION" \
+        --wait-for-state "$wait_state" \
+        --max-wait-seconds 300
+
+    log_success "Instance action '$action' completed (state: $wait_state)"
+    get_status
 }
 
 # Get deployment status
@@ -179,7 +223,8 @@ get_status() {
         PUBLIC_IP=$(echo "$VNIC" | grep -o '"public-ip": "[^"]*' | cut -d'"' -f4)
         if [ ! -z "$PUBLIC_IP" ]; then
             log_info "Public IP: $PUBLIC_IP"
-            log_info "Access URL: https://$PUBLIC_IP:8000"
+            log_info "Dashboard URL: http://$PUBLIC_IP:3000"
+            log_info "API URL: http://$PUBLIC_IP:8000"
         fi
     else
         log_warning "Instance state: $STATE"
@@ -276,7 +321,7 @@ pip install poetry
 # Install project dependencies
 poetry install --no-interaction --no-dev 2>&1 || {
     echo "Poetry install failed, trying pip..."
-    pip install mcp boto3 azure-identity azure-mgmt-costmanagement google-cloud-billing oci pydantic python-dotenv httpx
+    pip install fastapi uvicorn sqlalchemy alembic psycopg2-binary python-jose passlib python-multipart boto3 azure-identity azure-mgmt-costmanagement google-cloud-billing oci pydantic python-dotenv httpx
 }
 
 # Configure environment
@@ -295,11 +340,11 @@ if [ ! -f /opt/optiora/.env ]; then
     echo "  - OCI_CONFIG_PROFILE"
 fi
 
-# Create system service for MCP server
-echo "Setting up MCP server service..."
-cat > /etc/systemd/system/optiora-mcp.service << 'EOF'
+# Create system service for FastAPI backend
+echo "Setting up API backend service..."
+cat > /etc/systemd/system/optiora-api.service << 'EOF'
 [Unit]
-Description=OptiOra MCP Server
+Description=OptiOra API Backend
 After=network.target
 
 [Service]
@@ -307,11 +352,11 @@ Type=simple
 User=root
 WorkingDirectory=/opt/optiora
 Environment="PATH=/opt/optiora/venv/bin"
-ExecStart=/opt/optiora/venv/bin/python -m finops_mcp.server
+ExecStart=/opt/optiora/venv/bin/python -m uvicorn finops_mcp.app:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
-StandardOutput=append:/var/log/optiora-mcp.log
-StandardError=append:/var/log/optiora-mcp.log
+StandardOutput=append:/var/log/optiora-api.log
+StandardError=append:/var/log/optiora-api.log
 
 [Install]
 WantedBy=multi-user.target
@@ -351,12 +396,12 @@ npm install --production
 # Enable services
 echo "Enabling services..."
 systemctl daemon-reload
-systemctl enable optiora-mcp.service
+systemctl enable optiora-api.service
 systemctl enable optiora-dashboard.service
 
 # Start services
 echo "Starting OptiOra services..."
-systemctl start optiora-mcp.service
+systemctl start optiora-api.service
 systemctl start optiora-dashboard.service
 
 # Wait for services to start
@@ -366,9 +411,9 @@ sleep 10
 # Health check
 echo "Performing health checks..."
 if curl -s http://localhost:8000/health > /dev/null 2>&1; then
-    echo "✓ MCP Server health check passed"
+    echo "✓ API backend health check passed"
 else
-    echo "⚠ MCP Server health check failed - check logs"
+    echo "⚠ API backend health check failed - check logs"
 fi
 
 if curl -s http://localhost:3000 > /dev/null 2>&1; then
@@ -382,11 +427,11 @@ echo "=== OptiOra Installation Complete ==="
 echo "Time: $(date)"
 echo ""
 echo "Services running:"
-echo "  • MCP Server: http://localhost:8000"
+echo "  • API Backend: http://localhost:8000"
 echo "  • Dashboard: http://localhost:3000"
 echo ""
 echo "Logs:"
-echo "  • MCP: tail -f /var/log/optiora-mcp.log"
+echo "  • API: tail -f /var/log/optiora-api.log"
 echo "  • Dashboard: tail -f /var/log/optiora-dashboard.log"
 echo "  • Setup: tail -f /var/log/optiora-setup.log"
 echo ""
@@ -461,7 +506,7 @@ deploy_container() {
     log_info "Step 1: Build and push Docker image to OCI Registry"
     log_info "Step 2: Use OCI Container Instances API to deploy"
     log_info ""
-    log_info "For detailed instructions, see DEPLOYMENT_GUIDE.md"
+    log_info "For detailed instructions, see DEPLOYMENT.md"
     log_error "Container deployment: Feature in progress"
     log_info "Recommend using compute instance for now: ./deploy/deploy-oci.sh compute"
 }
@@ -503,7 +548,8 @@ view_logs() {
     log_info "Connecting to instance at $PUBLIC_IP..."
     log_info "To view logs, SSH to the instance:"
     echo "  ssh opc@$PUBLIC_IP"
-    echo "  tail -f /var/log/optiora.log"
+    echo "  tail -f /var/log/optiora-api.log"
+    echo "  tail -f /var/log/optiora-dashboard.log"
 }
 
 # Destroy deployment
@@ -577,6 +623,18 @@ main() {
         status)
             check_prerequisites
             get_status
+            ;;
+        stop)
+            check_prerequisites
+            instance_action STOP STOPPED
+            ;;
+        start)
+            check_prerequisites
+            instance_action START RUNNING
+            ;;
+        restart)
+            check_prerequisites
+            instance_action RESET RUNNING
             ;;
         logs)
             check_prerequisites

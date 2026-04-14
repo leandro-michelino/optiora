@@ -13,6 +13,7 @@ from .orm_models import User, Organization, UserOrganization, RefreshToken, get_
 from .auth_utils import (
     hash_password,
     verify_password,
+    hash_token,
     create_access_token,
     create_refresh_token,
     verify_access_token,
@@ -29,14 +30,14 @@ security = HTTPBearer()
 # Schemas
 class RegisterRequest(BaseModel):
     """Registration request schema."""
-    email: str
+    email: EmailStr
     password: str
     full_name: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
     """Login request schema."""
-    email: str
+    email: EmailStr
     password: str
 
 
@@ -190,8 +191,7 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
     )
     
     # Hash and store refresh token
-    from .auth_utils import hash_password as hash_rt
-    refresh_token_hash = hash_rt(refresh_token)
+    refresh_token_hash = hash_token(refresh_token)
     
     rt_obj = RefreshToken(
         user_id=user.id,
@@ -241,14 +241,13 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
         )
     
     # Check if refresh token is revoked
-    from .auth_utils import hash_password as hash_rt
-    refresh_token_hash = hash_rt(request.refresh_token)
+    refresh_token_hash = hash_token(request.refresh_token)
     
     rt_obj = db.query(RefreshToken).filter(
         and_(
             RefreshToken.user_id == user_id,
             RefreshToken.token_hash == refresh_token_hash,
-            RefreshToken.is_revoked == False,
+            RefreshToken.is_revoked.is_(False),
             RefreshToken.expires_at > datetime.utcnow(),
         )
     ).first()
@@ -283,7 +282,7 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     rt_obj.is_revoked = True
     
     # Store new refresh token
-    new_rt_hash = hash_rt(new_refresh_token)
+    new_rt_hash = hash_token(new_refresh_token)
     new_rt_obj = RefreshToken(
         user_id=user_id,
         token_hash=new_rt_hash,

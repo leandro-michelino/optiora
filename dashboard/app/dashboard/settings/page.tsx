@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Trash2, Loader, AlertCircle, CheckCircle, Plus } from 'lucide-react';
+import { Trash2, Loader } from 'lucide-react';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
+import { backendUrl } from '@/lib/backend-url';
 
 
 interface StoredCredential {
@@ -25,7 +26,7 @@ export default function SettingsPage() {
 
   const loadCredentials = async () => {
     try {
-      const res = await fetch('/api/v1/credentials?customer_id=demo')
+      const res = await fetch(backendUrl('/api/v1/credentials?customer_id=demo'))
       if (res.ok) {
         const data = await res.json()
         setStoredCredentials(data.credentials || [])
@@ -50,7 +51,7 @@ export default function SettingsPage() {
     if (!confirm(`Delete ${provider.toUpperCase()} credentials?`)) return
 
     try {
-      const res = await fetch(`/api/v1/credentials/${provider}?customer_id=demo`, {
+      const res = await fetch(backendUrl(`/api/v1/credentials/${provider}?customer_id=demo`), {
         method: 'DELETE'
       })
 
@@ -64,7 +65,7 @@ export default function SettingsPage() {
 
   const handleScanningApproved = async (config: any) => {
     try {
-      const res = await fetch('/api/v1/scanning/approve', {
+      const res = await fetch(backendUrl('/api/v1/scanning/approve'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -75,7 +76,7 @@ export default function SettingsPage() {
 
       if (res.ok) {
         // Directly start the scan
-        const scanRes = await fetch('/api/v1/scanning/start', {
+        const scanRes = await fetch(backendUrl('/api/v1/scanning/start'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

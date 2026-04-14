@@ -1,15 +1,11 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import axios from "axios";
+import { useRouter } from "next/navigation";
+import { backendUrl } from "@/lib/backend-url";
 
-interface TokenResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
-}
-
-interface User {
+interface AuthUser {
   id: number;
   email: string;
   full_name?: string;
@@ -19,207 +15,120 @@ interface User {
 }
 
 interface AuthContextType {
-  user: User | null;
-  loading: boolean;
+  user: AuthUser | null;
   isAuthenticated: boolean;
-  register: (email: string, password: string, fullName?: string) => Promise<void>;
+  loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, fullName?: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshToken: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+function getAccessToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem("access_token");
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const router = useRouter();
 
-  // Restore auth from localStorage on mount
+  const isAuthenticated = Boolean(user);
+
+  const loadProfile = async (token: string) => {
+    const response = await axios.get<AuthUser>(backendUrl("/auth/profile"), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setUser(response.data);
+  };
+
   useEffect(() => {
-    const restoreAuth = async () => {
+    const init = async () => {
       try {
-        const accessToken = localStorage.getItem("access_token");
-        if (accessToken) {
-          // Verify token is still valid and fetch user
-          const response = await fetch("/auth/profile", {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
-
-          if (response.ok) {
-            const userData = await response.json();
-            setUser(userData);
-            setIsAuthenticated(true);
-          } else {
-            // Token invalid, try to refresh
-            await refreshToken();
-          }
+        const token = getAccessToken();
+        if (token) {
+          await loadProfile(token);
         }
-      } catch (error) {
-        console.error("Failed to restore auth:", error);
+      } catch {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        setUser(null);
       } finally {
         setLoading(false);
       }
     };
 
-    restoreAuth();
+    void init();
   }, []);
-
-  const register = async (email: string, password: string, fullName?: string) => {
-    try {
-      const response = await fetch("/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          password,
-          full_name: fullName,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Registration failed");
-      }
-
-      const userData = await response.json();
-      setUser(userData);
-
-      // Auto-login after registration
-      await login(email, password);
-    } catch (error) {
-      throw error;
-    }
-  };
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await fetch("/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+      const response = await axios.post<{
+        access_token: string;
+        refresh_token: string;
+      }>(backendUrl("/auth/login"), { email, password });
+
+      localStorage.setItem("access_token", response.data.access_token);
+      localStorage.setItem("refresh_token", response.data.refresh_token);
+      await loadProfile(response.data.access_token);
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.detail || "Login failed. Check your credentials.";
+      throw new Error(message);
+    }
+  };
+
+  const register = async (email: string, password: string, fullName?: string) => {
+    try {
+      await axios.post(backendUrl("/auth/register"), {
+        email,
+        password,
+        full_name: fullName || undefined,
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Login failed");
-      }
-
-      const tokenData: TokenResponse = await response.json();
-
-      // Store tokens
-      localStorage.setItem("access_token", tokenData.access_token);
-      localStorage.setItem("refresh_token", tokenData.refresh_token);
-
-      // Set expiry timer
-      const expiresIn = tokenData.expires_in * 1000; // Convert to milliseconds
-      setTimeout(
-        () => {
-          refreshToken();
-        },
-        expiresIn - 60000 // Refresh 1 minute before expiry
-      );
-
-      // Fetch user profile
-      const profileResponse = await fetch("/auth/profile", {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-        },
-      });
-
-      if (profileResponse.ok) {
-        const userData = await profileResponse.json();
-        setUser(userData);
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      throw error;
+      await login(email, password);
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || "Registration failed.";
+      throw new Error(message);
     }
   };
 
   const logout = async () => {
     try {
-      const accessToken = localStorage.getItem("access_token");
-      if (accessToken) {
-        await fetch("/auth/logout", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
+      const token = getAccessToken();
+      if (token) {
+        await axios.post(
+          backendUrl("/auth/logout"),
+          {},
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
       }
-    } catch (error) {
-      console.error("Logout error:", error);
+    } catch {
+      // Best-effort logout.
     } finally {
       localStorage.removeItem("access_token");
       localStorage.removeItem("refresh_token");
       setUser(null);
-      setIsAuthenticated(false);
-    }
-  };
-
-  const refreshToken = async () => {
-    try {
-      const refreshTokenValue = localStorage.getItem("refresh_token");
-      if (!refreshTokenValue) {
-        throw new Error("No refresh token");
-      }
-
-      const response = await fetch("/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshTokenValue }),
-      });
-
-      if (!response.ok) {
-        // Refresh failed, logout user
-        await logout();
-        throw new Error("Token refresh failed");
-      }
-
-      const tokenData: TokenResponse = await response.json();
-
-      // Update tokens
-      localStorage.setItem("access_token", tokenData.access_token);
-      localStorage.setItem("refresh_token", tokenData.refresh_token);
-
-      // Set new expiry timer
-      const expiresIn = tokenData.expires_in * 1000;
-      setTimeout(
-        () => {
-          refreshToken();
-        },
-        expiresIn - 60000
-      );
-    } catch (error) {
-      console.error("Token refresh error:", error);
-      await logout();
+      router.push("/login");
     }
   };
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        isAuthenticated,
-        register,
-        login,
-        logout,
-        refreshToken,
-      }}
+      value={{ user, isAuthenticated, loading, login, register, logout }}
     >
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
-export const useAuth = () => {
+export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
-};
+}

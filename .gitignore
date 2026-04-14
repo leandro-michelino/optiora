@@ -1,103 +1,53 @@
-# Virtual Environments
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+.Python
 .venv/
 venv/
 env/
 ENV/
-.env
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Testing & Code Quality
+# Python tooling
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .tox/
-.mypy_cache/
-.ruff_cache/
 
-# IDE & Editors
-.vscode/
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE / OS
 .idea/
+.vscode/
+.DS_Store
+Thumbs.db
 *.swp
 *.swo
 *~
-.DS_Store
-*.sublime-project
-*.sublime-workspace
 
-# Project Specific
-.env.local
-.env.*.local
-*.log
-
-# Dashboard - keep lib/ (TypeScript utilities, not Python venv)
-!dashboard/lib/
-
-# Dashboard build outputs
+# Dashboard (Next.js)
 dashboard/.next/
 dashboard/out/
 dashboard/build/
 dashboard/node_modules/
 dashboard/.env
 dashboard/.env.local
-dashboard/package-lock.json
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+dashboard/tsconfig.tsbuildinfo
 
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Logs
-logs/
-*.log
-
-# Docker
-.dockerignore
-
-# Git
-.git/
-.gitignore
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# API/Service
+# Root Node artifacts (if any)
 node_modules/

@@ -1,10 +1,9 @@
 import axios from 'axios'
 import { CostResponse, AnomalyResponse, RecommendationResponse } from './types'
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { BACKEND_URL } from './backend-url'
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: BACKEND_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -28,13 +27,13 @@ const mockCostData = {
  * Fetch cost data from backend
  * Falls back to mock data if API is unavailable
  */
-export async function fetchCosts(): Promise<any> {
+export async function fetchCosts(): Promise<CostResponse> {
   try {
-    const response = await api.get('/costs')
+    const response = await api.get('/api/v1/costs')
     return response.data
   } catch (error) {
     console.warn('Failed to fetch costs from backend, using mock data', error)
-    return mockCostData
+    return mockCostData as CostResponse
   }
 }
 
@@ -43,7 +42,7 @@ export async function fetchCosts(): Promise<any> {
  */
 export async function fetchAnomalies(): Promise<AnomalyResponse[]> {
   try {
-    const response = await api.get('/anomalies')
+    const response = await api.get('/api/v1/anomalies')
     return response.data
   } catch (error) {
     console.warn('Failed to fetch anomalies, using empty list', error)
@@ -56,7 +55,7 @@ export async function fetchAnomalies(): Promise<AnomalyResponse[]> {
  */
 export async function fetchRecommendations(): Promise<RecommendationResponse[]> {
   try {
-    const response = await api.get('/recommendations')
+    const response = await api.get('/api/v1/recommendations')
     return response.data
   } catch (error) {
     console.warn('Failed to fetch recommendations, using empty list', error)

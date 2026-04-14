@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle, Loader, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { backendUrl } from '@/lib/backend-url';
 
 interface CredentialFormProps {
   onSubmit: (provider: string, credentials: Record<string, string>) => Promise<void>;
@@ -51,7 +52,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
         ociForm;
 
       // Step 1: Validate credentials
-      const validateRes = await fetch('/api/v1/credentials/validate', {
+      const validateRes = await fetch(backendUrl('/api/v1/credentials/validate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -74,7 +75,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
       // Step 2: Store credentials
       await new Promise(resolve => setTimeout(resolve, 1500)); // Brief delay for UX
       
-      const storeRes = await fetch('/api/v1/credentials/add', {
+      const storeRes = await fetch(backendUrl('/api/v1/credentials/add'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

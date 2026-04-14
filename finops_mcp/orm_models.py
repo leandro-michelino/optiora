@@ -1,6 +1,18 @@
 """Database models for OptiOra with SQLAlchemy ORM."""
 
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Enum
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    Float,
+    String,
+    DateTime,
+    Boolean,
+    ForeignKey,
+    Enum,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -162,6 +174,71 @@ class StoredCredential(Base):
     
     def __repr__(self):
         return f"<StoredCredential(org_id={self.organization_id}, provider={self.provider})>"
+
+
+class CredentialRecord(Base):
+    """Credential metadata used by the dashboard credential workflow."""
+
+    __tablename__ = "credential_records"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "provider", name="uq_customer_provider_credential"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(String(255), index=True, nullable=False)
+    provider = Column(String(50), index=True, nullable=False)
+    credential_json = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_valid = Column(Boolean, default=False)
+    validation_message = Column(String(500), nullable=True)
+    tested_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<CredentialRecord(customer_id={self.customer_id}, provider={self.provider})>"
+
+
+class ScanningPermissionRecord(Base):
+    """Persisted customer scanning permission and preferences."""
+
+    __tablename__ = "scanning_permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(String(255), unique=True, index=True, nullable=False)
+    state = Column(String(50), nullable=False, default="pending_approval")
+    providers_json = Column(Text, nullable=False, default="[]")
+    scan_frequency = Column(String(20), nullable=False, default="daily")
+    auto_remediate = Column(Boolean, default=False)
+    notification_email = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    approved_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ScanningPermissionRecord(customer_id={self.customer_id}, state={self.state})>"
+
+
+class ScanRunRecord(Base):
+    """Track scan jobs launched by the scanning workflow."""
+
+    __tablename__ = "scan_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scan_id = Column(String(255), unique=True, index=True, nullable=False)
+    customer_id = Column(String(255), index=True, nullable=False)
+    state = Column(String(50), nullable=False, default="running")
+    providers_json = Column(Text, nullable=False, default="[]")
+    progress = Column(Integer, default=0)
+    total_resources = Column(Integer, default=0)
+    anomalies_found = Column(Integer, default=0)
+    savings_identified = Column(Float, default=0.0)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    def __repr__(self):
+        return f"<ScanRunRecord(scan_id={self.scan_id}, state={self.state})>"
 
 
 # Dependency
