@@ -2,12 +2,22 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, Dict, List
 from datetime import datetime, timedelta
 from finops_mcp.config import Config
 
 logger = logging.getLogger(__name__)
 config = Config()
+
+
+def _project_list() -> List[str]:
+    values = [config.gcp_project_id]
+    values.extend([part.strip() for part in config.gcp_project_ids.split(",") if part.strip()])
+    unique: List[str] = []
+    for value in values:
+        if value and value not in unique:
+            unique.append(value)
+    return unique
 
 
 async def get_cost_summary(params: dict[str, Any]) -> str:
@@ -21,7 +31,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         
         if not config.google_application_credentials:
             return json.dumps({"error": "GCP not configured (GOOGLE_APPLICATION_CREDENTIALS not set)"})
-        if not config.gcp_project_id:
+        if not config.gcp_project_id and not config.gcp_project_ids:
             return json.dumps({"error": "GCP not configured (GCP_PROJECT_ID not set)"})
         
         try:
@@ -49,39 +59,73 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         else:  # year
             start_date = end_date - timedelta(days=365)
         
-        # Query BigQuery for billing data
-        # Typical billing export table: project.billing_dataset.gcp_billing_export_v1_xxxxxxxxxxxx
-        query = f"""
-        SELECT
-            service.description AS service_name,
-            SUM(CAST(cost AS FLOAT64)) as total_cost
-        FROM
-            `{config.gcp_project_id}.billing.gcp_billing_export_v1_*`
-        WHERE
-            DATE(usage_start_time) >= DATE('{start_date}')
-            AND DATE(usage_start_time) <= DATE('{end_date}')
-        GROUP BY
-            service_name
-        ORDER BY
-            total_cost DESC
-        LIMIT 10
-        """
-        
-        query_job = client.query(query)
-        results = query_job.result()
-        
-        # Parse results
         total_cost = 0.0
-        services = {}
-        
-        for row in results:
-            service_name = row.service_name or "Unknown"
-            cost = float(row.total_cost or 0)
-            services[service_name] = cost
-            total_cost += cost
-        
-        # Get top 5 services
+        services: Dict[str, float] = {}
+        regions: Dict[str, float] = {}
+        project_breakdown: List[Dict[str, Any]] = []
+
+        for project_id in _project_list():
+            # Typical billing export table: <project>.billing.gcp_billing_export_v1_*
+            service_query = f"""
+            SELECT
+                service.description AS service_name,
+                SUM(CAST(cost AS FLOAT64)) as total_cost
+            FROM
+                `{project_id}.billing.gcp_billing_export_v1_*`
+            WHERE
+                DATE(usage_start_time) >= DATE('{start_date}')
+                AND DATE(usage_start_time) <= DATE('{end_date}')
+            GROUP BY
+                service_name
+            ORDER BY
+                total_cost DESC
+            LIMIT 200
+            """
+            region_query = f"""
+            SELECT
+                COALESCE(location.region, location.location, 'global') AS region_name,
+                SUM(CAST(cost AS FLOAT64)) as total_cost
+            FROM
+                `{project_id}.billing.gcp_billing_export_v1_*`
+            WHERE
+                DATE(usage_start_time) >= DATE('{start_date}')
+                AND DATE(usage_start_time) <= DATE('{end_date}')
+            GROUP BY
+                region_name
+            """
+
+            project_total = 0.0
+            try:
+                for row in client.query(service_query).result():
+                    service_name = row.service_name or "Unknown"
+                    cost = float(row.total_cost or 0.0)
+                    services[service_name] = services.get(service_name, 0.0) + cost
+                    total_cost += cost
+                    project_total += cost
+
+                for row in client.query(region_query).result():
+                    region_name = row.region_name or "global"
+                    cost = float(row.total_cost or 0.0)
+                    regions[region_name] = regions.get(region_name, 0.0) + cost
+
+                project_breakdown.append(
+                    {
+                        "scope_type": "project",
+                        "scope_id": project_id,
+                        "total_cost_usd": round(project_total, 2),
+                    }
+                )
+            except Exception as project_exc:
+                project_breakdown.append(
+                    {
+                        "scope_type": "project",
+                        "scope_id": project_id,
+                        "error": str(project_exc),
+                    }
+                )
+
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)[:10]
         
         return json.dumps({
             "period": period,
@@ -91,6 +135,14 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             "top_services": [
                 {"service": s, "cost_usd": round(c, 2)} for s, c in top_services
             ],
+            "region_breakdown": [
+                {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
+            ],
+            "account_breakdown": project_breakdown,
+            "scope_context": {
+                "folder_id": config.gcp_folder_id or None,
+                "organization_id": config.gcp_organization_id or None,
+            },
             "currency": "USD",
             "cloud_provider": "gcp",
         })

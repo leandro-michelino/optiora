@@ -1,5 +1,6 @@
 """Main FastAPI application for OptiOra."""
 
+import asyncio
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,11 +11,12 @@ import os
 from .config import Config
 from .orm_models import ensure_public_workspace, init_db
 from .auth_routes import router as auth_router
-from .api import router as api_router
+from .api import router as api_router, run_scheduled_scans_once
 from . import __version__
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+_scheduler_task: asyncio.Task | None = None
 
 
 def _resolve_allowed_origins() -> list[str]:
@@ -61,10 +63,38 @@ async def startup_event():
         init_db()
         if not Config().auth_enabled:
             ensure_public_workspace()
+        if Config().enable_scan_scheduler:
+            interval_seconds = max(300, Config().scan_scheduler_interval_minutes * 60)
+
+            async def _scheduler_loop():
+                while True:
+                    try:
+                        result = await run_scheduled_scans_once()
+                        logger.info("Scheduled scan loop result: %s", result)
+                    except Exception:
+                        logger.exception("Scheduled scan loop failed")
+                    await asyncio.sleep(interval_seconds)
+
+            global _scheduler_task
+            _scheduler_task = asyncio.create_task(_scheduler_loop())
+            logger.info("Scheduled scan runner enabled (interval=%ss)", interval_seconds)
         logger.info("Database initialized successfully (version=%s)", __version__)
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)
         raise RuntimeError("Database initialization failed") from e
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop background scheduler task cleanly."""
+    global _scheduler_task
+    if _scheduler_task is not None:
+        _scheduler_task.cancel()
+        try:
+            await _scheduler_task
+        except asyncio.CancelledError:
+            pass
+        _scheduler_task = None
 
 
 # Health check endpoint

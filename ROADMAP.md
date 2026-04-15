@@ -22,6 +22,13 @@
 - ~~reverse-proxy / TLS front door~~ — nginx Ansible role with Let's Encrypt certbot + renewal cron
 - ~~managed database migration path~~ — Alembic with initial schema migration covering all tables
 - ~~persisted historical cost models~~ — CostSnapshot ORM table; snapshots captured after each scan run
+- ~~AWS Organizations member-account scanning~~ — optional `AWS_ORGANIZATION_ROLE_ARNS` assume-role aggregation with per-account rollups
+- ~~Azure Management Group / multi-subscription aggregation~~ — supports `AZURE_MANAGEMENT_GROUP_ID` and `AZURE_SUBSCRIPTION_IDS`
+- ~~GCP multi-project + folder/org context~~ — supports `GCP_PROJECT_IDS` with folder/org metadata context in scans
+- ~~region-level cost breakdown~~ — cost summaries now expose `region_breakdown` per provider and aggregated dashboard `regionBreakdown`
+- ~~scheduled scan runner~~ — background scheduler loop with approval-based cadence checks (`daily` / `weekly` / `hourly`)
+- ~~per-scan diff view~~ — `/scanning/{scan_id}/diff` and CSV export for delta vs previous scan
+- ~~scan history browser~~ — operations dashboard + `/scanning/history` API + CSV export
 
 ## High-Priority Next Steps
 
@@ -47,16 +54,17 @@
 
 ### Multi-account and multi-region support
 
-- AWS Organizations: scan across all member accounts via assume-role
-- Azure Management Groups: aggregate costs across multiple subscriptions
-- GCP folder / org-level billing aggregation
-- region-level cost breakdown for each provider
+- optional organization account hierarchy visualization (parent/child) for AWS OUs and Azure MG descendants
+- account-level tagging policy drift report (missing owner/cost-center tags)
+- cross-provider normalized account inventory (owner, env, business unit)
+- region-level anomaly detection (not just cost totals)
 
 ### Scheduled background scans
 
-- cron-triggered scan runner (configurable daily/weekly cadence)
-- per-scan diff view showing cost changes since the previous snapshot
-- scan history browser in the dashboard
+- scheduler UI controls (override cadence per organization without API call)
+- scheduler SLO dashboard (last run, success/failure rate, next run ETA)
+- retry/backoff policy for transient cloud API errors
+- scheduler health alerts when scans are overdue
 
 ### Alerting and notifications
 
@@ -82,6 +90,7 @@
 - Redis API response caching to reduce cloud provider API calls
 - async background task queue (Celery or ARQ) for long-running scans
 - pagination on cost and recommendation endpoints for large data sets
+- provider API rate-limit aware batching and back-pressure controls
 
 ### Developer and operations experience
 

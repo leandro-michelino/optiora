@@ -20,9 +20,12 @@ class Config:
     aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     aws_region: str = os.getenv("AWS_REGION", "us-east-1")
+    aws_organization_role_arns: str = os.getenv("AWS_ORGANIZATION_ROLE_ARNS", "")
 
     # Azure
     azure_subscription_id: str = os.getenv("AZURE_SUBSCRIPTION_ID", "")
+    azure_subscription_ids: str = os.getenv("AZURE_SUBSCRIPTION_IDS", "")
+    azure_management_group_id: str = os.getenv("AZURE_MANAGEMENT_GROUP_ID", "")
     azure_tenant_id: str = os.getenv("AZURE_TENANT_ID", "")
     azure_client_id: str = os.getenv("AZURE_CLIENT_ID", "")
     azure_client_secret: str = os.getenv("AZURE_CLIENT_SECRET", "")
@@ -32,6 +35,9 @@ class Config:
         "GOOGLE_APPLICATION_CREDENTIALS", ""
     )
     gcp_project_id: str = os.getenv("GCP_PROJECT_ID", "")
+    gcp_project_ids: str = os.getenv("GCP_PROJECT_IDS", "")
+    gcp_folder_id: str = os.getenv("GCP_FOLDER_ID", "")
+    gcp_organization_id: str = os.getenv("GCP_ORGANIZATION_ID", "")
 
     # OCI (Oracle Cloud Infrastructure)
     # Used for: (1) hosting the API backend, (2) analyzing OCI costs via Usage API
@@ -66,6 +72,10 @@ class Config:
     max_auto_action_spend: float = float(
         os.getenv("MAX_AUTO_ACTION_SPEND", "1000")
     )  # Max $ to save via automation without approval
+
+    # Scan scheduling
+    enable_scan_scheduler: bool = os.getenv("ENABLE_SCAN_SCHEDULER", "false").strip().lower() in {"1", "true", "yes"}
+    scan_scheduler_interval_minutes: int = int(os.getenv("SCAN_SCHEDULER_INTERVAL_MINUTES", "60"))
 
     def validate(self):
         """Validate required configuration."""

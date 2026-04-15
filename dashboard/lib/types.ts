@@ -13,6 +13,10 @@ export interface CostResponse {
       percentage: number
     }
   }
+  regionBreakdown?: Array<{
+    region: string
+    cost: number
+  }>
 }
 
 export interface AnomalyResponse {
@@ -34,6 +38,13 @@ export interface RecommendationResponse {
   savings: number
   roi: number
   difficulty: 'easy' | 'medium' | 'hard'
+}
+
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface CloudCredential {

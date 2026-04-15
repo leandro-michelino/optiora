@@ -2,12 +2,22 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, Dict, List
 from datetime import datetime, timedelta
 from finops_mcp.config import Config
 
 logger = logging.getLogger(__name__)
 config = Config()
+
+
+def _subscription_list() -> List[str]:
+    values = [config.azure_subscription_id]
+    values.extend([part.strip() for part in config.azure_subscription_ids.split(",") if part.strip()])
+    unique: List[str] = []
+    for value in values:
+        if value and value not in unique:
+            unique.append(value)
+    return unique
 
 
 async def get_cost_summary(params: dict[str, Any]) -> str:
@@ -19,7 +29,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     try:
         period = params.get("period", "month")
         
-        if not config.azure_subscription_id:
+        if not config.azure_subscription_id and not config.azure_subscription_ids and not config.azure_management_group_id:
             return json.dumps({"error": "Azure not configured (AZURE_SUBSCRIPTION_ID not set)"})
         
         try:
@@ -51,10 +61,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         else:  # year
             start_date = end_date - timedelta(days=365)
         
-        # Build query
-        scope = f"/subscriptions/{config.azure_subscription_id}"
-        
-        query_def = QueryDefinition(
+        def _build_query(group_dimension: str) -> QueryDefinition:
+            return QueryDefinition(
             type="Usage",
             timeframe="Custom",
             time_period={
@@ -72,35 +80,84 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                 "grouping": [
                     {
                         "type": "Dimension",
-                        "name": "MeterCategory"
+                        "name": group_dimension
                     }
                 ],
                 "sorting": [
                     {
                         "direction": "Ascending",
-                        "name": "MeterCategory"
+                        "name": group_dimension
                     }
                 ]
             }
         )
-        
-        # Execute query
-        query_result = client.query.usage(scope, query_def)
-        
-        # Parse results
+
+        # Build scan scopes: management group first (if provided), then subscriptions.
+        scopes: List[Dict[str, str]] = []
+        if config.azure_management_group_id:
+            scopes.append(
+                {
+                    "scope": f"/providers/Microsoft.Management/managementGroups/{config.azure_management_group_id}",
+                    "identifier": config.azure_management_group_id,
+                    "scope_type": "management_group",
+                }
+            )
+        for subscription_id in _subscription_list():
+            scopes.append(
+                {
+                    "scope": f"/subscriptions/{subscription_id}",
+                    "identifier": subscription_id,
+                    "scope_type": "subscription",
+                }
+            )
+
         total_cost = 0.0
-        services = {}
-        
-        if hasattr(query_result, 'rows'):
-            for row in query_result.rows:
-                if len(row) >= 2:
-                    service_name = row[0] or "Unknown"
-                    cost = float(row[1]) if row[1] else 0
-                    services[service_name] = services.get(service_name, 0) + cost
-                    total_cost += cost
-        
-        # Sort by cost descending
+        services: Dict[str, float] = {}
+        regions: Dict[str, float] = {}
+        scope_breakdown: List[Dict[str, Any]] = []
+
+        for scope_info in scopes:
+            scope = scope_info["scope"]
+            service_query = _build_query("MeterCategory")
+            region_query = _build_query("ResourceLocation")
+            scope_total = 0.0
+            try:
+                query_result = client.query.usage(scope, service_query)
+                if hasattr(query_result, "rows"):
+                    for row in query_result.rows:
+                        if len(row) >= 2:
+                            service_name = row[0] or "Unknown"
+                            cost = float(row[1]) if row[1] else 0.0
+                            services[service_name] = services.get(service_name, 0.0) + cost
+                            scope_total += cost
+                            total_cost += cost
+
+                region_result = client.query.usage(scope, region_query)
+                if hasattr(region_result, "rows"):
+                    for row in region_result.rows:
+                        if len(row) >= 2:
+                            region = row[0] or "global"
+                            cost = float(row[1]) if row[1] else 0.0
+                            regions[region] = regions.get(region, 0.0) + cost
+
+                scope_breakdown.append(
+                    {
+                        "scope_type": scope_info["scope_type"],
+                        "scope_id": scope_info["identifier"],
+                        "total_cost_usd": round(scope_total, 2),
+                    }
+                )
+            except Exception as scope_exc:
+                scope_breakdown.append(
+                    {
+                        "scope_type": scope_info["scope_type"],
+                        "scope_id": scope_info["identifier"],
+                        "error": str(scope_exc),
+                    }
+                )
+
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)[:10]
         
         return json.dumps({
             "period": period,
@@ -110,6 +167,10 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             "top_services": [
                 {"service": s, "cost_usd": round(c, 2)} for s, c in top_services
             ],
+            "region_breakdown": [
+                {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
+            ],
+            "account_breakdown": scope_breakdown,
             "currency": "USD",
             "cloud_provider": "azure",
         })

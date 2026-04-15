@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, Dict
 from datetime import datetime, timedelta
 import os
 from finops_mcp.config import Config
@@ -52,12 +52,20 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             granularity="DAILY",
             group_by=["service"],
         )
+        region_request = models.RequestSummarizedUsagesDetails(
+            tenant_id=tenancy_id,
+            time_usage_started=datetime.combine(start_date, datetime.min.time()),
+            time_usage_ended=datetime.combine(end_date, datetime.max.time()),
+            granularity="DAILY",
+            group_by=["region"],
+        )
         
         response = usage_client.request_summarized_usages(request)
         
         # Parse response
         total_cost = 0.0
-        services = {}
+        services: Dict[str, float] = {}
+        regions: Dict[str, float] = {}
         
         for item in response.data.items:
             service_name = (
@@ -68,8 +76,19 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             cost = float(item.computed_amount or 0)
             services[service_name] = services.get(service_name, 0) + cost
             total_cost += cost
-        
+
+        region_response = usage_client.request_summarized_usages(region_request)
+        for item in region_response.data.items:
+            region_name = (
+                getattr(item, "region", None)
+                or (item.tags.get("region") if item.tags else None)
+                or "global"
+            )
+            cost = float(item.computed_amount or 0)
+            regions[region_name] = regions.get(region_name, 0.0) + cost
+
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)[:10]
         
         return json.dumps({
             "period": period,
@@ -77,6 +96,16 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             "end_date": str(end_date),
             "total_cost_usd": round(total_cost, 2),
             "top_services": [{"service": s, "cost_usd": round(c, 2)} for s, c in top_services],
+            "region_breakdown": [
+                {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
+            ],
+            "account_breakdown": [
+                {
+                    "scope_type": "tenancy",
+                    "scope_id": tenancy_id,
+                    "total_cost_usd": round(total_cost, 2),
+                }
+            ],
             "currency": "USD",
             "cloud_provider": "oci",
         })
