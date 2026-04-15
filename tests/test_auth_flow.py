@@ -8,6 +8,7 @@ from datetime import datetime
 
 TEST_DB = os.path.join(tempfile.gettempdir(), "optiora_auth_flow_test.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
+os.environ["ENABLE_AUTH"] = "true"
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["PASSWORD_RESET_RETURN_TOKEN"] = "true"
 
@@ -271,6 +272,9 @@ class AuthFlowTest(unittest.TestCase):
 
     def test_z_alembic_upgrade_downgrade_roundtrip(self) -> None:
         cfg = AlembicConfig("alembic.ini")
+        Base.metadata.drop_all(bind=engine)
+
+        alembic_command.upgrade(cfg, "head")
 
         alembic_command.downgrade(cfg, "base")
         inspector = inspect(engine)

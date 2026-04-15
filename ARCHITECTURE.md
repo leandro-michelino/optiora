@@ -80,6 +80,58 @@ Scan run recorded
    +--> history + diff + CSV exports
 ```
 
+## Scheduler and Diff Flow
+
+```text
+FastAPI startup
+   |
+   +--> ENABLE_SCAN_SCHEDULER=true ?
+           |
+           +--> background loop (SCAN_SCHEDULER_INTERVAL_MINUTES)
+                   |
+                   +--> due approved scanning_permissions
+                           |
+                           +--> create scan_runs (state=running)
+                           +--> fetch provider costs/anomalies/recommendations
+                           +--> write cost_snapshots + provider_account_snapshots
+                           +--> complete scan_runs
+                                   |
+                                   +--> /scanning/history
+                                   +--> /scanning/{scan_id}/diff
+                                   +--> CSV exports
+```
+
+## Data Model (Core Runtime Tables)
+
+```text
+users ---< user_organizations >--- organizations
+  |                                   |
+  |                                   +---< stored_credentials
+  +---< refresh_tokens                +---< scanning_permissions
+  +---< password_reset_tokens         +---< audit_logs
+                                      +---< alert_events
+                                      +---< provider_accounts ---< provider_account_links
+
+scan_runs ---< cost_snapshots
+scan_runs ---< provider_account_snapshots >--- provider_accounts
+```
+
+## Authorization Modes
+
+```text
+ENABLE_AUTH=true
+  |
+  +--> JWT + cookie session required
+  +--> org selected via /auth/organization/select
+  +--> owner/admin required for credential/scanning mutation endpoints
+
+ENABLE_AUTH=false
+  |
+  +--> backend resolves requests to seeded public workspace identity
+  +--> dashboard opens directly with no login wall
+  +--> same org-scoped data model, single workspace context
+```
+
 ## Deployment Paths
 
 ### Quick OCI deploy

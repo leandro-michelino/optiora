@@ -128,6 +128,8 @@ OCI_CONFIG_FILE=
 ENVIRONMENT=production
 PASSWORD_RESET_RETURN_TOKEN=false
 PASSWORD_RESET_TOKEN_MINUTES=30
+ENABLE_SCAN_SCHEDULER=false
+SCAN_SCHEDULER_INTERVAL_MINUTES=60
 ```
 
 `OCI_PRIVATE_KEY_PATH` is the preferred deployment option because it avoids fragile multiline env formatting.
@@ -150,6 +152,12 @@ SECRET_KEY=<strong-random-value>
 curl http://<instance-ip>:8000/health
 curl http://<instance-ip>:8000/api/v1/info
 curl http://<instance-ip>:3000
+```
+
+Optional scheduler smoke test (authenticated mode with owner/admin role):
+
+```bash
+curl -X POST http://<instance-ip>:8000/api/v1/scanning/scheduler/run-now
 ```
 
 On the VM:

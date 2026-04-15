@@ -20,11 +20,13 @@ from sqlalchemy.orm import Session
 from .auth_routes import get_current_membership, get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
 from .config import Config
+from .access_control import require_role
 from .orm_models import (
     SessionLocal,
     User,
     CostSnapshot,
     UserOrganization,
+    UserRole,
     ScanRunRecord,
     AlertEvent,
     AuditLog,
@@ -276,6 +278,14 @@ def _organization_id_from_customer_id(customer_id: str) -> Optional[int]:
     return None
 
 
+def _require_management_role(membership: UserOrganization, action: str) -> None:
+    require_role(
+        membership,
+        allowed_roles=[UserRole.OWNER, UserRole.ADMIN],
+        action=action,
+    )
+
+
 def _resolve_customer_id(
     current_user: User,
     membership: UserOrganization,
@@ -306,32 +316,6 @@ async def _cost_summary_for_provider(provider: str, period: str = "month") -> Di
     else:
         return {"error": f"Unsupported provider: {provider}"}
     return _safe_json_load(raw, {"error": "Invalid tool response"})
-
-
-def _latest_completed_scans(customer_id: str, limit: int = 2) -> List[ScanRunRecord]:
-    db = SessionLocal()
-    try:
-        return (
-            db.query(ScanRunRecord)
-            .filter(
-                ScanRunRecord.customer_id == customer_id,
-                ScanRunRecord.state == ScanningState.COMPLETED.value,
-            )
-            .order_by(ScanRunRecord.started_at.desc())
-            .limit(limit)
-            .all()
-        )
-    finally:
-        db.close()
-
-
-def _snapshot_map(scan_id: str) -> Dict[str, CostSnapshot]:
-    db = SessionLocal()
-    try:
-        rows = db.query(CostSnapshot).filter(CostSnapshot.scan_id == scan_id).all()
-        return {row.provider: row for row in rows}
-    finally:
-        db.close()
 
 
 async def _cost_context(period: str = "month", cloud_provider: str = "all") -> Dict[str, Any]:
@@ -459,6 +443,7 @@ async def add_credentials(
 ) -> Dict[str, Any]:
     """Validate and store credentials metadata."""
     try:
+        _require_management_role(membership, "credential updates")
         customer_id = _resolve_customer_id(
             current_user=current_user,
             membership=membership,
@@ -524,6 +509,7 @@ async def delete_credentials(
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Dict[str, Any]:
     try:
+        _require_management_role(membership, "credential deletion")
         scoped_customer_id = _resolve_customer_id(current_user, membership, customer_id)
         deleted = credential_manager.delete_credentials(scoped_customer_id, provider)
         if not deleted:
@@ -550,6 +536,7 @@ async def request_scanning_approval(
     customer_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
+        _require_management_role(membership, "scan approval requests")
         scoped_customer_id = _resolve_customer_id(current_user, membership, customer_id)
         scanning_manager.create_permission_request(
             customer_id=scoped_customer_id,
@@ -583,6 +570,7 @@ async def approve_scanning(
     membership: UserOrganization = Depends(get_current_membership),
 ) -> ScanningPermissionResponse:
     try:
+        _require_management_role(membership, "scan approval")
         customer_id = _resolve_customer_id(current_user, membership, approval.customer_id)
         approved = scanning_manager.approve_scanning(
             customer_id=customer_id,
@@ -635,6 +623,7 @@ async def pause_scanning(
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Dict[str, Any]:
     try:
+        _require_management_role(membership, "scan pause")
         scoped_customer_id = _resolve_customer_id(current_user, membership, customer_id)
         return scanning_manager.pause_scanning(scoped_customer_id)
     except HTTPException:
@@ -652,6 +641,7 @@ async def resume_scanning(
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Dict[str, Any]:
     try:
+        _require_management_role(membership, "scan resume")
         scoped_customer_id = _resolve_customer_id(current_user, membership, customer_id)
         return scanning_manager.resume_scanning(scoped_customer_id)
     except HTTPException:
@@ -670,6 +660,7 @@ async def start_scan(
     membership: UserOrganization = Depends(get_current_membership),
 ) -> ScanProgressResponse:
     try:
+        _require_management_role(membership, "scan start")
         customer_id = _resolve_customer_id(current_user, membership, scan_request.customer_id)
         permission = scanning_manager.get_permission_status(customer_id)
         if permission["state"] not in [ScanningState.APPROVED.value, ScanningState.RUNNING.value]:
@@ -712,9 +703,12 @@ async def run_scheduler_now(
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Dict[str, Any]:
-    """Run the scan scheduler loop once on-demand (owner/admin only recommended)."""
-    _ = (current_user, membership)
-    return await run_scheduled_scans_once()
+    """Run the scan scheduler loop once on-demand."""
+    _ = current_user
+    _require_management_role(membership, "manual scheduler runs")
+    return await run_scheduled_scans_once(
+        requested_organization_id=_organization_id_for_membership(membership),
+    )
 
 
 @router.get("/scanning/{scan_id}/progress", response_model=ScanProgressResponse)
@@ -1044,6 +1038,7 @@ async def acknowledge_alert(
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Dict[str, Any]:
+    _require_management_role(membership, "alert acknowledgement")
     organization_id = _organization_id_for_membership(membership)
     db = SessionLocal()
     try:
@@ -1516,21 +1511,24 @@ def _scan_interval_seconds(scan_frequency: str) -> int:
     return 24 * 60 * 60
 
 
-async def run_scheduled_scans_once() -> Dict[str, Any]:
+async def run_scheduled_scans_once(requested_organization_id: Optional[int] = None) -> Dict[str, Any]:
     """Trigger due scans for approved organizations based on configured cadence."""
     global _scheduler_running
     if _scheduler_running:
-        return {"status": "busy", "started": 0}
+        return {"status": "busy", "started": 0, "organization_id": requested_organization_id}
     _scheduler_running = True
     started = 0
     now = datetime.utcnow()
     db = SessionLocal()
     try:
-        permissions = (
-            db.query(ScanningPermissionRecord)
-            .filter(ScanningPermissionRecord.state.in_([ScanningState.APPROVED.value, ScanningState.RUNNING.value]))
-            .all()
+        permissions_query = db.query(ScanningPermissionRecord).filter(
+            ScanningPermissionRecord.state.in_([ScanningState.APPROVED.value, ScanningState.RUNNING.value])
         )
+        if requested_organization_id is not None:
+            permissions_query = permissions_query.filter(
+                ScanningPermissionRecord.organization_id == requested_organization_id
+            )
+        permissions = permissions_query.all()
         for permission in permissions:
             cadence_seconds = _scan_interval_seconds(permission.scan_frequency)
             last_completed = (
@@ -1563,11 +1561,11 @@ async def run_scheduled_scans_once() -> Dict[str, Any]:
             db.commit()
             started += 1
             await _run_cost_analysis(scan_id=scan_id, customer_id=permission.customer_id, providers=providers)
-            organization_id = _organization_id_from_customer_id(permission.customer_id)
-            if organization_id is not None:
+            derived_org_id = _organization_id_from_customer_id(permission.customer_id)
+            if derived_org_id is not None:
                 db.add(
                     AuditLog(
-                        organization_id=organization_id,
+                        organization_id=derived_org_id,
                         actor_user_id=None,
                         action="scan.schedule.triggered",
                         entity_type="scan_run",
@@ -1585,4 +1583,4 @@ async def run_scheduled_scans_once() -> Dict[str, Any]:
     finally:
         db.close()
         _scheduler_running = False
-    return {"status": "ok", "started": started}
+    return {"status": "ok", "started": started, "organization_id": requested_organization_id}

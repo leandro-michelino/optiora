@@ -18,6 +18,7 @@ from .orm_models import (
     UserOrganization,
     RefreshToken,
     PasswordResetToken,
+    ensure_public_workspace,
     get_db,
     UserRole,
 )
@@ -161,6 +162,10 @@ def _should_return_reset_token() -> bool:
     return str(PASSWORD_RESET_RETURN_TOKEN).strip().lower() in {"1", "true", "yes"}
 
 
+def _is_auth_enabled() -> bool:
+    return os.getenv("ENABLE_AUTH", "false").strip().lower() in {"1", "true", "yes"}
+
+
 def _cookie_kwargs(max_age: Optional[int] = None) -> Dict[str, object]:
     """Return consistent cookie attributes for auth tokens."""
     kwargs: Dict[str, object] = {
@@ -223,6 +228,14 @@ def get_current_token_payload(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Resolve and validate access token payload from header or cookie."""
+    if not _is_auth_enabled():
+        token = _token_from_request(request, credentials)
+        if token:
+            payload = verify_access_token(token)
+            if payload:
+                return payload
+        return {}
+
     token = _token_from_request(request, credentials)
     if not token:
         raise HTTPException(
@@ -245,6 +258,10 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     """Get current authenticated user from JWT Bearer token."""
+    if not _is_auth_enabled():
+        user, _ = ensure_public_workspace(db)
+        return user
+
     user_id_raw = payload.get("sub")
     if user_id_raw is None:
         raise HTTPException(

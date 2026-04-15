@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { authorizedFetch } from "@/lib/auth-fetch";
@@ -16,9 +16,11 @@ interface AuthUser {
 }
 
 interface AuthContextType {
+  authEnabled: boolean;
   user: AuthUser | null;
   organizations: OrganizationMembership[];
   activeOrganization: OrganizationMembership | null;
+  organization: OrganizationMembership | null;
   isAuthenticated: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -39,6 +41,7 @@ interface OrganizationMembership {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const authEnabled = String(process.env.NEXT_PUBLIC_ENABLE_AUTH || "false").toLowerCase() === "true";
   const [user, setUser] = useState<AuthUser | null>(null);
   const [organizations, setOrganizations] = useState<OrganizationMembership[]>([]);
   const [activeOrganization, setActiveOrganization] = useState<OrganizationMembership | null>(null);
@@ -47,7 +50,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = Boolean(user);
 
-  const loadSession = async () => {
+  const loadSession = useCallback(async () => {
+    if (!authEnabled) {
+      setUser(null);
+      setOrganizations([]);
+      setActiveOrganization(null);
+      return;
+    }
+
     const [profileResponse, organizationsResponse, activeOrgResponse] = await Promise.all([
       authorizedFetch(backendUrl("/auth/profile")),
       authorizedFetch(backendUrl("/auth/organizations")),
@@ -65,10 +75,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(profile);
     setOrganizations(orgs);
     setActiveOrganization(activeOrg);
-  };
+  }, [authEnabled]);
 
   useEffect(() => {
     const init = async () => {
+      if (!authEnabled) {
+        setLoading(false);
+        return;
+      }
       try {
         await loadSession();
       } catch {
@@ -81,9 +95,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     void init();
-  }, []);
+  }, [authEnabled, loadSession]);
 
   const login = async (email: string, password: string) => {
+    if (!authEnabled) {
+      return;
+    }
     try {
       await axios.post(
         backendUrl("/auth/login"),
@@ -99,6 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (email: string, password: string, fullName?: string) => {
+    if (!authEnabled) {
+      return;
+    }
     try {
       await axios.post(backendUrl("/auth/register"), {
         email,
@@ -113,6 +133,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    if (!authEnabled) {
+      setUser(null);
+      setOrganizations([]);
+      setActiveOrganization(null);
+      router.push("/dashboard");
+      return;
+    }
     try {
       await authorizedFetch(backendUrl("/auth/logout"), {
         method: "POST",
@@ -128,6 +155,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshOrganizations = async () => {
+    if (!authEnabled) {
+      setOrganizations([]);
+      setActiveOrganization(null);
+      return;
+    }
     const [organizationsResponse, activeOrgResponse] = await Promise.all([
       authorizedFetch(backendUrl("/auth/organizations")),
       authorizedFetch(backendUrl("/auth/organization")),
@@ -140,6 +172,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const switchOrganization = async (organizationId: number) => {
+    if (!authEnabled) {
+      return;
+    }
     const response = await authorizedFetch(backendUrl("/auth/organization/select"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -155,9 +190,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
+        authEnabled,
         user,
         organizations,
         activeOrganization,
+        organization: activeOrganization,
         isAuthenticated,
         loading,
         login,

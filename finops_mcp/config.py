@@ -79,14 +79,20 @@ class Config:
 
     def validate(self):
         """Validate required configuration."""
-        has_aws = bool(self.aws_access_key_id and self.aws_secret_access_key)
+        has_aws = bool(
+            (self.aws_access_key_id and self.aws_secret_access_key)
+            or self.aws_organization_role_arns
+        )
         has_azure = bool(
-            self.azure_subscription_id
+            (self.azure_subscription_id or self.azure_subscription_ids or self.azure_management_group_id)
             and self.azure_tenant_id
             and self.azure_client_id
             and self.azure_client_secret
         )
-        has_gcp = bool(self.google_application_credentials and self.gcp_project_id)
+        has_gcp = bool(
+            self.google_application_credentials
+            and (self.gcp_project_id or self.gcp_project_ids)
+        )
         has_oci = bool(self.oci_config_file)
         if not any([has_aws, has_azure, has_gcp, has_oci]):
             raise ValueError(

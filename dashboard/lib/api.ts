@@ -238,8 +238,8 @@ export async function fetchAuditLogs(limit = 20): Promise<AuditLogEntry[]> {
   )
 }
 
-export async function runScheduledScanNow(): Promise<{ status: string; started: number }> {
-  return requestJson<{ status: string; started: number }>(
+export async function runScheduledScanNow(): Promise<{ status: string; started: number; organization_id?: number | null }> {
+  return requestJson<{ status: string; started: number; organization_id?: number | null }>(
     '/api/v1/scanning/scheduler/run-now',
     { method: 'POST' },
   )

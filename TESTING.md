@@ -16,13 +16,15 @@ source .venv/bin/activate
 python -m finops_mcp.app
 ```
 
+If `python3` resolves to `3.14`, create your virtualenv with `python3.13` (or `python3.12`) first.
+
 Use Python `3.10` to `3.13` for backend runtime/setup.
 Avoid using a Python `3.14` virtualenv for the backend test environment until the upstream `httpx/httpcore` test stack fully stabilizes there.
 
 Regression tests:
 
 ```bash
-python3 -m unittest discover -s tests
+.venv/bin/python -m unittest discover -s tests
 ```
 
 Current backend coverage includes:
@@ -68,5 +70,6 @@ terraform -chdir=terraform validate
 
 - Backend tests require the Python dependencies from `pyproject.toml`.
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
+- Python `3.13` test runs currently show `datetime.utcnow()` deprecation warnings from runtime/framework code paths; functional behavior still passes.
 - Next test expansion should prioritize credential CRUD with mocked provider validators and scan approval/progress flows.
 - Frontend production build is a required deployment gate.

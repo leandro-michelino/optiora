@@ -68,10 +68,12 @@ The dashboard is the main workspace for:
 
 - `.env` is loaded automatically when the backend package is imported.
 - Dashboard access is public by default. Authentication and RBAC are optional deployment hardening steps and stay disabled unless you explicitly set `ENABLE_AUTH=true` and `NEXT_PUBLIC_ENABLE_AUTH=true`.
+- When auth is disabled, backend auth dependencies resolve to the seeded public workspace identity so dashboard APIs still work without login.
 - Raw cloud secrets are validated server-side but not persisted; only sanitized metadata is stored.
 - Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
 - Forecasts, anomaly detection, and recommendations are all driven from live provider cost data — no hardcoded baselines.
+- Credential/scanning mutations are role-guarded (`owner`/`admin`) when auth is enabled.
 - AI advisor features are OCI GenAI-based; there is no parallel OpenAI/ChatGPT runtime path in this repository.
 - For OCI GenAI signing, prefer `OCI_PRIVATE_KEY_PATH` over inline multiline env values. Inline `OCI_PRIVATE_KEY` is still supported when encoded with literal `\n` escapes.
 
@@ -87,11 +89,22 @@ The dashboard is the main workspace for:
 - `GET /api/v1/scanning/permission`
 - `POST /api/v1/scanning/start`
 - `GET /api/v1/scanning/{scan_id}/progress`
+- `GET /api/v1/scanning/history`
+- `GET /api/v1/scanning/{scan_id}/diff`
+- `POST /api/v1/scanning/scheduler/run-now`
+- `GET /api/v1/scanning/history.csv`
+- `GET /api/v1/scanning/{scan_id}/diff.csv`
 - `GET /api/v1/costs`
 - `GET /api/v1/anomalies`
 - `GET /api/v1/recommendations`
  - `GET /api/v1/forecast` (supports budget guardrails + fan percentiles)
  - `GET /api/v1/analytics` (adds provider signals and GenAI brief)
+- `GET /api/v1/provider-accounts/rollups`
+- `GET /api/v1/alerts`
+- `POST /api/v1/alerts/{alert_id}/acknowledge`
+- `GET /api/v1/alerts.csv`
+- `GET /api/v1/audit-logs`
+- `GET /api/v1/audit-logs.csv`
 - `GET /api/v1/provider-diagnostics`
 - `GET /api/v1/info`
 
@@ -110,12 +123,14 @@ This creates a backend virtualenv, installs dashboard dependencies, and runs Ter
 ### Backend
 
 ```bash
-python3 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 cp .env.example .env
 python -m finops_mcp.app
 ```
+
+If your default `python3` resolves to `3.14`, use `python3.13` (or `python3.12`) for backend setup.
 
 Backend default: `http://localhost:8000`
 Dashboard opens directly by default with no login wall.
