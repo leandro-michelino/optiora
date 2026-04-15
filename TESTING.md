@@ -31,6 +31,7 @@ Current backend coverage includes:
 - refresh-token revocation after password reset
 - customer scope rejection for mismatched `customer_id`
 - login rate limiting after repeated failures
+- organization-scoped credential, scan history, alert, and export flows in auth-enabled regression mode
 
 Smoke endpoints:
 
@@ -65,5 +66,6 @@ terraform -chdir=terraform validate
 ## Notes
 
 - Backend tests require the Python dependencies from `pyproject.toml`.
+- `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Next test expansion should prioritize credential CRUD with mocked provider validators and scan approval/progress flows.
 - Frontend production build is a required deployment gate.

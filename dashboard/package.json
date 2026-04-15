@@ -8,8 +8,7 @@
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "format": "prettier --write .",
-    "type-check": "tsc --noEmit",
-    "generate:api": "openapi-typescript ../finops_mcp/app:openapi.json --output src/generated/api-types.ts"
+    "type-check": "tsc --noEmit"
   },
   "keywords": [
     "finops",
@@ -51,7 +50,6 @@
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "^16.2.3",
-    "openapi-typescript": "^7.13.0",
     "prettier": "^3.1.0",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.3.0"

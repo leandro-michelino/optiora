@@ -57,3 +57,6 @@ terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.*
 terraform/terraform.tfvars
+
+# Local scratch / generated artifacts
+tmp/

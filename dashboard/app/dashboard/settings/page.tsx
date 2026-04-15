@@ -7,7 +7,6 @@ import ScanningApproval from '@/app/components/ScanningApproval';
 import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 import { useAuth } from '@/lib/auth-context';
-import { AIProvider, getAIProvider, setAIProvider } from '@/lib/ai-config';
 
 
 interface StoredCredential {
@@ -29,7 +28,6 @@ interface ScanApprovalConfig {
 
 export default function SettingsPage() {
   const { authEnabled, user, organization } = useAuth()
-  const [aiProvider, setAIProviderState] = useState<AIProvider>(getAIProvider())
   const [storedCredentials, setStoredCredentials] = useState<StoredCredential[]>([])
   const [loadingCredentials, setLoadingCredentials] = useState(true)
   const [scanningApprovalStep, setScanningApprovalStep] = useState(false)
@@ -98,11 +96,6 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Failed to delete credential:', error)
     }
-  }
-
-  const handleAIProviderChange = (provider: AIProvider) => {
-    setAIProvider(provider)
-    setAIProviderState(provider)
   }
 
   const handleScanningApproved = async (config: ScanApprovalConfig) => {
@@ -282,35 +275,16 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
               <div>
                 <h3 className="font-semibold text-slate-900 dark:text-white">
-                AI Provider
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Choose between OCI GenAI (preferred) or ChatGPT for narrative and advisor features
-              </p>
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="ai-provider"
-                  value="oci"
-                  checked={aiProvider === 'oci'}
-                  onChange={() => handleAIProviderChange('oci')}
-                />
+                  AI Provider
+                </h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Narrative and advisor features use OCI GenAI for this deployment.
+                </p>
+              </div>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                 OCI GenAI
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="ai-provider"
-                  value="chatgpt"
-                  checked={aiProvider === 'chatgpt'}
-                  onChange={() => handleAIProviderChange('chatgpt')}
-                />
-                ChatGPT
-              </label>
+              </span>
             </div>
-          </div>
 
           <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
             <div>
