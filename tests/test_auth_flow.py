@@ -1,5 +1,6 @@
 """Regression tests for authentication and tenant-scoped API behavior."""
 
+import asyncio
 import os
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ os.environ["PASSWORD_RESET_RETURN_TOKEN"] = "true"
 try:
     from fastapi.testclient import TestClient  # noqa: E402
 
+    from finops_mcp.api import _run_cost_analysis  # noqa: E402
     from finops_mcp.app import app  # noqa: E402
     from finops_mcp.credentials import CredentialStatus  # noqa: E402
     from finops_mcp.orm_models import (  # noqa: E402
@@ -564,6 +566,98 @@ class AuthFlowTest(unittest.TestCase):
             params={"customer_id": customer_id},
         )
         self.assertEqual(blocked.status_code, 403)
+
+    def test_background_scan_creates_provider_rollup_snapshots(self) -> None:
+        tokens = self._register_and_login(
+            "owner11@example.com",
+            "StrongPass1!",
+            "Owner Eleven",
+        )
+        organization_id = self.client.get(
+            "/auth/organization",
+            headers=self._auth_headers(tokens),
+        ).json()["id"]
+        customer_id = f"org-{organization_id}"
+
+        db = SessionLocal()
+        try:
+            db.add(
+                ScanRunRecord(
+                    scan_id="scan_rollup_population",
+                    customer_id=customer_id,
+                    state="running",
+                    providers_json='["aws"]',
+                    progress=0,
+                    started_at=datetime.utcnow() - timedelta(minutes=5),
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        async def fake_summary(provider: str, period: str = "month") -> dict:
+            self.assertEqual(provider, "aws")
+            self.assertEqual(period, "month")
+            return {
+                "total_cost_usd": 150.0,
+                "top_services": [
+                    {"service": "EC2", "cost_usd": 100.0},
+                    {"service": "S3", "cost_usd": 50.0},
+                ],
+            }
+
+        async def fake_anomalies(_params: dict) -> str:
+            return '{"anomalies_found": 2, "anomalies": []}'
+
+        async def fake_recommendations(_params: dict) -> str:
+            return '{"recommendations": [], "total_potential_savings_annual_usd": 144.0}'
+
+        with patch("finops_mcp.api._cost_summary_for_provider", side_effect=fake_summary), patch(
+            "finops_mcp.api.anomalies.detect_anomalies",
+            side_effect=fake_anomalies,
+        ), patch(
+            "finops_mcp.api.recommendations.get_recommendations",
+            side_effect=fake_recommendations,
+        ):
+            asyncio.run(
+                _run_cost_analysis(
+                    scan_id="scan_rollup_population",
+                    organization_id=organization_id,
+                    customer_id=customer_id,
+                    providers=["aws"],
+                )
+            )
+
+        db = SessionLocal()
+        try:
+            account = (
+                db.query(ProviderAccount)
+                .filter(
+                    ProviderAccount.organization_id == organization_id,
+                    ProviderAccount.customer_id == customer_id,
+                    ProviderAccount.provider == "aws",
+                    ProviderAccount.account_identifier == "aws-aggregate",
+                )
+                .first()
+            )
+            self.assertIsNotNone(account)
+            self.assertEqual(account.account_type, "provider_rollup")
+
+            snapshot = (
+                db.query(ProviderAccountSnapshot)
+                .filter(
+                    ProviderAccountSnapshot.scan_id == "scan_rollup_population",
+                    ProviderAccountSnapshot.provider_account_id == account.id,
+                )
+                .first()
+            )
+            self.assertIsNotNone(snapshot)
+            self.assertEqual(snapshot.direct_cost_usd, 150.0)
+            self.assertEqual(snapshot.savings_identified_usd, 12.0)
+            self.assertEqual(snapshot.anomalies_count, 2)
+            self.assertEqual(snapshot.service_count, 2)
+        finally:
+            db.close()
 
     def test_scan_history_diff_alerts_and_exports(self) -> None:
         tokens = self._register_and_login(

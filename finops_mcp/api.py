@@ -532,6 +532,97 @@ def _provider_account_rollups(
     return items, total_direct_cost_usd, total_rolled_up_cost_usd
 
 
+def _ensure_provider_rollup_account(
+    db: Session,
+    organization_id: int,
+    customer_id: str,
+    provider: str,
+) -> ProviderAccount:
+    normalized_provider = provider.lower()
+    identifier = f"{normalized_provider}-aggregate"
+    account = (
+        db.query(ProviderAccount)
+        .filter(
+            ProviderAccount.organization_id == organization_id,
+            ProviderAccount.customer_id == customer_id,
+            ProviderAccount.provider == normalized_provider,
+            ProviderAccount.account_identifier == identifier,
+        )
+        .first()
+    )
+    if account is None:
+        account = ProviderAccount(
+            organization_id=organization_id,
+            customer_id=customer_id,
+            provider=normalized_provider,
+            account_identifier=identifier,
+            account_name=f"{provider.upper()} Aggregated Spend",
+            account_type="provider_rollup",
+            metadata_json=json.dumps({"synthetic": True, "source": "scan_aggregate"}),
+            is_active=True,
+        )
+        db.add(account)
+        db.flush()
+        return account
+
+    account.account_name = f"{provider.upper()} Aggregated Spend"
+    account.account_type = "provider_rollup"
+    account.metadata_json = json.dumps({"synthetic": True, "source": "scan_aggregate"})
+    account.is_active = True
+    account.updated_at = datetime.utcnow()
+    db.flush()
+    return account
+
+
+def _record_provider_rollup_snapshot(
+    db: Session,
+    organization_id: int,
+    customer_id: str,
+    scan_id: str,
+    provider: str,
+    direct_cost_usd: float,
+    savings_identified_usd: float,
+    anomalies_count: int,
+    service_count: int,
+    captured_at: datetime,
+) -> None:
+    account = _ensure_provider_rollup_account(
+        db,
+        organization_id=organization_id,
+        customer_id=customer_id,
+        provider=provider,
+    )
+    snapshot = (
+        db.query(ProviderAccountSnapshot)
+        .filter(
+            ProviderAccountSnapshot.scan_id == scan_id,
+            ProviderAccountSnapshot.provider_account_id == account.id,
+        )
+        .first()
+    )
+    if snapshot is None:
+        db.add(
+            ProviderAccountSnapshot(
+                organization_id=organization_id,
+                customer_id=customer_id,
+                scan_id=scan_id,
+                provider_account_id=account.id,
+                direct_cost_usd=float(direct_cost_usd or 0.0),
+                savings_identified_usd=float(savings_identified_usd or 0.0),
+                anomalies_count=int(anomalies_count or 0),
+                service_count=int(service_count or 0),
+                captured_at=captured_at,
+            )
+        )
+        return
+
+    snapshot.direct_cost_usd = float(direct_cost_usd or 0.0)
+    snapshot.savings_identified_usd = float(savings_identified_usd or 0.0)
+    snapshot.anomalies_count = int(anomalies_count or 0)
+    snapshot.service_count = int(service_count or 0)
+    snapshot.captured_at = captured_at
+
+
 def _csv_response(filename: str, headers: list[str], rows: list[list[Any]]) -> Response:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -1848,6 +1939,7 @@ async def api_info() -> Dict[str, Any]:
             "audit_logging": True,
             "budget_alerts": True,
             "csv_exports": True,
+            "provider_hierarchy": True,
         },
     }
 
@@ -1915,6 +2007,18 @@ async def _run_cost_analysis(
                 captured_at=now,
             )
             db.add(snapshot)
+            _record_provider_rollup_snapshot(
+                db,
+                organization_id=organization_id,
+                customer_id=customer_id,
+                scan_id=scan_id,
+                provider=provider,
+                direct_cost_usd=total_cost,
+                savings_identified_usd=provider_savings,
+                anomalies_count=provider_anomalies,
+                service_count=len(summary.get("top_services", []) or []),
+                captured_at=now,
+            )
 
         permission = (
             db.query(ScanningPermissionRecord)

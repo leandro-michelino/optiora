@@ -13,6 +13,7 @@ import {
   ScanDiffResponse,
   AuditLogEntry,
   AlertEvent,
+  ProviderAccountRollupResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -157,6 +158,17 @@ export async function fetchAuditLogs(limit = 20): Promise<AuditLogEntry[]> {
 
 export async function fetchAlerts(limit = 20): Promise<AlertEvent[]> {
   return requestJson<AlertEvent[]>(`/api/v1/alerts?limit=${encodeURIComponent(String(limit))}`)
+}
+
+export async function fetchProviderAccountRollups(provider?: string): Promise<ProviderAccountRollupResponse | null> {
+  const search = new URLSearchParams()
+  if (provider) search.set('provider', provider)
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  try {
+    return await requestJson<ProviderAccountRollupResponse>(`/api/v1/hierarchy/accounts${suffix}`)
+  } catch {
+    return null
+  }
 }
 
 export async function acknowledgeAlert(alertId: number): Promise<AlertEvent> {

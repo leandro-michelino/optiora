@@ -11,6 +11,7 @@ import {
   DollarSign,
   Download,
   KeyRound,
+  Layers3,
   Network,
   RefreshCw,
   Server,
@@ -26,6 +27,7 @@ import {
   fetchApiInfo,
   fetchCosts,
   fetchCredentials,
+  fetchProviderAccountRollups,
   fetchRecommendations,
   fetchScanningPermission,
 } from '@/lib/api'
@@ -34,6 +36,7 @@ import {
   ApiHealth,
   ApiInfo,
   CostResponse,
+  ProviderAccountRollupResponse,
   RecommendationResponse,
   ScanningPermission,
   StoredCredential,
@@ -58,6 +61,7 @@ interface DashboardState {
   info: ApiInfo | null
   credentials: StoredCredential[]
   permission: ScanningPermission | null
+  accountRollup: ProviderAccountRollupResponse | null
   anomalies: AnomalyResponse[]
   recommendations: RecommendationResponse[]
   source: 'live' | 'partial' | 'fallback'
@@ -70,6 +74,7 @@ const initialState: DashboardState = {
   info: null,
   credentials: [],
   permission: null,
+  accountRollup: null,
   anomalies: [],
   recommendations: [],
   source: 'live',
@@ -88,6 +93,15 @@ function formatCurrency(value: number): string {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
+  })
+}
+
+function formatCurrencyPrecise(value: number): string {
+  return value.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })
 }
 
@@ -172,16 +186,18 @@ export default function DashboardPage() {
   const trendData = useMemo(() => makeTrendData(state.costs), [state.costs])
   const topRecommendation = state.recommendations[0]
   const highestAnomaly = state.anomalies[0]
+  const accountRollupItems = state.accountRollup?.items.slice(0, 6) || []
 
   async function loadDashboard() {
     setLoading(true)
-    const [costs, health, info, credentials, permission, anomalies, recommendations] =
+    const [costs, health, info, credentials, permission, accountRollup, anomalies, recommendations] =
       await Promise.allSettled([
         fetchCosts(),
         fetchApiHealth(),
         fetchApiInfo(),
         fetchCredentials(),
         fetchScanningPermission(),
+        fetchProviderAccountRollups(),
         fetchAnomalies(),
         fetchRecommendations(),
       ])
@@ -192,6 +208,7 @@ export default function DashboardPage() {
       info: info.status === 'fulfilled' ? info.value : null,
       credentials: credentials.status === 'fulfilled' ? credentials.value.credentials || [] : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
+      accountRollup: accountRollup.status === 'fulfilled' ? accountRollup.value : null,
       anomalies: anomalies.status === 'fulfilled' ? anomalies.value.items : [],
       recommendations: recommendations.status === 'fulfilled' ? recommendations.value.items : [],
       source: health.status === 'fulfilled' && credentials.status === 'fulfilled' ? 'live' : 'partial',
@@ -426,6 +443,71 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="rounded-lg">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <Layers3 className="h-5 w-5" />
+              Account Hierarchy Rollup
+            </CardTitle>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Rolled-up cost visibility by provider account, subscription, project, or compartment.
+            </p>
+          </div>
+          <Badge variant="outline" className="rounded-md">
+            {state.accountRollup?.items.length || 0} nodes
+          </Badge>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {!state.accountRollup || accountRollupItems.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
+              Run a scan to populate provider rollups. Current scan execution creates one aggregate hierarchy node per connected provider, and future account imports can expand that into full parent-child structures.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Account Node</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Direct Cost</TableHead>
+                  <TableHead>Rolled Up</TableHead>
+                  <TableHead>Signals</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {accountRollupItems.map((item) => (
+                  <TableRow key={item.account_id}>
+                    <TableCell className="font-semibold uppercase">
+                      {providerLabels[item.provider] || item.provider}
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium text-slate-900 dark:text-white">{item.account_name}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-500">
+                        {item.account_identifier}
+                        {item.parent_account_identifier ? ` · parent ${item.parent_account_identifier}` : ''}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="rounded-md">
+                        {item.account_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatCurrencyPrecise(item.direct_cost_usd)}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatCurrencyPrecise(item.rolled_up_cost_usd)}
+                    </TableCell>
+                    <TableCell className="text-sm text-slate-600 dark:text-slate-400">
+                      {item.rolled_up_service_count} services · {item.rolled_up_anomalies_count} anomalies
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card className="rounded-lg">

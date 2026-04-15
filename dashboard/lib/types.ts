@@ -205,6 +205,38 @@ export interface AlertEvent {
   created_at: string
 }
 
+export interface ProviderAccountRollupItem {
+  account_id: number
+  provider: string
+  account_identifier: string
+  account_name: string
+  account_type: string
+  parent_account_id?: number | null
+  parent_account_identifier?: string | null
+  direct_cost_usd: number
+  rolled_up_cost_usd: number
+  direct_savings_identified_usd: number
+  rolled_up_savings_identified_usd: number
+  direct_anomalies_count: number
+  rolled_up_anomalies_count: number
+  direct_service_count: number
+  rolled_up_service_count: number
+  child_count: number
+  scan_id?: string | null
+  captured_at?: string | null
+}
+
+export interface ProviderAccountRollupResponse {
+  organization_id: number
+  customer_id: string
+  provider?: string | null
+  scan_id?: string | null
+  generated_at: string
+  total_direct_cost_usd: number
+  total_rolled_up_cost_usd: number
+  items: ProviderAccountRollupItem[]
+}
+
 export interface FinOpsAnalyticsResponse {
   generated_at: string
   current_monthly_spend_usd: number
