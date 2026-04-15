@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Cloud, TrendingUp, TrendingDown, Share2, Download, AlertCircle, CheckCircle2, Zap } from 'lucide-react'
-import { fetchCosts } from '@/lib/api'
+import { fetchCosts, fetchRecommendations } from '@/lib/api'
+import { RecommendationResponse } from '@/lib/types'
 
 interface Service {
   name: string
@@ -40,7 +41,7 @@ const competitorData: CompetitorComparison[] = [
   },
   {
     feature: 'AI-Powered Insights',
-    optiora: '✅ Claude AI Real-time',
+    optiora: '✅ OCI GenAI (explainable)',
     kubecost: '❌ Rule-based only',
     vantage: '❌ Basic heuristics',
     cloudhealth: '❌ No AI features'
@@ -78,6 +79,7 @@ const competitorData: CompetitorComparison[] = [
 export default function CostsPage() {
   const [costs, setCosts] = useState<CostData[]>([])
   const [loading, setLoading] = useState(true)
+  const [recs, setRecs] = useState<{ items: RecommendationResponse[]; total: number; limit: number; offset: number }>({ items: [], total: 0, limit: 5, offset: 0 })
 
   useEffect(() => {
     async function loadCosts() {
@@ -101,6 +103,9 @@ export default function CostsPage() {
           }
         })
         setCosts(providerRows)
+        // load recommendations (paged)
+        const recData = await fetchRecommendations({ limit: recs.limit, offset: recs.offset })
+        setRecs(recData)
       } finally {
         setLoading(false)
       }
@@ -368,6 +373,63 @@ export default function CostsPage() {
             ✨ OptiOra combines the best of all worlds: true multi-cloud support, AI-powered intelligence, chat interface for easy access, predictive forecasting, self-hosted deployment options, and transparent pricing. We're not just better—we're fundamentally different.
           </p>
         </div>
+      </div>
+
+      {/* Recommendations (paged) */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Top Recommendations</h2>
+          {recs.total > recs.limit && (
+            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+              <button
+                disabled={recs.offset === 0}
+                onClick={async () => {
+                  const nextOffset = Math.max(0, recs.offset - recs.limit)
+                  const data = await fetchRecommendations({ limit: recs.limit, offset: nextOffset })
+                  setRecs(data)
+                }}
+                className="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span>
+                Showing {recs.offset + 1}-{Math.min(recs.offset + recs.limit, recs.total)} of {recs.total}
+              </span>
+              <button
+                disabled={recs.offset + recs.limit >= recs.total}
+                onClick={async () => {
+                  const nextOffset = recs.offset + recs.limit
+                  const data = await fetchRecommendations({ limit: recs.limit, offset: nextOffset })
+                  setRecs(data)
+                }}
+                className="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          {recs.items.map((rec) => (
+            <div key={rec.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">{rec.service}</span>
+                    <span className="text-sm px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">{rec.cloud}</span>
+                    <span className="text-sm px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded capitalize">{rec.difficulty}</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{rec.title}</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{rec.description}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">${rec.savings.toLocaleString()}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">ROI: {rec.roi}%</p>
+                </div>
+              </div>
+            </div>
+          ))}
       </div>
 
       {/* Action Buttons */}

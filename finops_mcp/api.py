@@ -611,7 +611,13 @@ async def dashboard_costs(period: str = "month", cloud_provider: str = "all") ->
 
 @router.get("/dashboard/anomalies")
 @router.get("/anomalies")
-async def dashboard_anomalies(cloud_provider: str = "all") -> List[Dict[str, Any]]:
+async def dashboard_anomalies(
+    cloud_provider: str = "all",
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     result = _safe_json_load(
         await anomalies.detect_anomalies({"cloud_provider": cloud_provider}),
         {},
@@ -630,12 +636,21 @@ async def dashboard_anomalies(cloud_provider: str = "all") -> List[Dict[str, Any
                 "change": float(row.get("increase_percent", 0) or 0),
             }
         )
-    return mapped
+
+    total = len(mapped)
+    sliced = mapped[offset : offset + limit]
+    return {"items": sliced, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/dashboard/recommendations")
 @router.get("/recommendations")
-async def dashboard_recommendations(cloud_provider: str = "all") -> List[Dict[str, Any]]:
+async def dashboard_recommendations(
+    cloud_provider: str = "all",
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     context = await _cost_context("month", cloud_provider)
     result = _safe_json_load(
         await recommendations.get_recommendations(
@@ -666,7 +681,10 @@ async def dashboard_recommendations(cloud_provider: str = "all") -> List[Dict[st
                 else "hard",
             }
         )
-    return mapped
+
+    total = len(mapped)
+    sliced = mapped[offset : offset + limit]
+    return {"items": sliced, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/forecast")

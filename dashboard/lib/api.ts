@@ -10,6 +10,7 @@ import {
   ForecastResponse,
   FinOpsAnalyticsResponse,
 } from './types'
+import { paths } from '@/generated/api-types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
 
@@ -64,13 +65,31 @@ async function requestJson<T>(
   }
 }
 
+// Convenience client wrapper using generated types
+type ApiResponse<Path extends keyof paths, Method extends keyof paths[Path]> =
+  paths[Path][Method] extends { responses: infer R }
+    ? R extends { 200: infer Ok }
+      ? Ok extends { content: { 'application/json': infer C } }
+        ? C
+        : unknown
+      : unknown
+    : unknown
+
 /**
  * Fetch cost data from backend
  * Falls back to an explicit zero-cost baseline if API is unavailable.
  */
 export async function fetchCosts(): Promise<CostResponse> {
   try {
-    return await requestJson<CostResponse>('/api/v1/costs', {}, { authenticated: false })
+    const data = await requestJson<ApiResponse<'/api/v1/costs', 'get'>>('/api/v1/costs', {}, { authenticated: false })
+    // ApiResponse returns numeric keys; normalize to existing CostResponse shape
+    return {
+      totalCost: Number(data.totalCost ?? 0),
+      trend: Number(data.trend ?? 0),
+      anomalies: Number(data.anomalies ?? 0),
+      potentialSavings: Number(data.potentialSavings ?? 0),
+      breakdown: data.breakdown as CostResponse['breakdown'],
+    }
   } catch (error) {
     console.warn('Failed to fetch costs from backend, using safe fallback data', error)
     return safeFallbackCostData as CostResponse
@@ -80,28 +99,32 @@ export async function fetchCosts(): Promise<CostResponse> {
 /**
  * Fetch anomalies from backend
  */
-export async function fetchAnomalies(): Promise<AnomalyResponse[]> {
+export async function fetchAnomalies(params: { limit?: number; offset?: number } = {}): Promise<{ items: AnomalyResponse[]; total: number; limit: number; offset: number }> {
+  const search = new URLSearchParams()
+  if (params.limit !== undefined) search.set('limit', String(params.limit))
+  if (params.offset !== undefined) search.set('offset', String(params.offset))
+  const path = `/api/v1/anomalies${search.toString() ? `?${search.toString()}` : ''}`
   try {
-    return await requestJson<AnomalyResponse[]>('/api/v1/anomalies', {}, { authenticated: false })
+    return await requestJson(path, {}, { authenticated: false }) as { items: AnomalyResponse[]; total: number; limit: number; offset: number }
   } catch (error) {
     console.warn('Failed to fetch anomalies, using empty list', error)
-    return []
+    return { items: [], total: 0, limit: params.limit ?? 50, offset: params.offset ?? 0 }
   }
 }
 
 /**
  * Fetch recommendations from backend
  */
-export async function fetchRecommendations(): Promise<RecommendationResponse[]> {
+export async function fetchRecommendations(params: { limit?: number; offset?: number } = {}): Promise<{ items: RecommendationResponse[]; total: number; limit: number; offset: number }> {
+  const search = new URLSearchParams()
+  if (params.limit !== undefined) search.set('limit', String(params.limit))
+  if (params.offset !== undefined) search.set('offset', String(params.offset))
+  const path = `/api/v1/recommendations${search.toString() ? `?${search.toString()}` : ''}`
   try {
-    return await requestJson<RecommendationResponse[]>(
-      '/api/v1/recommendations',
-      {},
-      { authenticated: false },
-    )
+    return await requestJson(path, {}, { authenticated: false }) as { items: RecommendationResponse[]; total: number; limit: number; offset: number }
   } catch (error) {
     console.warn('Failed to fetch recommendations, using empty list', error)
-    return []
+    return { items: [], total: 0, limit: params.limit ?? 50, offset: params.offset ?? 0 }
   }
 }
 

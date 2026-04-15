@@ -1,56 +1,36 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { AlertTriangle, TrendingUp } from 'lucide-react'
+import { fetchAnomalies } from '@/lib/api'
+import { AnomalyResponse } from '@/lib/types'
 
-interface Anomaly {
-  id: string
-  service: string
-  cloud: string
-  message: string
-  severity: 'high' | 'medium' | 'low'
-  timestamp: string
-  change: number
+interface PageState {
+  items: AnomalyResponse[]
+  total: number
+  limit: number
+  offset: number
+  loading: boolean
 }
 
 export default function AnomaliesPage() {
-  const anomalies: Anomaly[] = [
-    {
-      id: '1',
-      service: 'EC2',
-      cloud: 'AWS',
-      message: 'Compute costs increased 45% week-over-week',
-      severity: 'high',
-      timestamp: '2 hours ago',
-      change: 45,
-    },
-    {
-      id: '2',
-      service: 'AppService',
-      cloud: 'Azure',
-      message: 'App Service billing jumped unexpectedly',
-      severity: 'medium',
-      timestamp: '5 hours ago',
-      change: 23,
-    },
-    {
-      id: '3',
-      service: 'BigQuery',
-      cloud: 'GCP',
-      message: 'New BigQuery queries detected',
-      severity: 'low',
-      timestamp: '1 day ago',
-      change: 12,
-    },
-    {
-      id: '4',
-      service: 'Compute',
-      cloud: 'OCI',
-      message: 'Unusual compute instance activity',
-      severity: 'medium',
-      timestamp: '2 days ago',
-      change: 18,
-    },
-  ]
+  const [state, setState] = useState<PageState>({ items: [], total: 0, limit: 10, offset: 0, loading: true })
+
+  const loadPage = async (offset: number, limit: number) => {
+    setState(prev => ({ ...prev, loading: true }))
+    try {
+      const res = await fetchAnomalies({ offset, limit })
+      setState({ ...res, loading: false })
+    } catch (e) {
+      console.warn('Failed to load anomalies', e)
+      setState(prev => ({ ...prev, loading: false }))
+    }
+  }
+
+  useEffect(() => {
+    void loadPage(0, state.limit)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -89,8 +69,13 @@ export default function AnomaliesPage() {
         </p>
       </div>
 
-      <div className="space-y-4">
-        {anomalies.map((anomaly) => (
+      {state.loading && (
+        <div className="text-slate-600 dark:text-slate-400">Loading anomalies...</div>
+      )}
+
+      {!state.loading && (
+        <div className="space-y-4">
+          {state.items.map((anomaly) => (
           <div
             key={anomaly.id}
             className={`card border-l-4 ${getSeverityColor(anomaly.severity)} ${getSeverityTextColor(
@@ -119,14 +104,37 @@ export default function AnomaliesPage() {
               </div>
             </div>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {anomalies.length === 0 && (
+      {!state.loading && state.items.length === 0 && (
         <div className="card text-center py-12">
           <p className="text-slate-600 dark:text-slate-400">
             No anomalies detected - your costs are stable
           </p>
+        </div>
+      )}
+
+      {!state.loading && state.total > state.limit && (
+        <div className="flex items-center gap-3">
+          <button
+            disabled={state.offset === 0}
+            onClick={() => loadPage(Math.max(0, state.offset - state.limit), state.limit)}
+            className="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-slate-600 dark:text-slate-400">
+            Showing {state.offset + 1}-{Math.min(state.offset + state.limit, state.total)} of {state.total}
+          </span>
+          <button
+            disabled={state.offset + state.limit >= state.total}
+            onClick={() => loadPage(state.offset + state.limit, state.limit)}
+            className="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-50"
+          >
+            Next
+          </button>
         </div>
       )}
     </div>
