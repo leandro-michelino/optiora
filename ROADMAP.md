@@ -16,6 +16,20 @@
 - nginx reverse proxy with TLS via Let's Encrypt automation
 - Alembic-managed database migration path
 - persisted historical cost models through snapshot storage after each scan run
+- organization-scoped audit logging for credential, alert, and scan events
+- persisted budget alerts with acknowledgement support
+- scan history browser, scan diff workflow, and CSV exports
+- public-by-default dashboard access with optional auth hardening
+
+## Current Deployment Stance
+
+The current product direction is intentionally simple for customer rollout:
+
+- customers open the dashboard directly
+- default deployment is a single public workspace
+- authentication and RBAC remain optional hardening for a later deployment, not a current blocker
+
+That means the immediate goal is deployment stability, live provider validation, and reporting depth rather than mandatory access-control expansion.
 
 ## Product Positioning
 
@@ -53,24 +67,23 @@ The next phase should not try to out-feature every competitor immediately. Inste
 
 ## High-Priority Next Steps
 
-### 1. Complete multi-tenant behavior
+### 1. Validate deployment and live customer workflow
 
-This is the most important product milestone for commercial readiness.
+This is the most important immediate milestone for commercial readiness.
 
-- switch dashboard data endpoints from demo data to org-scoped live data
-- expose organization switcher and team-management flows
-- align credential ownership with organization boundaries
-- introduce role-based access for admin, finance, engineering, and read-only personas
-- enforce organization isolation in all data access paths
-- add automated tenant-isolation regression tests
+- deploy the current public-dashboard build onto OCI
+- validate credential add, scan approval, scan start, and live provider reads
+- confirm scan history, diff, alerts, and CSV exports in the deployed environment
+- verify dashboard pages are using live backend data paths rather than placeholders
+- finalize the operational runbook for repeatable redeploys
 
 ### 2. Expand automated test coverage
 
 - add credential CRUD tests with mocked provider validators
 - add scan approval and scan progress tests
 - add migration round-trip tests for Alembic upgrades and downgrades
-- add RBAC coverage tests
-- add regression tests for tenant isolation and scoped reporting
+- add public-mode regression coverage for direct dashboard access
+- add regression tests for org-scoped reporting and exports
 - add endpoint contract tests for dashboard-critical APIs
 
 ### 3. Add enterprise account hierarchy support
@@ -227,17 +240,18 @@ This is the best near-term commercial path.
 
 ## Suggested Release Framing
 
-### Release 0.9 — Enterprise Readiness
+### Release 0.9 — Public Dashboard Readiness
 
-Goal: make the product commercially credible for real tenant-based usage.
+Goal: make the product deployable, demoable, and operationally credible with direct dashboard access.
 
-- complete multi-tenant behavior
-- add RBAC
-- add tenant isolation testing
+- keep dashboard access public by default
+- preserve auth and RBAC only as optional hardening
+- validate org-scoped credential, scan, alert, and export flows
 - add audit logging
 - add scan history and snapshot diff views
-- add CSV / Excel exports
-- add budget alerts and Slack / email notifications
+- add CSV exports
+- add budget alerts and notification foundations
+- prove repeatable OCI deployment with migrations
 
 ### Release 1.0 — Marketable FinOps Core
 
@@ -278,10 +292,10 @@ OptiOra already has a strong technical base and a clear product direction.
 
 The most important next move is to close the commercial readiness gap through:
 
-- complete multi-tenancy
+- stable public deployment
+- live multi-cloud validation
 - enterprise hierarchy support
-- reporting and alerts
-- stronger governance
+- stronger reporting and alerts
 - explainable optimization at scale
 
 The strongest strategic path is to position OptiOra as:

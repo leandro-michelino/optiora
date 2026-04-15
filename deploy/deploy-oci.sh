@@ -399,6 +399,12 @@ fi
 "$APP_DIR/venv/bin/pip" install --upgrade pip setuptools wheel poetry-core
 "$APP_DIR/venv/bin/pip" install -e "$APP_DIR"
 
+set -a
+. "$APP_DIR/.env"
+set +a
+
+"$APP_DIR/venv/bin/alembic" upgrade head
+
 cd "$APP_DIR/dashboard"
 npm ci
 export NEXT_PUBLIC_API_URL="http://${PUBLIC_IP}:8000"

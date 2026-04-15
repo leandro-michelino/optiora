@@ -77,6 +77,8 @@ Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script alw
 
 Those rewrites matter because the dashboard is browser-executed; leaving `NEXT_PUBLIC_API_URL=http://localhost:8000` would break the deployed UI.
 
+The quick deploy path also runs `alembic upgrade head` on the VM before restarting services so schema changes from the current release are applied consistently.
+
 ## Command Reference
 
 ```bash
@@ -150,6 +152,16 @@ sudo systemctl status optiora-dashboard
 sudo tail -f /var/log/optiora-api.log
 sudo tail -f /var/log/optiora-dashboard.log
 sudo tail -f /var/log/optiora-setup.log
+```
+
+Manual migration check if needed:
+
+```bash
+cd /opt/optiora
+set -a
+. ./.env
+set +a
+./venv/bin/alembic upgrade head
 ```
 
 ## Troubleshooting

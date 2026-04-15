@@ -155,6 +155,7 @@ Deployment script behavior:
 - uploads the current local workspace snapshot
 - rewrites remote `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` to the instance public IP
 - replaces placeholder JWT secrets with a generated value
+- applies `alembic upgrade head` on the VM before services restart
 - installs backend + dashboard dependencies and starts systemd services
 
 ## Terraform + Ansible Baseline
@@ -207,6 +208,7 @@ terraform -chdir=../terraform validate
 - [Testing](TESTING.md)
 - [Terraform](terraform/README.md)
 - [Ansible](ansible/README.md)
+- [Next Phase Checklist](NEXT_PHASE.md)
 - [Roadmap](ROADMAP.md)
 
 ## License
