@@ -3,14 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import {
-  authorizedFetch,
-  clearStoredTokens,
-  getStoredAccessToken,
-  getStoredRefreshToken,
-  isAuthEnabled,
-  storeTokens,
-} from "@/lib/auth-fetch";
+import { authorizedFetch } from "@/lib/auth-fetch";
 import { backendUrl } from "@/lib/backend-url";
 
 interface AuthUser {
@@ -22,6 +15,21 @@ interface AuthUser {
   created_at: string;
 }
 
+interface AuthContextType {
+  user: AuthUser | null;
+  organizations: OrganizationMembership[];
+  activeOrganization: OrganizationMembership | null;
+  isAuthenticated: boolean;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, fullName?: string) => Promise<void>;
+  logout: () => Promise<void>;
+  switchOrganization: (organizationId: number) => Promise<void>;
+  refreshOrganizations: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
 interface OrganizationMembership {
   id: number;
   name: string;
@@ -30,102 +38,59 @@ interface OrganizationMembership {
   is_active: boolean;
 }
 
-const PUBLIC_USER: AuthUser = {
-  id: 0,
-  email: "public-access@disabled.local",
-  full_name: "Public Access",
-  is_active: true,
-  email_verified: true,
-  created_at: new Date(0).toISOString(),
-};
-
-const PUBLIC_ORGANIZATION: OrganizationMembership = {
-  id: 0,
-  name: "Public Workspace",
-  role: "owner",
-  plan: "enterprise",
-  is_active: true,
-};
-
-interface AuthContextType {
-  user: AuthUser | null;
-  organization: OrganizationMembership | null;
-  authEnabled: boolean;
-  isAuthenticated: boolean;
-  loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, fullName?: string) => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const authEnabled = isAuthEnabled();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [organization, setOrganization] = useState<OrganizationMembership | null>(null);
+  const [organizations, setOrganizations] = useState<OrganizationMembership[]>([]);
+  const [activeOrganization, setActiveOrganization] = useState<OrganizationMembership | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const isAuthenticated = authEnabled ? Boolean(user) : true;
+  const isAuthenticated = Boolean(user);
 
-  const loadProfile = async () => {
-    const [profileResponse, organizationResponse] = await Promise.all([
+  const loadSession = async () => {
+    const [profileResponse, organizationsResponse, activeOrgResponse] = await Promise.all([
       authorizedFetch(backendUrl("/auth/profile")),
+      authorizedFetch(backendUrl("/auth/organizations")),
       authorizedFetch(backendUrl("/auth/organization")),
     ]);
     if (!profileResponse.ok) {
       throw new Error("Failed to load profile");
     }
-    const userData = (await profileResponse.json()) as AuthUser;
-    setUser(userData);
-    if (organizationResponse.ok) {
-      const organizationData = (await organizationResponse.json()) as OrganizationMembership;
-      setOrganization(organizationData);
-    } else {
-      setOrganization(null);
+    if (!organizationsResponse.ok || !activeOrgResponse.ok) {
+      throw new Error("Failed to load organizations");
     }
+    const profile = (await profileResponse.json()) as AuthUser;
+    const orgs = (await organizationsResponse.json()) as OrganizationMembership[];
+    const activeOrg = (await activeOrgResponse.json()) as OrganizationMembership;
+    setUser(profile);
+    setOrganizations(orgs);
+    setActiveOrganization(activeOrg);
   };
 
   useEffect(() => {
     const init = async () => {
       try {
-        if (!authEnabled) {
-          setUser(PUBLIC_USER);
-          setOrganization(PUBLIC_ORGANIZATION);
-          return;
-        }
-        if (!getStoredAccessToken() && !getStoredRefreshToken()) {
-          setUser(null);
-          setOrganization(null);
-          return;
-        }
-        await loadProfile();
+        await loadSession();
       } catch {
-        clearStoredTokens();
         setUser(null);
-        setOrganization(null);
+        setOrganizations([]);
+        setActiveOrganization(null);
       } finally {
         setLoading(false);
       }
     };
 
     void init();
-  }, [authEnabled]);
+  }, []);
 
   const login = async (email: string, password: string) => {
-    if (!authEnabled) {
-      router.push("/dashboard");
-      return;
-    }
     try {
-      const response = await axios.post<{
-        access_token: string;
-        refresh_token: string;
-      }>(backendUrl("/auth/login"), { email, password });
-
-      storeTokens(response.data.access_token, response.data.refresh_token);
-      await loadProfile();
+      await axios.post(
+        backendUrl("/auth/login"),
+        { email, password },
+        { withCredentials: true },
+      );
+      await loadSession();
     } catch (error: any) {
       const message =
         error?.response?.data?.detail || "Login failed. Check your credentials.";
@@ -134,10 +99,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (email: string, password: string, fullName?: string) => {
-    if (!authEnabled) {
-      router.push("/dashboard");
-      return;
-    }
     try {
       await axios.post(backendUrl("/auth/register"), {
         email,
@@ -152,10 +113,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    if (!authEnabled) {
-      router.push("/dashboard");
-      return;
-    }
     try {
       await authorizedFetch(backendUrl("/auth/logout"), {
         method: "POST",
@@ -163,16 +120,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Best-effort logout.
     } finally {
-      clearStoredTokens();
       setUser(null);
-      setOrganization(null);
+      setOrganizations([]);
+      setActiveOrganization(null);
       router.push("/login");
     }
   };
 
+  const refreshOrganizations = async () => {
+    const [organizationsResponse, activeOrgResponse] = await Promise.all([
+      authorizedFetch(backendUrl("/auth/organizations")),
+      authorizedFetch(backendUrl("/auth/organization")),
+    ]);
+    if (!organizationsResponse.ok || !activeOrgResponse.ok) {
+      throw new Error("Failed to refresh organizations");
+    }
+    setOrganizations((await organizationsResponse.json()) as OrganizationMembership[]);
+    setActiveOrganization((await activeOrgResponse.json()) as OrganizationMembership);
+  };
+
+  const switchOrganization = async (organizationId: number) => {
+    const response = await authorizedFetch(backendUrl("/auth/organization/select"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organization_id: organizationId }),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(detail || "Failed to switch organization");
+    }
+    await refreshOrganizations();
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, organization, authEnabled, isAuthenticated, loading, login, register, logout }}
+      value={{
+        user,
+        organizations,
+        activeOrganization,
+        isAuthenticated,
+        loading,
+        login,
+        register,
+        logout,
+        switchOrganization,
+        refreshOrganizations,
+      }}
     >
       {children}
     </AuthContext.Provider>

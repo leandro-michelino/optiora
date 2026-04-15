@@ -13,7 +13,7 @@ function DashboardLayoutContent({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const { authEnabled, user, organization, logout } = useAuth()
+  const { user, logout, organizations, activeOrganization, switchOrganization } = useAuth()
 
   const mainNavItems = [
     { href: '/dashboard', label: 'Overview', icon: BarChart3 },
@@ -156,22 +156,38 @@ function DashboardLayoutContent({
             <div className="text-sm">
               <p className="font-medium text-slate-900 dark:text-white">{user?.full_name || user?.email}</p>
               <p className="text-xs text-slate-600 dark:text-slate-400">{user?.email}</p>
-              {organization && (
-                <p className="text-xs text-slate-500 dark:text-slate-500">
-                  {organization.name} · {organization.role}
-                </p>
-              )}
             </div>
-            {authEnabled && (
-              <button
-                onClick={logout}
-                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition"
-                title="Logout"
-              >
-                <LogOut className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-              </button>
-            )}
+            <button
+              onClick={logout}
+              className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+            </button>
           </div>
+          {organizations.length > 0 && (
+            <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg">
+              <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">
+                Active organization
+              </label>
+              <select
+                value={activeOrganization?.id ?? ""}
+                onChange={(event) => {
+                  const nextId = Number(event.target.value)
+                  if (Number.isFinite(nextId) && nextId > 0) {
+                    void switchOrganization(nextId)
+                  }
+                }}
+                className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-slate-900 dark:text-slate-100"
+              >
+                {organizations.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <ThemeToggle />
           <div className="text-xs text-slate-600 dark:text-slate-400 p-2 bg-slate-50 dark:bg-slate-900 rounded-lg">
             <p className="font-medium mb-1">💡 Tip</p>

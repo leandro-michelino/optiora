@@ -1,6 +1,6 @@
 """Authentication API endpoints for user registration, login, and profile management."""
 
-from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
@@ -21,7 +21,6 @@ from .orm_models import (
     get_db,
     UserRole,
 )
-from .access_control import primary_membership, resolve_membership
 from .auth_utils import (
     hash_password,
     verify_password,
@@ -36,8 +35,7 @@ from .auth_utils import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
-security = HTTPBearer()
-optional_security = HTTPBearer(auto_error=False)
+security = HTTPBearer(auto_error=False)
 
 
 PASSWORD_SPECIAL_CHARS = "!@#$%^&*"
@@ -47,6 +45,10 @@ PASSWORD_RESET_RETURN_TOKEN = os.getenv(
     os.getenv("ENVIRONMENT", "development").lower() != "production",
 )
 _RATE_LIMIT_BUCKETS: Dict[str, List[datetime]] = {}
+ACCESS_TOKEN_COOKIE_NAME = "optiora_access_token"
+REFRESH_TOKEN_COOKIE_NAME = "optiora_refresh_token"
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", os.getenv("ENVIRONMENT", "development").lower() == "production")
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 
 # Schemas
@@ -65,7 +67,12 @@ class LoginRequest(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     """Refresh token request schema."""
-    refresh_token: str
+    refresh_token: Optional[str] = None
+
+
+class SelectOrganizationRequest(BaseModel):
+    """Switch the active organization for the current user session."""
+    organization_id: int
 
 
 class UpdateProfileRequest(BaseModel):
@@ -154,12 +161,75 @@ def _should_return_reset_token() -> bool:
     return str(PASSWORD_RESET_RETURN_TOKEN).strip().lower() in {"1", "true", "yes"}
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: Session = Depends(get_db),
-) -> User:
-    """Get current authenticated user from JWT Bearer token."""
-    token = credentials.credentials
+def _cookie_kwargs(max_age: Optional[int] = None) -> Dict[str, object]:
+    """Return consistent cookie attributes for auth tokens."""
+    kwargs: Dict[str, object] = {
+        "httponly": True,
+        "secure": bool(COOKIE_SECURE),
+        "samesite": COOKIE_SAMESITE,
+        "path": "/",
+    }
+    if max_age is not None:
+        kwargs["max_age"] = max_age
+    return kwargs
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    """Set HTTP-only cookies for access and refresh tokens."""
+    response.set_cookie(
+        ACCESS_TOKEN_COOKIE_NAME,
+        access_token,
+        **_cookie_kwargs(max_age=30 * 60),
+    )
+    response.set_cookie(
+        REFRESH_TOKEN_COOKIE_NAME,
+        refresh_token,
+        **_cookie_kwargs(max_age=7 * 24 * 60 * 60),
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    """Clear auth cookies on logout and token revocation events."""
+    response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME, path="/")
+    response.delete_cookie(REFRESH_TOKEN_COOKIE_NAME, path="/")
+
+
+def _resolve_membership(user: User, requested_org_id: Optional[int]) -> Optional[UserOrganization]:
+    """Resolve a user membership by org_id, or default to the first available membership."""
+    memberships = list(user.user_organizations or [])
+    if not memberships:
+        return None
+    if requested_org_id is None:
+        return memberships[0]
+    for membership in memberships:
+        if membership.organization_id == requested_org_id:
+            return membership
+    return None
+
+
+def _token_from_request(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials],
+) -> Optional[str]:
+    """Read token from Authorization header first, then access-token cookie."""
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    cookie_token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME, "")
+    return cookie_token or None
+
+
+def get_current_token_payload(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    """Resolve and validate access token payload from header or cookie."""
+    token = _token_from_request(request, credentials)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = verify_access_token(token)
     if not payload:
         raise HTTPException(
@@ -167,7 +237,14 @@ def get_current_user(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return payload
 
+
+def get_current_user(
+    payload: dict = Depends(get_current_token_payload),
+    db: Session = Depends(get_db),
+) -> User:
+    """Get current authenticated user from JWT Bearer token."""
     user_id_raw = payload.get("sub")
     if user_id_raw is None:
         raise HTTPException(
@@ -195,45 +272,29 @@ def get_current_user(
             detail="User account is inactive",
         )
 
-    user._token_org_id = payload.get("org_id")
-    user._token_role = payload.get("role")
-    return user
-
-
-def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
-    db: Session = Depends(get_db),
-) -> Optional[User]:
-    """Return the authenticated user when available, otherwise None."""
-    if credentials is None:
-        return None
-
-    token = credentials.credentials
-    payload = verify_access_token(token)
-    if not payload:
-        return None
-
-    user_id_raw = payload.get("sub")
-    try:
-        user_id = int(user_id_raw)
-    except (TypeError, ValueError):
-        return None
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user or not user.is_active:
-        return None
-
-    user._token_org_id = payload.get("org_id")
-    user._token_role = payload.get("role")
     return user
 
 
 def get_current_membership(
-    current_user: User,
-    organization_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    payload: dict = Depends(get_current_token_payload),
 ) -> UserOrganization:
-    """Resolve a membership for the current user."""
-    return resolve_membership(current_user, organization_id=organization_id)
+    """Resolve the active org membership from token claim, falling back to primary org."""
+    org_id_raw = payload.get("org_id")
+    org_id: Optional[int] = None
+    try:
+        if org_id_raw is not None:
+            org_id = int(org_id_raw)
+    except (TypeError, ValueError):
+        org_id = None
+
+    membership = _resolve_membership(current_user, org_id)
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No active organization membership found",
+        )
+    return membership
 
 
 # Endpoints
@@ -302,6 +363,7 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 async def login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     """Authenticate user and return JWT tokens."""
@@ -331,7 +393,7 @@ async def login(
         )
     
     # Get user's primary organization
-    user_org = primary_membership(user)
+    user_org = db.query(UserOrganization).filter(UserOrganization.user_id == user.id).first()
     org_id = user_org.organization_id if user_org else None
     role = user_org.role.value if user_org else None
     
@@ -345,6 +407,7 @@ async def login(
     refresh_token = create_refresh_token(
         user_id=user.id,
         email=user.email,
+        org_id=org_id,
     )
     
     # Hash and store refresh token
@@ -362,7 +425,8 @@ async def login(
     db.commit()
     
     logger.info("User logged in: %s", user.email)
-    
+    _set_auth_cookies(response, access_token, refresh_token)
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -372,11 +436,25 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+async def refresh(
+    request_body: RefreshTokenRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     """Refresh access token using refresh token."""
+    incoming_refresh_token = (
+        request_body.refresh_token
+        or request.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
+        or ""
+    )
+    if not incoming_refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token",
+        )
 
-    # Verify refresh token
-    payload = verify_refresh_token(request.refresh_token)
+    payload = verify_refresh_token(incoming_refresh_token)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -404,7 +482,7 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
         )
     
     # Check if refresh token is revoked
-    refresh_token_hash = hash_token(request.refresh_token)
+    refresh_token_hash = hash_token(incoming_refresh_token)
     
     rt_obj = db.query(RefreshToken).filter(
         and_(
@@ -422,7 +500,13 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
         )
     
     # Get user's organization
-    user_org = primary_membership(user)
+    requested_org_id: Optional[int] = None
+    try:
+        if payload.get("org_id") is not None:
+            requested_org_id = int(payload.get("org_id"))
+    except (TypeError, ValueError):
+        requested_org_id = None
+    user_org = _resolve_membership(user, requested_org_id)
     org_id = user_org.organization_id if user_org else None
     role = user_org.role.value if user_org else None
     
@@ -436,6 +520,7 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     new_refresh_token = create_refresh_token(
         user_id=user.id,
         email=user.email,
+        org_id=org_id,
     )
     
     # Revoke old refresh token
@@ -452,6 +537,7 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     db.commit()
     
     logger.info("Token refreshed for user: %s", user.email)
+    _set_auth_cookies(response, access_token, new_refresh_token)
     
     return TokenResponse(
         access_token=access_token,
@@ -489,6 +575,7 @@ async def update_profile(
 
 @router.post("/logout")
 async def logout(
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -500,6 +587,7 @@ async def logout(
     ).update({"is_revoked": True})
     
     db.commit()
+    _clear_auth_cookies(response)
     
     logger.info("User logged out: %s", current_user.email)
     
@@ -527,12 +615,69 @@ async def list_organizations(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/organization", response_model=OrganizationMembershipResponse)
-async def get_primary_organization(current_user: User = Depends(get_current_user)):
-    """Return the user's primary organization membership."""
-    memberships = await list_organizations(current_user)
-    if not memberships:
+async def get_primary_organization(
+    membership: UserOrganization = Depends(get_current_membership),
+):
+    """Return the active organization membership from the current access token."""
+    org = membership.organization
+    if org is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No organization found")
-    return memberships[0]
+    return OrganizationMembershipResponse(
+        id=org.id,
+        name=org.name,
+        role=membership.role.value,
+        plan=org.plan.value,
+        is_active=org.is_active,
+    )
+
+
+@router.post("/organization/select", response_model=OrganizationMembershipResponse)
+async def select_organization(
+    payload: SelectOrganizationRequest,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Switch active org by issuing new access+refresh tokens scoped to the selected org."""
+    membership = _resolve_membership(current_user, payload.organization_id)
+    if membership is None or membership.organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization is not available for this user",
+        )
+    if not membership.organization.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization is inactive",
+        )
+
+    access_token = create_access_token(
+        user_id=current_user.id,
+        email=current_user.email,
+        org_id=membership.organization_id,
+        role=membership.role.value,
+    )
+    refresh_token = create_refresh_token(
+        user_id=current_user.id,
+        email=current_user.email,
+        org_id=membership.organization_id,
+    )
+    new_rt_obj = RefreshToken(
+        user_id=current_user.id,
+        token_hash=hash_token(refresh_token),
+        expires_at=datetime.utcnow() + timedelta(days=7),
+    )
+    db.add(new_rt_obj)
+    db.commit()
+
+    _set_auth_cookies(response, access_token, refresh_token)
+    return OrganizationMembershipResponse(
+        id=membership.organization.id,
+        name=membership.organization.name,
+        role=membership.role.value,
+        plan=membership.organization.plan.value,
+        is_active=membership.organization.is_active,
+    )
 
 
 @router.post("/password-reset-request", response_model=PasswordResetResponse)

@@ -9,11 +9,6 @@ import {
   ScanStartResponse,
   ForecastResponse,
   FinOpsAnalyticsResponse,
-  ScanHistoryItem,
-  ScanDiffResponse,
-  AuditLogEntry,
-  AlertEvent,
-  ProviderAccountRollupResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -75,7 +70,7 @@ async function requestJson<T>(
  */
 export async function fetchCosts(): Promise<CostResponse> {
   try {
-    return await requestJson<CostResponse>('/api/v1/costs', {}, { authenticated: false })
+    return await requestJson<CostResponse>('/api/v1/costs')
   } catch (error) {
     console.warn('Failed to fetch costs from backend, using safe fallback data', error)
     return safeFallbackCostData as CostResponse
@@ -85,32 +80,27 @@ export async function fetchCosts(): Promise<CostResponse> {
 /**
  * Fetch anomalies from backend
  */
-export async function fetchAnomalies(params: { limit?: number; offset?: number } = {}): Promise<{ items: AnomalyResponse[]; total: number; limit: number; offset: number }> {
-  const search = new URLSearchParams()
-  if (params.limit !== undefined) search.set('limit', String(params.limit))
-  if (params.offset !== undefined) search.set('offset', String(params.offset))
-  const path = `/api/v1/anomalies${search.toString() ? `?${search.toString()}` : ''}`
+export async function fetchAnomalies(): Promise<AnomalyResponse[]> {
   try {
-    return await requestJson(path, {}, { authenticated: false }) as { items: AnomalyResponse[]; total: number; limit: number; offset: number }
+    return await requestJson<AnomalyResponse[]>('/api/v1/anomalies')
   } catch (error) {
     console.warn('Failed to fetch anomalies, using empty list', error)
-    return { items: [], total: 0, limit: params.limit ?? 50, offset: params.offset ?? 0 }
+    return []
   }
 }
 
 /**
  * Fetch recommendations from backend
  */
-export async function fetchRecommendations(params: { limit?: number; offset?: number } = {}): Promise<{ items: RecommendationResponse[]; total: number; limit: number; offset: number }> {
-  const search = new URLSearchParams()
-  if (params.limit !== undefined) search.set('limit', String(params.limit))
-  if (params.offset !== undefined) search.set('offset', String(params.offset))
-  const path = `/api/v1/recommendations${search.toString() ? `?${search.toString()}` : ''}`
+export async function fetchRecommendations(): Promise<RecommendationResponse[]> {
   try {
-    return await requestJson(path, {}, { authenticated: false }) as { items: RecommendationResponse[]; total: number; limit: number; offset: number }
+    return await requestJson<RecommendationResponse[]>(
+      '/api/v1/recommendations',
+      {},
+    )
   } catch (error) {
     console.warn('Failed to fetch recommendations, using empty list', error)
-    return { items: [], total: 0, limit: params.limit ?? 50, offset: params.offset ?? 0 }
+    return []
   }
 }
 
@@ -141,87 +131,10 @@ export async function startScan(providers?: string[]): Promise<ScanStartResponse
   })
 }
 
-export async function fetchScanHistory(limit = 10): Promise<ScanHistoryItem[]> {
-  return requestJson<ScanHistoryItem[]>(`/api/v1/scanning/history?limit=${encodeURIComponent(String(limit))}`)
-}
-
-export async function fetchScanDiff(scanId: string, baseScanId?: string): Promise<ScanDiffResponse> {
-  const search = new URLSearchParams()
-  if (baseScanId) search.set('base_scan_id', baseScanId)
-  const suffix = search.toString() ? `?${search.toString()}` : ''
-  return requestJson<ScanDiffResponse>(`/api/v1/scanning/${encodeURIComponent(scanId)}/diff${suffix}`)
-}
-
-export async function fetchAuditLogs(limit = 20): Promise<AuditLogEntry[]> {
-  return requestJson<AuditLogEntry[]>(`/api/v1/audit-logs?limit=${encodeURIComponent(String(limit))}`)
-}
-
-export async function fetchAlerts(limit = 20): Promise<AlertEvent[]> {
-  return requestJson<AlertEvent[]>(`/api/v1/alerts?limit=${encodeURIComponent(String(limit))}`)
-}
-
-export async function fetchProviderAccountRollups(provider?: string): Promise<ProviderAccountRollupResponse | null> {
-  const search = new URLSearchParams()
-  if (provider) search.set('provider', provider)
-  const suffix = search.toString() ? `?${search.toString()}` : ''
-  try {
-    return await requestJson<ProviderAccountRollupResponse>(`/api/v1/hierarchy/accounts${suffix}`)
-  } catch {
-    return null
-  }
-}
-
-export async function acknowledgeAlert(alertId: number): Promise<AlertEvent> {
-  return requestJson<AlertEvent>(`/api/v1/alerts/${encodeURIComponent(String(alertId))}/acknowledge`, {
-    method: 'POST',
-  })
-}
-
-async function downloadAuthorizedFile(path: string, fallbackFilename: string): Promise<void> {
-  const response = await authorizedFetch(backendUrl(path))
-  if (!response.ok) {
-    throw new Error(`Download failed with ${response.status}`)
-  }
-  const blob = await response.blob()
-  const disposition = response.headers.get('Content-Disposition') || ''
-  const filenameMatch = disposition.match(/filename="([^"]+)"/)
-  const filename = filenameMatch?.[1] || fallbackFilename
-  const url = window.URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.URL.revokeObjectURL(url)
-}
-
-export async function downloadScanHistoryCsv(): Promise<void> {
-  await downloadAuthorizedFile('/api/v1/exports/scan-history.csv', 'optiora-scan-history.csv')
-}
-
-export async function downloadAuditLogsCsv(): Promise<void> {
-  await downloadAuthorizedFile('/api/v1/exports/audit-logs.csv', 'optiora-audit-log.csv')
-}
-
-export async function downloadAlertsCsv(): Promise<void> {
-  await downloadAuthorizedFile('/api/v1/exports/alerts.csv', 'optiora-alerts.csv')
-}
-
-export async function downloadScanDiffCsv(scanId: string, baseScanId?: string): Promise<void> {
-  const search = new URLSearchParams()
-  if (baseScanId) search.set('base_scan_id', baseScanId)
-  await downloadAuthorizedFile(
-    `/api/v1/exports/scans/${encodeURIComponent(scanId)}/diff.csv${search.toString() ? `?${search.toString()}` : ''}`,
-    `optiora-scan-diff-${scanId}.csv`,
-  )
-}
-
 export async function fetchForecast(months = 12): Promise<ForecastResponse> {
   return requestJson<ForecastResponse>(
     `/api/v1/forecast?months=${encodeURIComponent(String(months))}`,
     {},
-    { authenticated: false },
   )
 }
 
@@ -229,6 +142,5 @@ export async function fetchFinOpsAnalytics(): Promise<FinOpsAnalyticsResponse> {
   return requestJson<FinOpsAnalyticsResponse>(
     '/api/v1/analytics',
     {},
-    { authenticated: false },
   )
 }
