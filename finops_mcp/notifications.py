@@ -33,6 +33,29 @@ def _send_slack_message(webhook_url: str, title: str, message: str) -> bool:
         return False
 
 
+def _send_teams_message(webhook_url: str, title: str, message: str) -> bool:
+    if not webhook_url:
+        return False
+    try:
+        response = httpx.post(
+            webhook_url,
+            json={
+                "@type": "MessageCard",
+                "@context": "https://schema.org/extensions",
+                "summary": title,
+                "themeColor": "0078D4",
+                "title": title,
+                "text": message,
+            },
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        return True
+    except Exception:
+        logger.exception("Teams notification failed")
+        return False
+
+
 def _send_email(config: Config, to_address: str, subject: str, body: str) -> bool:
     if not (config.smtp_host and config.smtp_from_email and to_address):
         return False
@@ -101,6 +124,8 @@ def evaluate_budget_alert(
 
     if config.slack_webhook and _send_slack_message(config.slack_webhook, title, message):
         delivered_channels.append("slack")
+    if config.teams_webhook and _send_teams_message(config.teams_webhook, title, message):
+        delivered_channels.append("teams")
 
     event = AlertEvent(
         organization_id=organization_id,

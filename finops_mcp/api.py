@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from .auth_routes import get_current_membership, get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
 from .config import Config
+from .notifications import evaluate_budget_alert
 from .access_control import require_role
 from .orm_models import (
     SessionLocal,
@@ -1354,6 +1355,7 @@ async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str
         total_resources = 0
         anomalies_found = 0
         savings_identified = 0.0
+        aggregated_cost_usd = 0.0
         now = datetime.utcnow()
 
         for provider in providers:
@@ -1362,6 +1364,7 @@ async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str
                 continue
 
             total_cost = float(summary.get("total_cost_usd", 0) or 0)
+            aggregated_cost_usd += total_cost
             total_resources += 100
             provider_savings = total_cost * 0.08
             savings_identified += provider_savings
@@ -1485,6 +1488,22 @@ async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str
                                 captured_at=now,
                             )
                         )
+
+        permission = (
+            db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        organization_id = _organization_id_from_customer_id(customer_id)
+        if organization_id is not None:
+            evaluate_budget_alert(
+                db=db,
+                organization_id=organization_id,
+                customer_id=customer_id,
+                scan_id=scan_id,
+                total_cost_usd=aggregated_cost_usd,
+                permission=permission,
+            )
 
         db.commit()
 

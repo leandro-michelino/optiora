@@ -29,6 +29,7 @@
 - ~~scheduled scan runner~~ — background scheduler loop with approval-based cadence checks (`daily` / `weekly` / `hourly`)
 - ~~per-scan diff view~~ — `/scanning/{scan_id}/diff` and CSV export for delta vs previous scan
 - ~~scan history browser~~ — operations dashboard + `/scanning/history` API + CSV export
+- ~~budget threshold alert pipeline~~ — budget checks run after scans and emit alert events with email/Slack/Teams delivery metadata
 
 ## High-Priority Next Steps
 
