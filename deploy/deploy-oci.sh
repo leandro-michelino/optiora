@@ -297,6 +297,7 @@ wait_for_ssh() {
 sync_local_project() {
     local public_ip="$1"
     local archive_path="/tmp/optiora-deploy-$$.tar.gz"
+    local local_private_key_path=""
 
     log_step "Uploading Local Project To OCI VM"
     log_info "Deployment source: local filesystem snapshot from this laptop (no Git clone)."
@@ -317,6 +318,26 @@ sync_local_project() {
         -o UserKnownHostsFile=/dev/null \
         -i "$RESOLVED_SSH_PRIVATE_KEY_PATH" \
         "$archive_path" "${REMOTE_USER}@${public_ip}:/tmp/optiora-deploy.tar.gz"
+
+    if [ -f ".env" ]; then
+        local_private_key_path=$(grep '^OCI_PRIVATE_KEY_PATH=' .env | tail -1 | cut -d'=' -f2- || true)
+        local_private_key_path="${local_private_key_path%\"}"
+        local_private_key_path="${local_private_key_path#\"}"
+        if [ -n "$local_private_key_path" ]; then
+            if [[ "$local_private_key_path" == ~/* ]]; then
+                local_private_key_path="${HOME}${local_private_key_path#\~}"
+            fi
+            if [ -f "$local_private_key_path" ]; then
+                log_info "Copying OCI private key referenced by OCI_PRIVATE_KEY_PATH into the deployment bundle..."
+                scp -o StrictHostKeyChecking=no \
+                    -o UserKnownHostsFile=/dev/null \
+                    -i "$RESOLVED_SSH_PRIVATE_KEY_PATH" \
+                    "$local_private_key_path" "${REMOTE_USER}@${public_ip}:/tmp/optiora-oci-api-key.pem"
+            else
+                log_warning "OCI_PRIVATE_KEY_PATH is set locally but the file was not found: $local_private_key_path"
+            fi
+        fi
+    fi
 
     rm -f "$archive_path"
 
@@ -391,6 +412,12 @@ ensure_env_value "UVICORN_RELOAD" "false"
 ensure_env_value "ENVIRONMENT" "production"
 ensure_env_value "PASSWORD_RESET_RETURN_TOKEN" "false"
 ensure_env_value "PASSWORD_RESET_TOKEN_MINUTES" "30"
+
+if [ -f /tmp/optiora-oci-api-key.pem ]; then
+    install -m 0600 /tmp/optiora-oci-api-key.pem "$APP_DIR/oci_api_key.pem"
+    rm -f /tmp/optiora-oci-api-key.pem
+    ensure_env_value "OCI_PRIVATE_KEY_PATH" "$APP_DIR/oci_api_key.pem"
+fi
 
 if [ ! -d "$APP_DIR/venv" ]; then
     python3 -m venv "$APP_DIR/venv"

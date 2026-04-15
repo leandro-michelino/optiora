@@ -17,6 +17,7 @@ python -m finops_mcp.app
 ```
 
 Use Python `3.10` to `3.13` for backend runtime/setup.
+Avoid using a Python `3.14` virtualenv for the backend test environment until the upstream `httpx/httpcore` test stack fully stabilizes there.
 
 Regression tests:
 

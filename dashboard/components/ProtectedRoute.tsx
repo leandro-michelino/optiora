@@ -12,15 +12,15 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const router = useRouter();
   const { authEnabled, isAuthenticated, loading } = useAuth();
 
+  useEffect(() => {
+    if (authEnabled && !loading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authEnabled, loading, isAuthenticated, router]);
+
   if (!authEnabled) {
     return <>{children}</>;
   }
-
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [loading, isAuthenticated, router]);
 
   if (loading) {
     return (

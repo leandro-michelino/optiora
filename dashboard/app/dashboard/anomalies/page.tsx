@@ -34,8 +34,26 @@ export default function AnomaliesPage() {
   }
 
   useEffect(() => {
-    void loadPage(0, state.limit)
-    // limit is user-controlled page size; load when it changes
+    let cancelled = false
+
+    async function loadInitialPage() {
+      try {
+        const res = await fetchAnomalies({ offset: 0, limit: state.limit })
+        if (!cancelled) {
+          setState({ ...res, loading: false })
+        }
+      } catch (error) {
+        console.warn('Failed to load anomalies', error)
+        if (!cancelled) {
+          setState((prev) => ({ ...prev, loading: false }))
+        }
+      }
+    }
+
+    void loadInitialPage()
+    return () => {
+      cancelled = true
+    }
   }, [state.limit])
 
   return (

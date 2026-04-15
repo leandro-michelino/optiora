@@ -40,5 +40,14 @@ Pass sensitive values through Ansible Vault or environment-specific extra vars, 
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml \
   -e optiora_secret_key="$(openssl rand -hex 32)" \
-  -e optiora_anthropic_api_key="$ANTHROPIC_API_KEY"
+  -e optiora_private_key_path="~/.oci/oci_api_key.pem" \
+  -e optiora_genai_model="ocid1.generativeaimodel.oc1..<model_ocid>"
 ```
+
+The Ansible path deploys the public dashboard mode by default:
+
+- `optiora_enable_auth: false`
+- direct dashboard access with no login wall
+- RBAC/auth left available only as optional hardening later
+
+Migrations are applied before the health checks so schema-changing releases come up cleanly.

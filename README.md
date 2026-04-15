@@ -27,6 +27,7 @@ The dashboard is the main workspace for:
 - `ansible/`: host provisioning and application runtime configuration
 - `deploy/deploy-oci.sh`: laptop-driven OCI compute deployment
 - `terraform/`: OCI network baseline
+- `ARCHITECTURE.md`: current ASCII architecture and deployment flows
 - `DEPLOYMENT.md`: deployment runbook
 
 ## Runtime Architecture
@@ -72,6 +73,7 @@ The dashboard is the main workspace for:
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
 - Forecasts, anomaly detection, and recommendations are all driven from live provider cost data — no hardcoded baselines.
 - AI advisor features are OCI GenAI-based; there is no parallel OpenAI/ChatGPT runtime path in this repository.
+- For OCI GenAI signing, prefer `OCI_PRIVATE_KEY_PATH` over inline multiline env values. Inline `OCI_PRIVATE_KEY` is still supported when encoded with literal `\n` escapes.
 
 ## Core API Surface
 
@@ -201,6 +203,7 @@ terraform -chdir=../terraform validate
 
 ## Documentation
 
+- [Architecture](ARCHITECTURE.md)
 - [Deployment](DEPLOYMENT.md)
 - [Testing](TESTING.md)
 - [Terraform](terraform/README.md)

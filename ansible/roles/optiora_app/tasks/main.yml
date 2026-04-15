@@ -140,6 +140,12 @@
     - Reload systemd
     - Restart optiora dashboard
 
+- name: Run database migrations
+  ansible.builtin.command:
+    cmd: "{{ optiora_app_dir }}/venv/bin/alembic upgrade head"
+    chdir: "{{ optiora_app_dir }}"
+  changed_when: true
+
 - name: Flush service handlers
   ansible.builtin.meta: flush_handlers
 
@@ -169,15 +175,6 @@
   retries: "{{ optiora_health_retries }}"
   delay: "{{ optiora_health_delay }}"
   until: optiora_dashboard_health.status == 200
-
-# ── Run Alembic migrations ───────────────────────────────────────────────────
-- name: Run database migrations
-  ansible.builtin.command:
-    cmd: "{{ optiora_app_dir }}/venv/bin/alembic upgrade head"
-    chdir: "{{ optiora_app_dir }}"
-  environment:
-    DATABASE_URL: "{{ lookup('env', 'DATABASE_URL') | default('') }}"
-  changed_when: true
 
 # ── nginx reverse-proxy + optional TLS ──────────────────────────────────────
 - name: Install nginx and certbot

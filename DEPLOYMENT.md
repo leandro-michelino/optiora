@@ -60,7 +60,7 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ### GenAI-ready deployment checklist
 
 - Confirm OCI Generative AI is available in your chosen region and your tenancy has access.
-- Ensure the following env vars are set before deploy: `OCI_GENAI_ENDPOINT`, `OCI_GENAI_MODEL`, `OCI_COMPARTMENT_OCID`, `OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_PRIVATE_KEY`, `OCI_REGION`.
+- Ensure the following env vars are set before deploy: `OCI_GENAI_ENDPOINT`, `OCI_GENAI_MODEL`, `OCI_COMPARTMENT_OCID`, `OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_REGION`, plus either `OCI_PRIVATE_KEY_PATH` or `OCI_PRIVATE_KEY`.
 - Validate OCI CLI works locally: `oci iam region list` and `oci os ns get`.
 - If using the deploy script, export the vars (or add to inventory/group_vars for Ansible) so they render into the remote `.env`.
 - After deploy, test AI chat via the dashboard or `curl http://<host>:3000/api/ai/chat` with a sample message.
@@ -120,13 +120,21 @@ OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..<tenancy_ocid>
 OCI_USER_OCID=ocid1.user.oc1..<user_ocid>
 OCI_FINGERPRINT=<api_key_fingerprint>
-OCI_PRIVATE_KEY="$(cat ~/.oci/oci_api_key.pem)"
+OCI_PRIVATE_KEY_PATH=~/.oci/oci_api_key.pem
+# Optional alternative:
+# OCI_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
 OCI_REGION=<oci_region>
 OCI_CONFIG_FILE=
 ENVIRONMENT=production
 PASSWORD_RESET_RETURN_TOKEN=false
 PASSWORD_RESET_TOKEN_MINUTES=30
 ```
+
+`OCI_PRIVATE_KEY_PATH` is the preferred deployment option because it avoids fragile multiline env formatting.
+
+- For `deploy/deploy-oci.sh`, the script will copy the referenced local key file onto the VM and rewrite `OCI_PRIVATE_KEY_PATH` to the deployed path automatically.
+- For Ansible-only provisioning, point `optiora_private_key_path` at a file path that exists on the target host.
+- Use `OCI_PRIVATE_KEY` only when you intentionally need to inject the PEM inline with literal `\n` escapes.
 
 Optional hardened deployment later:
 

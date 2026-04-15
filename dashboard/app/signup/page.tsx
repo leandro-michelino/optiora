@@ -1,19 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { register } = useAuth();
+  const { authEnabled, loading: authLoading, register } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!authLoading && !authEnabled) {
+      router.replace("/dashboard");
+    }
+  }, [authEnabled, authLoading, router]);
 
   const validatePassword = (pwd: string) => {
     if (pwd.length < 8) return "Password must be at least 8 characters";
@@ -51,6 +57,19 @@ export default function SignupPage() {
       setLoading(false);
     }
   };
+
+  if (authLoading || !authEnabled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+        <div className="text-center text-slate-300">
+          <p className="text-lg font-medium">Redirecting to the dashboard...</p>
+          <p className="mt-2 text-sm text-slate-400">
+            Authentication is optional and disabled for this deployment.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">

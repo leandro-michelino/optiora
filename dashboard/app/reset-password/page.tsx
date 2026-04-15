@@ -1,15 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
 import { backendUrl } from "@/lib/backend-url";
 
 export default function ResetPasswordPage() {
+  const router = useRouter();
+  const { authEnabled, loading: authLoading } = useAuth();
   const [resetToken, setResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!authLoading && !authEnabled) {
+      router.replace("/dashboard");
+    }
+  }, [authEnabled, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +46,19 @@ export default function ResetPasswordPage() {
       setLoading(false);
     }
   };
+
+  if (authLoading || !authEnabled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+        <div className="text-center text-slate-300">
+          <p className="text-lg font-medium">Redirecting to the dashboard...</p>
+          <p className="mt-2 text-sm text-slate-400">
+            Password reset is unavailable while authentication is disabled for this deployment.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">

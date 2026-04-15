@@ -1,6 +1,8 @@
 // OCI Generative AI chat via HTTPS with request signing using OCI SDK credentials.
 // This module avoids any non-OCI providers (e.g., Anthropic / OpenAI) by design.
 import crypto from 'crypto';
+import fs from 'fs';
+import os from 'os';
 
 interface ConversationEntry {
   role: 'user' | 'assistant';
@@ -12,6 +14,27 @@ type OCIHttpMethod = 'POST' | 'GET';
 function required(name: string, value: string | undefined): string {
   if (!value) throw new Error(`${name} is not configured`);
   return value;
+}
+
+function normalizePrivateKeyPem(rawValue: string): string {
+  return rawValue.replace(/\\n/g, '\n').trim();
+}
+
+function resolvePrivateKeyPem(): string {
+  const inlineKey = process.env.OCI_PRIVATE_KEY?.trim();
+  if (inlineKey) {
+    return normalizePrivateKeyPem(inlineKey);
+  }
+
+  const configuredPath = process.env.OCI_PRIVATE_KEY_PATH?.trim();
+  if (configuredPath) {
+    const expandedPath = configuredPath.startsWith('~/')
+      ? `${os.homedir()}${configuredPath.slice(1)}`
+      : configuredPath;
+    return fs.readFileSync(expandedPath, 'utf8').trim();
+  }
+
+  throw new Error('OCI_PRIVATE_KEY or OCI_PRIVATE_KEY_PATH is not configured');
 }
 
 // Minimal HTTP request signer for OCI (private key + fingerprint).
@@ -67,7 +90,7 @@ async function callOCIGenAI(prompt: string, history: ConversationEntry[]): Promi
   const tenancyOcid = required('OCI_TENANCY_OCID', process.env.OCI_TENANCY_OCID);
   const userOcid = required('OCI_USER_OCID', process.env.OCI_USER_OCID);
   const fingerprint = required('OCI_FINGERPRINT', process.env.OCI_FINGERPRINT);
-  const keyPem = required('OCI_PRIVATE_KEY', process.env.OCI_PRIVATE_KEY);
+  const keyPem = resolvePrivateKeyPem();
 
   const host = new URL(endpoint).host;
   const path = `/20231130/actions/chat`; // OCI Generative AI Chat Inference path
