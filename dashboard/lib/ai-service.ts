@@ -63,7 +63,7 @@ function signRequest(
 async function callOCIGenAI(prompt: string, history: ConversationEntry[]): Promise<string> {
   const endpoint = required('OCI_GENAI_ENDPOINT', process.env.OCI_GENAI_ENDPOINT);
   const model = required('OCI_GENAI_MODEL', process.env.OCI_GENAI_MODEL);
-  const region = required('OCI_REGION', process.env.OCI_REGION);
+  required('OCI_REGION', process.env.OCI_REGION);
   const tenancyOcid = required('OCI_TENANCY_OCID', process.env.OCI_TENANCY_OCID);
   const userOcid = required('OCI_USER_OCID', process.env.OCI_USER_OCID);
   const fingerprint = required('OCI_FINGERPRINT', process.env.OCI_FINGERPRINT);

@@ -207,7 +207,15 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    void loadDashboard()
+    let mounted = true
+    const run = async () => {
+      await loadDashboard()
+      if (!mounted) return
+    }
+    void run()
+    return () => {
+      mounted = false
+    }
   }, [])
 
   if (loading) {

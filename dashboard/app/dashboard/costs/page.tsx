@@ -112,7 +112,8 @@ export default function CostsPage() {
     }
 
     void loadCosts()
-  }, [])
+    // recs.limit/offset intentionally fixed during initial load; pagination handled by buttons
+  }, [recs.limit, recs.offset])
 
   const totalCost = costs.reduce((sum, c) => sum + c.cost, 0)
   const totalLastMonth = costs.reduce((sum, c) => sum + c.lastMonth, 0)
@@ -430,6 +431,7 @@ export default function CostsPage() {
               </div>
             </div>
           ))}
+        </div>
       </div>
 
       {/* Action Buttons */}

@@ -100,6 +100,10 @@ export interface ForecastPoint {
   aggressive: number
   lower_bound: number
   upper_bound: number
+  p10?: number
+  p50?: number
+  p90?: number
+  budget_flag?: 'within' | 'watch' | 'breach-likely' | null
 }
 
 export interface ForecastScenario {
@@ -121,9 +125,18 @@ export interface ForecastResponse {
     monthly_growth_rate: number
     weighted_volatility: number
     confidence_method: string
+    commitment_score?: number
   }
   history: Array<{ month: string; actual_usd: number }>
   forecast: ForecastPoint[]
+  fan_percentiles?: Array<{ month: string; p10: number; p50: number; p90: number; budget_flag?: string | null }>
+  budget_guardrails?: {
+    budget_monthly_usd: number
+    breaches: number
+    first_breach_month: string | null
+    breach_severity: 'none' | 'medium' | 'high'
+  } | null
+  genai_brief?: string
   scenarios: ForecastScenario[]
 }
 
@@ -147,5 +160,11 @@ export interface FinOpsAnalyticsResponse {
     commitment_coverage_percent: number
     volatility_score: number
   }>
+  provider_signals?: Array<{
+    provider: string
+    signal: string
+    message: string
+  }>
   actions: string[]
+  genai_advice_prompt?: string
 }

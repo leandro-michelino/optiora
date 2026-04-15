@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import math
+import hashlib
+import statistics
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 
 
 PROVIDER_PROFILES: dict[str, dict[str, float]] = {
@@ -53,6 +55,10 @@ def _synthetic_history(
     growth: float,
     volatility: float,
 ) -> list[float]:
+    """Generate a backward-looking synthetic history to anchor regression.
+
+    We keep this deterministic (no RNG) so forecasts are inspectable and repeatable.
+    """
     if current_monthly <= 0:
         return [0.0 for _ in range(months)]
 
@@ -67,6 +73,36 @@ def _synthetic_history(
     return values
 
 
+def _deterministic_random_sequence(seed_material: str, count: int) -> list[float]:
+    """Produce a stable pseudo-random sequence in [0, 1) using SHA256 as PRNG.
+
+    This avoids importing `random` to keep the model reproducible and side-effect free.
+    """
+    result: list[float] = []
+    digest = seed_material.encode()
+    while len(result) < count:
+        digest = hashlib.sha256(digest).digest()
+        for byte in digest:
+            if len(result) >= count:
+                break
+            result.append(byte / 255.0)
+    return result
+
+
+def _percentile(values: Iterable[float], pct: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    k = (len(ordered) - 1) * pct
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return ordered[int(k)]
+    d0 = ordered[f] * (c - k)
+    d1 = ordered[c] * (k - f)
+    return d0 + d1
+
+
 def _provider_inputs(cost_breakdown: dict[str, Any]) -> dict[str, float]:
     providers: dict[str, float] = {}
     for provider, details in cost_breakdown.items():
@@ -78,11 +114,14 @@ def _provider_inputs(cost_breakdown: dict[str, Any]) -> dict[str, float]:
 
 
 def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic forecast with a Monte Carlo fan for risk-aware planning."""
+
     months = int(params.get("months", 12) or 12)
     months = max(1, min(months, 24))
     current_monthly = _safe_float(params.get("current_monthly_spend"))
     cost_breakdown = params.get("cost_breakdown") or {}
     providers = _provider_inputs(cost_breakdown)
+    budget_monthly = _safe_float(params.get("budget_monthly"))
 
     if current_monthly <= 0:
         current_monthly = sum(providers.values())
@@ -91,15 +130,18 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
 
     weighted_growth = 0.0
     weighted_volatility = 0.0
+    weighted_commitment = 0.0
     if current_monthly > 0 and providers:
         for provider, cost in providers.items():
             profile = PROVIDER_PROFILES.get(provider, PROVIDER_PROFILES["aws"])
             weight = cost / current_monthly
             weighted_growth += profile["growth"] * weight
             weighted_volatility += profile["volatility"] * weight
+            weighted_commitment += profile["commitment"] * weight
     else:
         weighted_growth = 0.012
         weighted_volatility = 0.10
+        weighted_commitment = 0.35
 
     history = _synthetic_history(current_monthly, 12, weighted_growth, weighted_volatility)
     intercept, slope = _linear_regression(history)
@@ -112,6 +154,11 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     balanced_total = 0.0
     aggressive_total = 0.0
 
+    # Monte Carlo fan using deterministic pseudo-random samples so output is repeatable.
+    simulations_per_month = 400
+    seed_material = f"{current_monthly}-{weighted_growth}-{weighted_volatility}-{months}"
+    samples = _deterministic_random_sequence(seed_material, simulations_per_month * months)
+
     for month_index in range(1, months + 1):
         regression_value = intercept + slope * (len(history) + month_index - 1)
         seasonal_value = regression_value * SEASONALITY[(month_index - 1) % len(SEASONALITY)]
@@ -120,6 +167,30 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         balanced = baseline * 0.82
         aggressive = baseline * 0.72
         confidence_width = residual_stddev + (baseline * weighted_volatility * math.sqrt(month_index) * 0.35)
+
+        # Simulate month volatility with deterministic samples
+        month_samples = samples[(month_index - 1) * simulations_per_month : month_index * simulations_per_month]
+        simulated_values = [
+            max(
+                baseline
+                * (1 + ((val - 0.5) * 2 * weighted_volatility))
+                * SEASONALITY[(month_index - 1) % len(SEASONALITY)],
+                0.0,
+            )
+            for val in month_samples
+        ]
+        p10 = _percentile(simulated_values, 0.10)
+        p50 = _percentile(simulated_values, 0.50)
+        p90 = _percentile(simulated_values, 0.90)
+
+        budget_flag = None
+        if budget_monthly > 0:
+            if p90 > budget_monthly:
+                budget_flag = "breach-likely"
+            elif p50 > budget_monthly:
+                budget_flag = "watch"
+            else:
+                budget_flag = "within"
 
         baseline_total += baseline
         conservative_total += conservative
@@ -134,6 +205,10 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
                 "aggressive": round(aggressive, 2),
                 "lower_bound": round(max(baseline - confidence_width, 0.0), 2),
                 "upper_bound": round(baseline + confidence_width, 2),
+                "p10": round(p10, 2),
+                "p50": round(p50, 2),
+                "p90": round(p90, 2),
+                "budget_flag": budget_flag,
             }
         )
 
@@ -176,14 +251,30 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         },
     ]
 
+    budget_guardrails = None
+    if budget_monthly > 0:
+        breaches = [row for row in forecast if row.get("p90", 0) > budget_monthly]
+        budget_guardrails = {
+            "budget_monthly_usd": round(budget_monthly, 2),
+            "breaches": len(breaches),
+            "first_breach_month": breaches[0]["month"] if breaches else None,
+            "breach_severity": "high" if len(breaches) > months * 0.4 else "medium" if breaches else "none",
+        }
+
+    fan = [
+        {"month": row["month"], "p10": row["p10"], "p50": row["p50"], "p90": row["p90"], "budget_flag": row["budget_flag"]}
+        for row in forecast
+    ]
+
     return {
         "generated_at": datetime.utcnow().isoformat(),
         "forecast_months": months,
         "current_monthly_spend_usd": round(current_monthly, 2),
         "model": {
-            "type": "linear_regression_with_provider_weighted_seasonality",
+            "type": "regression_with_deterministic_monte_carlo_fan",
             "monthly_growth_rate": round(weighted_growth, 4),
             "weighted_volatility": round(weighted_volatility, 4),
+            "commitment_score": round(weighted_commitment, 4),
             "confidence_method": "residual_stddev_plus_provider_volatility",
         },
         "history": [
@@ -191,6 +282,9 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
             for index, value in enumerate(history)
         ],
         "forecast": forecast,
+        "fan_percentiles": fan,
+        "budget_guardrails": budget_guardrails,
+        "genai_brief": "Fan chart built with deterministic pseudo-randomness; safe to narrate via GenAI without drifting math.",
         "scenarios": scenarios,
     }
 
@@ -205,6 +299,7 @@ def build_analytics(params: dict[str, Any]) -> dict[str, Any]:
     provider_findings = []
     weighted_waste = 0.0
     weighted_commitment = 0.0
+    provider_signals = []
     for provider, cost in providers.items():
         profile = PROVIDER_PROFILES.get(provider, PROVIDER_PROFILES["aws"])
         weight = cost / current_monthly if current_monthly else 0.0
@@ -221,8 +316,22 @@ def build_analytics(params: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+        provider_signals.append(
+            {
+                "provider": provider,
+                "signal": "low-commitment" if profile["commitment"] < 0.4 else "stable",
+                "message": (
+                    "Increase commitments/Savings Plans coverage for steady workloads"
+                    if profile["commitment"] < 0.4
+                    else "Commitment coverage looks healthy"
+                ),
+            }
+        )
+
     risk_score = min(100, round((weighted_waste * 160) + anomalies * 8 + (1 - weighted_commitment) * 35, 1))
     maturity_score = max(0, round(100 - risk_score + min(weighted_commitment * 20, 10), 1))
+
+    efficiency_delta = (recommendation_savings / current_monthly) * 100 if current_monthly else 0.0
 
     return {
         "generated_at": datetime.utcnow().isoformat(),
@@ -234,17 +343,20 @@ def build_analytics(params: dict[str, Any]) -> dict[str, Any]:
         "commitment_coverage_percent": round(weighted_commitment * 100, 1),
         "unit_metrics": {
             "estimated_waste_rate_percent": round(weighted_waste * 100, 1),
-            "savings_to_spend_percent": round((recommendation_savings / current_monthly) * 100, 1)
-            if current_monthly
-            else 0.0,
+            "savings_to_spend_percent": round(efficiency_delta, 1),
             "anomaly_density_per_10k": round((anomalies / max(current_monthly, 1)) * 10000, 2),
         },
         "provider_findings": provider_findings,
+        "provider_signals": provider_signals,
         "actions": [
             "Prioritize high-spend providers with low commitment coverage.",
             "Run scan approval before trusting remediation estimates.",
             "Use balanced scenario as the default executive forecast.",
         ],
+        "genai_advice_prompt": (
+            "Summarize savings opportunities, call out budget breaches, and explain the fan chart bands "
+            "using p10/p50/p90 in plain language without altering the numeric values."
+        ),
     }
 
 

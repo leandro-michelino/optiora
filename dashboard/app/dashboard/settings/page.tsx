@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Trash2, Loader } from 'lucide-react';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
 import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 import { useAuth } from '@/lib/auth-context';
+import { AIProvider, getAIProvider, setAIProvider } from '@/lib/ai-config';
 
 
 interface StoredCredential {
@@ -24,23 +25,13 @@ interface ScanApprovalConfig {
 
 export default function SettingsPage() {
   const { user } = useAuth()
+  const [aiProvider, setAIProviderState] = useState<AIProvider>(getAIProvider())
   const [storedCredentials, setStoredCredentials] = useState<StoredCredential[]>([])
   const [loadingCredentials, setLoadingCredentials] = useState(true)
   const [scanningApprovalStep, setScanningApprovalStep] = useState(false)
   const [approvedProviders, setApprovedProviders] = useState<string[]>([])
 
-  useEffect(() => {
-    if (!user) {
-      setStoredCredentials([])
-      setLoadingCredentials(false)
-      return
-    }
-
-    setLoadingCredentials(true)
-    void loadCredentials()
-  }, [user?.id])
-
-  const loadCredentials = async () => {
+  const loadCredentials = useCallback(async () => {
     if (!user) {
       return
     }
@@ -56,7 +47,18 @@ export default function SettingsPage() {
     } finally {
       setLoadingCredentials(false)
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    if (!user) {
+      setStoredCredentials([])
+      setLoadingCredentials(false)
+      return
+    }
+
+    setLoadingCredentials(true)
+    void loadCredentials()
+  }, [user, loadCredentials])
 
   const handleCredentialSubmitted = async (provider: string, _credentials: Record<string, string>) => {
     void _credentials
@@ -85,6 +87,11 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Failed to delete credential:', error)
     }
+  }
+
+  const handleAIProviderChange = (provider: AIProvider) => {
+    setAIProvider(provider)
+    setAIProviderState(provider)
   }
 
   const handleScanningApproved = async (config: ScanApprovalConfig) => {
@@ -226,6 +233,39 @@ export default function SettingsPage() {
         </h2>
 
         <div className="space-y-4">
+          <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+            <div>
+              <h3 className="font-semibold text-slate-900 dark:text-white">
+                AI Provider
+              </h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Choose between OCI GenAI (preferred) or ChatGPT for narrative and advisor features
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="ai-provider"
+                  value="oci"
+                  checked={aiProvider === 'oci'}
+                  onChange={() => handleAIProviderChange('oci')}
+                />
+                OCI GenAI
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="ai-provider"
+                  value="chatgpt"
+                  checked={aiProvider === 'chatgpt'}
+                  onChange={() => handleAIProviderChange('chatgpt')}
+                />
+                ChatGPT
+              </label>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
             <div>
               <h3 className="font-semibold text-slate-900 dark:text-white">

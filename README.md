@@ -17,7 +17,7 @@ The dashboard is the main workspace for:
 - multi-cloud cost overview across AWS, Azure, GCP, and OCI
 - provider connection and scan readiness checks
 - anomaly detection and optimization recommendations
-- deterministic forecasting with baseline, conservative, balanced, and aggressive scenarios
+- deterministic forecasting with baseline, conservative, balanced, and aggressive scenarios plus p10/p50/p90 fan percentiles and budget guardrails
 - OCI GenAI-assisted cost advisor conversations when OCI GenAI credentials are configured
 
 ## Repository Layout
@@ -87,8 +87,8 @@ The dashboard is the main workspace for:
 - `GET /api/v1/costs`
 - `GET /api/v1/anomalies`
 - `GET /api/v1/recommendations`
-- `GET /api/v1/forecast`
-- `GET /api/v1/analytics`
+ - `GET /api/v1/forecast` (supports budget guardrails + fan percentiles)
+ - `GET /api/v1/analytics` (adds provider signals and GenAI brief)
 - `GET /api/v1/provider-diagnostics`
 - `GET /api/v1/info`
 

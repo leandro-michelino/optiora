@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-This document reflects the repository state as of April 14, 2026.
+This document reflects the repository state as of April 15, 2026.
 
 ## 1) Runtime Topology
 
@@ -54,7 +54,7 @@ FastAPI cost context
    +--> /api/v1/costs              current spend and provider mix
    +--> /api/v1/recommendations    deterministic savings opportunities
    +--> /api/v1/analytics          waste, risk, maturity, unit metrics
-   +--> /api/v1/forecast           12-month seasonal trend scenarios
+    +--> /api/v1/forecast           12–24 month seasonal trend + p10/p50/p90 fan
    |
    v
 Next.js dashboard
@@ -64,7 +64,7 @@ Next.js dashboard
    +--> AI Insights                deterministic findings + GenAI advisor link
 ```
 
-GenAI is used for explanation and planning through the dashboard advisor. Savings math remains deterministic and inspectable.
+GenAI is used for explanation and planning through the dashboard advisor. Savings math remains deterministic and inspectable. Fan percentiles (p10/p50/p90) are deterministic and can be narrated safely.
 
 ## 2) Auth + Session Flow
 

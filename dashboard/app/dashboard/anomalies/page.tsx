@@ -1,4 +1,4 @@
-'use client'
+euse client'
 
 import { useEffect, useState } from 'react'
 import { AlertTriangle, TrendingUp } from 'lucide-react'
@@ -30,7 +30,7 @@ export default function AnomaliesPage() {
   useEffect(() => {
     void loadPage(0, state.limit)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [state.limit])
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {

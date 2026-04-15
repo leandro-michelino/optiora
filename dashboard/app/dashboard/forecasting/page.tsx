@@ -108,6 +108,16 @@ export default function PredictiveAnalyticsPage() {
   const selectedScenarioData =
     forecast.scenarios.find((scenario) => scenario.name === selectedScenario) ||
     forecast.scenarios[0]
+
+  const fanBands = forecast.fan_percentiles || forecast.forecast.map((row) => ({
+    month: row.month,
+    p10: row.p10 ?? row.lower_bound,
+    p50: row.p50 ?? row.baseline,
+    p90: row.p90 ?? row.upper_bound,
+    budget_flag: row.budget_flag,
+  }))
+
+  const budgetGuardrails = forecast.budget_guardrails
   const selectedColor = scenarioColors[selectedScenarioData.name] || '#10b981'
 
   return (
@@ -202,6 +212,35 @@ export default function PredictiveAnalyticsPage() {
                   strokeWidth={2}
                   dot={false}
                   name="Baseline"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="p10"
+                  stroke="#0ea5e9"
+                  strokeWidth={1.5}
+                  dot={false}
+                  name="p10 (fan)"
+                  strokeDasharray="4 4"
+                  data={fanBands}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="p50"
+                  stroke="#14b8a6"
+                  strokeWidth={2}
+                  dot={false}
+                  name="p50 (fan)"
+                  data={fanBands}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="p90"
+                  stroke="#f97316"
+                  strokeWidth={1.5}
+                  dot={false}
+                  name="p90 (fan)"
+                  strokeDasharray="4 4"
+                  data={fanBands}
                 />
                 <Line
                   type="monotone"
@@ -301,10 +340,22 @@ export default function PredictiveAnalyticsPage() {
             </h3>
             <ol className="text-xs text-blue-800 dark:text-blue-300 space-y-2 list-decimal list-inside">
               <li>Baseline uses trend and provider-weighted seasonality.</li>
-              <li>Confidence widens with provider volatility.</li>
+              <li>Fan shows deterministic p10 / p50 / p90 Monte Carlo percentiles.</li>
+              <li>Budget guardrails flag likely breaches at p90.</li>
               <li>Balanced is the recommended executive planning view.</li>
-              <li>GenAI can explain and sequence the actions, while the math stays deterministic.</li>
+              <li>GenAI can narrate actions; math remains deterministic.</li>
             </ol>
+            {budgetGuardrails && (
+              <div className="mt-3 text-xs text-blue-800 dark:text-blue-200">
+                <p className="font-semibold">Budget guardrails</p>
+                <p>
+                  Monthly budget: {formatCurrency(budgetGuardrails.budget_monthly_usd)} —
+                  {budgetGuardrails.breaches > 0
+                    ? ` ${budgetGuardrails.breaches} potential breach months (first: ${budgetGuardrails.first_breach_month ?? 'n/a'})`
+                    : ' within bounds across forecast'}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
