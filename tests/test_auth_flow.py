@@ -219,6 +219,180 @@ class AuthFlowTest(unittest.TestCase):
         self.assertEqual(readonly_attempt.status_code, 403)
         self.assertIn("Credential storage requires", readonly_attempt.json()["detail"])
 
+    def test_credential_delete_updates_list_and_audit(self) -> None:
+        tokens = self._register_and_login(
+            "owner4@example.com",
+            "StrongPass1!",
+            "Owner Four",
+        )
+        headers = self._auth_headers(tokens)
+        organization_id = self.client.get("/auth/organization", headers=headers).json()["id"]
+
+        validation = CredentialStatus(
+            provider="aws",
+            is_valid=True,
+            message="validated",
+            tested_at=datetime.utcnow().isoformat(),
+        )
+        with patch("finops_mcp.api._run_validation", return_value=validation):
+            add_response = self.client.post(
+                "/api/v1/credentials/add",
+                headers=headers,
+                json={
+                    "organization_id": organization_id,
+                    "provider": "aws",
+                    "access_key_id": "AKIA000000000001",
+                    "secret_access_key": "delete-secret",
+                    "region": "us-east-1",
+                },
+            )
+        self.assertEqual(add_response.status_code, 200)
+
+        before_delete = self.client.get(
+            "/api/v1/credentials",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(before_delete.status_code, 200)
+        self.assertEqual(len(before_delete.json()["credentials"]), 1)
+
+        delete_response = self.client.delete(
+            "/api/v1/credentials/aws",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertEqual(delete_response.json()["provider"], "aws")
+
+        after_delete = self.client.get(
+            "/api/v1/credentials",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(after_delete.status_code, 200)
+        self.assertEqual(after_delete.json()["credentials"], [])
+
+        audit_response = self.client.get(
+            "/api/v1/audit-logs",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(audit_response.status_code, 200)
+        actions = [item["action"] for item in audit_response.json()]
+        self.assertIn("credential.stored", actions)
+        self.assertIn("credential.deleted", actions)
+
+    def test_scanning_request_pause_resume_and_start_transitions(self) -> None:
+        tokens = self._register_and_login(
+            "owner5@example.com",
+            "StrongPass1!",
+            "Owner Five",
+        )
+        headers = self._auth_headers(tokens)
+        organization_id = self.client.get("/auth/organization", headers=headers).json()["id"]
+
+        permission = self.client.get(
+            "/api/v1/scanning/permission",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(permission.status_code, 200)
+        self.assertEqual(permission.json()["state"], "initialized")
+
+        approval_request = self.client.post(
+            "/api/v1/scanning/request-approval",
+            headers=headers,
+            params=[
+                ("organization_id", organization_id),
+                ("notification_email", "owner5@example.com"),
+                ("providers", "gcp"),
+                ("providers", "aws"),
+            ],
+        )
+        self.assertEqual(approval_request.status_code, 200)
+        self.assertEqual(approval_request.json()["status"], "approval_pending")
+
+        pending_permission = self.client.get(
+            "/api/v1/scanning/permission",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(pending_permission.status_code, 200)
+        self.assertEqual(pending_permission.json()["state"], "pending_approval")
+        self.assertEqual(sorted(pending_permission.json()["providers"]), ["aws", "gcp"])
+
+        denied_start = self.client.post(
+            "/api/v1/scanning/start",
+            headers=headers,
+            json={"organization_id": organization_id, "providers": ["aws"]},
+        )
+        self.assertEqual(denied_start.status_code, 403)
+        self.assertIn("pending_approval", denied_start.json()["detail"])
+
+        approve_response = self.client.post(
+            "/api/v1/scanning/approve",
+            headers=headers,
+            json={
+                "organization_id": organization_id,
+                "notification_email": "owner5@example.com",
+                "monthly_budget_usd": 1200.0,
+            },
+        )
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["state"], "approved")
+
+        pause_response = self.client.post(
+            "/api/v1/scanning/pause",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(pause_response.status_code, 200)
+        self.assertEqual(pause_response.json()["state"], "paused")
+
+        paused_start = self.client.post(
+            "/api/v1/scanning/start",
+            headers=headers,
+            json={"organization_id": organization_id, "providers": ["aws"]},
+        )
+        self.assertEqual(paused_start.status_code, 403)
+        self.assertIn("paused", paused_start.json()["detail"])
+
+        resume_response = self.client.post(
+            "/api/v1/scanning/resume",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(resume_response.status_code, 200)
+        self.assertEqual(resume_response.json()["state"], "running")
+
+        with patch("finops_mcp.api._run_cost_analysis", new=lambda **kwargs: None):
+            start_response = self.client.post(
+                "/api/v1/scanning/start",
+                headers=headers,
+                json={"organization_id": organization_id, "providers": ["aws"]},
+            )
+        self.assertEqual(start_response.status_code, 200)
+        self.assertEqual(start_response.json()["state"], "running")
+        self.assertEqual(start_response.json()["providers"], ["aws"])
+        self.assertTrue(start_response.json()["scan_id"].startswith("scan_org-"))
+
+        audit_response = self.client.get(
+            "/api/v1/audit-logs",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(audit_response.status_code, 200)
+        actions = {item["action"] for item in audit_response.json()}
+        self.assertTrue(
+            {
+                "scan.approval_requested",
+                "scan.approved",
+                "scan.paused",
+                "scan.resumed",
+                "scan.started",
+            }.issubset(actions)
+        )
+
     def test_scan_history_diff_alerts_and_exports(self) -> None:
         tokens = self._register_and_login(
             "owner3@example.com",
@@ -363,6 +537,141 @@ class AuthFlowTest(unittest.TestCase):
         export_diff = self.client.get("/api/v1/exports/scans/scan_current/diff.csv", headers=headers)
         self.assertEqual(export_diff.status_code, 200)
         self.assertIn("provider,current_cost_usd,previous_cost_usd", export_diff.text)
+
+    def test_scan_progress_and_snapshots_require_org_scope(self) -> None:
+        owner_a_tokens = self._register_and_login(
+            "owner6@example.com",
+            "StrongPass1!",
+            "Owner Six",
+        )
+        owner_b_tokens = self._register_and_login(
+            "owner7@example.com",
+            "StrongPass1!",
+            "Owner Seven",
+        )
+        owner_a_headers = self._auth_headers(owner_a_tokens)
+        owner_b_headers = self._auth_headers(owner_b_tokens)
+        organization_id = self.client.get("/auth/organization", headers=owner_a_headers).json()["id"]
+        customer_id = f"org-{organization_id}"
+
+        db = SessionLocal()
+        try:
+            db.add(
+                ScanRunRecord(
+                    scan_id="scan_scope_guard",
+                    customer_id=customer_id,
+                    state="completed",
+                    providers_json='["aws"]',
+                    progress=100,
+                    total_resources=42,
+                    anomalies_found=1,
+                    savings_identified=55.0,
+                    started_at=datetime.utcnow() - timedelta(hours=2),
+                    completed_at=datetime.utcnow() - timedelta(hours=1, minutes=50),
+                )
+            )
+            db.add(
+                CostSnapshot(
+                    scan_id="scan_scope_guard",
+                    customer_id=customer_id,
+                    provider="aws",
+                    total_cost_usd=123.45,
+                    savings_identified_usd=12.0,
+                    anomalies_count=1,
+                    captured_at=datetime.utcnow() - timedelta(hours=2),
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        visible_progress = self.client.get(
+            "/api/v1/scanning/scan_scope_guard/progress",
+            headers=owner_a_headers,
+        )
+        self.assertEqual(visible_progress.status_code, 200)
+        self.assertEqual(visible_progress.json()["customer_id"], customer_id)
+
+        visible_snapshots = self.client.get(
+            "/api/v1/scanning/scan_scope_guard/snapshots",
+            headers=owner_a_headers,
+        )
+        self.assertEqual(visible_snapshots.status_code, 200)
+        self.assertEqual(len(visible_snapshots.json()), 1)
+
+        hidden_progress = self.client.get(
+            "/api/v1/scanning/scan_scope_guard/progress",
+            headers=owner_b_headers,
+        )
+        self.assertEqual(hidden_progress.status_code, 404)
+
+        hidden_snapshots = self.client.get(
+            "/api/v1/scanning/scan_scope_guard/snapshots",
+            headers=owner_b_headers,
+        )
+        self.assertEqual(hidden_snapshots.status_code, 404)
+
+    def test_audit_and_alert_exports_return_csv(self) -> None:
+        tokens = self._register_and_login(
+            "owner8@example.com",
+            "StrongPass1!",
+            "Owner Eight",
+        )
+        headers = self._auth_headers(tokens)
+        organization_id = self.client.get("/auth/organization", headers=headers).json()["id"]
+        customer_id = f"org-{organization_id}"
+
+        db = SessionLocal()
+        try:
+            owner_user = db.query(User).filter(User.email == "owner8@example.com").first()
+            self.assertIsNotNone(owner_user)
+            db.add(
+                AuditLog(
+                    organization_id=organization_id,
+                    actor_user_id=owner_user.id,
+                    action="scan.completed",
+                    entity_type="scan_run",
+                    entity_id="scan_export_case",
+                    metadata_json='{"provider":"aws"}',
+                )
+            )
+            db.add(
+                AlertEvent(
+                    organization_id=organization_id,
+                    customer_id=customer_id,
+                    scan_id="scan_export_case",
+                    alert_type="budget_threshold",
+                    severity="critical",
+                    title="Critical budget threshold reached",
+                    message="Monthly budget has been exceeded",
+                    delivered_channels_json='["email","slack"]',
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        audit_export = self.client.get(
+            "/api/v1/exports/audit-logs.csv",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(audit_export.status_code, 200)
+        self.assertIn("text/csv", audit_export.headers["content-type"])
+        self.assertIn("attachment; filename=", audit_export.headers["content-disposition"])
+        self.assertIn("created_at,action,entity_type,entity_id,actor_user_id,metadata_json", audit_export.text)
+        self.assertIn("scan.completed", audit_export.text)
+
+        alerts_export = self.client.get(
+            "/api/v1/exports/alerts.csv",
+            headers=headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(alerts_export.status_code, 200)
+        self.assertIn("text/csv", alerts_export.headers["content-type"])
+        self.assertIn("created_at,severity,alert_type,title,message,delivered_channels,acknowledged_at", alerts_export.text)
+        self.assertIn("Critical budget threshold reached", alerts_export.text)
+        self.assertIn("budget_threshold", alerts_export.text)
 
 
 if __name__ == "__main__":
