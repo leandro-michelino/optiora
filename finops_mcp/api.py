@@ -10,7 +10,7 @@ Handles:
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -199,6 +199,40 @@ class ProviderAccountRollupResponse(BaseModel):
     total_direct_cost_usd: float
     total_rolled_up_cost_usd: float
     items: List[ProviderAccountRollupItem]
+
+
+class SchedulerCounters(BaseModel):
+    total: int
+    success: int
+    failure: int
+
+
+class SchedulerTimelineItem(BaseModel):
+    id: str
+    event_type: str
+    state: str
+    title: str
+    detail: str
+    created_at: str
+
+
+class SchedulerStatusResponse(BaseModel):
+    organization_id: int
+    customer_id: str
+    scheduler_enabled: bool
+    scheduler_running: bool
+    permission_state: str
+    scan_frequency: str
+    next_run_at: Optional[str] = None
+    next_run_eta_seconds: Optional[int] = None
+    last_success_at: Optional[str] = None
+    last_failure_at: Optional[str] = None
+    counters: SchedulerCounters
+    timeline: List[SchedulerTimelineItem]
+
+
+class ExternalAWSAnomalyIngestRequest(BaseModel):
+    events: List[Dict[str, Any]]
 
 
 def get_credential_manager(db: Session = Depends(get_db)) -> CredentialManager:
@@ -1530,6 +1564,241 @@ def _scan_interval_seconds(scan_frequency: str) -> int:
     return 24 * 60 * 60
 
 
+def _coerce_aws_anomaly_impact_usd(payload: Dict[str, Any]) -> float:
+    impact = payload.get("impact")
+    if isinstance(impact, dict):
+        for key in ("totalImpact", "maxImpact", "impact"):
+            value = impact.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    pass
+    for key in ("totalImpact", "impact", "estimatedImpact"):
+        value = payload.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    return 0.0
+
+
+def _aws_anomaly_severity(impact_usd: float, source_severity: Optional[str]) -> str:
+    normalized = str(source_severity or "").strip().lower()
+    if normalized in {"critical", "high", "warning", "medium", "low"}:
+        if normalized == "critical":
+            return "high"
+        if normalized == "warning":
+            return "medium"
+        return normalized
+    if impact_usd >= 1000:
+        return "high"
+    if impact_usd >= 250:
+        return "medium"
+    return "low"
+
+
+def _compute_next_run(now: datetime, scan_frequency: str, anchor: datetime) -> datetime:
+    interval = timedelta(seconds=_scan_interval_seconds(scan_frequency))
+    next_run = anchor + interval
+    while next_run < now:
+        next_run += interval
+    return next_run
+
+
+@router.get("/scanning/scheduler/status", response_model=SchedulerStatusResponse)
+async def get_scheduler_status(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> SchedulerStatusResponse:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    now = datetime.utcnow()
+    db = SessionLocal()
+    try:
+        permission = (
+            db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        runs = (
+            db.query(ScanRunRecord)
+            .filter(ScanRunRecord.customer_id == customer_id)
+            .order_by(ScanRunRecord.started_at.desc())
+            .limit(50)
+            .all()
+        )
+        audit_rows = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.organization_id == organization_id,
+                AuditLog.action.in_(["scan.schedule.triggered"]),
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(8)
+            .all()
+        )
+    finally:
+        db.close()
+
+    total_runs = len(runs)
+    success_runs = sum(1 for row in runs if row.state == ScanningState.COMPLETED.value)
+    failed_runs = sum(1 for row in runs if row.state == ScanningState.FAILED.value)
+    last_success = next(
+        (
+            row.completed_at or row.started_at
+            for row in runs
+            if row.state == ScanningState.COMPLETED.value
+        ),
+        None,
+    )
+    last_failure = next(
+        (
+            row.completed_at or row.started_at
+            for row in runs
+            if row.state == ScanningState.FAILED.value
+        ),
+        None,
+    )
+
+    permission_state = permission.state if permission else ScanningState.INITIALIZED.value
+    scan_frequency = permission.scan_frequency if permission else "daily"
+    next_run_at: Optional[datetime] = None
+    if permission and permission_state in [ScanningState.APPROVED.value, ScanningState.RUNNING.value]:
+        anchor = last_success or permission.approved_at or permission.created_at or now
+        next_run_at = _compute_next_run(now, scan_frequency, anchor)
+
+    timeline: List[SchedulerTimelineItem] = []
+    for row in runs[:6]:
+        providers = json.loads(row.providers_json or "[]")
+        timeline.append(
+            SchedulerTimelineItem(
+                id=f"scan-{row.scan_id}",
+                event_type="scan_run",
+                state=row.state,
+                title=f"Scan {row.state}",
+                detail=f"Providers: {', '.join(providers) if providers else 'n/a'}",
+                created_at=(row.completed_at or row.started_at).isoformat(),
+            )
+        )
+    for row in audit_rows:
+        metadata = _safe_json_load(row.metadata_json or "{}", {})
+        providers = metadata.get("providers", [])
+        detail = f"Frequency: {metadata.get('frequency', 'n/a')}"
+        if providers:
+            detail = f"{detail} | Providers: {', '.join([str(item) for item in providers])}"
+        timeline.append(
+            SchedulerTimelineItem(
+                id=f"audit-{row.id}",
+                event_type="scheduler_trigger",
+                state="info",
+                title="Scheduler triggered scan",
+                detail=detail,
+                created_at=row.created_at.isoformat(),
+            )
+        )
+    timeline = sorted(timeline, key=lambda item: item.created_at, reverse=True)[:10]
+
+    eta_seconds: Optional[int] = None
+    if next_run_at is not None:
+        eta_seconds = max(0, int((next_run_at - now).total_seconds()))
+
+    return SchedulerStatusResponse(
+        organization_id=organization_id,
+        customer_id=customer_id,
+        scheduler_enabled=Config().enable_scan_scheduler,
+        scheduler_running=_scheduler_running,
+        permission_state=permission_state,
+        scan_frequency=scan_frequency,
+        next_run_at=next_run_at.isoformat() if next_run_at else None,
+        next_run_eta_seconds=eta_seconds,
+        last_success_at=last_success.isoformat() if last_success else None,
+        last_failure_at=last_failure.isoformat() if last_failure else None,
+        counters=SchedulerCounters(
+            total=total_runs,
+            success=success_runs,
+            failure=failed_runs,
+        ),
+        timeline=timeline,
+    )
+
+
+@router.post("/anomalies/external/aws")
+async def ingest_external_aws_anomalies(
+    payload: ExternalAWSAnomalyIngestRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Dict[str, Any]:
+    _require_management_role(membership, "external anomaly ingestion")
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+
+    if not payload.events:
+        return {"status": "ok", "ingested": 0, "alert_ids": []}
+
+    now = datetime.utcnow()
+    db = SessionLocal()
+    try:
+        alert_ids: List[int] = []
+        for event in payload.events:
+            detail = event.get("detail")
+            detail_payload = detail if isinstance(detail, dict) else event
+            anomaly_id = (
+                detail_payload.get("anomalyId")
+                or detail_payload.get("AnomalyId")
+                or event.get("id")
+                or f"aws-anomaly-{int(now.timestamp())}"
+            )
+            impact_usd = _coerce_aws_anomaly_impact_usd(detail_payload)
+            severity = _aws_anomaly_severity(
+                impact_usd=impact_usd,
+                source_severity=detail_payload.get("severity"),
+            )
+            monitor_name = (
+                detail_payload.get("monitorName")
+                or detail_payload.get("dimensionValue")
+                or "AWS Cost Anomaly Detection"
+            )
+            title = f"AWS anomaly detected ({monitor_name})"
+            message = (
+                f"Anomaly {anomaly_id} estimated impact ${impact_usd:.2f}. "
+                f"Root cause: {detail_payload.get('rootCauses', [])[:1] or 'pending'}."
+            )
+            row = AlertEvent(
+                organization_id=organization_id,
+                customer_id=customer_id,
+                scan_id=None,
+                alert_type="external.aws.cost_anomaly",
+                severity=severity,
+                title=title[:255],
+                message=message,
+                delivered_channels_json=json.dumps(["aws-cost-anomaly-detection"]),
+                created_at=now,
+            )
+            db.add(row)
+            db.flush()
+            alert_ids.append(row.id)
+
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="alert.external.ingest",
+                entity_type="alert_event",
+                entity_id="aws-cost-anomaly-detection",
+                metadata_json=json.dumps({"count": len(alert_ids)}),
+                created_at=now,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    return {"status": "ok", "ingested": len(payload.events), "alert_ids": alert_ids}
+
+
 async def run_scheduled_scans_once(requested_organization_id: Optional[int] = None) -> Dict[str, Any]:
     """Trigger due scans for approved organizations based on configured cadence."""
     global _scheduler_running
@@ -1545,7 +1814,7 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
         )
         if requested_organization_id is not None:
             permissions_query = permissions_query.filter(
-                ScanningPermissionRecord.organization_id == requested_organization_id
+                ScanningPermissionRecord.customer_id == f"org-{requested_organization_id}"
             )
         permissions = permissions_query.all()
         for permission in permissions:

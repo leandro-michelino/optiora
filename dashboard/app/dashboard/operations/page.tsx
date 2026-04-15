@@ -26,6 +26,7 @@ import {
   fetchApiInfo,
   fetchAuditLogs,
   fetchCredentials,
+  fetchSchedulerStatus,
   fetchScanDiff,
   fetchScanHistory,
   fetchScanningPermission,
@@ -39,6 +40,7 @@ import {
   ScanDiffResponse,
   ScanHistoryItem,
   ScanningPermission,
+  SchedulerStatusResponse,
   StoredCredential,
   ScanStartResponse,
 } from '@/lib/types'
@@ -60,6 +62,7 @@ interface OperationsState {
   credentials: StoredCredential[]
   permission: ScanningPermission | null
   scan: ScanStartResponse | null
+  scheduler: SchedulerStatusResponse | null
   history: ScanHistoryItem[]
   latestDiff: ScanDiffResponse | null
   alerts: AlertEvent[]
@@ -73,6 +76,7 @@ const initialState: OperationsState = {
   credentials: [],
   permission: null,
   scan: null,
+  scheduler: null,
   history: [],
   latestDiff: null,
   alerts: [],
@@ -84,6 +88,18 @@ function statusTone(ok: boolean): string {
   return ok
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
     : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
+}
+
+function formatEta(seconds?: number | null): string {
+  if (!seconds || seconds <= 0) {
+    return 'now'
+  }
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+  return `${Math.max(1, minutes)}m`
 }
 
 function CapabilityCard({
@@ -132,11 +148,12 @@ export default function OperationsPage() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
 
-    const [health, info, credentials, permission, history, alerts, auditLogs] = await Promise.allSettled([
+    const [health, info, credentials, permission, scheduler, history, alerts, auditLogs] = await Promise.allSettled([
       fetchApiHealth(),
       fetchApiInfo(),
       fetchCredentials(),
       fetchScanningPermission(),
+      fetchSchedulerStatus(),
       fetchScanHistory(8),
       fetchAlerts(8),
       fetchAuditLogs(8),
@@ -159,6 +176,7 @@ export default function OperationsPage() {
       info: info.status === 'fulfilled' ? info.value : null,
       credentials: credentials.status === 'fulfilled' ? credentials.value.credentials || [] : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
+      scheduler: scheduler.status === 'fulfilled' ? scheduler.value : null,
       history: historyItems,
       latestDiff,
       alerts: alerts.status === 'fulfilled' ? alerts.value : [],
@@ -339,6 +357,38 @@ export default function OperationsPage() {
             )}
           </CardContent>
         </Card>
+        <Card className="rounded-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Scheduler
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+              <div className="flex items-center justify-between">
+                <span>Status</span>
+                <Badge className={`rounded-md border ${statusTone(Boolean(state.scheduler?.scheduler_enabled))}`}>
+                  {state.scheduler?.scheduler_enabled ? 'Enabled' : 'Disabled'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Next run ETA</span>
+                <span>{formatEta(state.scheduler?.next_run_eta_seconds)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Success / Failure</span>
+                <span>
+                  {state.scheduler?.counters.success ?? 0} / {state.scheduler?.counters.failure ?? 0}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Total runs</span>
+                <span>{state.scheduler?.counters.total ?? 0}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -441,6 +491,36 @@ export default function OperationsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card className="rounded-lg">
+          <CardHeader>
+            <CardTitle>Operations Timeline</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {state.scheduler?.timeline?.length ? (
+              state.scheduler.timeline.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-slate-900 dark:text-white">{entry.title}</div>
+                      <div className="text-sm text-slate-600 dark:text-slate-400">{entry.detail}</div>
+                    </div>
+                    <Badge className={`rounded-md border ${statusTone(entry.state !== 'failed')}`}>
+                      {entry.state}
+                    </Badge>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    {new Date(entry.created_at).toLocaleString()}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Scheduler timeline will appear after scans are triggered.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
         <Card className="rounded-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Alerts</CardTitle>

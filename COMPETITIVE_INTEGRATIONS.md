@@ -15,18 +15,18 @@ This backlog captures competitor-proven capabilities that can be integrated into
 
 2. Scheduler operations dashboard quality-of-life
    - Why: competitors expose clear scheduled-run visibility and history.
-   - Status: Planned.
+   - Status: **Concluded** (scheduler status API + operations timeline now live).
    - Technical slice:
-     - next-run ETA in API
-     - scheduler success/failure counters
-     - operations timeline card
+     - ✅ next-run ETA in API (`GET /api/v1/scanning/scheduler/status`)
+     - ✅ scheduler success/failure counters
+     - ✅ operations timeline card
 
 3. External anomaly ingestion (AWS Cost Anomaly Detection first)
    - Why: accelerates anomaly signal quality with native cloud detections.
-   - Status: Planned.
+   - Status: **Concluded** (AWS external anomaly ingestion endpoint now persists normalized alerts).
    - Technical slice:
-     - endpoint/worker to ingest AWS anomaly events
-     - normalize into `alert_events`
+     - ✅ endpoint to ingest AWS anomaly events (`POST /api/v1/anomalies/external/aws`)
+     - ✅ normalize into `alert_events`
 
 ## P1 (Near-term)
 

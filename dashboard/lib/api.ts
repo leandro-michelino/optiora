@@ -12,6 +12,7 @@ import {
   ApiInfo,
   CredentialListResponse,
   ScanningPermission,
+  SchedulerStatusResponse,
   ScanStartResponse,
   ForecastResponse,
   FinOpsAnalyticsResponse,
@@ -243,6 +244,14 @@ export async function runScheduledScanNow(): Promise<{ status: string; started: 
     '/api/v1/scanning/scheduler/run-now',
     { method: 'POST' },
   )
+}
+
+export async function fetchSchedulerStatus(): Promise<SchedulerStatusResponse | null> {
+  try {
+    return await requestJson<SchedulerStatusResponse>('/api/v1/scanning/scheduler/status')
+  } catch {
+    return null
+  }
 }
 
 export async function downloadScanHistoryCsv(limit = 200): Promise<void> {

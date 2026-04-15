@@ -195,6 +195,34 @@ export interface ScanDiffResponse {
   entries: ScanDiffEntry[]
 }
 
+export interface SchedulerTimelineItem {
+  id: string
+  event_type: string
+  state: string
+  title: string
+  detail: string
+  created_at: string
+}
+
+export interface SchedulerStatusResponse {
+  organization_id: number
+  customer_id: string
+  scheduler_enabled: boolean
+  scheduler_running: boolean
+  permission_state: string
+  scan_frequency: string
+  next_run_at?: string | null
+  next_run_eta_seconds?: number | null
+  last_success_at?: string | null
+  last_failure_at?: string | null
+  counters: {
+    total: number
+    success: number
+    failure: number
+  }
+  timeline: SchedulerTimelineItem[]
+}
+
 export interface AuditLogEntry {
   id: number
   action: string

@@ -92,10 +92,12 @@ The dashboard is the main workspace for:
 - `GET /api/v1/scanning/history`
 - `GET /api/v1/scanning/{scan_id}/diff`
 - `POST /api/v1/scanning/scheduler/run-now`
+- `GET /api/v1/scanning/scheduler/status`
 - `GET /api/v1/scanning/history.csv`
 - `GET /api/v1/scanning/{scan_id}/diff.csv`
 - `GET /api/v1/costs`
 - `GET /api/v1/anomalies`
+- `POST /api/v1/anomalies/external/aws`
 - `GET /api/v1/recommendations`
  - `GET /api/v1/forecast` (supports budget guardrails + fan percentiles)
  - `GET /api/v1/analytics` (adds provider signals and GenAI brief)

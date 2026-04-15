@@ -30,6 +30,8 @@
 - ~~per-scan diff view~~ — `/scanning/{scan_id}/diff` and CSV export for delta vs previous scan
 - ~~scan history browser~~ — operations dashboard + `/scanning/history` API + CSV export
 - ~~budget threshold alert pipeline~~ — budget checks run after scans and emit alert events with email/Slack/Teams delivery metadata
+- ~~scheduler operations dashboard QoL~~ — `/scanning/scheduler/status` + Operations card for ETA, counters, and timeline visibility
+- ~~external AWS anomaly ingestion~~ — `/anomalies/external/aws` normalizes AWS Cost Anomaly Detection payloads into `alert_events`
 
 ## High-Priority Next Steps
 
@@ -63,7 +65,6 @@
 ### Scheduled background scans
 
 - scheduler UI controls (override cadence per organization without API call)
-- scheduler SLO dashboard (last run, success/failure rate, next run ETA)
 - retry/backoff policy for transient cloud API errors
 - scheduler health alerts when scans are overdue
 

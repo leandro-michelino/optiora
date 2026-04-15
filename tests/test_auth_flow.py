@@ -270,6 +270,62 @@ class AuthFlowTest(unittest.TestCase):
             api_module._run_validation = original_run_validation
             api_module._run_cost_analysis = original_run_cost_analysis
 
+    def test_scheduler_status_and_external_aws_anomaly_ingestion(self) -> None:
+        register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "scheduler@example.com",
+                "password": "StrongPass1!",
+                "full_name": "Scheduler Owner",
+            },
+        )
+        self.assertEqual(register.status_code, 201)
+
+        login = self.client.post(
+            "/auth/login",
+            json={"email": "scheduler@example.com", "password": "StrongPass1!"},
+        )
+        self.assertEqual(login.status_code, 200)
+
+        approved = self.client.post(
+            "/api/v1/scanning/approve",
+            json={
+                "scan_frequency": "weekly",
+                "auto_remediate": False,
+            },
+        )
+        self.assertEqual(approved.status_code, 200)
+
+        scheduler_status = self.client.get("/api/v1/scanning/scheduler/status")
+        self.assertEqual(scheduler_status.status_code, 200)
+        scheduler_payload = scheduler_status.json()
+        self.assertIn("counters", scheduler_payload)
+        self.assertEqual(scheduler_payload["scan_frequency"], "weekly")
+        self.assertIn("timeline", scheduler_payload)
+
+        ingest = self.client.post(
+            "/api/v1/anomalies/external/aws",
+            json={
+                "events": [
+                    {
+                        "detail": {
+                            "anomalyId": "anomaly-123",
+                            "monitorName": "prod-billing-monitor",
+                            "impact": {"totalImpact": 345.67},
+                        }
+                    }
+                ]
+            },
+        )
+        self.assertEqual(ingest.status_code, 200)
+        ingest_payload = ingest.json()
+        self.assertEqual(ingest_payload["ingested"], 1)
+        self.assertEqual(len(ingest_payload["alert_ids"]), 1)
+
+        alerts = self.client.get("/api/v1/alerts")
+        self.assertEqual(alerts.status_code, 200)
+        self.assertTrue(any(row["alert_type"] == "external.aws.cost_anomaly" for row in alerts.json()))
+
     def test_z_alembic_upgrade_downgrade_roundtrip(self) -> None:
         cfg = AlembicConfig("alembic.ini")
         Base.metadata.drop_all(bind=engine)
