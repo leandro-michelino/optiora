@@ -8,7 +8,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 from .orm_models import CredentialRecord
 
@@ -340,6 +340,16 @@ class CredentialManager:
     def __init__(self, db_session):
         self.db = db_session
 
+    @staticmethod
+    def _scope_candidates(customer_id: str, legacy_customer_ids: Optional[Iterable[str]] = None) -> list[str]:
+        ordered = [customer_id, *(legacy_customer_ids or [])]
+        unique: list[str] = []
+        for candidate in ordered:
+            normalized = str(candidate or "").strip()
+            if normalized and normalized not in unique:
+                unique.append(normalized)
+        return unique
+
     def store_credentials(
         self,
         customer_id: str,
@@ -347,15 +357,17 @@ class CredentialManager:
         credentials: Dict[str, Any],
         is_active: bool = True,
         validation: Optional[CredentialStatus] = None,
+        legacy_customer_ids: Optional[Iterable[str]] = None,
     ) -> Dict[str, Any]:
         provider = provider.lower()
         now = datetime.utcnow()
         sanitized_credentials = self._sanitize_credentials(provider, credentials)
+        candidates = self._scope_candidates(customer_id, legacy_customer_ids)
 
         record = (
             self.db.query(CredentialRecord)
             .filter(
-                CredentialRecord.customer_id == customer_id,
+                CredentialRecord.customer_id.in_(candidates),
                 CredentialRecord.provider == provider,
             )
             .first()
@@ -375,6 +387,7 @@ class CredentialManager:
             )
             self.db.add(record)
         else:
+            record.customer_id = customer_id
             record.credential_json = json.dumps(sanitized_credentials)
             record.is_active = is_active
             if validation:
@@ -450,12 +463,30 @@ class CredentialManager:
         return {"provider": provider, "stored_fields": sorted(credentials.keys())}
 
     def list_credentials(self, customer_id: str) -> Dict[str, Any]:
+        return self.list_credentials_with_aliases(customer_id, legacy_customer_ids=None)
+
+    def list_credentials_with_aliases(
+        self,
+        customer_id: str,
+        legacy_customer_ids: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
+        candidates = self._scope_candidates(customer_id, legacy_customer_ids)
         records = (
             self.db.query(CredentialRecord)
-            .filter(CredentialRecord.customer_id == customer_id)
+            .filter(CredentialRecord.customer_id.in_(candidates))
             .order_by(CredentialRecord.provider.asc())
             .all()
         )
+        changed = False
+        normalized_records: dict[str, CredentialRecord] = {}
+        for row in records:
+            if row.provider not in normalized_records:
+                normalized_records[row.provider] = row
+            if row.customer_id != customer_id:
+                row.customer_id = customer_id
+                changed = True
+        if changed:
+            self.db.commit()
 
         return {
             "customer_id": customer_id,
@@ -468,15 +499,21 @@ class CredentialManager:
                     "tested_at": row.tested_at.isoformat() if row.tested_at else None,
                     "created_at": row.created_at.isoformat(),
                 }
-                for row in records
+                for row in normalized_records.values()
             ],
         }
 
-    def delete_credentials(self, customer_id: str, provider: str) -> bool:
+    def delete_credentials(
+        self,
+        customer_id: str,
+        provider: str,
+        legacy_customer_ids: Optional[Iterable[str]] = None,
+    ) -> bool:
+        candidates = self._scope_candidates(customer_id, legacy_customer_ids)
         record = (
             self.db.query(CredentialRecord)
             .filter(
-                CredentialRecord.customer_id == customer_id,
+                CredentialRecord.customer_id.in_(candidates),
                 CredentialRecord.provider == provider.lower(),
             )
             .first()

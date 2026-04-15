@@ -7,14 +7,14 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Home() {
-  const { isAuthenticated, loading } = useAuth()
+  const { authEnabled, isAuthenticated, loading } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (!loading && isAuthenticated) {
+    if (!loading && (!authEnabled || isAuthenticated)) {
       router.push('/dashboard')
     }
-  }, [isAuthenticated, loading, router])
+  }, [authEnabled, isAuthenticated, loading, router])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
@@ -26,12 +26,20 @@ export default function Home() {
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">OptiOra</h1>
           </div>
           <div className="flex gap-2">
-            <Link href="/login" className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
-              Sign In
-            </Link>
-            <Link href="/signup" className="btn-primary">
-              Sign Up
-            </Link>
+            {authEnabled ? (
+              <>
+                <Link href="/login" className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
+                  Sign In
+                </Link>
+                <Link href="/signup" className="btn-primary">
+                  Sign Up
+                </Link>
+              </>
+            ) : (
+              <Link href="/dashboard" className="btn-primary">
+                Open Dashboard
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -72,10 +80,10 @@ export default function Home() {
         </div>
 
         <Link
-          href="/signup"
+          href={authEnabled ? "/signup" : "/dashboard"}
           className="inline-flex items-center gap-2 btn-primary text-lg"
         >
-          Get Started <ArrowRight className="w-5 h-5" />
+          {authEnabled ? "Get Started" : "Open Dashboard"} <ArrowRight className="w-5 h-5" />
         </Link>
       </section>
 

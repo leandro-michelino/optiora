@@ -8,6 +8,10 @@ from dataclasses import dataclass
 class Config:
     """Central configuration."""
 
+    auth_enabled: bool = os.getenv("ENABLE_AUTH", "false").strip().lower() in {"1", "true", "yes"}
+    public_workspace_name: str = os.getenv("PUBLIC_WORKSPACE_NAME", "OptiOra Public Workspace")
+    public_workspace_email: str = os.getenv("PUBLIC_WORKSPACE_EMAIL", "public@optiora.local")
+
     # Server
     api_port: int = int(os.getenv("PORT", "8000"))
     api_log_level: str = os.getenv("LOG_LEVEL", "INFO")
@@ -47,6 +51,12 @@ class Config:
     jira_api_token: str = os.getenv("JIRA_API_TOKEN", "")
     slack_webhook: str = os.getenv("SLACK_WEBHOOK", "")
     teams_webhook: str = os.getenv("TEAMS_WEBHOOK", "")
+    smtp_host: str = os.getenv("SMTP_HOST", "")
+    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user: str = os.getenv("SMTP_USER", "")
+    smtp_password: str = os.getenv("SMTP_PASSWORD", "")
+    smtp_from_email: str = os.getenv("SMTP_FROM_EMAIL", "")
+    smtp_use_tls: bool = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
 
     # Business config
     revenue_share_percentage: float = float(os.getenv("REVENUE_SHARE_PERCENTAGE", "15"))

@@ -5,6 +5,11 @@ import { backendUrl } from "@/lib/backend-url";
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 
+export function isAuthEnabled(): boolean {
+  const value = process.env.NEXT_PUBLIC_ENABLE_AUTH;
+  return value === "1" || value === "true" || value === "yes";
+}
+
 interface RefreshTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -45,6 +50,9 @@ export function clearStoredTokens(): void {
 }
 
 export async function refreshAccessToken(): Promise<string | null> {
+  if (!isAuthEnabled()) {
+    return null;
+  }
   const refreshToken = getStoredRefreshToken();
   if (!refreshToken) {
     clearStoredTokens();
@@ -87,6 +95,10 @@ export async function authorizedFetch(
   input: string,
   init: RequestInit = {},
 ): Promise<Response> {
+  if (!isAuthEnabled()) {
+    return fetch(input, init);
+  }
+
   let token = getStoredAccessToken();
   if (!token) {
     token = await refreshAccessToken();

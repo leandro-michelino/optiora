@@ -8,6 +8,7 @@ import {
   clearStoredTokens,
   getStoredAccessToken,
   getStoredRefreshToken,
+  isAuthEnabled,
   storeTokens,
 } from "@/lib/auth-fetch";
 import { backendUrl } from "@/lib/backend-url";
@@ -21,8 +22,35 @@ interface AuthUser {
   created_at: string;
 }
 
+interface OrganizationMembership {
+  id: number;
+  name: string;
+  role: string;
+  plan: string;
+  is_active: boolean;
+}
+
+const PUBLIC_USER: AuthUser = {
+  id: 0,
+  email: "public-access@disabled.local",
+  full_name: "Public Access",
+  is_active: true,
+  email_verified: true,
+  created_at: new Date(0).toISOString(),
+};
+
+const PUBLIC_ORGANIZATION: OrganizationMembership = {
+  id: 0,
+  name: "Public Workspace",
+  role: "owner",
+  plan: "enterprise",
+  is_active: true,
+};
+
 interface AuthContextType {
   user: AuthUser | null;
+  organization: OrganizationMembership | null;
+  authEnabled: boolean;
   isAuthenticated: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -33,41 +61,63 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const authEnabled = isAuthEnabled();
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [organization, setOrganization] = useState<OrganizationMembership | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const isAuthenticated = Boolean(user);
+  const isAuthenticated = authEnabled ? Boolean(user) : true;
 
   const loadProfile = async () => {
-    const response = await authorizedFetch(backendUrl("/auth/profile"));
-    if (!response.ok) {
+    const [profileResponse, organizationResponse] = await Promise.all([
+      authorizedFetch(backendUrl("/auth/profile")),
+      authorizedFetch(backendUrl("/auth/organization")),
+    ]);
+    if (!profileResponse.ok) {
       throw new Error("Failed to load profile");
     }
-    const data = (await response.json()) as AuthUser;
-    setUser(data);
+    const userData = (await profileResponse.json()) as AuthUser;
+    setUser(userData);
+    if (organizationResponse.ok) {
+      const organizationData = (await organizationResponse.json()) as OrganizationMembership;
+      setOrganization(organizationData);
+    } else {
+      setOrganization(null);
+    }
   };
 
   useEffect(() => {
     const init = async () => {
       try {
+        if (!authEnabled) {
+          setUser(PUBLIC_USER);
+          setOrganization(PUBLIC_ORGANIZATION);
+          return;
+        }
         if (!getStoredAccessToken() && !getStoredRefreshToken()) {
           setUser(null);
+          setOrganization(null);
           return;
         }
         await loadProfile();
       } catch {
         clearStoredTokens();
         setUser(null);
+        setOrganization(null);
       } finally {
         setLoading(false);
       }
     };
 
     void init();
-  }, []);
+  }, [authEnabled]);
 
   const login = async (email: string, password: string) => {
+    if (!authEnabled) {
+      router.push("/dashboard");
+      return;
+    }
     try {
       const response = await axios.post<{
         access_token: string;
@@ -84,6 +134,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (email: string, password: string, fullName?: string) => {
+    if (!authEnabled) {
+      router.push("/dashboard");
+      return;
+    }
     try {
       await axios.post(backendUrl("/auth/register"), {
         email,
@@ -98,6 +152,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    if (!authEnabled) {
+      router.push("/dashboard");
+      return;
+    }
     try {
       await authorizedFetch(backendUrl("/auth/logout"), {
         method: "POST",
@@ -107,13 +165,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       clearStoredTokens();
       setUser(null);
+      setOrganization(null);
       router.push("/login");
     }
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated, loading, login, register, logout }}
+      value={{ user, organization, authEnabled, isAuthenticated, loading, login, register, logout }}
     >
       {children}
     </AuthContext.Provider>

@@ -13,7 +13,7 @@ function DashboardLayoutContent({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const { user, logout } = useAuth()
+  const { authEnabled, user, organization, logout } = useAuth()
 
   const mainNavItems = [
     { href: '/dashboard', label: 'Overview', icon: BarChart3 },
@@ -156,14 +156,21 @@ function DashboardLayoutContent({
             <div className="text-sm">
               <p className="font-medium text-slate-900 dark:text-white">{user?.full_name || user?.email}</p>
               <p className="text-xs text-slate-600 dark:text-slate-400">{user?.email}</p>
+              {organization && (
+                <p className="text-xs text-slate-500 dark:text-slate-500">
+                  {organization.name} · {organization.role}
+                </p>
+              )}
             </div>
-            <button
-              onClick={logout}
-              className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-            </button>
+            {authEnabled && (
+              <button
+                onClick={logout}
+                className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+              </button>
+            )}
           </div>
           <ThemeToggle />
           <div className="text-xs text-slate-600 dark:text-slate-400 p-2 bg-slate-50 dark:bg-slate-900 rounded-lg">

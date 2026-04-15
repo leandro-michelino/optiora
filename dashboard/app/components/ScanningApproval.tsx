@@ -13,6 +13,10 @@ interface ScanningConfig {
   scan_frequency: 'hourly' | 'daily' | 'weekly';
   auto_remediate: boolean;
   notification_email: string;
+  monthly_budget_usd: number;
+  warning_threshold_percent: number;
+  critical_threshold_percent: number;
+  notifications_enabled: boolean;
 }
 
 const ScanningApproval: React.FC<ScanningApprovalProps> = ({ providers, onApprove }) => {
@@ -21,7 +25,11 @@ const ScanningApproval: React.FC<ScanningApprovalProps> = ({ providers, onApprov
   const [config, setConfig] = useState<ScanningConfig>({
     scan_frequency: 'daily',
     auto_remediate: false,
-    notification_email: ''
+    notification_email: '',
+    monthly_budget_usd: 0,
+    warning_threshold_percent: 80,
+    critical_threshold_percent: 100,
+    notifications_enabled: true,
   });
 
   const handleApprove = async (e: React.FormEvent) => {
@@ -56,6 +64,7 @@ const ScanningApproval: React.FC<ScanningApprovalProps> = ({ providers, onApprov
             <p><strong>Frequency:</strong> {config.scan_frequency}</p>
             <p><strong>Auto-remediate:</strong> {config.auto_remediate ? 'Enabled' : 'Disabled'}</p>
             <p><strong>Notifications:</strong> {config.notification_email}</p>
+            <p><strong>Budget guardrail:</strong> {config.monthly_budget_usd > 0 ? `$${config.monthly_budget_usd.toLocaleString()}` : 'Not set'}</p>
           </div>
           <button className="w-full mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">
             <Play className="w-4 h-4" />
@@ -177,6 +186,60 @@ const ScanningApproval: React.FC<ScanningApprovalProps> = ({ providers, onApprov
               className="w-full px-3 py-2 border rounded-md"
             />
             <p className="text-xs text-gray-600 mt-1">We'll send weekly cost reports and alerts</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Monthly Budget USD</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={config.monthly_budget_usd}
+                onChange={e => setConfig({...config, monthly_budget_usd: Number(e.target.value) || 0})}
+                className="w-full px-3 py-2 border rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Warning %</label>
+              <input
+                type="number"
+                min="1"
+                max="1000"
+                value={config.warning_threshold_percent}
+                onChange={e => setConfig({...config, warning_threshold_percent: Number(e.target.value) || 80})}
+                className="w-full px-3 py-2 border rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Critical %</label>
+              <input
+                type="number"
+                min="1"
+                max="1000"
+                value={config.critical_threshold_percent}
+                onChange={e => setConfig({...config, critical_threshold_percent: Number(e.target.value) || 100})}
+                className="w-full px-3 py-2 border rounded-md"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            <input
+              type="checkbox"
+              id="notifications_enabled"
+              checked={config.notifications_enabled}
+              onChange={e => setConfig({...config, notifications_enabled: e.target.checked})}
+              className="w-4 h-4"
+            />
+            <div className="flex-1">
+              <label htmlFor="notifications_enabled" className="font-medium text-sm block">
+                Enable budget and anomaly notifications
+              </label>
+              <p className="text-xs text-gray-600">
+                Sends alerts when configured thresholds are crossed after a scan completes.
+              </p>
+            </div>
           </div>
 
           {/* Warning */}

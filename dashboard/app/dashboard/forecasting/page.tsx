@@ -33,6 +33,18 @@ function formatCurrency(value: number): string {
 
 function downloadScenarioCSV(scenario: ForecastScenario, forecastData: ForecastPoint[]) {
   const scenarioKey = scenario.name as keyof ForecastPoint
+  const projectionRows = forecastData
+    .map(
+      (row) =>
+        [
+          row.month,
+          row.baseline,
+          Number(row[scenarioKey] || row.baseline),
+          row.lower_bound,
+          row.upper_bound,
+        ].join(','),
+    )
+    .join('\n')
   const csvContent = `${scenario.name} Scenario - Cost Forecast Report
 Generated: ${new Date().toISOString().split('T')[0]}
 
@@ -47,7 +59,8 @@ Risk Level,${scenario.risk_level}
 
 Month-by-Month Projection
 Month,Baseline,Scenario,Lower Bound,Upper Bound
-${forecastData.map((row) => `${row.month},${row.baseline},${Number(row[scenarioKey] || row.baseline)},${row.lower_bound},${row.upper_bound}`).join('\n')}`
+${projectionRows}
+`
 
   const element = document.createElement('a')
   element.setAttribute('href', `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`)

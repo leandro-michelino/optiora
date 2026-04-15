@@ -67,6 +67,7 @@ The dashboard is the main workspace for:
 ## Key Behavior
 
 - `.env` is loaded automatically when the backend package is imported.
+- Dashboard access is public by default. Authentication and RBAC are optional deployment hardening steps and stay disabled unless you explicitly set `ENABLE_AUTH=true` and `NEXT_PUBLIC_ENABLE_AUTH=true`.
 - Raw cloud secrets are validated server-side but not persisted; only sanitized metadata is stored.
 - Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
@@ -115,6 +116,7 @@ python -m finops_mcp.app
 ```
 
 Backend default: `http://localhost:8000`
+Dashboard opens directly by default with no login wall.
 
 ### Dashboard
 
@@ -130,6 +132,7 @@ Local frontend env:
 
 ```bash
 export NEXT_PUBLIC_API_URL=http://localhost:8000
+export NEXT_PUBLIC_ENABLE_AUTH=false
 ```
 
 Database config:

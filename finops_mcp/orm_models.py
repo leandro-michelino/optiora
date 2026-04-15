@@ -266,6 +266,10 @@ class ScanningPermissionRecord(Base):
     scan_frequency = Column(String(20), nullable=False, default="daily")
     auto_remediate = Column(Boolean, default=False)
     notification_email = Column(String(255), nullable=True)
+    monthly_budget_usd = Column(Float, nullable=False, default=0.0)
+    warning_threshold_percent = Column(Float, nullable=False, default=80.0)
+    critical_threshold_percent = Column(Float, nullable=False, default=100.0)
+    notifications_enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     approved_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -339,6 +343,52 @@ class CostSnapshot(Base):
         )
 
 
+class AuditLog(Base):
+    """Immutable organization-scoped audit trail."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(120), nullable=False, index=True)
+    entity_type = Column(String(80), nullable=False, index=True)
+    entity_id = Column(String(255), nullable=True)
+    metadata_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return (
+            f"<AuditLog(org_id={self.organization_id}, action={self.action}, "
+            f"entity_type={self.entity_type})>"
+        )
+
+
+class AlertEvent(Base):
+    """Persisted alert outcomes for dashboard visibility and acknowledgement."""
+
+    __tablename__ = "alert_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    scan_id = Column(String(255), nullable=True, index=True)
+    alert_type = Column(String(80), nullable=False, index=True)
+    severity = Column(String(30), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    delivered_channels_json = Column(Text, nullable=False, default="[]")
+    acknowledged_at = Column(DateTime, nullable=True)
+    acknowledged_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return (
+            f"<AlertEvent(org_id={self.organization_id}, type={self.alert_type}, "
+            f"severity={self.severity})>"
+        )
+
+
 # Dependency
 def get_db():
     """FastAPI dependency for database session."""
@@ -353,6 +403,72 @@ def get_db():
 def init_db():
     """Create all tables."""
     Base.metadata.create_all(bind=engine)
+
+
+def ensure_public_workspace(db=None):
+    """Create or load the single-tenant public workspace used when auth is disabled."""
+    owns_session = db is None
+    if owns_session:
+        db = SessionLocal()
+
+    try:
+        public_email = os.getenv("PUBLIC_WORKSPACE_EMAIL", "public@optiora.local").strip().lower()
+        public_name = os.getenv("PUBLIC_WORKSPACE_NAME", "OptiOra Public Workspace").strip()
+
+        user = db.query(User).filter(User.email == public_email).first()
+        if user is None:
+            from .auth_utils import hash_password
+
+            user = User(
+                email=public_email,
+                password_hash=hash_password(os.urandom(24).hex()),
+                full_name="Public Workspace Service",
+                is_active=False,
+                email_verified=True,
+            )
+            db.add(user)
+            db.flush()
+
+        organization = (
+            db.query(Organization)
+            .filter(Organization.owner_id == user.id, Organization.name == public_name)
+            .first()
+        )
+        if organization is None:
+            organization = Organization(
+                name=public_name,
+                description="Single-tenant public workspace for anonymous dashboard access.",
+                owner_id=user.id,
+                plan=OrganizationPlan.ENTERPRISE,
+                is_active=True,
+            )
+            db.add(organization)
+            db.flush()
+
+        membership = (
+            db.query(UserOrganization)
+            .filter(
+                UserOrganization.user_id == user.id,
+                UserOrganization.organization_id == organization.id,
+            )
+            .first()
+        )
+        if membership is None:
+            db.add(
+                UserOrganization(
+                    user_id=user.id,
+                    organization_id=organization.id,
+                    role=UserRole.OWNER,
+                )
+            )
+
+        db.commit()
+        db.refresh(user)
+        db.refresh(organization)
+        return user, organization
+    finally:
+        if owns_session:
+            db.close()
 
 
 if __name__ == "__main__":

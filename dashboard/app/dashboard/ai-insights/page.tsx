@@ -37,7 +37,7 @@ export default function AIInsightsPage() {
           fetchRecommendations(),
         ])
         setAnalytics(analyticsResult)
-        setRecommendations(recommendationsResult)
+        setRecommendations(recommendationsResult.items)
       } catch (insightError) {
         setError(
           insightError instanceof Error

@@ -21,6 +21,7 @@ from .orm_models import (
     get_db,
     UserRole,
 )
+from .access_control import primary_membership, resolve_membership
 from .auth_utils import (
     hash_password,
     verify_password,
@@ -36,6 +37,7 @@ from .auth_utils import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 PASSWORD_SPECIAL_CHARS = "!@#$%^&*"
@@ -193,7 +195,45 @@ def get_current_user(
             detail="User account is inactive",
         )
 
+    user._token_org_id = payload.get("org_id")
+    user._token_role = payload.get("role")
     return user
+
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """Return the authenticated user when available, otherwise None."""
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    if not payload:
+        return None
+
+    user_id_raw = payload.get("sub")
+    try:
+        user_id = int(user_id_raw)
+    except (TypeError, ValueError):
+        return None
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or not user.is_active:
+        return None
+
+    user._token_org_id = payload.get("org_id")
+    user._token_role = payload.get("role")
+    return user
+
+
+def get_current_membership(
+    current_user: User,
+    organization_id: Optional[int] = None,
+) -> UserOrganization:
+    """Resolve a membership for the current user."""
+    return resolve_membership(current_user, organization_id=organization_id)
 
 
 # Endpoints
@@ -291,10 +331,7 @@ async def login(
         )
     
     # Get user's primary organization
-    user_org = db.query(UserOrganization).filter(
-        UserOrganization.user_id == user.id
-    ).first()
-    
+    user_org = primary_membership(user)
     org_id = user_org.organization_id if user_org else None
     role = user_org.role.value if user_org else None
     
@@ -385,10 +422,7 @@ async def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
         )
     
     # Get user's organization
-    user_org = db.query(UserOrganization).filter(
-        UserOrganization.user_id == user_id
-    ).first()
-    
+    user_org = primary_membership(user)
     org_id = user_org.organization_id if user_org else None
     role = user_org.role.value if user_org else None
     

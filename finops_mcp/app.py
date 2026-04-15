@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 import logging
 import os
 
-from .orm_models import init_db
+from .config import Config
+from .orm_models import ensure_public_workspace, init_db
 from .auth_routes import router as auth_router
 from .api import router as api_router
 from . import __version__
@@ -58,6 +59,8 @@ async def startup_event():
     """Initialize database on startup."""
     try:
         init_db()
+        if not Config().auth_enabled:
+            ensure_public_workspace()
         logger.info("Database initialized successfully (version=%s)", __version__)
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)

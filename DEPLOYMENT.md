@@ -10,6 +10,8 @@ Deployment can be done two ways:
 - `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services.
 - Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime.
 
+By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
+
 ## Prerequisites
 
 - OCI CLI installed and configured (`oci setup config`)
@@ -106,6 +108,10 @@ Optional runtime values copied into the remote `.env`:
 ```env
 DATABASE_URL=
 SECRET_KEY=
+ENABLE_AUTH=false
+NEXT_PUBLIC_ENABLE_AUTH=false
+PUBLIC_WORKSPACE_NAME=OptiOra Public Workspace
+PUBLIC_WORKSPACE_EMAIL=public@optiora.local
 OCI_GENAI_ENDPOINT=https://inference.generativeai.<region>.oci.oraclecloud.com
 OCI_GENAI_MODEL=ocid1.generativeaimodel.oc1..<model_ocid>
 OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
@@ -118,6 +124,14 @@ OCI_CONFIG_FILE=
 ENVIRONMENT=production
 PASSWORD_RESET_RETURN_TOKEN=false
 PASSWORD_RESET_TOKEN_MINUTES=30
+```
+
+Optional hardened deployment later:
+
+```env
+ENABLE_AUTH=true
+NEXT_PUBLIC_ENABLE_AUTH=true
+SECRET_KEY=<strong-random-value>
 ```
 
 ## Post-Deployment Validation

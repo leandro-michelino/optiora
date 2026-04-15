@@ -60,21 +60,31 @@ export interface ApiInfo {
 export interface StoredCredential {
   provider: string
   is_valid: boolean
+  message?: string
+  is_active?: boolean
   tested_at?: string
   last_tested?: string
+  created_at?: string
 }
 
 export interface CredentialListResponse {
+  organization_id?: number
   customer_id?: string
   credentials: StoredCredential[]
 }
 
 export interface ScanningPermission {
   customer_id: string
+  organization_id: number
   state: string
   providers: string[]
   scan_frequency: string
   auto_remediate: boolean
+  notification_email?: string | null
+  monthly_budget_usd: number
+  warning_threshold_percent: number
+  critical_threshold_percent: number
+  notifications_enabled: boolean
   created_at: string
   approved_at?: string | null
 }
@@ -82,6 +92,7 @@ export interface ScanningPermission {
 export interface ScanStartResponse {
   scan_id: string
   customer_id: string
+  organization_id: number
   state: string
   progress: number
   providers: string[]
@@ -138,6 +149,60 @@ export interface ForecastResponse {
   } | null
   genai_brief?: string
   scenarios: ForecastScenario[]
+}
+
+export interface ScanHistoryItem {
+  scan_id: string
+  customer_id: string
+  organization_id: number
+  state: string
+  providers: string[]
+  started_at: string
+  completed_at?: string | null
+  total_resources: number
+  anomalies_found: number
+  savings_identified: number
+}
+
+export interface ScanDiffEntry {
+  provider: string
+  current_cost_usd: number
+  previous_cost_usd: number
+  delta_cost_usd: number
+  delta_percent?: number | null
+  current_anomalies: number
+  previous_anomalies: number
+}
+
+export interface ScanDiffResponse {
+  organization_id: number
+  current_scan_id: string
+  previous_scan_id?: string | null
+  total_current_cost_usd: number
+  total_previous_cost_usd: number
+  total_delta_cost_usd: number
+  entries: ScanDiffEntry[]
+}
+
+export interface AuditLogEntry {
+  id: number
+  action: string
+  entity_type: string
+  entity_id?: string | null
+  actor_user_id?: number | null
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export interface AlertEvent {
+  id: number
+  alert_type: string
+  severity: string
+  title: string
+  message: string
+  delivered_channels: string[]
+  acknowledged_at?: string | null
+  created_at: string
 }
 
 export interface FinOpsAnalyticsResponse {

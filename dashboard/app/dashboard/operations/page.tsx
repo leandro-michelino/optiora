@@ -16,15 +16,28 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import {
+  acknowledgeAlert,
+  downloadAlertsCsv,
+  downloadAuditLogsCsv,
+  downloadScanDiffCsv,
+  downloadScanHistoryCsv,
+  fetchAlerts,
   fetchApiHealth,
   fetchApiInfo,
+  fetchAuditLogs,
   fetchCredentials,
+  fetchScanDiff,
+  fetchScanHistory,
   fetchScanningPermission,
   startScan,
 } from '@/lib/api'
 import {
+  AlertEvent,
+  AuditLogEntry,
   ApiHealth,
   ApiInfo,
+  ScanDiffResponse,
+  ScanHistoryItem,
   ScanningPermission,
   StoredCredential,
   ScanStartResponse,
@@ -47,6 +60,10 @@ interface OperationsState {
   credentials: StoredCredential[]
   permission: ScanningPermission | null
   scan: ScanStartResponse | null
+  history: ScanHistoryItem[]
+  latestDiff: ScanDiffResponse | null
+  alerts: AlertEvent[]
+  auditLogs: AuditLogEntry[]
   error: string | null
 }
 
@@ -56,6 +73,10 @@ const initialState: OperationsState = {
   credentials: [],
   permission: null,
   scan: null,
+  history: [],
+  latestDiff: null,
+  alerts: [],
+  auditLogs: [],
   error: null,
 }
 
@@ -111,12 +132,26 @@ export default function OperationsPage() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
 
-    const [health, info, credentials, permission] = await Promise.allSettled([
+    const [health, info, credentials, permission, history, alerts, auditLogs] = await Promise.allSettled([
       fetchApiHealth(),
       fetchApiInfo(),
       fetchCredentials(),
       fetchScanningPermission(),
+      fetchScanHistory(8),
+      fetchAlerts(8),
+      fetchAuditLogs(8),
     ])
+
+    const historyItems = history.status === 'fulfilled' ? history.value : []
+    const latestCompletedScan = historyItems.find((item) => item.state === 'completed')
+    let latestDiff: ScanDiffResponse | null = null
+    if (latestCompletedScan) {
+      try {
+        latestDiff = await fetchScanDiff(latestCompletedScan.scan_id)
+      } catch {
+        latestDiff = null
+      }
+    }
 
     setState((current) => ({
       ...current,
@@ -124,6 +159,10 @@ export default function OperationsPage() {
       info: info.status === 'fulfilled' ? info.value : null,
       credentials: credentials.status === 'fulfilled' ? credentials.value.credentials || [] : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
+      history: historyItems,
+      latestDiff,
+      alerts: alerts.status === 'fulfilled' ? alerts.value : [],
+      auditLogs: auditLogs.status === 'fulfilled' ? auditLogs.value : [],
       error:
         health.status === 'rejected'
           ? 'Backend health check failed. Verify API service and NEXT_PUBLIC_API_URL.'
@@ -146,6 +185,18 @@ export default function OperationsPage() {
       }))
     } finally {
       setScanLoading(false)
+    }
+  }
+
+  async function handleAcknowledgeAlert(alertId: number) {
+    try {
+      await acknowledgeAlert(alertId)
+      await loadOperations()
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Unable to acknowledge alert.',
+      }))
     }
   }
 
@@ -285,6 +336,171 @@ export default function OperationsPage() {
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
                 Started scan {state.scan.scan_id}
               </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card className="rounded-lg">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Recent Scan History</CardTitle>
+            <Button variant="outline" className="rounded-lg" onClick={() => void downloadScanHistoryCsv()}>
+              Export CSV
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Scan</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Providers</TableHead>
+                  <TableHead>Savings</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.history.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-slate-500 dark:text-slate-400">
+                      No scans recorded yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  state.history.map((item) => (
+                    <TableRow key={item.scan_id}>
+                      <TableCell className="font-medium">{item.scan_id}</TableCell>
+                      <TableCell>{item.state}</TableCell>
+                      <TableCell>{item.providers.join(', ')}</TableCell>
+                      <TableCell>${item.savings_identified.toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-lg">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Latest Scan Diff</CardTitle>
+            <Button
+              variant="outline"
+              className="rounded-lg"
+              disabled={!state.latestDiff}
+              onClick={() => state.latestDiff ? void downloadScanDiffCsv(state.latestDiff.current_scan_id, state.latestDiff.previous_scan_id || undefined) : undefined}
+            >
+              Export CSV
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!state.latestDiff ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Run at least two completed scans to view deltas versus the previous snapshot set.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Current</div>
+                    <div className="text-lg font-semibold">${state.latestDiff.total_current_cost_usd.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Previous</div>
+                    <div className="text-lg font-semibold">${state.latestDiff.total_previous_cost_usd.toFixed(2)}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-900">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Delta</div>
+                    <div className="text-lg font-semibold">${state.latestDiff.total_delta_cost_usd.toFixed(2)}</div>
+                  </div>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Current</TableHead>
+                      <TableHead>Previous</TableHead>
+                      <TableHead>Delta</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {state.latestDiff.entries.map((entry) => (
+                      <TableRow key={entry.provider}>
+                        <TableCell className="uppercase">{entry.provider}</TableCell>
+                        <TableCell>${entry.current_cost_usd.toFixed(2)}</TableCell>
+                        <TableCell>${entry.previous_cost_usd.toFixed(2)}</TableCell>
+                        <TableCell>${entry.delta_cost_usd.toFixed(2)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <Card className="rounded-lg">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Alerts</CardTitle>
+            <Button variant="outline" className="rounded-lg" onClick={() => void downloadAlertsCsv()}>
+              Export CSV
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {state.alerts.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No active alerts.</p>
+            ) : (
+              state.alerts.map((alert) => (
+                <div key={alert.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-slate-900 dark:text-white">{alert.title}</div>
+                      <div className="text-sm text-slate-600 dark:text-slate-400">{alert.message}</div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                        {alert.severity} · channels: {alert.delivered_channels.join(', ') || 'none'}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="rounded-lg"
+                      disabled={Boolean(alert.acknowledged_at)}
+                      onClick={() => void handleAcknowledgeAlert(alert.id)}
+                    >
+                      {alert.acknowledged_at ? 'Acknowledged' : 'Acknowledge'}
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-lg">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Audit Trail</CardTitle>
+            <Button variant="outline" className="rounded-lg" onClick={() => void downloadAuditLogsCsv()}>
+              Export CSV
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {state.auditLogs.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Audit entries are visible to owners and admins once privileged actions occur.
+              </p>
+            ) : (
+              state.auditLogs.map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                  <div className="font-medium text-slate-900 dark:text-white">{entry.action}</div>
+                  <div className="text-sm text-slate-600 dark:text-slate-400">
+                    {entry.entity_type}{entry.entity_id ? ` · ${entry.entity_id}` : ''}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                    {new Date(entry.created_at).toLocaleString()}
+                  </div>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>

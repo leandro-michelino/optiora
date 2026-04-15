@@ -21,18 +21,23 @@ interface ScanApprovalConfig {
   scan_frequency: 'hourly' | 'daily' | 'weekly'
   auto_remediate: boolean
   notification_email: string
+  monthly_budget_usd: number
+  warning_threshold_percent: number
+  critical_threshold_percent: number
+  notifications_enabled: boolean
 }
 
 export default function SettingsPage() {
-  const { user } = useAuth()
+  const { authEnabled, user, organization } = useAuth()
   const [aiProvider, setAIProviderState] = useState<AIProvider>(getAIProvider())
   const [storedCredentials, setStoredCredentials] = useState<StoredCredential[]>([])
   const [loadingCredentials, setLoadingCredentials] = useState(true)
   const [scanningApprovalStep, setScanningApprovalStep] = useState(false)
   const [approvedProviders, setApprovedProviders] = useState<string[]>([])
+  const canManageCloudSettings = !authEnabled || ['owner', 'admin'].includes(organization?.role || '')
 
   const loadCredentials = useCallback(async () => {
-    if (!user) {
+    if (authEnabled && !user) {
       return
     }
 
@@ -47,10 +52,10 @@ export default function SettingsPage() {
     } finally {
       setLoadingCredentials(false)
     }
-  }, [user])
+  }, [authEnabled, user])
 
   useEffect(() => {
-    if (!user) {
+    if (authEnabled && !user) {
       setStoredCredentials([])
       setLoadingCredentials(false)
       return
@@ -58,9 +63,12 @@ export default function SettingsPage() {
 
     setLoadingCredentials(true)
     void loadCredentials()
-  }, [user, loadCredentials])
+  }, [authEnabled, user, loadCredentials])
 
   const handleCredentialSubmitted = async (provider: string, _credentials: Record<string, string>) => {
+    if (!canManageCloudSettings) {
+      return
+    }
     void _credentials
     // After validation & storage, show scanning approval step
     setApprovedProviders([provider])
@@ -71,6 +79,9 @@ export default function SettingsPage() {
   }
 
   const handleDeleteCredential = async (provider: string) => {
+    if (!canManageCloudSettings) {
+      return
+    }
     if (!confirm(`Delete ${provider.toUpperCase()} credentials?`)) return
 
     try {
@@ -95,6 +106,9 @@ export default function SettingsPage() {
   }
 
   const handleScanningApproved = async (config: ScanApprovalConfig) => {
+    if (!canManageCloudSettings) {
+      return
+    }
     try {
       const res = await authorizedFetch(backendUrl('/api/v1/scanning/approve'), {
         method: 'POST',
@@ -133,7 +147,18 @@ export default function SettingsPage() {
         <p className="text-slate-600 dark:text-slate-400">
           Manage your cloud provider credentials and scanning preferences
         </p>
+        {organization && (
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Active organization: <strong>{organization.name}</strong> · role: <strong>{organization.role}</strong>
+          </p>
+        )}
       </div>
+
+      {!canManageCloudSettings && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          Your current role is read-only for cloud setup. Ask an organization owner or admin to manage credentials and scan approvals.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
@@ -143,7 +168,13 @@ export default function SettingsPage() {
           {/* Add Credentials Section */}
           <div>
             <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Add Cloud Provider</h2>
-            <CredentialForm onSubmit={handleCredentialSubmitted} />
+            {canManageCloudSettings ? (
+              <CredentialForm onSubmit={handleCredentialSubmitted} />
+            ) : (
+              <div className="card text-sm text-slate-600 dark:text-slate-400">
+                Credential management is disabled for your current role.
+              </div>
+            )}
           </div>
 
           {/* Scanning Approval Section */}
@@ -188,6 +219,7 @@ export default function SettingsPage() {
                   </div>
                   <button
                     onClick={() => handleDeleteCredential(cred.provider)}
+                    disabled={!canManageCloudSettings}
                     className="p-1 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-600"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -232,10 +264,24 @@ export default function SettingsPage() {
           Preferences
         </h2>
 
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-            <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+              <div>
+                <h3 className="font-semibold text-slate-900 dark:text-white">
+                  Organization Plan
+                </h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Current billing and feature tier for this workspace
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium uppercase text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                {organization?.plan || 'free'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+              <div>
+                <h3 className="font-semibold text-slate-900 dark:text-white">
                 AI Provider
               </h3>
               <p className="text-sm text-slate-600 dark:text-slate-400">
@@ -311,13 +357,19 @@ export default function SettingsPage() {
         </h2>
 
         <div className="space-y-4">
+          {!authEnabled && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+              Authentication is disabled for this deployment. User/password and RBAC remain an optional hardening step for a later deployment phase.
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
               Email Address
             </label>
             <input
               type="email"
-              value={user?.email || ''}
+              value={user?.email || 'public-access@disabled.local'}
               disabled
               className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-400"
             />

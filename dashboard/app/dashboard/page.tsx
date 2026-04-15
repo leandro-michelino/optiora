@@ -192,8 +192,8 @@ export default function DashboardPage() {
       info: info.status === 'fulfilled' ? info.value : null,
       credentials: credentials.status === 'fulfilled' ? credentials.value.credentials || [] : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
-      anomalies: anomalies.status === 'fulfilled' ? anomalies.value : [],
-      recommendations: recommendations.status === 'fulfilled' ? recommendations.value : [],
+      anomalies: anomalies.status === 'fulfilled' ? anomalies.value.items : [],
+      recommendations: recommendations.status === 'fulfilled' ? recommendations.value.items : [],
       source: health.status === 'fulfilled' && credentials.status === 'fulfilled' ? 'live' : 'partial',
       error: health.status === 'rejected' ? 'Backend health is unavailable. Cost widgets may be using safe fallback data.' : null,
     }
