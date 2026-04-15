@@ -123,6 +123,8 @@ Work should move into `1.0` only after these are true:
 - business mapping, tag normalization, and chargeback/showback foundations
 - production polish, test coverage, and operational observability
 
+Concrete implementation planning now lives in `RELEASE_1_0_BACKLOG.md`.
+
 ## Deferred Optional Hardening
 
 These items remain intentionally out of the default deployment path for now:

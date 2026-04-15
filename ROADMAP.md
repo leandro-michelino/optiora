@@ -264,6 +264,8 @@ Goal: deliver a competitive FinOps core for multi-cloud customers.
 - publish OCI-first product positioning
 - strengthen reporting for finance and procurement teams
 
+Implementation detail for this release is tracked in `RELEASE_1_0_BACKLOG.md`.
+
 ### Release 1.5 — Optimization and Automation
 
 Goal: move from visibility into guided cost action.

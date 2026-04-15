@@ -209,6 +209,7 @@ terraform -chdir=../terraform validate
 - [Terraform](terraform/README.md)
 - [Ansible](ansible/README.md)
 - [Next Phase Checklist](NEXT_PHASE.md)
+- [Release 1.0 Backlog](RELEASE_1_0_BACKLOG.md)
 - [Roadmap](ROADMAP.md)
 
 ## License
