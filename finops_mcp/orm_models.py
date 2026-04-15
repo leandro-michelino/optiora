@@ -297,6 +297,11 @@ class ScanRunRecord(Base):
     error_message = Column(Text, nullable=True)
 
     snapshots = relationship("CostSnapshot", back_populates="scan_run", cascade="all, delete-orphan")
+    provider_account_snapshots = relationship(
+        "ProviderAccountSnapshot",
+        back_populates="scan_run",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<ScanRunRecord(scan_id={self.scan_id}, state={self.state})>"
@@ -340,6 +345,123 @@ class CostSnapshot(Base):
         return (
             f"<CostSnapshot(scan_id={self.scan_id}, provider={self.provider}, "
             f"cost=${self.total_cost_usd:.2f})>"
+        )
+
+
+class ProviderAccount(Base):
+    """Provider hierarchy node such as account, subscription, project, or compartment."""
+
+    __tablename__ = "provider_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_id",
+            "provider",
+            "account_identifier",
+            name="uq_provider_account_scope",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    provider = Column(String(50), nullable=False, index=True)
+    account_identifier = Column(String(255), nullable=False)
+    account_name = Column(String(255), nullable=False)
+    account_type = Column(String(80), nullable=False, default="account")
+    native_region = Column(String(100), nullable=True)
+    metadata_json = Column(Text, nullable=False, default="{}")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    parent_links = relationship(
+        "ProviderAccountLink",
+        foreign_keys="ProviderAccountLink.child_account_id",
+        back_populates="child_account",
+        cascade="all, delete-orphan",
+    )
+    child_links = relationship(
+        "ProviderAccountLink",
+        foreign_keys="ProviderAccountLink.parent_account_id",
+        back_populates="parent_account",
+        cascade="all, delete-orphan",
+    )
+    snapshots = relationship(
+        "ProviderAccountSnapshot",
+        back_populates="provider_account",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self):
+        return (
+            f"<ProviderAccount(provider={self.provider}, "
+            f"identifier={self.account_identifier}, name={self.account_name})>"
+        )
+
+
+class ProviderAccountLink(Base):
+    """Parent-child hierarchy links between provider accounts."""
+
+    __tablename__ = "provider_account_links"
+    __table_args__ = (
+        UniqueConstraint("child_account_id", name="uq_provider_account_link_child"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    parent_account_id = Column(Integer, ForeignKey("provider_accounts.id"), nullable=False, index=True)
+    child_account_id = Column(Integer, ForeignKey("provider_accounts.id"), nullable=False, index=True)
+    relationship_type = Column(String(50), nullable=False, default="contains")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    parent_account = relationship(
+        "ProviderAccount",
+        foreign_keys=[parent_account_id],
+        back_populates="child_links",
+    )
+    child_account = relationship(
+        "ProviderAccount",
+        foreign_keys=[child_account_id],
+        back_populates="parent_links",
+    )
+
+    def __repr__(self):
+        return (
+            f"<ProviderAccountLink(parent_account_id={self.parent_account_id}, "
+            f"child_account_id={self.child_account_id})>"
+        )
+
+
+class ProviderAccountSnapshot(Base):
+    """Per-scan cost metrics for provider hierarchy nodes."""
+
+    __tablename__ = "provider_account_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "scan_id",
+            "provider_account_id",
+            name="uq_provider_account_snapshot",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    scan_id = Column(String(255), ForeignKey("scan_runs.scan_id"), nullable=False, index=True)
+    provider_account_id = Column(Integer, ForeignKey("provider_accounts.id"), nullable=False, index=True)
+    direct_cost_usd = Column(Float, nullable=False, default=0.0)
+    savings_identified_usd = Column(Float, nullable=False, default=0.0)
+    anomalies_count = Column(Integer, nullable=False, default=0)
+    service_count = Column(Integer, nullable=False, default=0)
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    scan_run = relationship("ScanRunRecord", back_populates="provider_account_snapshots")
+    provider_account = relationship("ProviderAccount", back_populates="snapshots")
+
+    def __repr__(self):
+        return (
+            f"<ProviderAccountSnapshot(scan_id={self.scan_id}, "
+            f"provider_account_id={self.provider_account_id}, cost=${self.direct_cost_usd:.2f})>"
         )
 
 

@@ -23,6 +23,9 @@ try:
         AuditLog,
         Base,
         CostSnapshot,
+        ProviderAccount,
+        ProviderAccountLink,
+        ProviderAccountSnapshot,
         ScanRunRecord,
         ScanningPermissionRecord,
         SessionLocal,
@@ -392,6 +395,175 @@ class AuthFlowTest(unittest.TestCase):
                 "scan.started",
             }.issubset(actions)
         )
+
+    def test_account_rollup_endpoint_returns_hierarchy_totals(self) -> None:
+        owner_tokens = self._register_and_login(
+            "owner9@example.com",
+            "StrongPass1!",
+            "Owner Nine",
+        )
+        outsider_tokens = self._register_and_login(
+            "owner10@example.com",
+            "StrongPass1!",
+            "Owner Ten",
+        )
+        owner_headers = self._auth_headers(owner_tokens)
+        outsider_headers = self._auth_headers(outsider_tokens)
+        organization_id = self.client.get("/auth/organization", headers=owner_headers).json()["id"]
+        customer_id = f"org-{organization_id}"
+
+        db = SessionLocal()
+        try:
+            db.add(
+                ScanRunRecord(
+                    scan_id="scan_hierarchy_1",
+                    customer_id=customer_id,
+                    state="completed",
+                    providers_json='["aws","azure"]',
+                    progress=100,
+                    total_resources=12,
+                    anomalies_found=4,
+                    savings_identified=34.0,
+                    started_at=datetime.utcnow() - timedelta(hours=3),
+                    completed_at=datetime.utcnow() - timedelta(hours=2, minutes=45),
+                )
+            )
+            aws_root = ProviderAccount(
+                organization_id=organization_id,
+                customer_id=customer_id,
+                provider="aws",
+                account_identifier="org-root",
+                account_name="AWS Organization Root",
+                account_type="organization",
+            )
+            aws_prod = ProviderAccount(
+                organization_id=organization_id,
+                customer_id=customer_id,
+                provider="aws",
+                account_identifier="111111111111",
+                account_name="Production",
+                account_type="account",
+            )
+            aws_dev = ProviderAccount(
+                organization_id=organization_id,
+                customer_id=customer_id,
+                provider="aws",
+                account_identifier="222222222222",
+                account_name="Development",
+                account_type="account",
+            )
+            azure_sub = ProviderAccount(
+                organization_id=organization_id,
+                customer_id=customer_id,
+                provider="azure",
+                account_identifier="sub-001",
+                account_name="Shared Services",
+                account_type="subscription",
+            )
+            db.add_all([aws_root, aws_prod, aws_dev, azure_sub])
+            db.flush()
+
+            db.add_all(
+                [
+                    ProviderAccountLink(
+                        organization_id=organization_id,
+                        parent_account_id=aws_root.id,
+                        child_account_id=aws_prod.id,
+                    ),
+                    ProviderAccountLink(
+                        organization_id=organization_id,
+                        parent_account_id=aws_root.id,
+                        child_account_id=aws_dev.id,
+                    ),
+                ]
+            )
+            db.add_all(
+                [
+                    ProviderAccountSnapshot(
+                        organization_id=organization_id,
+                        customer_id=customer_id,
+                        scan_id="scan_hierarchy_1",
+                        provider_account_id=aws_root.id,
+                        direct_cost_usd=15.0,
+                        savings_identified_usd=1.0,
+                        anomalies_count=0,
+                        service_count=2,
+                        captured_at=datetime.utcnow() - timedelta(hours=2),
+                    ),
+                    ProviderAccountSnapshot(
+                        organization_id=organization_id,
+                        customer_id=customer_id,
+                        scan_id="scan_hierarchy_1",
+                        provider_account_id=aws_prod.id,
+                        direct_cost_usd=120.0,
+                        savings_identified_usd=20.0,
+                        anomalies_count=1,
+                        service_count=6,
+                        captured_at=datetime.utcnow() - timedelta(hours=2),
+                    ),
+                    ProviderAccountSnapshot(
+                        organization_id=organization_id,
+                        customer_id=customer_id,
+                        scan_id="scan_hierarchy_1",
+                        provider_account_id=aws_dev.id,
+                        direct_cost_usd=80.0,
+                        savings_identified_usd=10.0,
+                        anomalies_count=2,
+                        service_count=4,
+                        captured_at=datetime.utcnow() - timedelta(hours=2),
+                    ),
+                    ProviderAccountSnapshot(
+                        organization_id=organization_id,
+                        customer_id=customer_id,
+                        scan_id="scan_hierarchy_1",
+                        provider_account_id=azure_sub.id,
+                        direct_cost_usd=40.0,
+                        savings_identified_usd=3.0,
+                        anomalies_count=1,
+                        service_count=3,
+                        captured_at=datetime.utcnow() - timedelta(hours=2),
+                    ),
+                ]
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        response = self.client.get(
+            "/api/v1/hierarchy/accounts",
+            headers=owner_headers,
+            params={"organization_id": organization_id},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["customer_id"], customer_id)
+        self.assertEqual(payload["total_direct_cost_usd"], 255.0)
+        self.assertEqual(payload["total_rolled_up_cost_usd"], 255.0)
+        self.assertEqual(len(payload["items"]), 4)
+
+        aws_root_item = next(
+            item for item in payload["items"] if item["account_identifier"] == "org-root"
+        )
+        self.assertEqual(aws_root_item["direct_cost_usd"], 15.0)
+        self.assertEqual(aws_root_item["rolled_up_cost_usd"], 215.0)
+        self.assertEqual(aws_root_item["rolled_up_anomalies_count"], 3)
+        self.assertEqual(aws_root_item["child_count"], 2)
+
+        aws_only = self.client.get(
+            "/api/v1/hierarchy/accounts",
+            headers=owner_headers,
+            params={"organization_id": organization_id, "provider": "aws"},
+        )
+        self.assertEqual(aws_only.status_code, 200)
+        self.assertEqual(aws_only.json()["total_rolled_up_cost_usd"], 215.0)
+        self.assertEqual(len(aws_only.json()["items"]), 3)
+
+        blocked = self.client.get(
+            "/api/v1/hierarchy/accounts",
+            headers=outsider_headers,
+            params={"customer_id": customer_id},
+        )
+        self.assertEqual(blocked.status_code, 403)
 
     def test_scan_history_diff_alerts_and_exports(self) -> None:
         tokens = self._register_and_login(

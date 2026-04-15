@@ -34,6 +34,9 @@ from .orm_models import (
     AlertEvent,
     AuditLog,
     CostSnapshot,
+    ProviderAccount,
+    ProviderAccountLink,
+    ProviderAccountSnapshot,
     ScanRunRecord,
     ScanningPermissionRecord,
     SessionLocal,
@@ -215,6 +218,38 @@ class AlertEventResponse(BaseModel):
     created_at: datetime
 
 
+class ProviderAccountRollupItem(BaseModel):
+    account_id: int
+    provider: str
+    account_identifier: str
+    account_name: str
+    account_type: str
+    parent_account_id: Optional[int] = None
+    parent_account_identifier: Optional[str] = None
+    direct_cost_usd: float = 0.0
+    rolled_up_cost_usd: float = 0.0
+    direct_savings_identified_usd: float = 0.0
+    rolled_up_savings_identified_usd: float = 0.0
+    direct_anomalies_count: int = 0
+    rolled_up_anomalies_count: int = 0
+    direct_service_count: int = 0
+    rolled_up_service_count: int = 0
+    child_count: int = 0
+    scan_id: Optional[str] = None
+    captured_at: Optional[datetime] = None
+
+
+class ProviderAccountRollupResponse(BaseModel):
+    organization_id: int
+    customer_id: str
+    provider: Optional[str] = None
+    scan_id: Optional[str] = None
+    generated_at: datetime
+    total_direct_cost_usd: float = 0.0
+    total_rolled_up_cost_usd: float = 0.0
+    items: List[ProviderAccountRollupItem]
+
+
 def get_credential_manager(db: Session = Depends(get_db)) -> CredentialManager:
     return CredentialManager(db)
 
@@ -371,6 +406,130 @@ def _scan_row_to_history_item(row: ScanRunRecord, organization_id: int) -> ScanH
 
 def _snapshot_total(snapshot: Optional[CostSnapshot]) -> float:
     return float(snapshot.total_cost_usd or 0.0) if snapshot else 0.0
+
+
+def _provider_account_rollups(
+    accounts: List[ProviderAccount],
+    links: List[ProviderAccountLink],
+    snapshots: List[ProviderAccountSnapshot],
+) -> tuple[List[ProviderAccountRollupItem], float, float]:
+    account_by_id = {row.id: row for row in accounts}
+    latest_snapshot_by_account: dict[int, ProviderAccountSnapshot] = {}
+    for row in snapshots:
+        latest_snapshot_by_account.setdefault(row.provider_account_id, row)
+
+    children_map: dict[int, list[int]] = {}
+    parent_by_child: dict[int, int] = {}
+    for link in links:
+        if link.parent_account_id not in account_by_id or link.child_account_id not in account_by_id:
+            continue
+        children_map.setdefault(link.parent_account_id, []).append(link.child_account_id)
+        parent_by_child[link.child_account_id] = link.parent_account_id
+
+    memo: dict[int, dict[str, Any]] = {}
+
+    def _rollup(account_id: int, active: set[int]) -> dict[str, Any]:
+        if account_id in memo:
+            return memo[account_id]
+        if account_id in active:
+            raise ValueError(f"Cycle detected in provider account hierarchy at account {account_id}")
+
+        active.add(account_id)
+        snapshot = latest_snapshot_by_account.get(account_id)
+        totals = {
+            "direct_cost_usd": float(snapshot.direct_cost_usd or 0.0) if snapshot else 0.0,
+            "rolled_up_cost_usd": float(snapshot.direct_cost_usd or 0.0) if snapshot else 0.0,
+            "direct_savings_identified_usd": float(snapshot.savings_identified_usd or 0.0)
+            if snapshot
+            else 0.0,
+            "rolled_up_savings_identified_usd": float(snapshot.savings_identified_usd or 0.0)
+            if snapshot
+            else 0.0,
+            "direct_anomalies_count": int(snapshot.anomalies_count or 0) if snapshot else 0,
+            "rolled_up_anomalies_count": int(snapshot.anomalies_count or 0) if snapshot else 0,
+            "direct_service_count": int(snapshot.service_count or 0) if snapshot else 0,
+            "rolled_up_service_count": int(snapshot.service_count or 0) if snapshot else 0,
+            "scan_id": snapshot.scan_id if snapshot else None,
+            "captured_at": snapshot.captured_at if snapshot else None,
+        }
+
+        for child_account_id in children_map.get(account_id, []):
+            child_totals = _rollup(child_account_id, active)
+            totals["rolled_up_cost_usd"] += child_totals["rolled_up_cost_usd"]
+            totals["rolled_up_savings_identified_usd"] += child_totals[
+                "rolled_up_savings_identified_usd"
+            ]
+            totals["rolled_up_anomalies_count"] += child_totals["rolled_up_anomalies_count"]
+            totals["rolled_up_service_count"] += child_totals["rolled_up_service_count"]
+            child_captured_at = child_totals["captured_at"]
+            if child_captured_at and (
+                totals["captured_at"] is None or child_captured_at > totals["captured_at"]
+            ):
+                totals["captured_at"] = child_captured_at
+                totals["scan_id"] = child_totals["scan_id"]
+
+        active.remove(account_id)
+        memo[account_id] = totals
+        return totals
+
+    for account_id in account_by_id:
+        _rollup(account_id, set())
+
+    depth_memo: dict[int, int] = {}
+
+    def _depth(account_id: int) -> int:
+        if account_id in depth_memo:
+            return depth_memo[account_id]
+        parent_account_id = parent_by_child.get(account_id)
+        depth_memo[account_id] = 0 if parent_account_id is None else _depth(parent_account_id) + 1
+        return depth_memo[account_id]
+
+    items: list[ProviderAccountRollupItem] = []
+    for account in sorted(
+        accounts,
+        key=lambda row: (row.provider, _depth(row.id), row.account_name.lower(), row.account_identifier),
+    ):
+        parent_account_id = parent_by_child.get(account.id)
+        parent_account = account_by_id.get(parent_account_id) if parent_account_id else None
+        totals = memo[account.id]
+        items.append(
+            ProviderAccountRollupItem(
+                account_id=account.id,
+                provider=account.provider,
+                account_identifier=account.account_identifier,
+                account_name=account.account_name,
+                account_type=account.account_type,
+                parent_account_id=parent_account_id,
+                parent_account_identifier=parent_account.account_identifier if parent_account else None,
+                direct_cost_usd=round(totals["direct_cost_usd"], 2),
+                rolled_up_cost_usd=round(totals["rolled_up_cost_usd"], 2),
+                direct_savings_identified_usd=round(totals["direct_savings_identified_usd"], 2),
+                rolled_up_savings_identified_usd=round(
+                    totals["rolled_up_savings_identified_usd"], 2
+                ),
+                direct_anomalies_count=totals["direct_anomalies_count"],
+                rolled_up_anomalies_count=totals["rolled_up_anomalies_count"],
+                direct_service_count=totals["direct_service_count"],
+                rolled_up_service_count=totals["rolled_up_service_count"],
+                child_count=len(children_map.get(account.id, [])),
+                scan_id=totals["scan_id"],
+                captured_at=totals["captured_at"],
+            )
+        )
+
+    root_account_ids = [account_id for account_id in account_by_id if account_id not in parent_by_child]
+    if not root_account_ids:
+        root_account_ids = list(account_by_id.keys())
+
+    total_direct_cost_usd = round(
+        sum(item.direct_cost_usd for item in items),
+        2,
+    )
+    total_rolled_up_cost_usd = round(
+        sum(memo[account_id]["rolled_up_cost_usd"] for account_id in root_account_ids),
+        2,
+    )
+    return items, total_direct_cost_usd, total_rolled_up_cost_usd
 
 
 def _csv_response(filename: str, headers: list[str], rows: list[list[Any]]) -> Response:
@@ -986,6 +1145,92 @@ async def get_scan_history(
         .all()
     )
     return [_scan_row_to_history_item(row, resolved_org_id) for row in rows]
+
+
+@router.get("/hierarchy/accounts", response_model=ProviderAccountRollupResponse)
+async def get_provider_account_rollups(
+    customer_id: Optional[str] = None,
+    organization_id: Optional[int] = None,
+    provider: Optional[str] = None,
+    scan_id: Optional[str] = None,
+    include_inactive: bool = False,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> ProviderAccountRollupResponse:
+    resolved_org_id, scoped_customer_id, _ = _resolve_customer_id(
+        current_user,
+        db,
+        customer_id,
+        organization_id=organization_id,
+    )
+    normalized_provider = str(provider or "").strip().lower() or None
+
+    account_query = db.query(ProviderAccount).filter(
+        ProviderAccount.organization_id == resolved_org_id,
+        ProviderAccount.customer_id == scoped_customer_id,
+    )
+    if normalized_provider:
+        account_query = account_query.filter(ProviderAccount.provider == normalized_provider)
+    if not include_inactive:
+        account_query = account_query.filter(ProviderAccount.is_active.is_(True))
+
+    accounts = (
+        account_query.order_by(
+            ProviderAccount.provider.asc(),
+            ProviderAccount.account_name.asc(),
+        ).all()
+    )
+    if not accounts:
+        return ProviderAccountRollupResponse(
+            organization_id=resolved_org_id,
+            customer_id=scoped_customer_id,
+            provider=normalized_provider,
+            scan_id=scan_id,
+            generated_at=datetime.utcnow(),
+            total_direct_cost_usd=0.0,
+            total_rolled_up_cost_usd=0.0,
+            items=[],
+        )
+
+    account_ids = [row.id for row in accounts]
+    links = (
+        db.query(ProviderAccountLink)
+        .filter(
+            ProviderAccountLink.organization_id == resolved_org_id,
+            ProviderAccountLink.child_account_id.in_(account_ids),
+        )
+        .all()
+    )
+
+    snapshot_query = db.query(ProviderAccountSnapshot).filter(
+        ProviderAccountSnapshot.organization_id == resolved_org_id,
+        ProviderAccountSnapshot.customer_id == scoped_customer_id,
+        ProviderAccountSnapshot.provider_account_id.in_(account_ids),
+    )
+    if scan_id:
+        snapshot_query = snapshot_query.filter(ProviderAccountSnapshot.scan_id == scan_id)
+    snapshots = (
+        snapshot_query.order_by(
+            ProviderAccountSnapshot.captured_at.desc(),
+            ProviderAccountSnapshot.id.desc(),
+        ).all()
+    )
+
+    items, total_direct_cost_usd, total_rolled_up_cost_usd = _provider_account_rollups(
+        accounts,
+        links,
+        snapshots,
+    )
+    return ProviderAccountRollupResponse(
+        organization_id=resolved_org_id,
+        customer_id=scoped_customer_id,
+        provider=normalized_provider,
+        scan_id=scan_id,
+        generated_at=datetime.utcnow(),
+        total_direct_cost_usd=total_direct_cost_usd,
+        total_rolled_up_cost_usd=total_rolled_up_cost_usd,
+        items=items,
+    )
 
 
 @router.get("/scanning/{scan_id}/snapshots", response_model=List[SnapshotSummary])
