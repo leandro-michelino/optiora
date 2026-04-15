@@ -13,7 +13,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Call Claude AI service
     const response = await askCostQuestion(message, conversationHistory);
 
     return NextResponse.json({

@@ -18,7 +18,7 @@ The dashboard is the main workspace for:
 - provider connection and scan readiness checks
 - anomaly detection and optimization recommendations
 - deterministic forecasting with baseline, conservative, balanced, and aggressive scenarios
-- GenAI-assisted cost advisor conversations when `ANTHROPIC_API_KEY` is configured
+- OCI GenAI-assisted cost advisor conversations when OCI GenAI credentials are configured
 
 ## Repository Layout
 

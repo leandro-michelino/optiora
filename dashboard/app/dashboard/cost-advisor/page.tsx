@@ -56,7 +56,7 @@ export default function CostAdvisorPage() {
     setLoading(true);
 
     try {
-      // Call your backend API that uses Claude
+      // Call your backend API that uses OCI GenAI
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,7 +110,7 @@ export default function CostAdvisorPage() {
           Cloud Cost Advisor
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Ask anything about your cloud costs. Powered by Claude AI.
+          Ask anything about your cloud costs. Powered by OCI GenAI.
         </p>
       </div>
 

@@ -115,7 +115,7 @@
 <text class="s1" x="196" y="39" fill="#94a3b8" font-size="10">Apr 2026 · 4 providers · live data</text>
 <text class="s2" x="196" y="39" fill="#94a3b8" font-size="10">Last 30 days · 2 anomalies detected</text>
 <text class="s3" x="196" y="39" fill="#94a3b8" font-size="10">3 items · $15,900/yr potential savings</text>
-<text class="s4" x="196" y="39" fill="#94a3b8" font-size="10">Powered by Claude Sonnet · FinOps mode</text>
+<text class="s4" x="196" y="39" fill="#94a3b8" font-size="10">Powered by OCI GenAI · FinOps mode</text>
 
 <!-- Date badge -->
 <rect x="818" y="13" width="64" height="24" rx="6" fill="#f1f5f9"/>
@@ -364,7 +364,7 @@
 
 <!-- AI Advisor header badge -->
 <rect x="196" y="60" width="160" height="24" rx="6" fill="#ede9fe"/>
-<text x="276" y="75" fill="#6d28d9" font-size="10" font-weight="600" text-anchor="middle">✦ Powered by Claude Sonnet</text>
+<text x="276" y="75" fill="#6d28d9" font-size="10" font-weight="600" text-anchor="middle">✦ Powered by OCI GenAI</text>
 
 <!-- User message bubble (right-aligned) -->
 <rect x="480" y="94" width="394" height="56" rx="10" fill="#3b82f6"/>
@@ -414,7 +414,7 @@
 <text x="844" y="425" fill="white" font-size="12" font-weight="600" text-anchor="middle">↑</text>
 
 <!-- Bottom tag -->
-<text x="196" y="458" fill="#cbd5e1" font-size="9">Claude has access to live cost data, anomaly reports, and recommendations from all connected providers.</text>
+<text x="196" y="458" fill="#cbd5e1" font-size="9">OCI GenAI has access to live cost data, anomaly reports, and recommendations from all connected providers.</text>
 
 </g><!-- end scene 4 -->
 
