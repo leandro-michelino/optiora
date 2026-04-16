@@ -19,6 +19,8 @@ import {
   acknowledgeAlert,
   downloadAlertsCsv,
   downloadAuditLogsCsv,
+  downloadExecutiveSummaryCsv,
+  downloadExecutiveSummaryExcel,
   downloadScanDiffCsv,
   downloadScanHistoryCsv,
   fetchAlerts,
@@ -554,6 +556,28 @@ export default function OperationsPage() {
                 </div>
               ))
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-lg">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Finance Reports</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" className="rounded-lg" onClick={() => void downloadExecutiveSummaryCsv()}>
+                Executive CSV
+              </Button>
+              <Button variant="outline" className="rounded-lg" onClick={() => void downloadExecutiveSummaryExcel()}>
+                Executive Excel
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+            <p>
+              Export a finance-friendly executive summary with current spend, savings, hierarchy rollups, and recent alerts.
+            </p>
+            <p>
+              Use CSV for downstream tooling and Excel when sharing directly with finance or procurement teams.
+            </p>
           </CardContent>
         </Card>
 

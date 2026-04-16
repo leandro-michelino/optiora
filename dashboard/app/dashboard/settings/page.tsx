@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Loader, Upload } from 'lucide-react';
+import { Trash2, Loader, Upload, Download } from 'lucide-react';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
-import { fetchImportedCostSummary, uploadImportedCostCsv } from '@/lib/api';
+import { downloadImportedCostTemplateCsv, fetchImportedCostSummary, uploadImportedCostCsv } from '@/lib/api';
 import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 import { useAuth } from '@/lib/auth-context';
@@ -258,7 +258,7 @@ export default function SettingsPage() {
               <div>
                 <div className="font-medium text-slate-900 dark:text-white">CSV only for now</div>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                  Upload a UTF-8 CSV to use manual billing data instead of live provider collection. Native Excel import is intentionally not enabled yet.
+                  Upload a UTF-8 CSV to use manual billing data instead of live provider collection. Use the template below for finance-friendly imports with account and region rollups.
                 </p>
               </div>
 
@@ -267,6 +267,15 @@ export default function SettingsPage() {
                 <br />
                 Optional columns: <code>service_name</code>, <code>account_identifier</code>, <code>account_name</code>, <code>region</code>, <code>period_start</code>, <code>period_end</code>, <code>currency</code>
               </div>
+
+              <button
+                type="button"
+                onClick={() => void downloadImportedCostTemplateCsv()}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <Download className="h-4 w-4" />
+                Download CSV template
+              </button>
 
               <div className="space-y-3">
                 <input
@@ -303,7 +312,7 @@ export default function SettingsPage() {
               )}
 
               {csvUploadError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+                <div className="whitespace-pre-wrap rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
                   {csvUploadError}
                 </div>
               )}

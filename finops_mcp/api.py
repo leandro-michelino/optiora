@@ -15,6 +15,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
+from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -31,6 +32,7 @@ from .orm_models import (
     CostSnapshot,
     ImportedCostRecord,
     ProviderAccount,
+    ProviderAccountLink,
     ProviderAccountSnapshot,
     ScanRunRecord,
     ScanningPermissionRecord,
@@ -180,6 +182,7 @@ class ProviderAccountRollupItem(BaseModel):
     account_identifier: str
     account_name: str
     account_type: str
+    depth: int = 0
     parent_account_id: Optional[int] = None
     parent_account_identifier: Optional[str] = None
     direct_cost_usd: float
@@ -300,6 +303,79 @@ def _parse_required_float(value: Optional[str], field_name: str, line_number: in
         ) from exc
 
 
+def _parse_optional_datetime_value(
+    value: Optional[str],
+    field_name: str,
+    line_number: int,
+) -> tuple[Optional[datetime], Optional[str]]:
+    text = str(value or "").strip()
+    if not text:
+        return None, None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")), None
+    except ValueError:
+        return None, f"Invalid {field_name} at CSV line {line_number}. Use ISO date or datetime."
+
+
+def _parse_required_float_value(
+    value: Optional[str],
+    field_name: str,
+    line_number: int,
+) -> tuple[Optional[float], Optional[str]]:
+    text = str(value or "").strip()
+    if not text:
+        return None, f"Missing {field_name} at CSV line {line_number}."
+    try:
+        return float(text), None
+    except ValueError:
+        return None, f"Invalid {field_name} at CSV line {line_number}."
+
+
+def _csv_escape(value: Any) -> str:
+    return f"\"{str(value if value is not None else '').replace('\"', '\"\"')}\""
+
+
+def _csv_response(filename: str, header: List[str], rows: List[List[Any]]) -> Response:
+    lines = [",".join(header)]
+    for row in rows:
+        lines.append(",".join(_csv_escape(cell) for cell in row))
+    return Response(
+        "\n".join(lines),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def _spreadsheet_xml_response(filename: str, sheet_name: str, rows: List[List[Any]]) -> Response:
+    def _cell_xml(value: Any) -> str:
+        if value is None or value == "":
+            return '<Cell><Data ss:Type="String"></Data></Cell>'
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return f'<Cell><Data ss:Type="Number">{value}</Data></Cell>'
+        return f'<Cell><Data ss:Type="String">{xml_escape(str(value))}</Data></Cell>'
+
+    row_xml = "".join(
+        "<Row>" + "".join(_cell_xml(cell) for cell in row) + "</Row>"
+        for row in rows
+    )
+    workbook = (
+        '<?xml version="1.0"?>'
+        '<?mso-application progid="Excel.Sheet"?>'
+        '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
+        'xmlns:o="urn:schemas-microsoft-com:office:office" '
+        'xmlns:x="urn:schemas-microsoft-com:office:excel" '
+        'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" '
+        'xmlns:html="http://www.w3.org/TR/REC-html40">'
+        f'<Worksheet ss:Name="{xml_escape(sheet_name[:31] or "Sheet1")}"><Table>{row_xml}</Table></Worksheet>'
+        "</Workbook>"
+    )
+    return Response(
+        workbook,
+        media_type="application/vnd.ms-excel",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 def _imported_cost_summary(rows: List[ImportedCostRecord]) -> Dict[str, Any]:
     providers = sorted({row.provider for row in rows})
     latest_imported_at = max((row.created_at for row in rows), default=None)
@@ -329,6 +405,201 @@ def _get_imported_cost_rows(
         ImportedCostRecord.created_at.desc(),
         ImportedCostRecord.id.desc(),
     ).all()
+
+
+def _materialize_rollup_items(nodes: Dict[int, Dict[str, Any]]) -> List[ProviderAccountRollupItem]:
+    children_by_parent: Dict[Optional[int], List[int]] = {}
+    for node_id, node in nodes.items():
+        children_by_parent.setdefault(node.get("parent_account_id"), []).append(node_id)
+
+    for child_ids in children_by_parent.values():
+        child_ids.sort(key=lambda item_id: (
+            str(nodes[item_id].get("provider") or ""),
+            str(nodes[item_id].get("account_name") or ""),
+            str(nodes[item_id].get("account_identifier") or ""),
+        ))
+
+    def _walk(node_id: int, depth: int) -> tuple[float, float, int, int, int]:
+        node = nodes[node_id]
+        child_ids = children_by_parent.get(node_id, [])
+        child_count = len(child_ids)
+        direct_cost = float(node.get("direct_cost_usd") or 0.0)
+        direct_savings = float(node.get("direct_savings_identified_usd") or 0.0)
+        direct_anomalies = int(node.get("direct_anomalies_count") or 0)
+        direct_services = int(node.get("direct_service_count") or 0)
+
+        # Grouping nodes represent aggregated structure, not additive direct spend.
+        if child_count > 0 and str(node.get("account_type") or "") in {
+            "provider",
+            "management_group",
+            "organization",
+            "folder",
+            "tenancy",
+        }:
+            direct_cost = 0.0
+            direct_savings = 0.0
+            direct_anomalies = 0
+            direct_services = 0
+
+        rolled_cost = direct_cost
+        rolled_savings = direct_savings
+        rolled_anomalies = direct_anomalies
+        rolled_services = direct_services
+        total_descendants = child_count
+
+        node["depth"] = depth
+        node["child_count"] = child_count
+        node["direct_cost_usd"] = round(direct_cost, 2)
+        node["direct_savings_identified_usd"] = round(direct_savings, 2)
+        node["direct_anomalies_count"] = direct_anomalies
+        node["direct_service_count"] = direct_services
+
+        for child_id in child_ids:
+            child_cost, child_savings, child_anomalies, child_services, descendant_count = _walk(child_id, depth + 1)
+            rolled_cost += child_cost
+            rolled_savings += child_savings
+            rolled_anomalies += child_anomalies
+            rolled_services += child_services
+            total_descendants += descendant_count
+
+        node["rolled_up_cost_usd"] = round(rolled_cost, 2)
+        node["rolled_up_savings_identified_usd"] = round(rolled_savings, 2)
+        node["rolled_up_anomalies_count"] = rolled_anomalies
+        node["rolled_up_service_count"] = rolled_services
+        node["descendant_count"] = total_descendants
+        return rolled_cost, rolled_savings, rolled_anomalies, rolled_services, total_descendants
+
+    root_ids = children_by_parent.get(None, [])
+    for root_id in root_ids:
+        _walk(root_id, 0)
+
+    ordered_ids: List[int] = []
+
+    def _append(node_id: int) -> None:
+        ordered_ids.append(node_id)
+        for child_id in children_by_parent.get(node_id, []):
+            _append(child_id)
+
+    for root_id in root_ids:
+        _append(root_id)
+
+    return [
+        ProviderAccountRollupItem(
+            account_id=node_id,
+            provider=str(nodes[node_id].get("provider") or ""),
+            account_identifier=str(nodes[node_id].get("account_identifier") or ""),
+            account_name=str(nodes[node_id].get("account_name") or ""),
+            account_type=str(nodes[node_id].get("account_type") or "account"),
+            depth=int(nodes[node_id].get("depth") or 0),
+            parent_account_id=nodes[node_id].get("parent_account_id"),
+            parent_account_identifier=nodes[node_id].get("parent_account_identifier"),
+            direct_cost_usd=float(nodes[node_id].get("direct_cost_usd") or 0.0),
+            rolled_up_cost_usd=float(nodes[node_id].get("rolled_up_cost_usd") or 0.0),
+            direct_savings_identified_usd=float(nodes[node_id].get("direct_savings_identified_usd") or 0.0),
+            rolled_up_savings_identified_usd=float(nodes[node_id].get("rolled_up_savings_identified_usd") or 0.0),
+            direct_anomalies_count=int(nodes[node_id].get("direct_anomalies_count") or 0),
+            rolled_up_anomalies_count=int(nodes[node_id].get("rolled_up_anomalies_count") or 0),
+            direct_service_count=int(nodes[node_id].get("direct_service_count") or 0),
+            rolled_up_service_count=int(nodes[node_id].get("rolled_up_service_count") or 0),
+            child_count=int(nodes[node_id].get("child_count") or 0),
+            scan_id=nodes[node_id].get("scan_id"),
+            captured_at=nodes[node_id].get("captured_at"),
+        )
+        for node_id in ordered_ids
+    ]
+
+
+def _build_rollups_from_imported_rows(
+    rows: List[ImportedCostRecord],
+    organization_id: int,
+    customer_id: str,
+    provider: Optional[str] = None,
+) -> ProviderAccountRollupResponse:
+    next_synthetic_id = -1
+
+    def _synthetic_id() -> int:
+        nonlocal next_synthetic_id
+        current = next_synthetic_id
+        next_synthetic_id -= 1
+        return current
+
+    nodes: Dict[int, Dict[str, Any]] = {}
+    provider_root_ids: Dict[str, int] = {}
+    account_nodes: Dict[tuple[str, str, str], int] = {}
+    latest_imported_at = max((row.created_at for row in rows), default=None)
+
+    for row in rows:
+        provider_key = str(row.provider or "").strip().lower()
+        if not provider_key:
+            continue
+        root_id = provider_root_ids.get(provider_key)
+        if root_id is None:
+            root_id = _synthetic_id()
+            provider_root_ids[provider_key] = root_id
+            nodes[root_id] = {
+                "provider": provider_key,
+                "account_identifier": f"{provider_key}:provider",
+                "account_name": provider_key.upper(),
+                "account_type": "provider",
+                "parent_account_id": None,
+                "parent_account_identifier": None,
+                "direct_cost_usd": 0.0,
+                "direct_savings_identified_usd": 0.0,
+                "direct_anomalies_count": 0,
+                "direct_service_count": 0,
+                "scan_id": None,
+                "captured_at": latest_imported_at.isoformat() if latest_imported_at else None,
+            }
+
+        identifier = str(row.account_identifier or row.account_name or "").strip()
+        account_name = str(row.account_name or row.account_identifier or provider_key).strip()
+        if not identifier:
+            identifier = f"{provider_key}:unassigned"
+            account_name = f"{provider_key.upper()} Unassigned"
+
+        account_key = (provider_key, identifier, account_name)
+        account_id = account_nodes.get(account_key)
+        if account_id is None:
+            account_id = _synthetic_id()
+            account_nodes[account_key] = account_id
+            nodes[account_id] = {
+                "provider": provider_key,
+                "account_identifier": identifier,
+                "account_name": account_name,
+                "account_type": "account",
+                "parent_account_id": root_id,
+                "parent_account_identifier": nodes[root_id]["account_identifier"],
+                "direct_cost_usd": 0.0,
+                "direct_savings_identified_usd": 0.0,
+                "direct_anomalies_count": 0,
+                "direct_service_count": 0,
+                "scan_id": None,
+                "captured_at": latest_imported_at.isoformat() if latest_imported_at else None,
+                "_services": set(),
+            }
+        nodes[account_id]["direct_cost_usd"] = round(float(nodes[account_id]["direct_cost_usd"]) + float(row.cost_usd or 0.0), 2)
+        service_name = str(row.service_name or "").strip()
+        if service_name:
+            nodes[account_id].setdefault("_services", set()).add(service_name)
+
+    for node in nodes.values():
+        node["direct_service_count"] = len(node.get("_services", set()))
+        node.pop("_services", None)
+
+    items = _materialize_rollup_items(nodes)
+    filtered_items = [item for item in items if provider is None or item.provider == provider]
+    direct_total = round(sum(item.direct_cost_usd for item in filtered_items if item.depth > 0 or item.child_count == 0), 2)
+    root_total = round(sum(item.rolled_up_cost_usd for item in filtered_items if item.depth == 0), 2)
+    return ProviderAccountRollupResponse(
+        organization_id=organization_id,
+        customer_id=customer_id,
+        provider=provider,
+        scan_id=None,
+        generated_at=datetime.utcnow().isoformat(),
+        total_direct_cost_usd=direct_total,
+        total_rolled_up_cost_usd=root_total,
+        items=filtered_items,
+    )
 def _parse_credential_payload(raw: Dict[str, Any]) -> CredentialInput:
     provider = str(raw.get("provider", "")).lower()
     if provider == "aws":
@@ -1115,6 +1386,13 @@ async def get_provider_account_rollups(
 
     db = SessionLocal()
     try:
+        imported_rows = _get_imported_cost_rows(
+            db,
+            organization_id=organization_id,
+            customer_id=customer_id,
+            cloud_provider=provider or "all",
+        )
+
         query = (
             db.query(ProviderAccountSnapshot, ProviderAccount)
             .join(ProviderAccount, ProviderAccount.id == ProviderAccountSnapshot.provider_account_id)
@@ -1141,36 +1419,117 @@ async def get_provider_account_rollups(
         if provider:
             query = query.filter(ProviderAccount.provider == provider)
         rows = query.all()
+
+        if imported_rows:
+            return _build_rollups_from_imported_rows(
+                imported_rows,
+                organization_id=organization_id,
+                customer_id=customer_id,
+                provider=provider,
+            )
+
+        account_ids = [account.id for _, account in rows]
+        links = (
+            db.query(ProviderAccountLink)
+            .filter(
+                ProviderAccountLink.organization_id == organization_id,
+                ProviderAccountLink.child_account_id.in_(account_ids),
+            )
+            .all()
+            if account_ids
+            else []
+        )
     finally:
         db.close()
 
-    items: List[ProviderAccountRollupItem] = []
-    total_direct = 0.0
+    nodes: Dict[int, Dict[str, Any]] = {}
+    provider_roots: Dict[str, int] = {}
+    next_synthetic_id = -1
+
+    def _synthetic_id() -> int:
+        nonlocal next_synthetic_id
+        current = next_synthetic_id
+        next_synthetic_id -= 1
+        return current
+
+    account_by_id = {account.id: account for _, account in rows}
+    parent_by_child = {link.child_account_id: link.parent_account_id for link in links}
+
     for snapshot, account in rows:
-        cost = float(snapshot.direct_cost_usd or 0.0)
-        total_direct += cost
-        items.append(
-            ProviderAccountRollupItem(
-                account_id=account.id,
-                provider=account.provider,
-                account_identifier=account.account_identifier,
-                account_name=account.account_name,
-                account_type=account.account_type,
-                parent_account_id=None,
-                parent_account_identifier=None,
-                direct_cost_usd=round(cost, 2),
-                rolled_up_cost_usd=round(cost, 2),
-                direct_savings_identified_usd=round(float(snapshot.savings_identified_usd or 0.0), 2),
-                rolled_up_savings_identified_usd=round(float(snapshot.savings_identified_usd or 0.0), 2),
-                direct_anomalies_count=int(snapshot.anomalies_count or 0),
-                rolled_up_anomalies_count=int(snapshot.anomalies_count or 0),
-                direct_service_count=int(snapshot.service_count or 0),
-                rolled_up_service_count=int(snapshot.service_count or 0),
-                child_count=0,
-                scan_id=snapshot.scan_id,
-                captured_at=snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-            )
+        nodes[account.id] = {
+            "provider": account.provider,
+            "account_identifier": account.account_identifier,
+            "account_name": account.account_name,
+            "account_type": account.account_type,
+            "parent_account_id": parent_by_child.get(account.id),
+            "parent_account_identifier": (
+                account_by_id[parent_by_child[account.id]].account_identifier
+                if parent_by_child.get(account.id) in account_by_id
+                else None
+            ),
+            "direct_cost_usd": round(float(snapshot.direct_cost_usd or 0.0), 2),
+            "direct_savings_identified_usd": round(float(snapshot.savings_identified_usd or 0.0), 2),
+            "direct_anomalies_count": int(snapshot.anomalies_count or 0),
+            "direct_service_count": int(snapshot.service_count or 0),
+            "scan_id": snapshot.scan_id,
+            "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
+        }
+
+    for node in nodes.values():
+        if node.get("parent_account_id") not in nodes:
+            node["parent_account_id"] = None
+            node["parent_account_identifier"] = None
+
+    management_group_by_provider: Dict[str, int] = {}
+    for account_id, node in nodes.items():
+        if node["account_type"] == "management_group":
+            management_group_by_provider[node["provider"]] = account_id
+
+    for account_id, node in list(nodes.items()):
+        provider_key = node["provider"]
+        root_id = provider_roots.get(provider_key)
+        if root_id is None:
+            root_id = _synthetic_id()
+            provider_roots[provider_key] = root_id
+            nodes[root_id] = {
+                "provider": provider_key,
+                "account_identifier": f"{provider_key}:provider",
+                "account_name": provider_key.upper(),
+                "account_type": "provider",
+                "parent_account_id": None,
+                "parent_account_identifier": None,
+                "direct_cost_usd": 0.0,
+                "direct_savings_identified_usd": 0.0,
+                "direct_anomalies_count": 0,
+                "direct_service_count": 0,
+                "scan_id": node.get("scan_id"),
+                "captured_at": node.get("captured_at"),
+            }
+
+        if node.get("parent_account_id") is not None:
+            continue
+
+        inferred_parent_id = root_id
+        if node["account_type"] == "management_group":
+            inferred_parent_id = root_id
+        elif node["account_type"] in {"subscription", "account"} and provider_key == "azure":
+            inferred_parent_id = management_group_by_provider.get(provider_key, root_id)
+        elif node["account_type"] == "tenancy":
+            inferred_parent_id = root_id
+        elif node["account_type"] in {"project", "compartment"}:
+            inferred_parent_id = root_id
+
+        node["parent_account_id"] = inferred_parent_id if inferred_parent_id != account_id else None
+        node["parent_account_identifier"] = (
+            nodes[inferred_parent_id]["account_identifier"]
+            if inferred_parent_id in nodes and inferred_parent_id != account_id
+            else None
         )
+
+    items = _materialize_rollup_items(nodes)
+    filtered_items = [item for item in items if provider is None or item.provider == provider]
+    total_direct = round(sum(item.direct_cost_usd for item in filtered_items if item.depth > 0 or item.child_count == 0), 2)
+    total_rolled = round(sum(item.rolled_up_cost_usd for item in filtered_items if item.depth == 0), 2)
 
     return ProviderAccountRollupResponse(
         organization_id=organization_id,
@@ -1178,9 +1537,9 @@ async def get_provider_account_rollups(
         provider=provider,
         scan_id=scan_id,
         generated_at=datetime.utcnow().isoformat(),
-        total_direct_cost_usd=round(total_direct, 2),
-        total_rolled_up_cost_usd=round(total_direct, 2),
-        items=items,
+        total_direct_cost_usd=total_direct,
+        total_rolled_up_cost_usd=total_rolled,
+        items=filtered_items,
     )
 
 
@@ -1212,6 +1571,24 @@ async def get_imported_cost_summary(
         total_cost_usd=summary["total_cost_usd"],
         providers=summary["providers"],
         last_imported_at=summary["last_imported_at"],
+    )
+
+
+@router.get("/imports/costs/template.csv")
+async def download_cost_import_template(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Response:
+    _ = (current_user, membership)
+    return Response(
+        (
+            "provider,cost_usd,service_name,account_identifier,account_name,region,period_start,period_end,currency\n"
+            "aws,123.45,EC2,acct-aws-1,AWS Prod,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+            "azure,67.89,Virtual Machines,sub-azure-1,Azure Prod,uk south,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+            "oci,10.00,Compute,comp-oci-1,OCI Prod,uk-london-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+        ),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=optiora-cost-import-template.csv"},
     )
 
 
@@ -1254,6 +1631,7 @@ async def upload_cost_csv(
     rows_to_store: List[ImportedCostRecord] = []
     total_cost = 0.0
     providers: set[str] = set()
+    validation_errors: List[str] = []
 
     for line_number, row in enumerate(reader, start=2):
         normalized_row = {
@@ -1262,22 +1640,36 @@ async def upload_cost_csv(
         }
         provider = normalized_row.get("provider", "").lower()
         if provider not in SUPPORTED_COST_IMPORT_PROVIDERS:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Unsupported provider at CSV line {line_number}. "
-                    f"Use one of: {', '.join(sorted(SUPPORTED_COST_IMPORT_PROVIDERS))}."
-                ),
+            validation_errors.append(
+                f"Unsupported provider at CSV line {line_number}. "
+                f"Use one of: {', '.join(sorted(SUPPORTED_COST_IMPORT_PROVIDERS))}."
             )
+            continue
 
         currency = normalized_row.get("currency", "USD").upper() or "USD"
         if currency != "USD":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Only USD CSV imports are supported right now. Invalid currency at line {line_number}.",
+            validation_errors.append(
+                f"Only USD CSV imports are supported right now. Invalid currency at line {line_number}."
             )
+            continue
 
-        cost_usd = _parse_required_float(normalized_row.get("cost_usd"), "cost_usd", line_number)
+        cost_usd, cost_error = _parse_required_float_value(normalized_row.get("cost_usd"), "cost_usd", line_number)
+        period_start, period_start_error = _parse_optional_datetime_value(
+            normalized_row.get("period_start"),
+            "period_start",
+            line_number,
+        )
+        period_end, period_end_error = _parse_optional_datetime_value(
+            normalized_row.get("period_end"),
+            "period_end",
+            line_number,
+        )
+        for error in (cost_error, period_start_error, period_end_error):
+            if error:
+                validation_errors.append(error)
+        if cost_usd is None or cost_error or period_start_error or period_end_error:
+            continue
+
         total_cost += cost_usd
         providers.add(provider)
         rows_to_store.append(
@@ -1291,14 +1683,20 @@ async def upload_cost_csv(
                 account_identifier=normalized_row.get("account_identifier") or None,
                 account_name=normalized_row.get("account_name") or None,
                 region=normalized_row.get("region") or None,
-                period_start=_parse_optional_datetime(normalized_row.get("period_start"), "period_start", line_number),
-                period_end=_parse_optional_datetime(normalized_row.get("period_end"), "period_end", line_number),
+                period_start=period_start,
+                period_end=period_end,
                 cost_usd=cost_usd,
                 currency=currency,
                 line_number=line_number,
                 created_at=imported_at,
             )
         )
+
+    if validation_errors:
+        detail = "CSV validation failed:\n- " + "\n- ".join(validation_errors[:10])
+        if len(validation_errors) > 10:
+            detail += f"\n- ...and {len(validation_errors) - 10} more issue(s)."
+        raise HTTPException(status_code=400, detail=detail)
 
     if not rows_to_store:
         raise HTTPException(status_code=400, detail="CSV file does not contain any data rows.")
@@ -1480,6 +1878,99 @@ async def download_audit_logs_csv(
             f"{row['actor_user_id'] or ''},{row['created_at']}"
         )
     return Response("\n".join(lines), media_type="text/csv")
+
+
+async def _executive_summary_rows(
+    current_user: User,
+    membership: UserOrganization,
+    db: Session,
+) -> List[List[Any]]:
+    costs = await dashboard_costs(
+        current_user=current_user,
+        membership=membership,
+        db=db,
+    )
+    analytics = await dashboard_analytics(
+        current_user=current_user,
+        membership=membership,
+        db=db,
+    )
+    rollups = await get_provider_account_rollups(
+        current_user=current_user,
+        membership=membership,
+    )
+    alerts = await list_alerts(
+        limit=10,
+        current_user=current_user,
+        membership=membership,
+    )
+
+    rows: List[List[Any]] = [["Section", "Field", "Value"]]
+    rows.extend(
+        [
+            ["Summary", "Generated At", datetime.utcnow().isoformat()],
+            ["Summary", "Organization ID", _organization_id_for_membership(membership)],
+            ["Summary", "Cost Source", costs.get("cost_context", {}).get("source", "live")],
+            ["Summary", "Total Monthly Cost USD", round(float(costs.get("totalCost", 0.0) or 0.0), 2)],
+            ["Summary", "Potential Monthly Savings USD", round(float(costs.get("potentialSavings", 0.0) or 0.0), 2)],
+            ["Summary", "Risk Score", analytics.get("risk_score", 0)],
+            ["Summary", "Maturity Score", analytics.get("maturity_score", 0)],
+            ["Summary", "Commitment Coverage Percent", analytics.get("commitment_coverage_percent", 0)],
+            ["Summary", "Open Alerts", len([row for row in alerts if not row.get("acknowledged_at")])],
+            ["Summary", "Rollup Nodes", len(rollups.items)],
+        ]
+    )
+
+    for provider_name, provider_data in costs.get("breakdown", {}).items():
+        rows.append([
+            "Provider Breakdown",
+            provider_name,
+            round(float(provider_data.get("cost", 0.0) or 0.0), 2),
+        ])
+
+    for item in rollups.items[:20]:
+        rows.append([
+            "Account Rollup",
+            f"{'  ' * item.depth}{item.account_name} ({item.account_type})",
+            item.rolled_up_cost_usd,
+        ])
+
+    for alert in alerts[:10]:
+        rows.append([
+            "Alerts",
+            f"{alert['severity']} {alert['title']}",
+            alert["created_at"],
+        ])
+
+    return rows
+
+
+@router.get("/reports/executive-summary.csv")
+async def download_executive_summary_csv(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
+    return _csv_response(
+        "optiora-executive-summary.csv",
+        rows[0],
+        rows[1:],
+    )
+
+
+@router.get("/reports/executive-summary.xls")
+async def download_executive_summary_excel(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
+    return _spreadsheet_xml_response(
+        "optiora-executive-summary.xls",
+        "Executive Summary",
+        rows,
+    )
 
 
 @router.get("/dashboard/costs")
@@ -1692,6 +2183,9 @@ async def api_info() -> Dict[str, Any]:
             "budget_alerts": True,
             "csv_exports": True,
             "csv_imports": True,
+            "csv_import_templates": True,
+            "excel_exports": True,
+            "executive_reports": True,
             "provider_hierarchy": True,
         },
     }

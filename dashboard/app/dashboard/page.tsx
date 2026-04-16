@@ -462,7 +462,7 @@ export default function DashboardPage() {
         <CardContent className="pt-4">
           {!state.accountRollup || accountRollupItems.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
-              Run a scan to populate provider rollups. Current scan execution creates one aggregate hierarchy node per connected provider, and future account imports can expand that into full parent-child structures.
+              Run a scan or upload a CSV with account identifiers to populate provider rollups. Provider roots, grouped account nodes, and rolled-up totals now render as a hierarchy.
             </div>
           ) : (
             <Table>
@@ -483,7 +483,13 @@ export default function DashboardPage() {
                       {providerLabels[item.provider] || item.provider}
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium text-slate-900 dark:text-white">{item.account_name}</div>
+                      <div
+                        className="font-medium text-slate-900 dark:text-white"
+                        style={{ paddingLeft: `${item.depth * 16}px` }}
+                      >
+                        {item.depth > 0 ? '↳ ' : ''}
+                        {item.account_name}
+                      </div>
                       <div className="text-xs text-slate-500 dark:text-slate-500">
                         {item.account_identifier}
                         {item.parent_account_identifier ? ` · parent ${item.parent_account_identifier}` : ''}

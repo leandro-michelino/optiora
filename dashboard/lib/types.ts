@@ -250,6 +250,7 @@ export interface ProviderAccountRollupItem {
   account_identifier: string
   account_name: string
   account_type: string
+  depth: number
   parent_account_id?: number | null
   parent_account_identifier?: string | null
   direct_cost_usd: number

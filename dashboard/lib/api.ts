@@ -239,6 +239,11 @@ export async function uploadImportedCostCsv(file: File): Promise<ImportedCostUpl
   return await response.json() as ImportedCostUploadResponse
 }
 
+export async function downloadImportedCostTemplateCsv(): Promise<void> {
+  const blob = await requestBlob('/api/v1/imports/costs/template.csv')
+  saveBlob(blob, 'optiora-cost-import-template.csv')
+}
+
 export async function fetchAlerts(limit = 20): Promise<AlertEvent[]> {
   return requestJson<AlertEvent[]>(
     `/api/v1/alerts${toQueryString({ limit })}`,
@@ -295,4 +300,14 @@ export async function downloadAlertsCsv(limit = 200): Promise<void> {
 export async function downloadAuditLogsCsv(limit = 200): Promise<void> {
   const blob = await requestBlob(`/api/v1/audit-logs.csv${toQueryString({ limit })}`)
   saveBlob(blob, `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`)
+}
+
+export async function downloadExecutiveSummaryCsv(): Promise<void> {
+  const blob = await requestBlob('/api/v1/reports/executive-summary.csv')
+  saveBlob(blob, `optiora-executive-summary-${new Date().toISOString().slice(0, 10)}.csv`)
+}
+
+export async function downloadExecutiveSummaryExcel(): Promise<void> {
+  const blob = await requestBlob('/api/v1/reports/executive-summary.xls')
+  saveBlob(blob, `optiora-executive-summary-${new Date().toISOString().slice(0, 10)}.xls`)
 }

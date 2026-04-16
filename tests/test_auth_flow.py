@@ -27,6 +27,7 @@ try:
         User,
         UserOrganization,
         UserRole,
+        ensure_public_workspace,
         engine,
     )
 except ImportError as exc:  # pragma: no cover - local dependency guard
@@ -479,6 +480,137 @@ class AuthFlowTest(unittest.TestCase):
         alerts = self.client.get("/api/v1/alerts")
         self.assertEqual(alerts.status_code, 200)
         self.assertTrue(any(row["alert_type"] == "external.aws.cost_anomaly" for row in alerts.json()))
+
+    def test_imported_hierarchy_rollups_and_finance_report_exports(self) -> None:
+        register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "finance-owner@example.com",
+                "password": "StrongPass1!",
+                "full_name": "Finance Owner",
+            },
+        )
+        self.assertEqual(register.status_code, 201)
+
+        login = self.client.post(
+            "/auth/login",
+            json={"email": "finance-owner@example.com", "password": "StrongPass1!"},
+        )
+        self.assertEqual(login.status_code, 200)
+
+        upload = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={
+                "file": (
+                    "finance-rollup.csv",
+                    (
+                        "provider,cost_usd,service_name,account_identifier,account_name,region,period_start,period_end,currency\n"
+                        "aws,100.00,EC2,acct-a,AWS Prod A,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+                        "aws,50.00,S3,acct-b,AWS Prod B,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+                        "azure,60.00,Virtual Machines,sub-a,Azure Prod,uk south,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+                    ),
+                    "text/csv",
+                )
+            },
+        )
+        self.assertEqual(upload.status_code, 200)
+
+        rollups = self.client.get("/api/v1/provider-accounts/rollups")
+        self.assertEqual(rollups.status_code, 200)
+        payload = rollups.json()
+        self.assertEqual(payload["total_direct_cost_usd"], 210.0)
+        self.assertEqual(payload["total_rolled_up_cost_usd"], 210.0)
+
+        aws_root = next(
+            item for item in payload["items"]
+            if item["provider"] == "aws" and item["account_type"] == "provider"
+        )
+        self.assertEqual(aws_root["rolled_up_cost_usd"], 150.0)
+        self.assertEqual(aws_root["child_count"], 2)
+        self.assertEqual(aws_root["depth"], 0)
+
+        aws_child = next(
+            item for item in payload["items"]
+            if item["provider"] == "aws" and item["account_identifier"] == "acct-a"
+        )
+        self.assertEqual(aws_child["rolled_up_cost_usd"], 100.0)
+        self.assertEqual(aws_child["depth"], 1)
+
+        template = self.client.get("/api/v1/imports/costs/template.csv")
+        self.assertEqual(template.status_code, 200)
+        self.assertIn("provider,cost_usd", template.text)
+
+        report_csv = self.client.get("/api/v1/reports/executive-summary.csv")
+        self.assertEqual(report_csv.status_code, 200)
+        self.assertIn("Total Monthly Cost USD", report_csv.text)
+        self.assertIn("AWS Prod A", report_csv.text)
+
+        report_excel = self.client.get("/api/v1/reports/executive-summary.xls")
+        self.assertEqual(report_excel.status_code, 200)
+        self.assertIn("application/vnd.ms-excel", report_excel.headers.get("content-type", ""))
+        self.assertIn(b"Executive Summary", report_excel.content)
+
+    def test_csv_import_validation_reports_multiple_row_errors(self) -> None:
+        register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "csv-validation@example.com",
+                "password": "StrongPass1!",
+                "full_name": "CSV Validation Owner",
+            },
+        )
+        self.assertEqual(register.status_code, 201)
+
+        login = self.client.post(
+            "/auth/login",
+            json={"email": "csv-validation@example.com", "password": "StrongPass1!"},
+        )
+        self.assertEqual(login.status_code, 200)
+
+        invalid_upload = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={
+                "file": (
+                    "invalid-costs.csv",
+                    (
+                        "provider,cost_usd,period_start,currency\n"
+                        "digitalocean,10.00,2026-04-01T00:00:00Z,USD\n"
+                        "aws,not-a-number,2026-04-01T00:00:00Z,USD\n"
+                        "azure,20.00,not-a-date,EUR\n"
+                    ),
+                    "text/csv",
+                )
+            },
+        )
+        self.assertEqual(invalid_upload.status_code, 400)
+        detail = invalid_upload.json()["detail"]
+        self.assertIn("CSV validation failed", detail)
+        self.assertIn("Unsupported provider at CSV line 2", detail)
+        self.assertIn("Invalid cost_usd at CSV line 3", detail)
+        self.assertIn("Invalid currency at line 4", detail)
+
+    def test_public_mode_info_contract_includes_reporting_features(self) -> None:
+        previous_auth = os.environ.get("ENABLE_AUTH")
+        os.environ["ENABLE_AUTH"] = "false"
+
+        try:
+            ensure_public_workspace()
+            with TestClient(app) as public_client:
+                info = public_client.get("/api/v1/info")
+                self.assertEqual(info.status_code, 200)
+                features = info.json()["features"]
+                self.assertTrue(features["csv_import_templates"])
+                self.assertTrue(features["excel_exports"])
+                self.assertTrue(features["executive_reports"])
+
+                template = public_client.get("/api/v1/imports/costs/template.csv")
+                self.assertEqual(template.status_code, 200)
+                self.assertIn("optiora-cost-import-template.csv", template.headers.get("content-disposition", ""))
+        finally:
+            if previous_auth is None:
+                os.environ.pop("ENABLE_AUTH", None)
+            else:
+                os.environ["ENABLE_AUTH"] = previous_auth
 
     def test_z_alembic_upgrade_downgrade_roundtrip(self) -> None:
         cfg = AlembicConfig("alembic.ini")
