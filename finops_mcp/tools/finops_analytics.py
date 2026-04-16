@@ -10,7 +10,7 @@ import json
 import math
 import hashlib
 import statistics
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 
@@ -198,7 +198,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         aggressive_total += aggressive
         forecast.append(
             {
-                "month": MONTHS[(datetime.utcnow().month + month_index - 1) % 12],
+                "month": MONTHS[(datetime.now(timezone.utc).replace(tzinfo=None).month + month_index - 1) % 12],
                 "baseline": round(baseline, 2),
                 "conservative": round(conservative, 2),
                 "balanced": round(balanced, 2),
@@ -267,7 +267,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     ]
 
     return {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "forecast_months": months,
         "current_monthly_spend_usd": round(current_monthly, 2),
         "model": {
@@ -334,7 +334,7 @@ def build_analytics(params: dict[str, Any]) -> dict[str, Any]:
     efficiency_delta = (recommendation_savings / current_monthly) * 100 if current_monthly else 0.0
 
     return {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "current_monthly_spend_usd": round(current_monthly, 2),
         "estimated_monthly_waste_usd": round(current_monthly * weighted_waste, 2),
         "identified_monthly_savings_usd": round(recommendation_savings, 2),

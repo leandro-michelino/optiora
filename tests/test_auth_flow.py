@@ -3,7 +3,7 @@
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 TEST_DB = os.path.join(tempfile.gettempdir(), "optiora_auth_flow_test.db")
@@ -211,7 +211,7 @@ class AuthFlowTest(unittest.TestCase):
             is_valid = True
             message = "mocked validation"
             test_cost_usd = 12.34
-            tested_at = datetime.utcnow().isoformat()
+            tested_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             error_details = None
 
         try:
@@ -646,6 +646,221 @@ class AuthFlowTest(unittest.TestCase):
             json={"email": "missing@example.com", "password": "WrongPass1!"},
         )
         self.assertEqual(limited.status_code, 429)
+
+    def test_csv_import_rejects_negative_costs(self) -> None:
+        register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "neg-cost@example.com",
+                "password": "StrongPass1!",
+                "full_name": "Neg Cost Owner",
+            },
+        )
+        self.assertEqual(register.status_code, 201)
+
+        self.client.post(
+            "/auth/login",
+            json={"email": "neg-cost@example.com", "password": "StrongPass1!"},
+        )
+
+        negative_upload = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={
+                "file": (
+                    "negative-costs.csv",
+                    "provider,cost_usd\naws,-50.00\naws,100.00\n",
+                    "text/csv",
+                )
+            },
+        )
+        self.assertEqual(negative_upload.status_code, 400)
+        detail = negative_upload.json()["detail"]
+        self.assertIn("CSV validation failed", detail)
+        self.assertIn("Negative cost_usd at CSV line 2", detail)
+
+    def test_scan_history_and_diff_endpoints(self) -> None:
+        register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "history@example.com",
+                "password": "StrongPass1!",
+                "full_name": "History Owner",
+            },
+        )
+        self.assertEqual(register.status_code, 201)
+
+        self.client.post(
+            "/auth/login",
+            json={"email": "history@example.com", "password": "StrongPass1!"},
+        )
+
+        original_run_validation = api_module._run_validation
+        original_run_cost_analysis = api_module._run_cost_analysis
+
+        class _MockStatus:
+            provider = "aws"
+            is_valid = True
+            message = "mocked"
+            test_cost_usd = 0.0
+            tested_at = "2026-04-16T00:00:00"
+            error_details = None
+
+        try:
+            api_module._run_validation = lambda _credential: _MockStatus()
+
+            async def _noop(scan_id: str, customer_id: str, providers: list[str]) -> None:
+                _ = (scan_id, customer_id, providers)
+
+            api_module._run_cost_analysis = _noop
+
+            self.client.post(
+                "/api/v1/credentials/add",
+                json={
+                    "provider": "aws",
+                    "access_key_id": "AKIA_HIST",
+                    "secret_access_key": "SECRET_HIST",
+                    "region": "us-east-1",
+                },
+            )
+            self.client.post(
+                "/api/v1/scanning/approve",
+                json={"scan_frequency": "daily", "auto_remediate": False},
+            )
+            started = self.client.post(
+                "/api/v1/scanning/start",
+                json={"providers": ["aws"]},
+            )
+            self.assertEqual(started.status_code, 200)
+            scan_id = started.json()["scan_id"]
+
+            history = self.client.get("/api/v1/scanning/history")
+            self.assertEqual(history.status_code, 200)
+            self.assertIsInstance(history.json(), list)
+            self.assertTrue(any(item["scan_id"] == scan_id for item in history.json()))
+
+            history_csv = self.client.get("/api/v1/scanning/history.csv")
+            self.assertEqual(history_csv.status_code, 200)
+            self.assertIn("scan_id", history_csv.text)
+
+            diff = self.client.get(f"/api/v1/scanning/{scan_id}/diff")
+            self.assertEqual(diff.status_code, 200)
+            self.assertIn("current_scan_id", diff.json())
+            self.assertEqual(diff.json()["current_scan_id"], scan_id)
+
+            diff_csv = self.client.get(f"/api/v1/scanning/{scan_id}/diff.csv")
+            self.assertEqual(diff_csv.status_code, 200)
+
+            diff_404 = self.client.get("/api/v1/scanning/nonexistent-scan/diff")
+            self.assertEqual(diff_404.status_code, 404)
+        finally:
+            api_module._run_validation = original_run_validation
+            api_module._run_cost_analysis = original_run_cost_analysis
+
+    def test_alert_acknowledgement_and_audit_log_exports(self) -> None:
+        register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "alert-ack@example.com",
+                "password": "StrongPass1!",
+                "full_name": "Alert Ack Owner",
+            },
+        )
+        self.assertEqual(register.status_code, 201)
+
+        self.client.post(
+            "/auth/login",
+            json={"email": "alert-ack@example.com", "password": "StrongPass1!"},
+        )
+
+        ingest = self.client.post(
+            "/api/v1/anomalies/external/aws",
+            json={
+                "events": [
+                    {
+                        "detail": {
+                            "anomalyId": "ack-test-anomaly",
+                            "monitorName": "ack-monitor",
+                            "impact": {"totalImpact": 200.00},
+                        }
+                    }
+                ]
+            },
+        )
+        self.assertEqual(ingest.status_code, 200)
+        alert_id = ingest.json()["alert_ids"][0]
+
+        alerts_before = self.client.get("/api/v1/alerts")
+        self.assertEqual(alerts_before.status_code, 200)
+        unacked = [a for a in alerts_before.json() if a["id"] == alert_id]
+        self.assertEqual(len(unacked), 1)
+        self.assertIsNone(unacked[0]["acknowledged_at"])
+
+        ack = self.client.post(f"/api/v1/alerts/{alert_id}/acknowledge")
+        self.assertEqual(ack.status_code, 200)
+        self.assertEqual(ack.json()["status"], "ok")
+
+        alerts_after = self.client.get("/api/v1/alerts")
+        self.assertEqual(alerts_after.status_code, 200)
+        acked = next(a for a in alerts_after.json() if a["id"] == alert_id)
+        self.assertIsNotNone(acked["acknowledged_at"])
+
+        alerts_csv = self.client.get("/api/v1/alerts.csv")
+        self.assertEqual(alerts_csv.status_code, 200)
+        self.assertIn("alert_type", alerts_csv.text)
+
+        ack_404 = self.client.post("/api/v1/alerts/999999/acknowledge")
+        self.assertEqual(ack_404.status_code, 404)
+
+        audit_logs = self.client.get("/api/v1/audit-logs")
+        self.assertEqual(audit_logs.status_code, 200)
+        self.assertIsInstance(audit_logs.json(), list)
+        self.assertTrue(any(row["action"] == "alert.acknowledge" for row in audit_logs.json()))
+
+        audit_csv = self.client.get("/api/v1/audit-logs.csv")
+        self.assertEqual(audit_csv.status_code, 200)
+        self.assertIn("action", audit_csv.text)
+
+    def test_public_mode_dashboard_data_endpoints(self) -> None:
+        previous_auth = os.environ.get("ENABLE_AUTH")
+        os.environ["ENABLE_AUTH"] = "false"
+
+        try:
+            ensure_public_workspace()
+            with TestClient(app) as public_client:
+                health = public_client.get("/api/v1/health")
+                self.assertEqual(health.status_code, 200)
+                self.assertEqual(health.json()["status"], "healthy")
+
+                costs = public_client.get("/api/v1/costs")
+                self.assertEqual(costs.status_code, 200)
+                self.assertIn("totalCost", costs.json())
+
+                forecast = public_client.get("/api/v1/forecast")
+                self.assertEqual(forecast.status_code, 200)
+                self.assertIn("cost_context", forecast.json())
+
+                analytics = public_client.get("/api/v1/analytics")
+                self.assertEqual(analytics.status_code, 200)
+                self.assertIn("cost_context", analytics.json())
+
+                anomalies_resp = public_client.get("/api/v1/anomalies")
+                self.assertEqual(anomalies_resp.status_code, 200)
+
+                recommendations_resp = public_client.get("/api/v1/recommendations")
+                self.assertEqual(recommendations_resp.status_code, 200)
+
+                rollups = public_client.get("/api/v1/provider-accounts/rollups")
+                self.assertEqual(rollups.status_code, 200)
+                self.assertIn("items", rollups.json())
+
+                import_summary = public_client.get("/api/v1/imports/costs/summary")
+                self.assertEqual(import_summary.status_code, 200)
+                self.assertIn("has_data", import_summary.json())
+        finally:
+            if previous_auth is None:
+                os.environ.pop("ENABLE_AUTH", None)
+            else:
+                os.environ["ENABLE_AUTH"] = previous_auth
 
 
 if __name__ == "__main__":

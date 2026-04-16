@@ -1,6 +1,6 @@
 """Authentication utilities: JWT, password hashing, and token generation."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import hashlib
 import os
@@ -77,14 +77,14 @@ def create_access_token(
     if expires_delta is None:
         expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(timezone.utc).replace(tzinfo=None) + expires_delta
     to_encode = {
         "sub": str(user_id),
         "email": email,
         "org_id": org_id,
         "role": role,
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(timezone.utc).replace(tzinfo=None),
     }
     
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -93,7 +93,7 @@ def create_access_token(
 
 def create_refresh_token(user_id: int, email: str, org_id: Optional[int] = None) -> str:
     """Create JWT refresh token."""
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode = {
         "sub": str(user_id),
         "email": email,
@@ -101,7 +101,7 @@ def create_refresh_token(user_id: int, email: str, org_id: Optional[int] = None)
         "type": "refresh",
         "jti": secrets.token_urlsafe(16),
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": datetime.now(timezone.utc).replace(tzinfo=None),
     }
     
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

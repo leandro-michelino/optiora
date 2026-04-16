@@ -7,7 +7,7 @@ Validates provider credentials and stores credential metadata in the local DB.
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
 
 from .orm_models import CredentialRecord
@@ -46,8 +46,8 @@ class CredentialValidator:
                 region_name=region,
             )
 
-            start = datetime.utcnow().date().replace(day=1)
-            end = datetime.utcnow().date() + timedelta(days=1)  # end date is exclusive
+            start = datetime.now(timezone.utc).replace(tzinfo=None).date().replace(day=1)
+            end = datetime.now(timezone.utc).replace(tzinfo=None).date() + timedelta(days=1)  # end date is exclusive
 
             response = ce_client.get_cost_and_usage(
                 TimePeriod={"Start": start.isoformat(), "End": end.isoformat()},
@@ -113,7 +113,7 @@ class CredentialValidator:
                 is_valid=True,
                 message=message,
                 test_cost_usd=round(total_cost, 2),
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
         except Exception as exc:
             logger.error("AWS credential validation failed: %s", exc)
@@ -122,7 +122,7 @@ class CredentialValidator:
                 is_valid=False,
                 message="Failed to validate AWS credentials",
                 error_details=str(exc),
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
 
     @staticmethod
@@ -185,7 +185,7 @@ class CredentialValidator:
                 is_valid=True,
                 message=message,
                 test_cost_usd=round(total_cost, 2) if total_cost > 0 else None,
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
         except Exception as exc:
             logger.error("Azure credential validation failed: %s", exc)
@@ -194,7 +194,7 @@ class CredentialValidator:
                 is_valid=False,
                 message="Failed to validate Azure credentials",
                 error_details=str(exc),
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
 
     @staticmethod
@@ -252,7 +252,7 @@ class CredentialValidator:
                 provider="gcp",
                 is_valid=True,
                 message=message,
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
         except Exception as exc:
             logger.error("GCP credential validation failed: %s", exc)
@@ -261,7 +261,7 @@ class CredentialValidator:
                 is_valid=False,
                 message="Failed to validate GCP credentials",
                 error_details=str(exc),
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
 
     @staticmethod
@@ -321,7 +321,7 @@ class CredentialValidator:
                 is_valid=True,
                 message=message,
                 test_cost_usd=round(total_cost, 2) if total_cost > 0 else None,
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
         except Exception as exc:
             logger.error("OCI credential validation failed: %s", exc)
@@ -330,7 +330,7 @@ class CredentialValidator:
                 is_valid=False,
                 message="Failed to validate OCI credentials",
                 error_details=str(exc),
-                tested_at=datetime.utcnow().isoformat(),
+                tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
 
 
@@ -360,7 +360,7 @@ class CredentialManager:
         legacy_customer_ids: Optional[Iterable[str]] = None,
     ) -> Dict[str, Any]:
         provider = provider.lower()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         sanitized_credentials = self._sanitize_credentials(provider, credentials)
         candidates = self._scope_candidates(customer_id, legacy_customer_ids)
 

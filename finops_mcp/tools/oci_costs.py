@@ -3,7 +3,7 @@
 import json
 import logging
 from typing import Any, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 from finops_mcp.config import Config
 
@@ -33,7 +33,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             return json.dumps({"error": "OCI SDK not available", "cloud_provider": "oci"})
         
         # Calculate date range
-        end_date = datetime.utcnow().date()
+        end_date = datetime.now(timezone.utc).replace(tzinfo=None).date()
         if period == "day":
             start_date = end_date - timedelta(days=1)
         elif period == "week":

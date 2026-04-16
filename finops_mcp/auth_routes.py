@@ -5,7 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 import logging
 import os
@@ -141,7 +141,7 @@ def _client_ip(request: Request) -> str:
 
 def _check_rate_limit(key: str, limit: int, window_seconds: int) -> None:
     """In-process fixed-window rate limiting for auth abuse protection."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     window_start = now - timedelta(seconds=window_seconds)
     attempts = [
         timestamp for timestamp in _RATE_LIMIT_BUCKETS.get(key, []) if timestamp > window_start
@@ -433,12 +433,12 @@ async def login(
     rt_obj = RefreshToken(
         user_id=user.id,
         token_hash=refresh_token_hash,
-        expires_at=datetime.utcnow() + timedelta(days=7),
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7),
     )
     db.add(rt_obj)
     
     # Update last login
-    user.last_login = datetime.utcnow()
+    user.last_login = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     
     logger.info("User logged in: %s", user.email)
@@ -506,7 +506,7 @@ async def refresh(
             RefreshToken.user_id == user_id,
             RefreshToken.token_hash == refresh_token_hash,
             RefreshToken.is_revoked.is_(False),
-            RefreshToken.expires_at > datetime.utcnow(),
+            RefreshToken.expires_at > datetime.now(timezone.utc).replace(tzinfo=None),
         )
     ).first()
     
@@ -548,7 +548,7 @@ async def refresh(
     new_rt_obj = RefreshToken(
         user_id=user_id,
         token_hash=new_rt_hash,
-        expires_at=datetime.utcnow() + timedelta(days=7),
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7),
     )
     db.add(new_rt_obj)
     db.commit()
@@ -581,7 +581,7 @@ async def update_profile(
     if request.full_name:
         current_user.full_name = request.full_name
     
-    current_user.updated_at = datetime.utcnow()
+    current_user.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(current_user)
     
@@ -682,7 +682,7 @@ async def select_organization(
     new_rt_obj = RefreshToken(
         user_id=current_user.id,
         token_hash=hash_token(refresh_token),
-        expires_at=datetime.utcnow() + timedelta(days=7),
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7),
     )
     db.add(new_rt_obj)
     db.commit()
@@ -712,7 +712,7 @@ async def request_password_reset(
         # Don't reveal if email exists
         return PasswordResetResponse(message="If email exists, password reset link sent")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     db.query(PasswordResetToken).filter(
         and_(
             PasswordResetToken.user_id == user.id,
@@ -756,7 +756,7 @@ async def reset_password(
         and_(
             PasswordResetToken.token_hash == token_hash,
             PasswordResetToken.used_at.is_(None),
-            PasswordResetToken.expires_at > datetime.utcnow(),
+            PasswordResetToken.expires_at > datetime.now(timezone.utc).replace(tzinfo=None),
         )
     ).first()
     if not reset_record:
@@ -773,8 +773,8 @@ async def reset_password(
         )
 
     user.password_hash = hash_password(payload.new_password)
-    user.updated_at = datetime.utcnow()
-    reset_record.used_at = datetime.utcnow()
+    user.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    reset_record.used_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.query(RefreshToken).filter(RefreshToken.user_id == user.id).update(
         {"is_revoked": True},
         synchronize_session=False,

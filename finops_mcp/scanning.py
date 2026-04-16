@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Iterable, List, Optional
 
@@ -78,7 +78,7 @@ class ScanningManager:
             record.state = ScanningState.PENDING_APPROVAL.value
             record.providers_json = json.dumps(providers)
             record.notification_email = notification_email
-            record.updated_at = datetime.utcnow()
+            record.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         self.db.commit()
         return self.get_permission_status(customer_id)
@@ -116,7 +116,7 @@ class ScanningManager:
                 warning_threshold_percent=float(warning_threshold_percent or 80.0),
                 critical_threshold_percent=float(critical_threshold_percent or 100.0),
                 notifications_enabled=bool(notifications_enabled),
-                approved_at=datetime.utcnow(),
+                approved_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             self.db.add(record)
         else:
@@ -128,8 +128,8 @@ class ScanningManager:
             record.warning_threshold_percent = float(warning_threshold_percent or 80.0)
             record.critical_threshold_percent = float(critical_threshold_percent or 100.0)
             record.notifications_enabled = bool(notifications_enabled)
-            record.approved_at = datetime.utcnow()
-            record.updated_at = datetime.utcnow()
+            record.approved_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            record.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         self.db.commit()
         return self.get_permission_status(customer_id)
@@ -174,7 +174,7 @@ class ScanningManager:
                 "warning_threshold_percent": 80.0,
                 "critical_threshold_percent": 100.0,
                 "notifications_enabled": True,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 "approved_at": None,
             }
 
@@ -238,7 +238,7 @@ class ScanningManager:
         row.total_resources = total_resources
         row.anomalies_found = anomalies_found
         row.savings_identified = float(savings_identified)
-        row.completed_at = datetime.utcnow()
+        row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.db.commit()
 
     def fail_scan_run(self, scan_id: str, error_message: str) -> None:
@@ -247,7 +247,7 @@ class ScanningManager:
             return
         row.state = ScanningState.FAILED.value
         row.error_message = error_message
-        row.completed_at = datetime.utcnow()
+        row.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.db.commit()
 
     def _update_state(
@@ -260,6 +260,6 @@ class ScanningManager:
         if record is None:
             raise ValueError("Scanning permission not found for customer")
         record.state = state.value
-        record.updated_at = datetime.utcnow()
+        record.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         self.db.commit()
         return self.get_permission_status(customer_id, legacy_customer_ids=legacy_customer_ids)

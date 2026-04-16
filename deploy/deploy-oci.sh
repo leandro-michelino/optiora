@@ -572,6 +572,37 @@ set -a
 set +a
 
 cd "$APP_DIR"
+
+# Validate database connectivity before running migrations.
+# If DATABASE_URL points to PostgreSQL, verify the server is reachable first so
+# that a failed migration does not leave the app starting on SQLite fallback.
+if echo "${DATABASE_URL:-}" | grep -q "^postgresql"; then
+    DB_HOST=$(echo "${DATABASE_URL}" | sed 's|.*@\([^:/]*\).*|\1|')
+    DB_PORT=$(echo "${DATABASE_URL}" | sed 's|.*:\([0-9]*\)/.*|\1|')
+    DB_PORT=${DB_PORT:-5432}
+    echo "Checking PostgreSQL connectivity at ${DB_HOST}:${DB_PORT}..."
+    _db_retries=0
+    until "$APP_DIR/venv/bin/python" -c "
+import sys, socket
+try:
+    s = socket.create_connection(('${DB_HOST}', ${DB_PORT}), timeout=5)
+    s.close()
+    sys.exit(0)
+except Exception as e:
+    print(f'DB not reachable: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null; do
+        _db_retries=$((_db_retries + 1))
+        if [ "$_db_retries" -ge 12 ]; then
+            echo "ERROR: PostgreSQL at ${DB_HOST}:${DB_PORT} is not reachable after 60 seconds. Aborting deployment." >&2
+            exit 1
+        fi
+        echo "  Waiting for database... (attempt ${_db_retries}/12)"
+        sleep 5
+    done
+    echo "Database is reachable."
+fi
+
 "$APP_DIR/venv/bin/alembic" -c "$APP_DIR/alembic.ini" upgrade head
 
 cd "$APP_DIR/dashboard"

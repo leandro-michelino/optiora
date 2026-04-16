@@ -2,7 +2,12 @@
 
 import enum
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _utcnow() -> datetime:
+    """Return current naive UTC datetime. Replaces deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 from urllib.parse import quote_plus
 
 from sqlalchemy import (
@@ -98,8 +103,8 @@ class User(Base):
     email_verified = Column(Boolean, default=False)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     last_login = Column(DateTime, nullable=True)
     
     # Relationships
@@ -133,8 +138,8 @@ class Organization(Base):
     is_active = Column(Boolean, default=True)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     
     # Relationships
     user_organizations = relationship("UserOrganization", back_populates="organization", cascade="all, delete-orphan")
@@ -154,7 +159,7 @@ class UserOrganization(Base):
     role = Column(Enum(UserRole), default=UserRole.ANALYST)
     
     # Timestamps
-    added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    added_at = Column(DateTime, default=_utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="user_organizations")
@@ -177,7 +182,7 @@ class RefreshToken(Base):
     expires_at = Column(DateTime, nullable=False)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="refresh_tokens")
@@ -195,7 +200,7 @@ class PasswordResetToken(Base):
     token_hash = Column(String(255), unique=True, nullable=False, index=True)
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
 
     user = relationship("User", back_populates="password_reset_tokens")
 
@@ -220,7 +225,7 @@ class StoredCredential(Base):
     validation_error = Column(String(500), nullable=True)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
     validated_at = Column(DateTime, nullable=True)
     last_used_at = Column(DateTime, nullable=True)
     
@@ -247,8 +252,8 @@ class CredentialRecord(Base):
     is_valid = Column(Boolean, default=False)
     validation_message = Column(String(500), nullable=True)
     tested_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     def __repr__(self):
         return f"<CredentialRecord(customer_id={self.customer_id}, provider={self.provider})>"
@@ -270,9 +275,9 @@ class ScanningPermissionRecord(Base):
     warning_threshold_percent = Column(Float, nullable=False, default=80.0)
     critical_threshold_percent = Column(Float, nullable=False, default=100.0)
     notifications_enabled = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
     approved_at = Column(DateTime, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     def __repr__(self):
         return f"<ScanningPermissionRecord(customer_id={self.customer_id}, state={self.state})>"
@@ -292,7 +297,7 @@ class ScanRunRecord(Base):
     total_resources = Column(Integer, default=0)
     anomalies_found = Column(Integer, default=0)
     savings_identified = Column(Float, default=0.0)
-    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime, default=_utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
 
@@ -337,7 +342,7 @@ class CostSnapshot(Base):
     anomalies_json = Column(Text, nullable=True)       # detect_anomalies result
     recommendations_json = Column(Text, nullable=True) # get_recommendations result
 
-    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    captured_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
     scan_run = relationship("ScanRunRecord", back_populates="snapshots")
 
@@ -371,7 +376,7 @@ class ImportedCostRecord(Base):
     cost_usd = Column(Float, nullable=False, default=0.0)
     currency = Column(String(10), nullable=False, default="USD")
     line_number = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
     def __repr__(self):
         return (
@@ -403,8 +408,8 @@ class ProviderAccount(Base):
     native_region = Column(String(100), nullable=True)
     metadata_json = Column(Text, nullable=False, default="{}")
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
     parent_links = relationship(
         "ProviderAccountLink",
@@ -444,7 +449,7 @@ class ProviderAccountLink(Base):
     parent_account_id = Column(Integer, ForeignKey("provider_accounts.id"), nullable=False, index=True)
     child_account_id = Column(Integer, ForeignKey("provider_accounts.id"), nullable=False, index=True)
     relationship_type = Column(String(50), nullable=False, default="contains")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
 
     parent_account = relationship(
         "ProviderAccount",
@@ -485,7 +490,7 @@ class ProviderAccountSnapshot(Base):
     savings_identified_usd = Column(Float, nullable=False, default=0.0)
     anomalies_count = Column(Integer, nullable=False, default=0)
     service_count = Column(Integer, nullable=False, default=0)
-    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    captured_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
     scan_run = relationship("ScanRunRecord", back_populates="provider_account_snapshots")
     provider_account = relationship("ProviderAccount", back_populates="snapshots")
@@ -509,7 +514,7 @@ class AuditLog(Base):
     entity_type = Column(String(80), nullable=False, index=True)
     entity_id = Column(String(255), nullable=True)
     metadata_json = Column(Text, nullable=False, default="{}")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
     def __repr__(self):
         return (
@@ -534,7 +539,7 @@ class AlertEvent(Base):
     delivered_channels_json = Column(Text, nullable=False, default="[]")
     acknowledged_at = Column(DateTime, nullable=True)
     acknowledged_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
     def __repr__(self):
         return (

@@ -12,7 +12,7 @@ import io
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
@@ -49,6 +49,11 @@ from . import __version__
 
 logger = logging.getLogger(__name__)
 _scheduler_running = False
+
+
+def _utcnow() -> datetime:
+    """Return current naive UTC datetime. Replaces deprecated _utcnow()."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
 SUPPORTED_COST_IMPORT_PROVIDERS = {"aws", "azure", "gcp", "oci"}
@@ -326,9 +331,12 @@ def _parse_required_float_value(
     if not text:
         return None, f"Missing {field_name} at CSV line {line_number}."
     try:
-        return float(text), None
+        parsed = float(text)
     except ValueError:
         return None, f"Invalid {field_name} at CSV line {line_number}."
+    if parsed < 0:
+        return None, f"Negative {field_name} at CSV line {line_number}. Cost values must be zero or greater."
+    return parsed, None
 
 
 def _csv_escape(value: Any) -> str:
@@ -595,7 +603,7 @@ def _build_rollups_from_imported_rows(
         customer_id=customer_id,
         provider=provider,
         scan_id=None,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=_utcnow().isoformat(),
         total_direct_cost_usd=direct_total,
         total_rolled_up_cost_usd=root_total,
         items=filtered_items,
@@ -1134,7 +1142,7 @@ async def start_scan(
         if not providers_to_scan:
             providers_to_scan = ["aws", "azure", "gcp", "oci"]
 
-        scan_id = f"scan_{customer_id}_{int(datetime.utcnow().timestamp())}"
+        scan_id = f"scan_{customer_id}_{int(_utcnow().timestamp())}"
         scanning_manager.create_scan_run(scan_id, customer_id, providers_to_scan)
         background_tasks.add_task(
             _run_cost_analysis,
@@ -1150,7 +1158,7 @@ async def start_scan(
             state=ScanningState.RUNNING.value,
             progress=0,
             providers=providers_to_scan,
-            started_at=datetime.utcnow(),
+            started_at=_utcnow(),
         )
     except HTTPException:
         raise
@@ -1536,7 +1544,7 @@ async def get_provider_account_rollups(
         customer_id=customer_id,
         provider=provider,
         scan_id=scan_id,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=_utcnow().isoformat(),
         total_direct_cost_usd=total_direct,
         total_rolled_up_cost_usd=total_rolled,
         items=filtered_items,
@@ -1626,7 +1634,7 @@ async def upload_cost_csv(
     if "provider" not in reader.fieldnames or "cost_usd" not in reader.fieldnames:
         raise HTTPException(status_code=400, detail="CSV must include provider and cost_usd columns.")
 
-    imported_at = datetime.utcnow()
+    imported_at = _utcnow()
     upload_id = f"csv_{uuid4().hex}"
     rows_to_store: List[ImportedCostRecord] = []
     total_cost = 0.0
@@ -1795,7 +1803,7 @@ async def acknowledge_alert(
         )
         if row is None:
             raise HTTPException(status_code=404, detail="Alert not found")
-        row.acknowledged_at = datetime.utcnow()
+        row.acknowledged_at = _utcnow()
         row.acknowledged_by_user_id = current_user.id
         db.add(
             AuditLog(
@@ -1908,7 +1916,7 @@ async def _executive_summary_rows(
     rows: List[List[Any]] = [["Section", "Field", "Value"]]
     rows.extend(
         [
-            ["Summary", "Generated At", datetime.utcnow().isoformat()],
+            ["Summary", "Generated At", _utcnow().isoformat()],
             ["Summary", "Organization ID", _organization_id_for_membership(membership)],
             ["Summary", "Cost Source", costs.get("cost_context", {}).get("source", "live")],
             ["Summary", "Total Monthly Cost USD", round(float(costs.get("totalCost", 0.0) or 0.0), 2)],
@@ -2030,7 +2038,7 @@ async def dashboard_anomalies(
                 "cloud": cloud_provider if cloud_provider != "all" else "multi-cloud",
                 "message": row.get("probable_cause", "Anomaly detected"),
                 "severity": "high" if (row.get("increase_percent", 0) or 0) > 150 else "medium",
-                "timestamp": row.get("date", datetime.utcnow().isoformat()),
+                "timestamp": row.get("date", _utcnow().isoformat()),
                 "change": float(row.get("increase_percent", 0) or 0),
             }
         )
@@ -2159,7 +2167,7 @@ async def health_check() -> Dict[str, Any]:
     return {
         "status": "healthy",
         "version": __version__,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": _utcnow().isoformat(),
     }
 
 
@@ -2203,7 +2211,7 @@ async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str
         anomalies_found = 0
         savings_identified = 0.0
         aggregated_cost_usd = 0.0
-        now = datetime.utcnow()
+        now = _utcnow()
 
         for provider in providers:
             summary = await _cost_summary_for_provider(provider, "month")
@@ -2428,7 +2436,7 @@ async def get_scheduler_status(
     _ = current_user
     organization_id = _organization_id_for_membership(membership)
     customer_id = _customer_id_for_org(membership)
-    now = datetime.utcnow()
+    now = _utcnow()
     db = SessionLocal()
     try:
         permission = (
@@ -2551,7 +2559,7 @@ async def ingest_external_aws_anomalies(
     if not payload.events:
         return {"status": "ok", "ingested": 0, "alert_ids": []}
 
-    now = datetime.utcnow()
+    now = _utcnow()
     db = SessionLocal()
     try:
         alert_ids: List[int] = []
@@ -2619,7 +2627,7 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
         return {"status": "busy", "started": 0, "organization_id": requested_organization_id}
     _scheduler_running = True
     started = 0
-    now = datetime.utcnow()
+    now = _utcnow()
     db = SessionLocal()
     try:
         permissions_query = db.query(ScanningPermissionRecord).filter(
