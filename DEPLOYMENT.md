@@ -7,8 +7,8 @@ This repository deploys two services onto one OCI compute instance:
 
 Deployment can be done two ways:
 
-- `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services.
-- Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime.
+- `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services on the latest Oracle Linux 9 platform image for the selected shape.
+- Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime on either Debian-family or Oracle Linux / RHEL hosts.
 
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
 
@@ -73,6 +73,7 @@ Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script alw
 - rewrites `FRONTEND_URL` to `http://<instance-ip>:3000`
 - rewrites `NEXT_PUBLIC_API_URL` to `http://<instance-ip>:8000`
 - replaces placeholder `SECRET_KEY` values with a generated secret
+- installs dependencies with `dnf` on Oracle Linux hosts while keeping `apt` fallback support for Debian-family hosts
 - builds the dashboard after the remote env has been corrected
 
 Those rewrites matter because the dashboard is browser-executed; leaving `NEXT_PUBLIC_API_URL=http://localhost:8000` would break the deployed UI.
@@ -100,10 +101,14 @@ OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex
 OCI_OCPU_COUNT=2
 OCI_MEMORY_GB=8
+OCI_PROFILE=DEFAULT
+OCI_IMAGE_COMPARTMENT_ID=
 OCI_SUBNET_ID=ocid1.subnet.oc1...
 OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/id_ed25519
 OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/id_ed25519.pub
 ```
+
+`OCI_IMAGE_COMPARTMENT_ID` is optional. If it is unset, the deploy script resolves the platform-image compartment from the tenancy configured in `OCI_PROFILE`.
 
 Optional runtime values copied into the remote `.env`:
 

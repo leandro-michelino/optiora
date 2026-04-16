@@ -177,16 +177,21 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 
 Deployment script behavior:
 
-- provisions or reuses an OCI compute instance
+- provisions or reuses an OCI compute instance with the latest Oracle Linux 9 platform image for the selected shape
 - uploads the current local workspace snapshot
 - rewrites remote `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` to the instance public IP
 - replaces placeholder JWT secrets with a generated value
 - applies `alembic upgrade head` on the VM before services restart
-- installs backend + dashboard dependencies and starts systemd services
+- installs backend + dashboard dependencies with `dnf` on Oracle Linux hosts and starts systemd services
+
+Optional OCI deploy environment:
+
+- `OCI_PROFILE`: OCI CLI profile used to resolve the platform-image tenancy when `OCI_IMAGE_COMPARTMENT_ID` is not set
+- `OCI_IMAGE_COMPARTMENT_ID`: explicit image compartment override for platform image lookup
 
 ## Terraform + Ansible Baseline
 
-Terraform is intentionally limited to OCI networking primitives. Ansible owns host package installation, runtime `.env` rendering, dashboard builds, systemd units, and health checks.
+Terraform is intentionally limited to OCI networking primitives. Ansible owns host package installation, runtime `.env` rendering, dashboard builds, systemd units, and health checks, and now supports both Debian-family hosts and Oracle Linux / RHEL hosts.
 
 ```bash
 terraform -chdir=terraform init

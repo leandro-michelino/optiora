@@ -1,4 +1,4 @@
-- name: Install system packages
+- name: Install Debian/Ubuntu system packages
   ansible.builtin.apt:
     name:
       - build-essential
@@ -15,20 +15,59 @@
       - wget
     update_cache: true
     state: present
+  when: ansible_os_family == "Debian"
 
-- name: Install NodeSource repository
+- name: Install NodeSource repository on Debian/Ubuntu
   ansible.builtin.shell: |
     set -euo pipefail
     curl -fsSL https://deb.nodesource.com/setup_{{ optiora_node_major }}.x | bash -
   args:
     executable: /bin/bash
     creates: "/etc/apt/sources.list.d/nodesource.list"
+  when: ansible_os_family == "Debian"
 
-- name: Install Node.js
+- name: Install Node.js on Debian/Ubuntu
   ansible.builtin.apt:
     name: nodejs
     update_cache: true
     state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Oracle Linux / RHEL system packages
+  ansible.builtin.dnf:
+    name:
+      - curl
+      - gcc
+      - gcc-c++
+      - libffi-devel
+      - make
+      - openssl
+      - openssl-devel
+      - postgresql
+      - python3
+      - python3-devel
+      - python3-pip
+      - rsync
+      - wget
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Enable Node.js {{ optiora_node_major }} module on Oracle Linux / RHEL
+  ansible.builtin.shell: |
+    set -euo pipefail
+    dnf -y module reset nodejs
+    dnf -y module enable nodejs:{{ optiora_node_major }}
+  args:
+    executable: /bin/bash
+  when: ansible_os_family == "RedHat"
+
+- name: Install Node.js on Oracle Linux / RHEL
+  ansible.builtin.dnf:
+    name:
+      - nodejs
+      - npm
+    state: present
+  when: ansible_os_family == "RedHat"
 
 - name: Create application user
   ansible.builtin.user:
@@ -90,7 +129,7 @@
 
 - name: Install dashboard dependencies
   ansible.builtin.command:
-    cmd: npm ci
+    cmd: npm ci --legacy-peer-deps
     chdir: "{{ optiora_app_dir }}/dashboard"
   changed_when: true
   notify: Restart optiora dashboard
@@ -142,7 +181,7 @@
 
 - name: Run database migrations
   ansible.builtin.command:
-    cmd: "{{ optiora_app_dir }}/venv/bin/alembic upgrade head"
+    cmd: "{{ optiora_app_dir }}/venv/bin/alembic -c {{ optiora_app_dir }}/alembic.ini upgrade head"
     chdir: "{{ optiora_app_dir }}"
   changed_when: true
 
@@ -177,7 +216,7 @@
   until: optiora_dashboard_health.status == 200
 
 # ── nginx reverse-proxy + optional TLS ──────────────────────────────────────
-- name: Install nginx and certbot
+- name: Install nginx and certbot on Debian/Ubuntu
   ansible.builtin.apt:
     name:
       - nginx
@@ -185,38 +224,55 @@
       - python3-certbot-nginx
     state: present
     update_cache: true
-  when: optiora_install_nginx | bool
+  when:
+    - optiora_install_nginx | bool
+    - ansible_os_family == "Debian"
+
+- name: Install nginx and certbot on Oracle Linux / RHEL
+  ansible.builtin.dnf:
+    name:
+      - nginx
+      - certbot
+      - python3-certbot-nginx
+    state: present
+  when:
+    - optiora_install_nginx | bool
+    - ansible_os_family == "RedHat"
 
 - name: Create webroot for ACME challenges
   ansible.builtin.file:
     path: /var/www/certbot
     state: directory
-    owner: www-data
-    group: www-data
+    owner: root
+    group: root
     mode: "0755"
   when: optiora_install_nginx | bool
 
 - name: Write nginx site config
   ansible.builtin.template:
     src: nginx-optiora.conf.j2
-    dest: /etc/nginx/sites-available/optiora.conf
+    dest: "{{ '/etc/nginx/conf.d/optiora.conf' if ansible_os_family == 'RedHat' else '/etc/nginx/sites-available/optiora.conf' }}"
     mode: "0644"
   when: optiora_install_nginx | bool
   notify: Reload nginx
 
-- name: Enable nginx site
+- name: Enable nginx site on Debian/Ubuntu
   ansible.builtin.file:
     src: /etc/nginx/sites-available/optiora.conf
     dest: /etc/nginx/sites-enabled/optiora.conf
     state: link
-  when: optiora_install_nginx | bool
+  when:
+    - optiora_install_nginx | bool
+    - ansible_os_family == "Debian"
   notify: Reload nginx
 
-- name: Remove default nginx site
+- name: Remove default nginx site on Debian/Ubuntu
   ansible.builtin.file:
     path: /etc/nginx/sites-enabled/default
     state: absent
-  when: optiora_install_nginx | bool
+  when:
+    - optiora_install_nginx | bool
+    - ansible_os_family == "Debian"
   notify: Reload nginx
 
 - name: Start and enable nginx
@@ -251,7 +307,7 @@
 - name: Re-render nginx config after certificate is available
   ansible.builtin.template:
     src: nginx-optiora.conf.j2
-    dest: /etc/nginx/sites-available/optiora.conf
+    dest: "{{ '/etc/nginx/conf.d/optiora.conf' if ansible_os_family == 'RedHat' else '/etc/nginx/sites-available/optiora.conf' }}"
     mode: "0644"
   when:
     - optiora_install_nginx | bool

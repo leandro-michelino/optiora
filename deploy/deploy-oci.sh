@@ -5,7 +5,7 @@
 #
 # Local-to-OCI deployment:
 # - Runs from your laptop
-# - Provisions/starts OCI compute instance
+# - Provisions/starts OCI compute instance with the latest Oracle Linux 9 image
 # - Uploads local project files to VM from your current local workspace
 # - Installs dependencies and starts systemd services on VM
 # - Does not clone from Git or depend on CI/CD triggers
@@ -37,10 +37,14 @@ SSH_PRIVATE_KEY_PATH=${OCI_SSH_PRIVATE_KEY_PATH:-}
 SSH_PUBLIC_KEY_VALUE=${OCI_SSH_PUBLIC_KEY:-}
 REMOTE_USER=${OCI_INSTANCE_USER:-opc}
 APP_DIR=${OCI_APP_DIR:-/opt/optiora}
+CLI_PROFILE=${OCI_PROFILE:-${OCI_CLI_PROFILE:-DEFAULT}}
+IMAGE_COMPARTMENT_ID=${OCI_IMAGE_COMPARTMENT_ID:-}
 
 RESOLVED_SUBNET_ID=""
 RESOLVED_SSH_PUBLIC_KEY=""
+RESOLVED_SSH_PUBLIC_KEY_PATH=""
 RESOLVED_SSH_PRIVATE_KEY_PATH=""
+RESOLVED_IMAGE_COMPARTMENT_ID=""
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -98,6 +102,8 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_SHAPE                  VM shape (default: VM.Standard.E4.Flex)
     OCI_OCPU_COUNT             vCPU count (default: 2)
     OCI_MEMORY_GB              Memory GB (default: 8)
+    OCI_PROFILE                OCI CLI profile for image lookup (default: DEFAULT)
+    OCI_IMAGE_COMPARTMENT_ID   Optional image compartment override (defaults to profile tenancy)
     OCI_SUBNET_ID              Subnet OCID (recommended)
     OCI_VCN_ID                 Optional if auto-selecting subnet
     OCI_ASSIGN_PUBLIC_IP       true/false (default: true)
@@ -111,6 +117,7 @@ ${YELLOW}EXAMPLE:${NC}
     export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
     export OCI_SUBNET_ID=ocid1.subnet.oc1...
     export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/id_ed25519
+    export OCI_PROFILE=DEFAULT
     ./deploy/deploy-oci.sh compute
 EOF
 }
@@ -232,6 +239,8 @@ resolve_ssh_credentials() {
     local priv_path="$SSH_PRIVATE_KEY_PATH"
 
     if [ -n "$SSH_PUBLIC_KEY_VALUE" ]; then
+        RESOLVED_SSH_PUBLIC_KEY_PATH=$(mktemp)
+        printf '%s\n' "$SSH_PUBLIC_KEY_VALUE" > "$RESOLVED_SSH_PUBLIC_KEY_PATH"
         RESOLVED_SSH_PUBLIC_KEY="$SSH_PUBLIC_KEY_VALUE"
     else
         if [ -z "$pub_path" ]; then
@@ -251,6 +260,7 @@ resolve_ssh_credentials() {
             log_error "SSH public key file not found: $pub_path"
             exit 1
         fi
+        RESOLVED_SSH_PUBLIC_KEY_PATH="$pub_path"
         RESOLVED_SSH_PUBLIC_KEY=$(tr -d '\n' < "$pub_path")
     fi
 
@@ -272,6 +282,46 @@ resolve_ssh_credentials() {
 
     RESOLVED_SSH_PRIVATE_KEY_PATH="$priv_path"
     log_success "SSH credentials resolved for local-to-OCI deployment"
+}
+
+resolve_image_compartment_id() {
+    if [ -n "$IMAGE_COMPARTMENT_ID" ]; then
+        RESOLVED_IMAGE_COMPARTMENT_ID="$IMAGE_COMPARTMENT_ID"
+        log_success "Using OCI_IMAGE_COMPARTMENT_ID=$RESOLVED_IMAGE_COMPARTMENT_ID for platform image lookup"
+        return
+    fi
+
+    local config_file="${OCI_CONFIG_FILE:-$HOME/.oci/config}"
+    if [ ! -f "$config_file" ]; then
+        log_error "OCI config not found while resolving image compartment: $config_file"
+        exit 1
+    fi
+
+    RESOLVED_IMAGE_COMPARTMENT_ID=$(awk -F= -v profile="$CLI_PROFILE" '
+        BEGIN {
+            section = "[" profile "]"
+            in_section = 0
+        }
+        $0 == section {
+            in_section = 1
+            next
+        }
+        /^\[/ && $0 != section {
+            in_section = 0
+        }
+        in_section && $1 == "tenancy" {
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
+            print $2
+            exit
+        }
+    ' "$config_file")
+
+    if [ -z "$RESOLVED_IMAGE_COMPARTMENT_ID" ]; then
+        log_error "Could not resolve tenancy OCID from OCI config profile '$CLI_PROFILE'. Set OCI_IMAGE_COMPARTMENT_ID explicitly."
+        exit 1
+    fi
+
+    log_success "Resolved platform image compartment from OCI profile '$CLI_PROFILE'"
 }
 
 wait_for_ssh() {
@@ -302,11 +352,13 @@ sync_local_project() {
     log_step "Uploading Local Project To OCI VM"
     log_info "Deployment source: local filesystem snapshot from this laptop (no Git clone)."
     log_info "Creating deployment archive from local workspace..."
-    tar -czf "$archive_path" \
+    COPYFILE_DISABLE=1 tar -czf "$archive_path" \
         --exclude=".git" \
         --exclude=".venv" \
         --exclude=".pytest_cache" \
         --exclude="__pycache__" \
+        --exclude=".DS_Store" \
+        --exclude="._*" \
         --exclude="dashboard/node_modules" \
         --exclude="dashboard/.next" \
         --exclude="dashboard/tsconfig.tsbuildinfo" \
@@ -356,10 +408,15 @@ fi
 find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name ".env" -exec rm -rf {} +
 tar -xzf /tmp/optiora-deploy.tar.gz -C "$APP_DIR"
 rm -f /tmp/optiora-deploy.tar.gz
+find "$APP_DIR" -name '._*' -delete
+find "$APP_DIR" -name '.DS_Store' -delete
 
 if [ -f /tmp/optiora.env.backup ]; then
-    mv /tmp/optiora.env.backup "$APP_DIR/.env"
+    cp /tmp/optiora.env.backup "$APP_DIR/.env"
+    rm -f /tmp/optiora.env.backup
 fi
+
+restorecon -RF "$APP_DIR" >/dev/null 2>&1 || true
 EOF
 
     log_success "Local project uploaded to VM"
@@ -380,12 +437,60 @@ exec 2>&1
 
 echo "=== OptiOra setup started: $(date) ==="
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y python3 python3-venv python3-pip python3-dev build-essential libssl-dev libffi-dev curl wget openssl postgresql-client
+install_runtime_dependencies() {
+    if command -v dnf >/dev/null 2>&1; then
+        dnf -y install \
+            python3 python3-pip python3-devel \
+            gcc gcc-c++ make \
+            openssl-devel libffi-devel \
+            curl wget openssl tar gzip findutils git jq \
+            postgresql
 
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
+        for pkg in \
+            python3.13 python3.13-pip python3.13-devel \
+            python3.12 python3.12-pip python3.12-devel \
+            python3.11 python3.11-pip python3.11-devel \
+            python3.10 python3.10-pip python3.10-devel; do
+            dnf -y install "$pkg" >/dev/null 2>&1 || true
+        done
+
+        if ! command -v node >/dev/null 2>&1 || ! node --version | grep -q '^v20\.'; then
+            dnf module reset -y nodejs >/dev/null 2>&1 || true
+            dnf module enable -y nodejs:20 >/dev/null 2>&1 || true
+            dnf -y install nodejs npm
+        fi
+        return
+    fi
+
+    if command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y python3 python3-venv python3-pip python3-dev build-essential libssl-dev libffi-dev curl wget openssl postgresql-client jq
+
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+        return
+    fi
+
+    echo "Unsupported package manager on target host"
+    exit 1
+}
+
+select_python_command() {
+    for cmd in python3.13 python3.12 python3.11 python3.10 python3; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            echo "$cmd"
+            return
+        fi
+    done
+
+    echo "python3"
+}
+
+install_runtime_dependencies
+
+PYTHON_CMD="$(select_python_command)"
+"$PYTHON_CMD" -m ensurepip --upgrade >/dev/null 2>&1 || true
 
 if [ ! -f "$APP_DIR/.env" ]; then
     cp "$APP_DIR/.env.example" "$APP_DIR/.env"
@@ -401,6 +506,36 @@ ensure_env_value() {
     fi
 }
 
+normalize_env_for_shell() {
+    local sanitized_env
+    local key
+    local value
+    sanitized_env="$(mktemp)"
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ -z "$line" ]] || [[ "$line" == \#* ]] || [[ "$line" != *=* ]]; then
+            printf '%s\n' "$line" >> "$sanitized_env"
+            continue
+        fi
+
+        key="${line%%=*}"
+        value="${line#*=}"
+
+        if [[ "$value" == *"<"* ]] || [[ "$value" == *">"* ]]; then
+            value=""
+        elif [[ "$value" == *" "* ]] && [[ "$value" != \"*\" ]] && [[ "$value" != \'*\' ]]; then
+            value="${value//\\/\\\\}"
+            value="${value//\"/\\\"}"
+            value="\"$value\""
+        fi
+
+        printf '%s=%s\n' "$key" "$value" >> "$sanitized_env"
+    done < "$APP_DIR/.env"
+
+    cat "$sanitized_env" > "$APP_DIR/.env"
+    rm -f "$sanitized_env"
+}
+
 current_secret="$(grep '^SECRET_KEY=' "$APP_DIR/.env" | tail -1 | cut -d'=' -f2- || true)"
 if [ -z "$current_secret" ] || [ "$current_secret" = "replace_with_random_64_char_hex" ] || [ "$current_secret" = "your-secret-key-change-in-production" ]; then
     ensure_env_value "SECRET_KEY" "$(openssl rand -hex 32)"
@@ -412,6 +547,7 @@ ensure_env_value "UVICORN_RELOAD" "false"
 ensure_env_value "ENVIRONMENT" "production"
 ensure_env_value "PASSWORD_RESET_RETURN_TOKEN" "false"
 ensure_env_value "PASSWORD_RESET_TOKEN_MINUTES" "30"
+normalize_env_for_shell
 
 if [ -f /tmp/optiora-oci-api-key.pem ]; then
     install -m 0600 /tmp/optiora-oci-api-key.pem "$APP_DIR/oci_api_key.pem"
@@ -420,7 +556,12 @@ if [ -f /tmp/optiora-oci-api-key.pem ]; then
 fi
 
 if [ ! -d "$APP_DIR/venv" ]; then
-    python3 -m venv "$APP_DIR/venv"
+    if "$PYTHON_CMD" -m venv "$APP_DIR/venv" >/dev/null 2>&1; then
+        true
+    else
+        "$PYTHON_CMD" -m pip install --upgrade virtualenv
+        "$PYTHON_CMD" -m virtualenv "$APP_DIR/venv"
+    fi
 fi
 
 "$APP_DIR/venv/bin/pip" install --upgrade pip setuptools wheel poetry-core
@@ -430,10 +571,11 @@ set -a
 . "$APP_DIR/.env"
 set +a
 
-"$APP_DIR/venv/bin/alembic" upgrade head
+cd "$APP_DIR"
+"$APP_DIR/venv/bin/alembic" -c "$APP_DIR/alembic.ini" upgrade head
 
 cd "$APP_DIR/dashboard"
-npm ci
+npm ci --legacy-peer-deps
 export NEXT_PUBLIC_API_URL="http://${PUBLIC_IP}:8000"
 npm run build
 
@@ -518,11 +660,13 @@ deploy_compute() {
 
     resolve_subnet_id
     resolve_ssh_credentials
+    resolve_image_compartment_id
 
     if [ "$DRY_RUN" = "true" ]; then
         log_warning "DRY RUN mode enabled"
         log_info "Would use subnet: $RESOLVED_SUBNET_ID"
         log_info "Would use SSH key: $RESOLVED_SSH_PRIVATE_KEY_PATH"
+        log_info "Would use image compartment: $RESOLVED_IMAGE_COMPARTMENT_ID"
         return 0
     fi
 
@@ -539,20 +683,21 @@ deploy_compute() {
     if [ "$instance_found" = "false" ]; then
         local image_id
         local ad
-        local escaped_ssh_key
-        local metadata_file
-        local vnic_file
         local response
+        local launch_status
 
-        log_info "Finding latest Ubuntu 24.04 image..."
+        log_info "Finding latest Oracle Linux 9 image..."
         image_id=$(oci compute image list \
-            --compartment-id "$COMPARTMENT_ID" \
+            --compartment-id "$RESOLVED_IMAGE_COMPARTMENT_ID" \
             --region "$REGION" \
-            --query "data[?\"display-name\" like 'Canonical-Ubuntu-24.04%'].id | [0]" \
+            --operating-system "Oracle Linux" \
+            --operating-system-version "9" \
+            --shape "$SHAPE" \
+            --query "reverse(sort_by(data, &\"time-created\"))[0].id" \
             --raw-output 2>/dev/null)
 
         if [ -z "$image_id" ] || [ "$image_id" = "null" ]; then
-            log_error "Could not find Ubuntu 24.04 image"
+            log_error "Could not find Oracle Linux 9 image from image compartment $RESOLVED_IMAGE_COMPARTMENT_ID"
             exit 1
         fi
         log_success "Image: $image_id"
@@ -563,28 +708,30 @@ deploy_compute() {
             --raw-output)
         log_info "Availability domain: $ad"
 
-        escaped_ssh_key=$(printf '%s' "$RESOLVED_SSH_PUBLIC_KEY" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        metadata_file=$(mktemp)
-        vnic_file=$(mktemp)
-        printf '{"ssh_authorized_keys":"%s"}' "$escaped_ssh_key" > "$metadata_file"
-        printf '{"subnetId":"%s","assignPublicIp":%s}' "$RESOLVED_SUBNET_ID" "$ASSIGN_PUBLIC_IP" > "$vnic_file"
-
         log_info "Creating compute instance..."
+        set +e
         response=$(oci compute instance launch \
             --compartment-id "$COMPARTMENT_ID" \
             --availability-domain "$ad" \
             --display-name "$INSTANCE_NAME" \
             --image-id "$image_id" \
             --shape "$SHAPE" \
-            --shape-config "ocpus=$OCPU_COUNT,memory-in-gbs=$MEMORY_GB" \
-            --create-vnic-details "file://$vnic_file" \
-            --metadata "file://$metadata_file" \
+            --shape-config "{\"ocpus\":${OCPU_COUNT},\"memoryInGBs\":${MEMORY_GB}}" \
+            --subnet-id "$RESOLVED_SUBNET_ID" \
+            --assign-public-ip "$ASSIGN_PUBLIC_IP" \
+            --ssh-authorized-keys-file "$RESOLVED_SSH_PUBLIC_KEY_PATH" \
             --wait-for-state RUNNING \
             --region "$REGION" \
             --max-wait-seconds 900 \
             2>&1)
+        launch_status=$?
+        set -e
 
-        rm -f "$metadata_file" "$vnic_file"
+        if [ "$launch_status" -ne 0 ]; then
+            log_error "Compute instance launch failed"
+            printf '%s\n' "$response"
+            exit "$launch_status"
+        fi
 
         instance_id=$(echo "$response" | grep -o '"id": "[^"]*' | head -1 | cut -d'"' -f4)
         if [ -z "$instance_id" ]; then

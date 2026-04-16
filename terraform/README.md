@@ -12,7 +12,7 @@ This folder contains the OCI network baseline used by OptiOra. It does not provi
   - `subnet-public-<project>-<env>-<region>-<suffix>`
 - ingress is restricted to `laptop_cidr`
 - outbound traffic is controlled by `egress_cidr`
-- compute bootstrap, packages, `.env`, builds, and systemd are handled by `../ansible`
+- compute bootstrap, packages, `.env`, builds, and systemd are handled by `../ansible`, including Oracle Linux / RHEL hosts
 
 ## Defaults
 
@@ -47,7 +47,7 @@ terraform plan \
   -var="egress_cidr=<trusted-egress-cidr>"
 ```
 
-`terraform apply` is intentionally not part of the default workflow unless explicitly requested. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning.
+`terraform apply` is intentionally not part of the default workflow unless explicitly requested. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning on either Debian-family or Oracle Linux / RHEL images.
 
 ## Topology
 
