@@ -57,7 +57,7 @@
 <rect class="s1" x="8" y="63"  width="162" height="34" rx="6" fill="#1e40af"/>
 <rect class="s2" x="8" y="104" width="162" height="34" rx="6" fill="#1e40af"/>
 <rect class="s3" x="8" y="145" width="162" height="34" rx="6" fill="#1e40af"/>
-<rect class="s4" x="8" y="186" width="162" height="34" rx="6" fill="#1e40af"/>
+<rect class="s4" x="8" y="227" width="162" height="34" rx="6" fill="#1e40af"/>
 
 <!-- Nav dots -->
 <circle cx="22" cy="80"  r="3.5" fill="#60a5fa"/>
@@ -65,6 +65,7 @@
 <circle cx="22" cy="162" r="3.5" fill="#34d399"/>
 <circle cx="22" cy="203" r="3.5" fill="#a78bfa"/>
 <circle cx="22" cy="244" r="3.5" fill="#64748b"/>
+<circle class="s4" cx="22" cy="244" r="3.5" fill="#60a5fa"/>
 
 <!-- Nav labels (dim always) -->
 <text x="33" y="84"  fill="#64748b" font-size="12">Overview</text>
@@ -77,7 +78,7 @@
 <text class="s1" x="33" y="84"  fill="white" font-size="12">Overview</text>
 <text class="s2" x="33" y="125" fill="white" font-size="12">Anomalies</text>
 <text class="s3" x="33" y="166" fill="white" font-size="12">Recommendations</text>
-<text class="s4" x="33" y="207" fill="white" font-size="12">Operations</text>
+<text class="s4" x="33" y="248" fill="white" font-size="12">Settings</text>
 
 <line x1="12" y1="266" x2="166" y2="266" stroke="#1e293b" stroke-width="1"/>
 
@@ -109,13 +110,13 @@
 <text class="s1" x="196" y="22" fill="#0f172a" font-size="13" font-weight="600">Multi-Cloud Cost Overview</text>
 <text class="s2" x="196" y="22" fill="#0f172a" font-size="13" font-weight="600">Anomaly Detection</text>
 <text class="s3" x="196" y="22" fill="#0f172a" font-size="13" font-weight="600">Optimization Recommendations</text>
-<text class="s4" x="196" y="22" fill="#0f172a" font-size="13" font-weight="600">Operations Center</text>
+<text class="s4" x="196" y="22" fill="#0f172a" font-size="13" font-weight="600">Cloud Settings</text>
 
 <!-- Scene subtitles -->
 <text class="s1" x="196" y="39" fill="#94a3b8" font-size="10">Apr 2026 · 4 providers · live data</text>
 <text class="s2" x="196" y="39" fill="#94a3b8" font-size="10">Last 30 days · 2 anomalies detected</text>
 <text class="s3" x="196" y="39" fill="#94a3b8" font-size="10">3 items · $15,900/yr potential savings</text>
-<text class="s4" x="196" y="39" fill="#94a3b8" font-size="10">Scan history, diffs, alerts, and audit logs</text>
+<text class="s4" x="196" y="39" fill="#94a3b8" font-size="10">CSV import, connected providers, and scan readiness</text>
 
 <!-- Date badge -->
 <rect x="818" y="13" width="64" height="24" rx="6" fill="#f1f5f9"/>
@@ -358,96 +359,86 @@
 
 
 <!-- ════════════════════════════════════════════════════ -->
-<!--  SCENE 4 — OPERATIONS CENTER                       -->
+<!--  SCENE 4 — SETTINGS / CSV IMPORT                   -->
 <!-- ════════════════════════════════════════════════════ -->
 <g class="s4">
 
-<!-- Scheduler status -->
-<rect x="196" y="60" width="220" height="24" rx="6" fill="#ecfeff"/>
-<text x="306" y="75" fill="#0e7490" font-size="10" font-weight="600" text-anchor="middle">Scheduler enabled · cadence: daily</text>
+<!-- Status badge -->
+<rect x="196" y="60" width="242" height="24" rx="6" fill="#eff6ff"/>
+<text x="317" y="75" fill="#1d4ed8" font-size="10" font-weight="600" text-anchor="middle">CSV import enabled · auth optional</text>
 
-<!-- Scan history panel -->
-<rect x="196" y="94" width="430" height="176" rx="8" fill="white" filter="url(#cs)"/>
-<text x="212" y="116" fill="#0f172a" font-size="12" font-weight="600">Recent Scan History</text>
-<line x1="212" y1="124" x2="610" y2="124" stroke="#e2e8f0" stroke-width="1"/>
-<text x="212" y="142" fill="#94a3b8" font-size="9">SCAN ID</text>
-<text x="376" y="142" fill="#94a3b8" font-size="9">STATUS</text>
-<text x="454" y="142" fill="#94a3b8" font-size="9">PROVIDERS</text>
-<text x="562" y="142" fill="#94a3b8" font-size="9" text-anchor="end">SAVINGS</text>
+<!-- Upload panel -->
+<rect x="196" y="94" width="408" height="182" rx="8" fill="white" filter="url(#cs)"/>
+<text x="212" y="116" fill="#0f172a" font-size="12" font-weight="600">Upload Cost CSV</text>
+<line x1="212" y1="124" x2="588" y2="124" stroke="#e2e8f0" stroke-width="1"/>
+<rect x="212" y="136" width="92" height="18" rx="4" fill="#f8fafc"/>
+<text x="258" y="148" fill="#334155" font-size="9" font-weight="600" text-anchor="middle">CSV only for now</text>
+<text x="212" y="174" fill="#64748b" font-size="10">Upload a UTF-8 billing CSV to use manual cost data</text>
+<text x="212" y="190" fill="#64748b" font-size="10">instead of live provider collection.</text>
 
-<text x="212" y="162" fill="#334155" font-size="10">scan_org-1_1776269101</text>
-<rect x="368" y="150" width="58" height="16" rx="4" fill="#dcfce7"/>
-<text x="397" y="161" fill="#166534" font-size="9" text-anchor="middle">completed</text>
-<text x="454" y="162" fill="#475569" font-size="10">aws, azure, gcp, oci</text>
-<text x="562" y="162" fill="#16a34a" font-size="10" text-anchor="end">$1,178</text>
+<rect x="212" y="204" width="376" height="44" rx="8" fill="#f8fafc"/>
+<text x="228" y="222" fill="#94a3b8" font-size="9">SELECTED FILE</text>
+<text x="228" y="239" fill="#0f172a" font-size="11" font-weight="600">april-billing.csv</text>
+<rect x="212" y="254" width="108" height="22" rx="6" fill="#0f172a"/>
+<text x="266" y="269" fill="white" font-size="10" font-weight="600" text-anchor="middle">Upload CSV</text>
+<rect x="332" y="254" width="138" height="22" rx="6" fill="#dcfce7"/>
+<text x="401" y="269" fill="#166534" font-size="10" font-weight="600" text-anchor="middle">214 rows imported</text>
 
-<text x="212" y="184" fill="#334155" font-size="10">scan_org-1_1776182701</text>
-<rect x="368" y="172" width="58" height="16" rx="4" fill="#dcfce7"/>
-<text x="397" y="183" fill="#166534" font-size="9" text-anchor="middle">completed</text>
-<text x="454" y="184" fill="#475569" font-size="10">aws, azure, gcp, oci</text>
-<text x="562" y="184" fill="#16a34a" font-size="10" text-anchor="end">$1,090</text>
+<!-- Providers panel -->
+<rect x="620" y="94" width="254" height="182" rx="8" fill="white" filter="url(#cs)"/>
+<text x="636" y="116" fill="#0f172a" font-size="12" font-weight="600">Connected Providers</text>
+<line x1="636" y1="124" x2="858" y2="124" stroke="#e2e8f0" stroke-width="1"/>
 
-<text x="212" y="206" fill="#334155" font-size="10">scan_org-1_1776096301</text>
-<rect x="368" y="194" width="50" height="16" rx="4" fill="#fef9c3"/>
-<text x="393" y="205" fill="#a16207" font-size="9" text-anchor="middle">running</text>
-<text x="454" y="206" fill="#475569" font-size="10">aws, azure</text>
-<text x="562" y="206" fill="#94a3b8" font-size="10" text-anchor="end">pending</text>
+<circle cx="642" cy="150" r="5" fill="#f97316"/>
+<text x="654" y="154" fill="#334155" font-size="10">AWS</text>
+<rect x="812" y="138" width="46" height="18" rx="4" fill="#dcfce7"/>
+<text x="835" y="150" fill="#166534" font-size="9" text-anchor="middle">Valid</text>
 
-<text x="212" y="238" fill="#64748b" font-size="10">Export history CSV from Operations page</text>
-<rect x="464" y="224" width="146" height="26" rx="6" fill="#eff6ff"/>
-<text x="537" y="241" fill="#1d4ed8" font-size="10" font-weight="600" text-anchor="middle">Download history CSV</text>
+<circle cx="642" cy="178" r="5" fill="#3b82f6"/>
+<text x="654" y="182" fill="#334155" font-size="10">Azure</text>
+<rect x="812" y="166" width="46" height="18" rx="4" fill="#dcfce7"/>
+<text x="835" y="178" fill="#166534" font-size="9" text-anchor="middle">Valid</text>
 
-<!-- Diff panel -->
-<rect x="642" y="94" width="232" height="176" rx="8" fill="white" filter="url(#cs)"/>
-<text x="658" y="116" fill="#0f172a" font-size="12" font-weight="600">Latest Diff</text>
-<line x1="658" y1="124" x2="858" y2="124" stroke="#e2e8f0" stroke-width="1"/>
-<text x="658" y="143" fill="#94a3b8" font-size="9">Current</text>
-<text x="730" y="143" fill="#94a3b8" font-size="9">Previous</text>
-<text x="812" y="143" fill="#94a3b8" font-size="9">Delta</text>
-<text x="658" y="161" fill="#0f172a" font-size="11" font-weight="600">$47,230</text>
-<text x="730" y="161" fill="#0f172a" font-size="11" font-weight="600">$45,941</text>
-<text x="812" y="161" fill="#dc2626" font-size="11" font-weight="700">+$1,289</text>
+<circle cx="642" cy="206" r="5" fill="#22c55e"/>
+<text x="654" y="210" fill="#334155" font-size="10">GCP</text>
+<rect x="812" y="194" width="46" height="18" rx="4" fill="#dcfce7"/>
+<text x="835" y="206" fill="#166534" font-size="9" text-anchor="middle">Valid</text>
 
-<text x="658" y="185" fill="#64748b" font-size="10">AWS</text>
-<text x="770" y="185" fill="#dc2626" font-size="10" text-anchor="end">+$625</text>
-<text x="658" y="203" fill="#64748b" font-size="10">Azure</text>
-<text x="770" y="203" fill="#dc2626" font-size="10" text-anchor="end">+$381</text>
-<text x="658" y="221" fill="#64748b" font-size="10">GCP</text>
-<text x="770" y="221" fill="#dc2626" font-size="10" text-anchor="end">+$208</text>
-<text x="658" y="239" fill="#64748b" font-size="10">OCI</text>
-<text x="770" y="239" fill="#dc2626" font-size="10" text-anchor="end">+$75</text>
+<circle cx="642" cy="234" r="5" fill="#a855f7"/>
+<text x="654" y="238" fill="#334155" font-size="10">OCI</text>
+<rect x="812" y="222" width="46" height="18" rx="4" fill="#dcfce7"/>
+<text x="835" y="234" fill="#166534" font-size="9" text-anchor="middle">Valid</text>
 
-<rect x="658" y="246" width="200" height="16" rx="4" fill="#fef2f2"/>
-<text x="758" y="257" fill="#b91c1c" font-size="9" text-anchor="middle">Cost change since previous snapshot</text>
+<rect x="636" y="248" width="222" height="18" rx="4" fill="#eff6ff"/>
+<text x="747" y="260" fill="#1d4ed8" font-size="9" text-anchor="middle">Ready to scan when live credentials are needed</text>
 
-<!-- Alerts panel -->
-<rect x="196" y="286" width="334" height="154" rx="8" fill="white" filter="url(#cs)"/>
-<text x="212" y="308" fill="#0f172a" font-size="12" font-weight="600">Alerts</text>
-<line x1="212" y1="316" x2="514" y2="316" stroke="#e2e8f0" stroke-width="1"/>
+<!-- Imported cost summary -->
+<rect x="196" y="292" width="678" height="152" rx="8" fill="white" filter="url(#cs)"/>
+<text x="212" y="314" fill="#0f172a" font-size="12" font-weight="600">Imported Cost Data</text>
+<line x1="212" y1="322" x2="858" y2="322" stroke="#e2e8f0" stroke-width="1"/>
 
-<rect x="212" y="328" width="302" height="42" rx="6" fill="#fef2f2"/>
-<text x="224" y="344" fill="#991b1b" font-size="10" font-weight="600">budget.threshold.breach</text>
-<text x="224" y="360" fill="#b91c1c" font-size="9">AWS spend exceeded warning threshold (+12%)</text>
+<rect x="212" y="336" width="250" height="44" rx="8" fill="#f8fafc"/>
+<text x="228" y="354" fill="#94a3b8" font-size="9">SOURCE FILE</text>
+<text x="228" y="371" fill="#0f172a" font-size="11" font-weight="600">april-billing.csv</text>
 
-<rect x="212" y="376" width="302" height="42" rx="6" fill="#fff7ed"/>
-<text x="224" y="392" fill="#9a3412" font-size="10" font-weight="600">anomaly.detected</text>
-<text x="224" y="408" fill="#b45309" font-size="9">EC2 usage spike detected in us-east-1</text>
+<rect x="478" y="336" width="110" height="44" rx="8" fill="#f8fafc"/>
+<text x="493" y="354" fill="#94a3b8" font-size="9">ROWS</text>
+<text x="493" y="371" fill="#0f172a" font-size="14" font-weight="700">214</text>
 
-<!-- Audit panel -->
-<rect x="540" y="286" width="334" height="154" rx="8" fill="white" filter="url(#cs)"/>
-<text x="556" y="308" fill="#0f172a" font-size="12" font-weight="600">Audit Trail</text>
-<line x1="556" y1="316" x2="858" y2="316" stroke="#e2e8f0" stroke-width="1"/>
+<rect x="604" y="336" width="124" height="44" rx="8" fill="#f8fafc"/>
+<text x="620" y="354" fill="#94a3b8" font-size="9">TOTAL COST</text>
+<text x="620" y="371" fill="#0f172a" font-size="14" font-weight="700">$47,230</text>
 
-<circle cx="564" cy="336" r="3.5" fill="#3b82f6"/>
-<text x="576" y="340" fill="#334155" font-size="10">scan.schedule.triggered · 08:00 UTC</text>
-<circle cx="564" cy="358" r="3.5" fill="#16a34a"/>
-<text x="576" y="362" fill="#334155" font-size="10">scan.completed · scan_org-1_1776269101</text>
-<circle cx="564" cy="380" r="3.5" fill="#f59e0b"/>
-<text x="576" y="384" fill="#334155" font-size="10">alert.acknowledge · alert_event 224</text>
-<circle cx="564" cy="402" r="3.5" fill="#0ea5e9"/>
-<text x="576" y="406" fill="#334155" font-size="10">credentials.added · provider azure</text>
+<rect x="744" y="336" width="114" height="44" rx="8" fill="#ecfdf5"/>
+<text x="760" y="354" fill="#059669" font-size="9">STATUS</text>
+<text x="760" y="371" fill="#065f46" font-size="11" font-weight="700">Active source</text>
 
-<text x="196" y="458" fill="#94a3b8" font-size="9">Operations dashboard now includes scan history browser, per-scan diffs, alerts, and audit logs.</text>
+<text x="212" y="404" fill="#64748b" font-size="10">Providers: AWS, Azure, GCP, OCI</text>
+<text x="212" y="422" fill="#64748b" font-size="10">Last imported: Apr 16, 2026 09:14</text>
+<text x="522" y="404" fill="#64748b" font-size="10">Required columns: provider, cost_usd</text>
+<text x="522" y="422" fill="#64748b" font-size="10">Native Excel import is intentionally not enabled yet.</text>
+
+<text x="196" y="462" fill="#94a3b8" font-size="9">Settings now covers CSV billing import, provider credential validation, and scan setup from one workspace.</text>
 
 </g><!-- end scene 4 -->
 
