@@ -15,14 +15,14 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 The dashboard is the main workspace for:
 
 - multi-cloud cost overview across AWS, Azure, GCP, and OCI
-- provider connection and scan readiness checks
+- provider connection, CSV billing upload, and scan readiness checks
 - anomaly detection and optimization recommendations
 - deterministic forecasting with baseline, conservative, balanced, and aggressive scenarios plus p10/p50/p90 fan percentiles and budget guardrails
 - OCI GenAI-assisted cost advisor conversations when OCI GenAI credentials are configured
 
 ## Repository Layout
 
-- `finops_mcp/`: FastAPI backend, auth, credential workflows, scan state, provider integrations
+- `finops_mcp/`: FastAPI backend, auth, credential and CSV import workflows, scan state, provider integrations
 - `dashboard/`: Next.js dashboard UI
 - `ansible/`: host provisioning and application runtime configuration
 - `deploy/deploy-oci.sh`: laptop-driven OCI compute deployment
@@ -41,7 +41,7 @@ The dashboard is the main workspace for:
 ┌──────────────────────────────────────────────┐
 │          Next.js Dashboard (port 3000)       │
 │  - cost views and AI advisor chat            │
-│  - credential + scan setup                   │
+│  - credential, CSV import, and scan setup    │
 │  - anomaly detection and recommendations     │
 └────────────────────────┬─────────────────────┘
                          │ REST
@@ -49,6 +49,7 @@ The dashboard is the main workspace for:
 ┌──────────────────────────────────────────────┐
 │           FastAPI Backend (port 8000)        │
 │  /api/v1/credentials/*                       │
+│  /api/v1/imports/costs/*                     │
 │  /api/v1/scanning/*                          │
 │  /api/v1/costs|anomalies|recommendations     │
 │  /api/v1/provider-diagnostics                │
@@ -60,6 +61,7 @@ The dashboard is the main workspace for:
       │ SQLite/Postgres  │   │ AWS / Azure / GCP / OCI│
       │ - org mapping    │   │ cost + usage endpoints │
       │ - credentials    │   └───────────────────────┘
+      │ - imported costs │
       │ - scan runs      │
       └──────────────────┘
 ```
@@ -70,9 +72,11 @@ The dashboard is the main workspace for:
 - Dashboard access is public by default. Authentication and RBAC are optional deployment hardening steps and stay disabled unless you explicitly set `ENABLE_AUTH=true` and `NEXT_PUBLIC_ENABLE_AUTH=true`.
 - When auth is disabled, backend auth dependencies resolve to the seeded public workspace identity so dashboard APIs still work without login.
 - Raw cloud secrets are validated server-side but not persisted; only sanitized metadata is stored.
+- Workspace owners/admins can upload UTF-8 CSV billing data as a manual cost source. Native Excel import is intentionally not supported yet.
+- When imported CSV cost data exists for a workspace, cost-oriented endpoints use that imported dataset before falling back to live provider summaries.
 - Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
-- Forecasts, anomaly detection, and recommendations are all driven from live provider cost data — no hardcoded baselines.
+- Cost overview, forecasting, analytics, and recommendations are driven from either imported CSV billing data or live provider cost data — no hardcoded baselines.
 - Credential/scanning mutations are role-guarded (`owner`/`admin`) when auth is enabled.
 - AI advisor features are OCI GenAI-based; there is no parallel OpenAI/ChatGPT runtime path in this repository.
 - For OCI GenAI signing, prefer `OCI_PRIVATE_KEY_PATH` over inline multiline env values. Inline `OCI_PRIVATE_KEY` is still supported when encoded with literal `\n` escapes.
@@ -84,6 +88,8 @@ The dashboard is the main workspace for:
 - `POST /api/v1/credentials/add`
 - `GET /api/v1/credentials`
 - `DELETE /api/v1/credentials/{provider}`
+- `GET /api/v1/imports/costs/summary`
+- `POST /api/v1/imports/costs/csv`
 - `POST /api/v1/scanning/request-approval`
 - `POST /api/v1/scanning/approve`
 - `GET /api/v1/scanning/permission`
@@ -136,6 +142,7 @@ If your default `python3` resolves to `3.14`, use `python3.13` (or `python3.12`)
 
 Backend default: `http://localhost:8000`
 Dashboard opens directly by default with no login wall.
+CSV uploads require a migrated database schema, so run `alembic upgrade head` if your local DB predates the latest migration set.
 
 ### Dashboard
 
@@ -217,6 +224,32 @@ npm run build
 
 terraform -chdir=../terraform validate
 ```
+
+## CSV Billing Import
+
+OptiOra currently supports CSV upload for manual billing ingestion. Excel import is not supported yet.
+
+Required CSV columns:
+
+- `provider`
+- `cost_usd`
+
+Optional CSV columns:
+
+- `service_name`
+- `account_identifier`
+- `account_name`
+- `region`
+- `period_start`
+- `period_end`
+- `currency`
+
+Current CSV rules:
+
+- file must be UTF-8 encoded
+- `provider` must be one of `aws`, `azure`, `gcp`, or `oci`
+- `currency` defaults to `USD` and only `USD` is currently accepted
+- each new upload replaces the previous imported billing dataset for that workspace
 
 ## Documentation
 

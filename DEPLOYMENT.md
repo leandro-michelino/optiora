@@ -17,7 +17,7 @@ By default, deployed dashboards are directly accessible with no login wall. Auth
 - OCI CLI installed and configured (`oci setup config`)
 - `OCI_COMPARTMENT_ID` exported
 - SSH keypair available locally
-- outbound access from the VM to package registries and cloud APIs
+- outbound access from the VM to package registries and any cloud APIs you plan to call
 
 ## Local Preflight
 
@@ -160,6 +160,14 @@ Optional scheduler smoke test (authenticated mode with owner/admin role):
 curl -X POST http://<instance-ip>:8000/api/v1/scanning/scheduler/run-now
 ```
 
+Manual product checks:
+
+1. Open `http://<instance-ip>:3000/dashboard` and confirm the dashboard opens directly with no login wall.
+2. Upload a UTF-8 billing CSV from the settings page and confirm the imported dataset summary updates.
+3. Confirm the costs overview reflects the imported CSV totals.
+4. If live provider validation is in scope, add one cloud credential, approve scanning, and start a scan.
+5. Confirm history, diff, alerts, and CSV exports still work after deployment.
+
 On the VM:
 
 ```bash
@@ -195,11 +203,18 @@ set +a
 2. Confirm `NEXT_PUBLIC_API_URL` in `/opt/optiora/.env` points to the VM public IP
 3. Ensure `node -v` and `npm -v` work on the instance
 
-### Credential validation failures
+### Live provider credential validation failures
 
 1. Re-check provider permissions and region/subscription/project values
 2. Confirm outbound egress from the subnet to the cloud provider APIs
 3. Use `/api/v1/credentials/validate` response details for root cause
+
+### CSV import failures
+
+1. Confirm the uploaded file is a UTF-8 `.csv`
+2. Confirm the CSV header includes `provider` and `cost_usd`
+3. Confirm `provider` values are limited to `aws`, `azure`, `gcp`, or `oci`
+4. Confirm `currency` is omitted or set to `USD`
 
 ## Deployment Architecture
 

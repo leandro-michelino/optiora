@@ -7,13 +7,16 @@ Handles:
 - Dashboard data endpoints
 """
 
+import csv
+import io
 import json
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Literal, Optional, Union
+from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -23,17 +26,18 @@ from .config import Config
 from .notifications import evaluate_budget_alert
 from .access_control import require_role
 from .orm_models import (
-    SessionLocal,
-    User,
-    CostSnapshot,
-    UserOrganization,
-    UserRole,
-    ScanRunRecord,
     AlertEvent,
     AuditLog,
+    CostSnapshot,
+    ImportedCostRecord,
     ProviderAccount,
     ProviderAccountSnapshot,
+    ScanRunRecord,
     ScanningPermissionRecord,
+    SessionLocal,
+    User,
+    UserOrganization,
+    UserRole,
     get_db,
 )
 from .scanning import ScanningManager, ScanningState
@@ -45,6 +49,7 @@ logger = logging.getLogger(__name__)
 _scheduler_running = False
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
+SUPPORTED_COST_IMPORT_PROVIDERS = {"aws", "azure", "gcp", "oci"}
 
 
 class AWSCredentialInput(BaseModel):
@@ -235,6 +240,29 @@ class ExternalAWSAnomalyIngestRequest(BaseModel):
     events: List[Dict[str, Any]]
 
 
+class ImportedCostUploadResponse(BaseModel):
+    organization_id: int
+    customer_id: str
+    upload_id: str
+    filename: str
+    rows_imported: int
+    total_cost_usd: float
+    providers: List[str]
+    imported_at: datetime
+
+
+class ImportedCostSummaryResponse(BaseModel):
+    organization_id: int
+    customer_id: str
+    has_data: bool
+    upload_id: Optional[str] = None
+    source_filename: Optional[str] = None
+    rows_imported: int = 0
+    total_cost_usd: float = 0.0
+    providers: List[str] = []
+    last_imported_at: Optional[datetime] = None
+
+
 def get_credential_manager(db: Session = Depends(get_db)) -> CredentialManager:
     return CredentialManager(db)
 
@@ -243,6 +271,64 @@ def get_scanning_manager(db: Session = Depends(get_db)) -> ScanningManager:
     return ScanningManager(db)
 
 
+def _parse_optional_datetime(value: Optional[str], field_name: str, line_number: int) -> Optional[datetime]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field_name} at CSV line {line_number}. Use ISO date or datetime.",
+        ) from exc
+
+
+def _parse_required_float(value: Optional[str], field_name: str, line_number: int) -> float:
+    text = str(value or "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing {field_name} at CSV line {line_number}.",
+        )
+    try:
+        return float(text)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field_name} at CSV line {line_number}.",
+        ) from exc
+
+
+def _imported_cost_summary(rows: List[ImportedCostRecord]) -> Dict[str, Any]:
+    providers = sorted({row.provider for row in rows})
+    latest_imported_at = max((row.created_at for row in rows), default=None)
+    return {
+        "rows_imported": len(rows),
+        "total_cost_usd": round(sum(float(row.cost_usd or 0.0) for row in rows), 2),
+        "providers": providers,
+        "last_imported_at": latest_imported_at,
+        "upload_id": rows[0].upload_id if rows else None,
+        "source_filename": rows[0].source_filename if rows else None,
+    }
+
+
+def _get_imported_cost_rows(
+    db: Session,
+    organization_id: int,
+    customer_id: str,
+    cloud_provider: str = "all",
+) -> List[ImportedCostRecord]:
+    query = db.query(ImportedCostRecord).filter(
+        ImportedCostRecord.organization_id == organization_id,
+        ImportedCostRecord.customer_id == customer_id,
+    )
+    if cloud_provider != "all":
+        query = query.filter(ImportedCostRecord.provider == cloud_provider)
+    return query.order_by(
+        ImportedCostRecord.created_at.desc(),
+        ImportedCostRecord.id.desc(),
+    ).all()
 def _parse_credential_payload(raw: Dict[str, Any]) -> CredentialInput:
     provider = str(raw.get("provider", "")).lower()
     if provider == "aws":
@@ -353,7 +439,76 @@ async def _cost_summary_for_provider(provider: str, period: str = "month") -> Di
     return _safe_json_load(raw, {"error": "Invalid tool response"})
 
 
-async def _cost_context(period: str = "month", cloud_provider: str = "all") -> Dict[str, Any]:
+def _imported_cost_context(
+    membership: UserOrganization,
+    db: Session,
+    cloud_provider: str = "all",
+) -> Optional[Dict[str, Any]]:
+    resolved_org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    rows = _get_imported_cost_rows(
+        db,
+        organization_id=resolved_org_id,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+    )
+    if not rows:
+        return None
+
+    breakdown: Dict[str, Dict[str, float]] = {}
+    region_breakdown: Dict[str, float] = {}
+    total_cost = 0.0
+    for row in rows:
+        provider = str(row.provider or "").strip().lower()
+        if not provider:
+            continue
+        cost = float(row.cost_usd or 0.0)
+        total_cost += cost
+        provider_bucket = breakdown.setdefault(provider, {"cost": 0.0, "percentage": 0.0})
+        provider_bucket["cost"] = round(provider_bucket["cost"] + cost, 2)
+        region_name = str(row.region or "").strip()
+        if region_name:
+            region_breakdown[region_name] = round(region_breakdown.get(region_name, 0.0) + cost, 2)
+
+    if total_cost > 0:
+        for provider in breakdown:
+            breakdown[provider]["percentage"] = round(
+                (breakdown[provider]["cost"] / total_cost) * 100,
+                1,
+            )
+
+    summary = _imported_cost_summary(rows)
+    return {
+        "period": "imported",
+        "cloud_provider": cloud_provider,
+        "total_cost": round(total_cost, 2),
+        "breakdown": breakdown,
+        "region_breakdown": [
+            {"region": region, "cost_usd": round(cost, 2)}
+            for region, cost in sorted(region_breakdown.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "source": "csv_import",
+        "rows_imported": summary["rows_imported"],
+        "last_imported_at": summary["last_imported_at"].isoformat()
+        if summary["last_imported_at"]
+        else None,
+    }
+
+
+async def _cost_context(
+    membership: UserOrganization,
+    db: Session,
+    period: str = "month",
+    cloud_provider: str = "all",
+) -> Dict[str, Any]:
+    imported_context = _imported_cost_context(
+        membership,
+        db,
+        cloud_provider=cloud_provider,
+    )
+    if imported_context is not None:
+        return imported_context
+
     providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
     breakdown: Dict[str, Dict[str, float]] = {}
     region_breakdown: Dict[str, float] = {}
@@ -1029,6 +1184,161 @@ async def get_provider_account_rollups(
     )
 
 
+@router.get("/imports/costs/summary", response_model=ImportedCostSummaryResponse)
+async def get_imported_cost_summary(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> ImportedCostSummaryResponse:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    rows = _get_imported_cost_rows(db, organization_id, customer_id)
+    if not rows:
+        return ImportedCostSummaryResponse(
+            organization_id=organization_id,
+            customer_id=customer_id,
+            has_data=False,
+        )
+
+    summary = _imported_cost_summary(rows)
+    return ImportedCostSummaryResponse(
+        organization_id=organization_id,
+        customer_id=customer_id,
+        has_data=True,
+        upload_id=summary["upload_id"],
+        source_filename=summary["source_filename"],
+        rows_imported=summary["rows_imported"],
+        total_cost_usd=summary["total_cost_usd"],
+        providers=summary["providers"],
+        last_imported_at=summary["last_imported_at"],
+    )
+
+
+@router.post("/imports/costs/csv", response_model=ImportedCostUploadResponse)
+async def upload_cost_csv(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> ImportedCostUploadResponse:
+    _require_management_role(membership, "CSV cost import")
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+
+    filename = str(file.filename or "").strip() or "cost-import.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV uploads are supported right now.")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded CSV file is empty.")
+
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="CSV upload must be UTF-8 encoded.") from exc
+
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV header row is missing. Expected columns include provider and cost_usd.",
+        )
+    reader.fieldnames = [str(name or "").strip().lower() for name in reader.fieldnames]
+    if "provider" not in reader.fieldnames or "cost_usd" not in reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV must include provider and cost_usd columns.")
+
+    imported_at = datetime.utcnow()
+    upload_id = f"csv_{uuid4().hex}"
+    rows_to_store: List[ImportedCostRecord] = []
+    total_cost = 0.0
+    providers: set[str] = set()
+
+    for line_number, row in enumerate(reader, start=2):
+        normalized_row = {
+            str(key or "").strip().lower(): str(value or "").strip()
+            for key, value in row.items()
+        }
+        provider = normalized_row.get("provider", "").lower()
+        if provider not in SUPPORTED_COST_IMPORT_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unsupported provider at CSV line {line_number}. "
+                    f"Use one of: {', '.join(sorted(SUPPORTED_COST_IMPORT_PROVIDERS))}."
+                ),
+            )
+
+        currency = normalized_row.get("currency", "USD").upper() or "USD"
+        if currency != "USD":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only USD CSV imports are supported right now. Invalid currency at line {line_number}.",
+            )
+
+        cost_usd = _parse_required_float(normalized_row.get("cost_usd"), "cost_usd", line_number)
+        total_cost += cost_usd
+        providers.add(provider)
+        rows_to_store.append(
+            ImportedCostRecord(
+                organization_id=organization_id,
+                customer_id=customer_id,
+                upload_id=upload_id,
+                source_filename=filename,
+                provider=provider,
+                service_name=normalized_row.get("service_name") or normalized_row.get("service") or None,
+                account_identifier=normalized_row.get("account_identifier") or None,
+                account_name=normalized_row.get("account_name") or None,
+                region=normalized_row.get("region") or None,
+                period_start=_parse_optional_datetime(normalized_row.get("period_start"), "period_start", line_number),
+                period_end=_parse_optional_datetime(normalized_row.get("period_end"), "period_end", line_number),
+                cost_usd=cost_usd,
+                currency=currency,
+                line_number=line_number,
+                created_at=imported_at,
+            )
+        )
+
+    if not rows_to_store:
+        raise HTTPException(status_code=400, detail="CSV file does not contain any data rows.")
+
+    db.query(ImportedCostRecord).filter(
+        ImportedCostRecord.organization_id == organization_id,
+        ImportedCostRecord.customer_id == customer_id,
+    ).delete(synchronize_session=False)
+    db.add_all(rows_to_store)
+    db.add(
+        AuditLog(
+            organization_id=organization_id,
+            actor_user_id=current_user.id,
+            action="cost_import.csv_uploaded",
+            entity_type="cost_import",
+            entity_id=upload_id,
+            metadata_json=json.dumps(
+                {
+                    "filename": filename,
+                    "rows_imported": len(rows_to_store),
+                    "providers": sorted(providers),
+                }
+            ),
+            created_at=imported_at,
+        )
+    )
+    db.commit()
+
+    return ImportedCostUploadResponse(
+        organization_id=organization_id,
+        customer_id=customer_id,
+        upload_id=upload_id,
+        filename=filename,
+        rows_imported=len(rows_to_store),
+        total_cost_usd=round(total_cost, 2),
+        providers=sorted(providers),
+        imported_at=imported_at,
+    )
+
+
 @router.get("/alerts")
 async def list_alerts(
     limit: int = 20,
@@ -1179,9 +1489,10 @@ async def dashboard_costs(
     cloud_provider: str = "all",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    _ = (current_user, membership)
-    context = await _cost_context(period, cloud_provider)
+    _ = current_user
+    context = await _cost_context(membership, db, period, cloud_provider)
 
     anomalies_result = _safe_json_load(
         await anomalies.detect_anomalies({"cloud_provider": cloud_provider}),
@@ -1241,9 +1552,10 @@ async def dashboard_recommendations(
     cloud_provider: str = "all",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
-    _ = (current_user, membership)
-    context = await _cost_context("month", cloud_provider)
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
     result = _safe_json_load(
         await recommendations.get_recommendations(
             {
@@ -1282,9 +1594,10 @@ async def dashboard_forecast(
     cloud_provider: str = "all",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    _ = (current_user, membership)
-    context = await _cost_context("month", cloud_provider)
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
     result = _safe_json_load(
         await finops_analytics.get_forecast(
             {
@@ -1306,9 +1619,10 @@ async def dashboard_analytics(
     cloud_provider: str = "all",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    _ = (current_user, membership)
-    context = await _cost_context("month", cloud_provider)
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
     anomalies_result = _safe_json_load(
         await anomalies.detect_anomalies({"cloud_provider": cloud_provider}),
         {},
@@ -1374,6 +1688,11 @@ async def api_info() -> Dict[str, Any]:
             "forecasting": True,
             "genai_advisor": True,
             "provider_diagnostics": True,
+            "audit_logging": True,
+            "budget_alerts": True,
+            "csv_exports": True,
+            "csv_imports": True,
+            "provider_hierarchy": True,
         },
     }
 

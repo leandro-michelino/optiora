@@ -16,6 +16,8 @@ import {
   ScanStartResponse,
   ForecastResponse,
   FinOpsAnalyticsResponse,
+  ImportedCostSummaryResponse,
+  ImportedCostUploadResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -77,10 +79,6 @@ async function requestJson<T>(
   }
 }
 
-/**
- * Fetch cost data from backend
- * Falls back to an explicit zero-cost baseline if API is unavailable.
- */
 export async function fetchCosts(): Promise<CostResponse> {
   try {
     return await requestJson<CostResponse>('/api/v1/costs')
@@ -216,6 +214,29 @@ export async function fetchProviderAccountRollups(provider?: string, scanId?: st
     `/api/v1/provider-accounts/rollups${toQueryString({ provider, scan_id: scanId })}`,
     {},
   )
+}
+
+export async function fetchImportedCostSummary(): Promise<ImportedCostSummaryResponse | null> {
+  try {
+    return await requestJson<ImportedCostSummaryResponse>('/api/v1/imports/costs/summary')
+  } catch {
+    return null
+  }
+}
+
+export async function uploadImportedCostCsv(file: File): Promise<ImportedCostUploadResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await authorizedFetch(backendUrl('/api/v1/imports/costs/csv'), {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(detail || `Upload failed with ${response.status}`)
+  }
+  return await response.json() as ImportedCostUploadResponse
 }
 
 export async function fetchAlerts(limit = 20): Promise<AlertEvent[]> {

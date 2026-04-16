@@ -30,6 +30,7 @@ Purpose: reduce implementation risk before deeper product expansion.
 - backend tests for credential CRUD
 - backend tests for scan approval, scan start, and scan progress
 - backend tests for history, diff, alerts, and export endpoints
+- backend tests for CSV cost import and role enforcement
 - public-mode dashboard regression coverage
 - migration upgrade coverage for current Alembic path
 - deployment smoke checklist automation
@@ -45,14 +46,14 @@ Purpose: reduce implementation risk before deeper product expansion.
 
 ### Acceptance criteria
 
-- core backend flows are covered by automated tests
+- core backend flows, including CSV import and live credential paths, are covered by automated tests
 - public dashboard mode is explicitly tested
 - migration failures are caught before deployment
 - docs describe one repeatable verification path for local and OCI environments
 
 ## Epic 2: Multi-Account and Hierarchy Support
 
-Purpose: move from one credential per provider toward real customer hierarchy coverage.
+Purpose: move from one credential or one CSV upload per workspace toward real customer hierarchy coverage.
 
 ### Deliverables
 
@@ -158,8 +159,8 @@ Purpose: improve the customer-facing value of the product for finance, leadershi
 ### Milestone 1
 
 - complete Epic 1
-- add minimal schema for provider hierarchy
-- expose first account rollup endpoint
+- harden the existing provider hierarchy foundation
+- broaden account rollups to cover both imported and scanned cost paths
 
 ### Milestone 2
 
@@ -192,9 +193,9 @@ These should stay out unless a customer requirement forces reprioritization.
 
 If work starts immediately, the strongest first sprint is:
 
-1. add backend tests for credentials, scans, history, diff, alerts, and exports
-2. add the first hierarchy model and migration
-3. expose one API response with account-level grouping
-4. add one dashboard card or table showing grouped account spend
+1. finish Epic 1 gaps around public-mode dashboard regression and migration verification
+2. extend CSV import handling to preserve richer hierarchy fields such as account and region
+3. expose account-level grouping consistently for imported and scanned datasets
+4. add one dashboard card or table showing grouped account spend with imported-data fallback
 
 That sequence reduces risk while producing visible `1.0` progress early.

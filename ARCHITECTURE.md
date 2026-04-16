@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-This document reflects the current public-dashboard deployment model and the repo state on April 15, 2026.
+This document reflects the current public-dashboard deployment model and the repo state on April 16, 2026.
 
 ## Runtime Topology
 
@@ -13,7 +13,7 @@ This document reflects the current public-dashboard deployment model and the rep
 ┌──────────────────────────────────────────────┐
 │          Next.js Dashboard (port 3000)       │
 │  - public landing and direct dashboard       │
-│  - cloud setup, scan approval, operations    │
+│  - cloud setup, CSV import, operations       │
 │  - forecasting, anomalies, recommendations   │
 │  - OCI GenAI chat route for advisor UX       │
 └────────────────────────┬─────────────────────┘
@@ -22,6 +22,7 @@ This document reflects the current public-dashboard deployment model and the rep
 ┌──────────────────────────────────────────────┐
 │           FastAPI Backend (port 8000)        │
 │  /api/v1/credentials/*                       │
+│  /api/v1/imports/costs/*                     │
 │  /api/v1/scanning/*                          │
 │  /api/v1/costs|anomalies|recommendations     │
 │  /api/v1/forecast|analytics|alerts|exports   │
@@ -34,7 +35,8 @@ This document reflects the current public-dashboard deployment model and the rep
       │ SQLite/Postgres  │   │ AWS / Azure / GCP / OCI│
       │ - org/workspace  │   │ cost + usage endpoints │
       │ - credentials    │   │ OCI GenAI chat         │
-      │ - scan runs      │   └───────────────────────┘
+      │ - imported costs │   └───────────────────────┘
+      │ - scan runs      │
       │ - alerts/audit   │
       └──────────────────┘
 ```
@@ -53,31 +55,43 @@ Single public workspace
    +--> dashboard opens directly
    +--> no login wall
    +--> org-scoped data stored under one workspace
+   +--> cost source can be live credentials or uploaded CSV
    +--> auth/RBAC code remains optional hardening only
 ```
 
-## Credential and Scan Flow
+## Cost Source Flow
 
 ```text
 Dashboard Settings
    |
-   | POST /api/v1/credentials/validate
-   v
-Provider-specific validation
+   +--> Live provider path
+   |      |
+   |      | POST /api/v1/credentials/validate
+   |      v
+   |   Provider-specific validation
+   |      |
+   |      | POST /api/v1/credentials/add
+   |      v
+   |   Persist sanitized metadata only
+   |      |
+   |      | POST /api/v1/scanning/approve
+   |      | POST /api/v1/scanning/start
+   |      v
+   |   Scan run recorded
+   |      |
+   |      +--> snapshots
+   |      +--> alerts
+   |      +--> audit events
+   |      +--> history + diff + CSV exports
    |
-   | POST /api/v1/credentials/add
-   v
-Persist sanitized metadata only
-   |
-   | POST /api/v1/scanning/approve
-   | POST /api/v1/scanning/start
-   v
-Scan run recorded
-   |
-   +--> snapshots
-   +--> alerts
-   +--> audit events
-   +--> history + diff + CSV exports
+   +--> Manual billing path
+          |
+          | POST /api/v1/imports/costs/csv
+          v
+       Imported cost rows persisted
+          |
+          +--> cost overview / forecast / analytics / recommendations use imported cost context
+          +--> audit event recorded
 ```
 
 ## Scheduler and Diff Flow

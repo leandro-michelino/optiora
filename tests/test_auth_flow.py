@@ -215,9 +215,11 @@ class AuthFlowTest(unittest.TestCase):
 
         try:
             api_module._run_validation = lambda _credential: _MockStatus()
+
             async def _noop_run_cost_analysis(scan_id: str, customer_id: str, providers: list[str]) -> None:
                 _ = (scan_id, customer_id, providers)
                 return None
+
             api_module._run_cost_analysis = _noop_run_cost_analysis
 
             add = self.client.post(
@@ -269,6 +271,158 @@ class AuthFlowTest(unittest.TestCase):
         finally:
             api_module._run_validation = original_run_validation
             api_module._run_cost_analysis = original_run_cost_analysis
+
+    def test_csv_cost_import_replaces_manual_dataset_and_updates_costs(self) -> None:
+        register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "csv-owner@example.com",
+                "password": "StrongPass1!",
+                "full_name": "CSV Owner",
+            },
+        )
+        self.assertEqual(register.status_code, 201)
+
+        login = self.client.post(
+            "/auth/login",
+            json={"email": "csv-owner@example.com", "password": "StrongPass1!"},
+        )
+        self.assertEqual(login.status_code, 200)
+
+        first_upload = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={
+                "file": (
+                    "initial-costs.csv",
+                    (
+                        "provider,cost_usd,service_name,account_identifier,region\n"
+                        "aws,120.50,EC2,acct-100,us-east-1\n"
+                        "azure,79.50,Compute,sub-200,westeurope\n"
+                    ),
+                    "text/csv",
+                )
+            },
+        )
+        self.assertEqual(first_upload.status_code, 200)
+        self.assertEqual(first_upload.json()["rows_imported"], 2)
+        self.assertEqual(sorted(first_upload.json()["providers"]), ["aws", "azure"])
+
+        summary = self.client.get("/api/v1/imports/costs/summary")
+        self.assertEqual(summary.status_code, 200)
+        self.assertTrue(summary.json()["has_data"])
+        self.assertEqual(summary.json()["rows_imported"], 2)
+        self.assertAlmostEqual(summary.json()["total_cost_usd"], 200.0)
+
+        costs = self.client.get("/api/v1/costs")
+        self.assertEqual(costs.status_code, 200)
+        self.assertEqual(costs.json()["totalCost"], 200.0)
+        self.assertEqual(costs.json()["breakdown"]["aws"]["cost"], 120.5)
+        self.assertEqual(costs.json()["breakdown"]["azure"]["cost"], 79.5)
+
+        replacement_upload = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={
+                "file": (
+                    "replacement-costs.csv",
+                    "provider,cost_usd,region\noci,42.25,eu-madrid-1\n",
+                    "text/csv",
+                )
+            },
+        )
+        self.assertEqual(replacement_upload.status_code, 200)
+        self.assertEqual(replacement_upload.json()["rows_imported"], 1)
+        self.assertEqual(replacement_upload.json()["providers"], ["oci"])
+
+        replaced_summary = self.client.get("/api/v1/imports/costs/summary")
+        self.assertEqual(replaced_summary.status_code, 200)
+        self.assertEqual(replaced_summary.json()["rows_imported"], 1)
+        self.assertAlmostEqual(replaced_summary.json()["total_cost_usd"], 42.25)
+        self.assertEqual(replaced_summary.json()["providers"], ["oci"])
+
+        replaced_costs = self.client.get("/api/v1/costs")
+        self.assertEqual(replaced_costs.status_code, 200)
+        self.assertEqual(replaced_costs.json()["totalCost"], 42.25)
+        self.assertEqual(replaced_costs.json()["breakdown"], {"oci": {"cost": 42.25, "percentage": 100.0}})
+        self.assertEqual(replaced_costs.json()["regionBreakdown"], [{"region": "eu-madrid-1", "cost_usd": 42.25}])
+
+    def test_csv_cost_import_requires_owner_or_admin_role(self) -> None:
+        owner_register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "csv-admin@example.com",
+                "password": "StrongPass1!",
+                "full_name": "CSV Admin",
+            },
+        )
+        self.assertEqual(owner_register.status_code, 201)
+        owner_user_id = owner_register.json()["id"]
+
+        db = SessionLocal()
+        try:
+            owner = db.query(User).filter(User.id == owner_user_id).first()
+            assert owner is not None
+            shared_org = Organization(name="CSV Shared Org", owner_id=owner.id)
+            db.add(shared_org)
+            db.flush()
+            owner_membership = UserOrganization(
+                user_id=owner.id,
+                organization_id=shared_org.id,
+                role=UserRole.OWNER,
+            )
+            db.add(owner_membership)
+            db.commit()
+            shared_org_id = shared_org.id
+        finally:
+            db.close()
+
+        readonly_register = self.client.post(
+            "/auth/register",
+            json={
+                "email": "csv-readonly@example.com",
+                "password": "StrongPass1!",
+                "full_name": "CSV Readonly",
+            },
+        )
+        self.assertEqual(readonly_register.status_code, 201)
+        readonly_user_id = readonly_register.json()["id"]
+
+        db = SessionLocal()
+        try:
+            db.add(
+                UserOrganization(
+                    user_id=readonly_user_id,
+                    organization_id=shared_org_id,
+                    role=UserRole.READONLY,
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        readonly_login = self.client.post(
+            "/auth/login",
+            json={"email": "csv-readonly@example.com", "password": "StrongPass1!"},
+        )
+        self.assertEqual(readonly_login.status_code, 200)
+
+        switched = self.client.post(
+            "/auth/organization/select",
+            json={"organization_id": shared_org_id},
+        )
+        self.assertEqual(switched.status_code, 200)
+
+        blocked = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={
+                "file": (
+                    "readonly-costs.csv",
+                    "provider,cost_usd\naws,10\n",
+                    "text/csv",
+                )
+            },
+        )
+        self.assertEqual(blocked.status_code, 403)
+        self.assertIn("requires", blocked.json()["detail"])
 
     def test_scheduler_status_and_external_aws_anomaly_ingestion(self) -> None:
         register = self.client.post(
@@ -342,8 +496,8 @@ class AuthFlowTest(unittest.TestCase):
         self.assertTrue(inspector.has_table("credential_records"))
         self.assertTrue(inspector.has_table("scan_runs"))
         self.assertTrue(inspector.has_table("cost_snapshots"))
+        self.assertTrue(inspector.has_table("imported_cost_records"))
 
-        # Rebuild the schema for any subsequent local test runs in this process.
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
 

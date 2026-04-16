@@ -348,6 +348,38 @@ class CostSnapshot(Base):
         )
 
 
+class ImportedCostRecord(Base):
+    """Customer-uploaded CSV cost rows used as a manual billing source."""
+
+    __tablename__ = "imported_cost_records"
+    __table_args__ = (
+        UniqueConstraint("upload_id", "line_number", name="uq_imported_cost_upload_line"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    upload_id = Column(String(64), nullable=False, index=True)
+    source_filename = Column(String(255), nullable=False)
+    provider = Column(String(50), nullable=False, index=True)
+    service_name = Column(String(255), nullable=True)
+    account_identifier = Column(String(255), nullable=True)
+    account_name = Column(String(255), nullable=True)
+    region = Column(String(100), nullable=True)
+    period_start = Column(DateTime, nullable=True)
+    period_end = Column(DateTime, nullable=True)
+    cost_usd = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(10), nullable=False, default="USD")
+    line_number = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return (
+            f"<ImportedCostRecord(customer_id={self.customer_id}, provider={self.provider}, "
+            f"cost=${self.cost_usd:.2f})>"
+        )
+
+
 class ProviderAccount(Base):
     """Provider hierarchy node such as account, subscription, project, or compartment."""
 

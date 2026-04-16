@@ -8,8 +8,9 @@ This file turns the current `Release 0.9` state into a concrete go-live gate and
 
 - dashboard opens directly by default with no login wall
 - authentication and RBAC are deferred as optional deployment hardening
-- organization-scoped persistence is in place for credentials, scan runs, alerts, audit logs, and exports
+- organization-scoped persistence is in place for credentials, imported CSV cost data, scan runs, alerts, audit logs, and exports
 - scan history, scan diff, alerts, audit logs, and CSV exports are available
+- customer-managed CSV cost upload is available as a billing input path
 - OCI deployment paths exist through `deploy/deploy-oci.sh` and Terraform plus Ansible
 
 ## Release 0.9 Exit Gate
@@ -45,8 +46,8 @@ Required deployment inputs:
 - `OCI_COMPARTMENT_ID`
 - subnet or VCN selection for the compute host
 - SSH key pair for the instance
-- outbound egress to package registries and cloud billing APIs
-- valid provider credentials for at least one target cloud
+- outbound egress to package registries and any cloud APIs you plan to call
+- either valid provider credentials for at least one target cloud or a customer billing CSV ready for upload
 
 ### 3. Deploy
 
@@ -73,13 +74,14 @@ curl http://<instance-ip>:3000
 Manual product checks:
 
 1. Open `http://<instance-ip>:3000/dashboard` directly and confirm no login prompt appears.
-2. Add one cloud provider credential from the dashboard.
-3. Approve scanning and start a scan.
-4. Confirm the operations page shows recent scan activity.
-5. Confirm history and diff views return real data after at least two scans.
-6. Confirm alerts load and acknowledgement works.
-7. Confirm CSV exports download successfully.
-8. Confirm forecasting, anomalies, recommendations, and AI insights render without hardcoded placeholder data.
+2. Upload one UTF-8 billing CSV from the dashboard settings page and confirm the imported dataset summary updates.
+3. Confirm the costs overview reflects the imported CSV totals.
+4. If live provider testing is in scope, add one cloud provider credential, approve scanning, and start a scan.
+5. Confirm the operations page shows recent scan activity.
+6. Confirm history and diff views return real data after at least two scans.
+7. Confirm alerts load and acknowledgement works.
+8. Confirm CSV exports download successfully.
+9. Confirm forecasting, anomalies, recommendations, and AI insights render without hardcoded placeholder data.
 
 ### 5. Operational checks
 
@@ -108,7 +110,7 @@ set +a
 Work should move into `1.0` only after these are true:
 
 - at least one deployed environment has passed the full `0.9` smoke test
-- real provider credentials and scan flows have been validated end to end
+- at least one real customer data path has been validated end to end through either provider credentials and scans or CSV upload
 - scan history, diff, alerts, and exports are confirmed in the deployed environment
 - deployment runbook is accurate enough for repeatable redeploys
 - known release blockers are limited to product expansion, not base deployment stability

@@ -276,6 +276,29 @@ export interface ProviderAccountRollupResponse {
   items: ProviderAccountRollupItem[]
 }
 
+export interface ImportedCostUploadResponse {
+  organization_id: number
+  customer_id: string
+  upload_id: string
+  filename: string
+  rows_imported: number
+  total_cost_usd: number
+  providers: string[]
+  imported_at: string
+}
+
+export interface ImportedCostSummaryResponse {
+  organization_id: number
+  customer_id: string
+  has_data: boolean
+  upload_id?: string | null
+  source_filename?: string | null
+  rows_imported: number
+  total_cost_usd: number
+  providers: string[]
+  last_imported_at?: string | null
+}
+
 export interface FinOpsAnalyticsResponse {
   generated_at: string
   current_monthly_spend_usd: number
