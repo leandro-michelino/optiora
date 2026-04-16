@@ -533,8 +533,67 @@ def _build_rollups_from_imported_rows(
 
     nodes: Dict[int, Dict[str, Any]] = {}
     provider_root_ids: Dict[str, int] = {}
-    account_nodes: Dict[tuple[str, str, str], int] = {}
+    account_nodes: Dict[tuple[str, str], int] = {}
     latest_imported_at = max((row.created_at for row in rows), default=None)
+
+    def _normalized_account_type(raw_value: Optional[str], default: str) -> str:
+        value = str(raw_value or "").strip().lower().replace(" ", "_")
+        return value or default
+
+    def _ensure_node(
+        *,
+        provider_key: str,
+        identifier: str,
+        account_name: str,
+        account_type: str,
+        parent_account_id: Optional[int],
+    ) -> int:
+        node_key = (provider_key, identifier)
+        node_id = account_nodes.get(node_key)
+        if node_id is None:
+            node_id = _synthetic_id()
+            account_nodes[node_key] = node_id
+            nodes[node_id] = {
+                "provider": provider_key,
+                "account_identifier": identifier,
+                "account_name": account_name,
+                "account_type": account_type,
+                "parent_account_id": parent_account_id,
+                "parent_account_identifier": (
+                    nodes[parent_account_id]["account_identifier"]
+                    if parent_account_id in nodes
+                    else None
+                ),
+                "direct_cost_usd": 0.0,
+                "direct_savings_identified_usd": 0.0,
+                "direct_anomalies_count": 0,
+                "direct_service_count": 0,
+                "scan_id": None,
+                "captured_at": latest_imported_at.isoformat() if latest_imported_at else None,
+                "_services": set(),
+            }
+            return node_id
+
+        node = nodes[node_id]
+        if account_name and (
+            not str(node.get("account_name") or "").strip()
+            or str(node.get("account_name") or "").strip() == identifier
+        ):
+            node["account_name"] = account_name
+        if (
+            account_type
+            and str(node.get("account_type") or "").strip() in {"", "account", "group"}
+            and account_type not in {"", "account", "group"}
+        ):
+            node["account_type"] = account_type
+        if parent_account_id is not None and node.get("parent_account_id") is None:
+            node["parent_account_id"] = parent_account_id
+            node["parent_account_identifier"] = (
+                nodes[parent_account_id]["account_identifier"]
+                if parent_account_id in nodes
+                else None
+            )
+        return node_id
 
     for row in rows:
         provider_key = str(row.provider or "").strip().lower()
@@ -565,26 +624,24 @@ def _build_rollups_from_imported_rows(
             identifier = f"{provider_key}:unassigned"
             account_name = f"{provider_key.upper()} Unassigned"
 
-        account_key = (provider_key, identifier, account_name)
-        account_id = account_nodes.get(account_key)
-        if account_id is None:
-            account_id = _synthetic_id()
-            account_nodes[account_key] = account_id
-            nodes[account_id] = {
-                "provider": provider_key,
-                "account_identifier": identifier,
-                "account_name": account_name,
-                "account_type": "account",
-                "parent_account_id": root_id,
-                "parent_account_identifier": nodes[root_id]["account_identifier"],
-                "direct_cost_usd": 0.0,
-                "direct_savings_identified_usd": 0.0,
-                "direct_anomalies_count": 0,
-                "direct_service_count": 0,
-                "scan_id": None,
-                "captured_at": latest_imported_at.isoformat() if latest_imported_at else None,
-                "_services": set(),
-            }
+        parent_identifier = str(row.parent_account_identifier or "").strip()
+        parent_account_id: Optional[int] = root_id
+        if parent_identifier:
+            parent_account_id = _ensure_node(
+                provider_key=provider_key,
+                identifier=parent_identifier,
+                account_name=parent_identifier,
+                account_type="group",
+                parent_account_id=root_id,
+            )
+
+        account_id = _ensure_node(
+            provider_key=provider_key,
+            identifier=identifier,
+            account_name=account_name,
+            account_type=_normalized_account_type(row.account_type, "account"),
+            parent_account_id=parent_account_id,
+        )
         nodes[account_id]["direct_cost_usd"] = round(float(nodes[account_id]["direct_cost_usd"]) + float(row.cost_usd or 0.0), 2)
         service_name = str(row.service_name or "").strip()
         if service_name:
@@ -608,6 +665,8 @@ def _build_rollups_from_imported_rows(
         total_rolled_up_cost_usd=root_total,
         items=filtered_items,
     )
+
+
 def _parse_credential_payload(raw: Dict[str, Any]) -> CredentialInput:
     provider = str(raw.get("provider", "")).lower()
     if provider == "aws":
@@ -1590,10 +1649,10 @@ async def download_cost_import_template(
     _ = (current_user, membership)
     return Response(
         (
-            "provider,cost_usd,service_name,account_identifier,account_name,region,period_start,period_end,currency\n"
-            "aws,123.45,EC2,acct-aws-1,AWS Prod,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
-            "azure,67.89,Virtual Machines,sub-azure-1,Azure Prod,uk south,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
-            "oci,10.00,Compute,comp-oci-1,OCI Prod,uk-london-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+            "provider,cost_usd,service_name,account_identifier,account_name,account_type,parent_account_identifier,region,period_start,period_end,currency\n"
+            "aws,123.45,EC2,acct-aws-1,AWS Prod,account,aws-org-root,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+            "azure,67.89,Virtual Machines,sub-azure-1,Azure Prod,subscription,mg-finops,uk south,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+            "oci,10.00,Compute,comp-oci-1,OCI Prod,compartment,tenancy-main,uk-london-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
         ),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=optiora-cost-import-template.csv"},
@@ -1690,6 +1749,8 @@ async def upload_cost_csv(
                 service_name=normalized_row.get("service_name") or normalized_row.get("service") or None,
                 account_identifier=normalized_row.get("account_identifier") or None,
                 account_name=normalized_row.get("account_name") or None,
+                account_type=normalized_row.get("account_type") or None,
+                parent_account_identifier=normalized_row.get("parent_account_identifier") or None,
                 region=normalized_row.get("region") or None,
                 period_start=period_start,
                 period_end=period_end,

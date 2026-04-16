@@ -370,6 +370,8 @@ class ImportedCostRecord(Base):
     service_name = Column(String(255), nullable=True)
     account_identifier = Column(String(255), nullable=True)
     account_name = Column(String(255), nullable=True)
+    account_type = Column(String(80), nullable=True)
+    parent_account_identifier = Column(String(255), nullable=True)
     region = Column(String(100), nullable=True)
     period_start = Column(DateTime, nullable=True)
     period_end = Column(DateTime, nullable=True)

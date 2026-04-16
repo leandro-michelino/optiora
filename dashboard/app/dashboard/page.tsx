@@ -187,6 +187,11 @@ export default function DashboardPage() {
   const topRecommendation = state.recommendations[0]
   const highestAnomaly = state.anomalies[0]
   const accountRollupItems = state.accountRollup?.items.slice(0, 6) || []
+  const accountRollupSourceLabel = state.accountRollup
+    ? state.accountRollup.scan_id
+      ? 'Scan snapshot'
+      : 'Imported CSV fallback'
+    : 'No rollup data'
 
   async function loadDashboard() {
     setLoading(true)
@@ -455,11 +460,36 @@ export default function DashboardPage() {
               Rolled-up cost visibility by provider account, subscription, project, or compartment.
             </p>
           </div>
-          <Badge variant="outline" className="rounded-md">
-            {state.accountRollup?.items.length || 0} nodes
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="rounded-md">
+              {state.accountRollup?.items.length || 0} nodes
+            </Badge>
+            <Badge variant="outline" className="rounded-md">
+              {accountRollupSourceLabel}
+            </Badge>
+          </div>
         </CardHeader>
         <CardContent className="pt-4">
+          {state.accountRollup && (
+            <div className="mb-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Total rolled-up spend
+                </p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {formatCurrencyPrecise(state.accountRollup.total_rolled_up_cost_usd)}
+                </p>
+              </div>
+              <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Direct grouped spend
+                </p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {formatCurrencyPrecise(state.accountRollup.total_direct_cost_usd)}
+                </p>
+              </div>
+            </div>
+          )}
           {!state.accountRollup || accountRollupItems.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
               Run a scan or upload a CSV with account identifiers to populate provider rollups. Provider roots, grouped account nodes, and rolled-up totals now render as a hierarchy.

@@ -504,10 +504,10 @@ class AuthFlowTest(unittest.TestCase):
                 "file": (
                     "finance-rollup.csv",
                     (
-                        "provider,cost_usd,service_name,account_identifier,account_name,region,period_start,period_end,currency\n"
-                        "aws,100.00,EC2,acct-a,AWS Prod A,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
-                        "aws,50.00,S3,acct-b,AWS Prod B,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
-                        "azure,60.00,Virtual Machines,sub-a,Azure Prod,uk south,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+                        "provider,cost_usd,service_name,account_identifier,account_name,account_type,parent_account_identifier,region,period_start,period_end,currency\n"
+                        "aws,100.00,EC2,acct-a,AWS Prod A,account,aws-org-root,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+                        "aws,50.00,S3,acct-b,AWS Prod B,account,aws-org-root,eu-west-2,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
+                        "azure,60.00,Virtual Machines,sub-a,Azure Prod,subscription,mg-finops,uk south,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD\n"
                     ),
                     "text/csv",
                 )
@@ -526,19 +526,29 @@ class AuthFlowTest(unittest.TestCase):
             if item["provider"] == "aws" and item["account_type"] == "provider"
         )
         self.assertEqual(aws_root["rolled_up_cost_usd"], 150.0)
-        self.assertEqual(aws_root["child_count"], 2)
+        self.assertEqual(aws_root["child_count"], 1)
         self.assertEqual(aws_root["depth"], 0)
+
+        aws_group = next(
+            item for item in payload["items"]
+            if item["provider"] == "aws" and item["account_identifier"] == "aws-org-root"
+        )
+        self.assertEqual(aws_group["account_type"], "group")
+        self.assertEqual(aws_group["rolled_up_cost_usd"], 150.0)
+        self.assertEqual(aws_group["child_count"], 2)
+        self.assertEqual(aws_group["depth"], 1)
 
         aws_child = next(
             item for item in payload["items"]
             if item["provider"] == "aws" and item["account_identifier"] == "acct-a"
         )
         self.assertEqual(aws_child["rolled_up_cost_usd"], 100.0)
-        self.assertEqual(aws_child["depth"], 1)
+        self.assertEqual(aws_child["depth"], 2)
 
         template = self.client.get("/api/v1/imports/costs/template.csv")
         self.assertEqual(template.status_code, 200)
-        self.assertIn("provider,cost_usd", template.text)
+        self.assertIn("account_type", template.text)
+        self.assertIn("parent_account_identifier", template.text)
 
         report_csv = self.client.get("/api/v1/reports/executive-summary.csv")
         self.assertEqual(report_csv.status_code, 200)
