@@ -16,6 +16,12 @@ source .venv/bin/activate
 optiora
 ```
 
+Developer override example:
+
+```bash
+optiora --port 8001 --reload
+```
+
 If `python3` resolves to `3.14`, create your virtualenv with `python3.13` (or `python3.12`) first.
 
 Use Python `3.10` to `3.13` for backend runtime/setup.
@@ -73,5 +79,6 @@ terraform -chdir=terraform validate
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Python `3.13` test runs currently show `datetime.utcnow()` deprecation warnings from runtime/framework code paths; functional behavior still passes.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
+- `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
 - Next test expansion should prioritize credential CRUD with mocked provider validators, scan approval/progress flows, public-mode dashboard regression coverage, Alembic migration round-trip coverage, and deeper CSV import validation cases.
 - Frontend production build is a required deployment gate.

@@ -24,6 +24,7 @@ By default, deployed dashboards are directly accessible with no login wall. Auth
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
 python3 -m compileall $(find ./finops_* -type d)
+./.venv/bin/python -m unittest discover -s tests -v
 
 cd dashboard
 npm run type-check
@@ -64,7 +65,7 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 - Ensure the following env vars are set before deploy: `OCI_GENAI_ENDPOINT`, `OCI_GENAI_MODEL`, `OCI_COMPARTMENT_OCID`, `OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_REGION`, plus either `OCI_PRIVATE_KEY_PATH` or `OCI_PRIVATE_KEY`.
 - Validate OCI CLI works locally: `oci iam region list` and `oci os ns get`.
 - If using the deploy script, export the vars (or add to inventory/group_vars for Ansible) so they render into the remote `.env`.
-- After deploy, test AI chat via the dashboard or `curl http://<host>:3000/api/ai/chat` with a sample message.
+- After deploy, test AI chat via the dashboard or with a JSON `POST` to `/api/ai/chat`.
 
 Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
 
@@ -158,6 +159,9 @@ SECRET_KEY=<strong-random-value>
 curl http://<instance-ip>:8000/health
 curl http://<instance-ip>:8000/api/v1/info
 curl http://<instance-ip>:3000
+curl -X POST http://<instance-ip>:3000/api/ai/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Summarize the main cost drivers in this workspace.","conversationHistory":[]}'
 ```
 
 Optional scheduler smoke test (authenticated mode with owner/admin role):
@@ -233,7 +237,7 @@ Developer Laptop
    v
 OCI VM
 ├── /opt/optiora
-│   ├── backend package
+│   ├── finops_mcp/ (internal backend package)
 │   ├── dashboard
 │   ├── .env
 │   └── venv

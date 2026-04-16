@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release 0.9 smoke test — verifies a running OptiOra deployment end-to-end.
+# Public-dashboard smoke test — verifies a running OptiOra deployment end-to-end.
 #
 # Usage:
 #   HOST=http://<instance-ip> bash tests/smoke_test_0_9.sh
@@ -37,7 +37,7 @@ _http_body() {
 }
 
 echo ""
-echo "=== OptiOra Release 0.9 Smoke Test ==="
+echo "=== OptiOra Public Dashboard Smoke Test ==="
 echo "API:       $API"
 echo "Dashboard: $DASHBOARD"
 echo ""
@@ -215,9 +215,9 @@ echo "=== Results: ${PASS} passed, ${FAIL} failed ==="
 echo ""
 
 if [ "$FAIL" -gt 0 ]; then
-    echo "SMOKE TEST FAILED — resolve the above failures before declaring 0.9 complete."
+    echo "SMOKE TEST FAILED — resolve the above failures before declaring the environment ready."
     exit 1
 else
-    echo "SMOKE TEST PASSED — deployment meets Release 0.9 exit gate requirements."
+    echo "SMOKE TEST PASSED — deployment meets the current public-dashboard exit gate."
     exit 0
 fi

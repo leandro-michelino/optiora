@@ -279,35 +279,6 @@ def get_scanning_manager(db: Session = Depends(get_db)) -> ScanningManager:
     return ScanningManager(db)
 
 
-def _parse_optional_datetime(value: Optional[str], field_name: str, line_number: int) -> Optional[datetime]:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid {field_name} at CSV line {line_number}. Use ISO date or datetime.",
-        ) from exc
-
-
-def _parse_required_float(value: Optional[str], field_name: str, line_number: int) -> float:
-    text = str(value or "").strip()
-    if not text:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Missing {field_name} at CSV line {line_number}.",
-        )
-    try:
-        return float(text)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid {field_name} at CSV line {line_number}.",
-        ) from exc
-
-
 def _parse_optional_datetime_value(
     value: Optional[str],
     field_name: str,

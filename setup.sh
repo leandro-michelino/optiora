@@ -271,7 +271,7 @@ main() {
 Setup complete.
 
 Next steps:
-  1) Backend: source .venv/bin/activate && python -m finops_mcp.app
+  1) Backend: source .venv/bin/activate && optiora
   2) Dashboard: cd dashboard && npm run dev
   3) Terraform plan (example):
      terraform -chdir=terraform plan -var="compartment_id=<ocid>" -var="laptop_cidr=<ip>/32"

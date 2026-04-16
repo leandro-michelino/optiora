@@ -21,7 +21,7 @@ echo "[dev] Starting backend (port 8000) and frontend (port 3000)"
   fi
   source .venv/bin/activate
   pip install -e . >/dev/null
-  python -m finops_mcp.app --port 8000
+  optiora --port 8000
 ) &
 
 npm run dev

@@ -87,19 +87,18 @@ This closes one of the biggest gaps versus more mature FinOps platforms.
 ### 4. Improve reporting and operational visibility
 
 - cost trend views by provider, region, service, and account
-- CSV template download and import validation feedback for customer billing uploads
-- Excel export for customer-friendly and finance-friendly reporting
+- richer CSV import validation previews, mapping feedback, and reconciliation guidance
+- multi-sheet Excel workbooks for finance-friendly reporting
 - scheduled PDF digest for weekly and monthly summaries
 - tokenized read-only report sharing
 
 ### 5. Add alerts and notifications
 
-- budget threshold alerts with percentage and absolute value support
-- anomaly notifications via email, Slack, and webhooks
+- alert routing by organization and team
+- mute windows, escalation policies, and acknowledgement SLAs
 - cost spike alerts with configurable sensitivity
 - daily and weekly executive summaries
-- alert routing by organization and team
-- acknowledgement and mute options for noisy alerts
+- acknowledgement history and noise-reduction analytics
 
 ## Competitive Gap Closure
 
@@ -226,7 +225,7 @@ This is the best near-term commercial path.
 
 ### Reporting and exports
 
-- CSV and Excel export for cost snapshots, anomalies, and recommendations
+- expanded CSV and Excel exports for cost snapshots, anomalies, and recommendations
 - scheduled PDF digest email for weekly and monthly reporting
 - shareable cost report URLs with read-only tokens
 

@@ -22,7 +22,7 @@ The dashboard is the main workspace for:
 
 ## Repository Layout
 
-- `backend package`: FastAPI backend, auth, credential and CSV import workflows, scan state, provider integrations
+- `finops_mcp/` (internal package): FastAPI backend, auth, credential and CSV import workflows, scan state, provider integrations
 - `dashboard/`: Next.js dashboard UI
 - `ansible/`: host provisioning and application runtime configuration
 - `deploy/deploy-oci.sh`: laptop-driven OCI compute deployment
@@ -68,7 +68,7 @@ The dashboard is the main workspace for:
 
 ## Key Behavior
 
-- `.env` is loaded automatically when the backend package is imported.
+- `.env` is loaded automatically when the OptiOra backend starts.
 - Dashboard access is public by default. Authentication and RBAC are optional deployment hardening steps and stay disabled unless you explicitly set `ENABLE_AUTH=true` and `NEXT_PUBLIC_ENABLE_AUTH=true`.
 - When auth is disabled, backend auth dependencies resolve to the seeded public workspace identity so dashboard APIs still work without login.
 - Raw cloud secrets are validated server-side but not persisted; only sanitized metadata is stored.
@@ -141,6 +141,7 @@ optiora
 If your default `python3` resolves to `3.14`, use `python3.13` (or `python3.12`) for backend setup.
 
 Backend default: `http://localhost:8000`
+Developer override example: `optiora --port 8001 --reload`
 Dashboard opens directly by default with no login wall.
 CSV uploads require a migrated database schema, so run `alembic upgrade head` if your local DB predates the latest migration set.
 
@@ -222,7 +223,7 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
 python3 -m compileall $(find ./finops_* -type d)
-python3 -m unittest discover -s tests
+.venv/bin/python -m unittest discover -s tests -v
 
 cd dashboard
 npm run type-check
@@ -258,6 +259,14 @@ Current CSV rules:
 - file must be UTF-8 encoded
 - `provider` must be one of `aws`, `azure`, `gcp`, or `oci`
 - `currency` defaults to `USD` and only `USD` is currently accepted
+
+## Smoke Test
+
+Use the bundled public-dashboard smoke test against a running environment:
+
+```bash
+HOST=http://<instance-ip> bash tests/smoke_test_0_9.sh
+```
 - each new upload replaces the previous imported billing dataset for that workspace
 
 ## Documentation

@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 
 TEST_DB = os.path.join(tempfile.gettempdir(), "optiora_auth_flow_test.db")
@@ -19,6 +20,7 @@ try:
     from sqlalchemy import inspect  # noqa: E402
 
     from finops_mcp import api as api_module  # noqa: E402
+    import finops_mcp.app as app_module  # noqa: E402
     from finops_mcp.app import app  # noqa: E402
     from finops_mcp.orm_models import (  # noqa: E402
         Base,
@@ -621,6 +623,17 @@ class AuthFlowTest(unittest.TestCase):
                 os.environ.pop("ENABLE_AUTH", None)
             else:
                 os.environ["ENABLE_AUTH"] = previous_auth
+
+    def test_optiora_cli_honors_host_port_and_reload_flags(self) -> None:
+        with patch("finops_mcp.app.uvicorn.run") as mocked_run:
+            app_module.main(["--host", "127.0.0.1", "--port", "9001", "--reload"])
+
+        mocked_run.assert_called_once_with(
+            "finops_mcp.app:app",
+            host="127.0.0.1",
+            port=9001,
+            reload=True,
+        )
 
     def test_z_alembic_upgrade_downgrade_roundtrip(self) -> None:
         cfg = AlembicConfig("alembic.ini")

@@ -1,18 +1,20 @@
 """Main FastAPI application for OptiOra."""
 
+import argparse
 import asyncio
+import logging
+import os
+
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import logging
-import os
 
 from .config import Config
-from .orm_models import ensure_public_workspace, init_db
-from .auth_routes import router as auth_router
-from .api import router as api_router, run_scheduled_scans_once
 from . import __version__
+from .api import router as api_router, run_scheduled_scans_once
+from .auth_routes import router as auth_router
+from .orm_models import ensure_public_workspace, init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -123,13 +125,28 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """Run the FastAPI backend with uvicorn."""
+    parser = argparse.ArgumentParser(prog="optiora", description="Run the OptiOra API backend.")
+    parser.add_argument("--host", default=os.getenv("HOST", "0.0.0.0"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable uvicorn auto-reload.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    args = parser.parse_args(argv)
+
     uvicorn.run(
         "finops_mcp.app:app",
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8000")),
-        reload=os.getenv("UVICORN_RELOAD", "false").lower() == "true",
+        host=args.host,
+        port=args.port,
+        reload=args.reload or os.getenv("UVICORN_RELOAD", "false").lower() == "true",
     )
 
 

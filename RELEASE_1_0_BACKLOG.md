@@ -128,7 +128,7 @@ Purpose: improve the customer-facing value of the product for finance, leadershi
 ### Deliverables
 
 - richer CSV exports with hierarchy and business dimensions
-- Excel export for finance-friendly reports
+- multi-sheet Excel workbooks for finance-friendly reports
 - executive dashboard cards and summary views
 - trend views by provider, region, service, and account
 - weekly/monthly summary data structure for future scheduled reporting

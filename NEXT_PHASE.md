@@ -1,10 +1,10 @@
 # Next Phase Checklist
 
-This file turns the current `Release 0.9` state into a concrete go-live gate and defines what must be true before work is considered ready to move into `1.0`.
+This file turns the current public-dashboard build into a concrete go-live gate and defines what must be true before work is considered ready to move into `1.0`.
 
-## Current Release Position
+## Current Go-Live Position
 
-`Release 0.9` is now centered on deployable product readiness:
+The current release is centered on deployable product readiness:
 
 - dashboard opens directly by default with no login wall
 - authentication and RBAC are deferred as optional deployment hardening
@@ -13,17 +13,20 @@ This file turns the current `Release 0.9` state into a concrete go-live gate and
 - customer-managed CSV cost upload is available as a billing input path
 - OCI deployment paths exist through `deploy/deploy-oci.sh` and Terraform plus Ansible
 
-## Release 0.9 Exit Gate
+## Go-Live Exit Gate
 
-Before declaring `0.9` complete in an environment, all of the following should be done.
+Before declaring an environment ready, all of the following should be done.
 
 ### 1. Local validation
 
 ```bash
 python3 -m py_compile $(find ./finops_* -maxdepth 1 -name '*.py') tests/test_auth_flow.py
+./.venv/bin/python -m unittest discover -s tests -v
 
 cd dashboard
 npm run type-check
+npm run lint
+npm run build
 cd ..
 
 terraform -chdir=terraform validate
@@ -109,7 +112,7 @@ set +a
 
 Work should move into `1.0` only after these are true:
 
-- at least one deployed environment has passed the full `0.9` smoke test
+- at least one deployed environment has passed the full smoke test
 - at least one real customer data path has been validated end to end through either provider credentials and scans or CSV upload
 - scan history, diff, alerts, and exports are confirmed in the deployed environment
 - deployment runbook is accurate enough for repeatable redeploys

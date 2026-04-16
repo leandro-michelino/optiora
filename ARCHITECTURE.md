@@ -184,6 +184,31 @@ Ansible
    +--> health checks
 ```
 
+## OCI Delivery and Access
+
+```text
+Developer Laptop
+   |
+   +--> terraform apply / validate
+   |       |
+   |       +--> VCN + subnet + security list
+   |
+   +--> ansible-playbook
+   |       |
+   |       +--> Oracle Linux / Debian package install
+   |       +--> Python venv + editable backend install
+   |       +--> dashboard npm ci + build
+   |       +--> .env render + systemd units
+   |       +--> alembic upgrade head
+   |
+   v
+OCI Compute Host
+   |
+   +--> optiora-api.service       -> http://<host>:8000/health
+   +--> optiora-dashboard.service -> http://<host>:3000/dashboard
+   +--> /api/ai/chat              -> OCI Generative AI in uk-london-1
+```
+
 ## AI Advisor Configuration
 
 ```text
