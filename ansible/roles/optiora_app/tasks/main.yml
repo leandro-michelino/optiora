@@ -326,3 +326,39 @@
   when:
     - optiora_install_nginx | bool
     - optiora_enable_tls | bool
+
+- name: Build deployment access summary
+  ansible.builtin.set_fact:
+    optiora_access_scheme: "{{ 'https' if (optiora_install_nginx | bool and optiora_enable_tls | bool and optiora_domain | length > 0) else 'http' }}"
+    optiora_access_host: "{{ optiora_domain if (optiora_install_nginx | bool and optiora_domain | length > 0) else ansible_host }}"
+    optiora_dashboard_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else ansible_host)) ~ '/dashboard') if (optiora_install_nginx | bool) else (optiora_frontend_url ~ '/dashboard') }}"
+    optiora_api_health_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else ansible_host)) ~ '/health') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/health') }}"
+    optiora_api_info_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else ansible_host)) ~ '/api/v1/info') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/api/v1/info') }}"
+
+- name: Show OptiOra access summary
+  ansible.builtin.debug:
+    msg: |
+
+      ============================================================
+      OptiOra deployment is live
+      ============================================================
+
+      Access
+        Dashboard:  {{ optiora_dashboard_access_url }}
+        API health: {{ optiora_api_health_access_url }}
+        API info:   {{ optiora_api_info_access_url }}
+        AI hub:     {{ optiora_dashboard_access_url | regex_replace('/dashboard$', '/dashboard/ai-insights') }}
+        Advisor:    {{ optiora_dashboard_access_url | regex_replace('/dashboard$', '/dashboard/cost-advisor') }}
+
+      Operations
+        SSH:        ssh {{ ansible_user | default('opc') }}@{{ ansible_host }}
+        API logs:   sudo journalctl -u optiora-api -n 100 --no-pager
+        UI logs:    sudo journalctl -u optiora-dashboard -n 100 --no-pager
+
+      OCI GenAI
+        Region:     {{ optiora_region | default('uk-london-1', true) }}
+        Endpoint:   {{ optiora_genai_endpoint | default('https://inference.generativeai.uk-london-1.oci.oraclecloud.com', true) }}
+
+      Mode
+        Auth:       {{ 'enabled' if optiora_enable_auth | bool else 'disabled (public dashboard mode)' }}
+        Front door: {{ 'nginx reverse proxy' if optiora_install_nginx | bool else 'direct service ports 3000/8000' }}

@@ -34,7 +34,7 @@ terraform init
 terraform validate
 terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
-  -var="region=af-johannesburg-1" \
+  -var="region=uk-london-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 
@@ -47,7 +47,7 @@ terraform plan \
   -var="egress_cidr=<trusted-egress-cidr>"
 ```
 
-`terraform apply` is intentionally not part of the default workflow unless explicitly requested. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning on either Debian-family or Oracle Linux / RHEL images.
+`terraform apply` is intentionally not part of the default workflow unless explicitly requested. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning on either Debian-family or Oracle Linux / RHEL images. The Terraform apply output now ends with a next-step banner that points operators to the Ansible command, dashboard URL pattern, API URLs, and OCI GenAI endpoint for the chosen region.
 
 ## Topology
 

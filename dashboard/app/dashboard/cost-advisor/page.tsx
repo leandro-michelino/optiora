@@ -110,7 +110,7 @@ export default function CostAdvisorPage() {
           Cloud Cost Advisor
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Ask anything about your cloud costs. Powered by OCI GenAI.
+          Ask anything about your cloud costs. Powered by OCI GenAI in London South.
         </p>
       </div>
 

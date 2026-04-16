@@ -459,7 +459,7 @@ export default function SettingsPage() {
                   AI Provider
                 </h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Narrative and advisor features use OCI GenAI for this deployment.
+                  Narrative, AI insights, and advisor features use OCI GenAI in London South (`uk-london-1`) for this deployment.
                 </p>
               </div>
               <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">

@@ -1,5 +1,5 @@
 compartment_id = "ocid1.compartment.oc1..your_compartment_ocid"
-region         = "af-johannesburg-1"
+region         = "uk-london-1"
 
 # Restrict ingress to your laptop public IP only.
 laptop_cidr = "79.112.21.102/32"
@@ -8,7 +8,7 @@ egress_cidr = "0.0.0.0/0"
 
 project_code = "optiora"
 environment  = "prod"
-region_code  = "jnb"
+region_code  = "lhr"
 name_suffix  = "001"
 
 vcn_cidr           = "10.50.0.0/16"

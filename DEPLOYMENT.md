@@ -38,7 +38,7 @@ terraform -chdir=../terraform init
 terraform -chdir=../terraform validate
 terraform -chdir=../terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
-  -var="region=af-johannesburg-1" \
+  -var="region=uk-london-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 
@@ -52,6 +52,7 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ## Quick Deploy
 
 ```bash
+export OCI_REGION=uk-london-1
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
@@ -59,7 +60,7 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 
 ### GenAI-ready deployment checklist
 
-- Confirm OCI Generative AI is available in your chosen region and your tenancy has access.
+- Confirm OCI Generative AI is available in your chosen region and your tenancy has access. `uk-london-1` is the primary region for this repository.
 - Ensure the following env vars are set before deploy: `OCI_GENAI_ENDPOINT`, `OCI_GENAI_MODEL`, `OCI_COMPARTMENT_OCID`, `OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_REGION`, plus either `OCI_PRIVATE_KEY_PATH` or `OCI_PRIVATE_KEY`.
 - Validate OCI CLI works locally: `oci iam region list` and `oci os ns get`.
 - If using the deploy script, export the vars (or add to inventory/group_vars for Ansible) so they render into the remote `.env`.
@@ -95,7 +96,7 @@ The quick deploy path also runs `alembic upgrade head` on the VM before restarti
 ## Environment Variables
 
 ```env
-OCI_REGION=af-johannesburg-1
+OCI_REGION=uk-london-1
 OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex
@@ -119,7 +120,7 @@ ENABLE_AUTH=false
 NEXT_PUBLIC_ENABLE_AUTH=false
 PUBLIC_WORKSPACE_NAME=OptiOra Public Workspace
 PUBLIC_WORKSPACE_EMAIL=public@optiora.local
-OCI_GENAI_ENDPOINT=https://inference.generativeai.<region>.oci.oraclecloud.com
+OCI_GENAI_ENDPOINT=https://inference.generativeai.uk-london-1.oci.oraclecloud.com
 OCI_GENAI_MODEL=ocid1.generativeaimodel.oc1..<model_ocid>
 OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..<tenancy_ocid>

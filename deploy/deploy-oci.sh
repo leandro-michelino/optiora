@@ -22,7 +22,7 @@ NC='\033[0m'
 
 # Configuration
 DEPLOYMENT_TYPE=${1:-"compute"}
-REGION=${OCI_REGION:-"af-johannesburg-1"}
+REGION=${OCI_REGION:-"uk-london-1"}
 COMPARTMENT_ID=${OCI_COMPARTMENT_ID:-}
 INSTANCE_NAME=${OCI_INSTANCE_NAME:-"optiora-api"}
 SHAPE=${OCI_SHAPE:-"VM.Standard.E4.Flex"}
@@ -97,7 +97,7 @@ ${YELLOW}REQUIRED ENV:${NC}
     OCI_COMPARTMENT_ID   Target compartment OCID
 
 ${YELLOW}COMMON ENV:${NC}
-    OCI_REGION                 Region (default: af-johannesburg-1)
+    OCI_REGION                 Region (default: uk-london-1)
     OCI_INSTANCE_NAME          VM display name (default: optiora-api)
     OCI_SHAPE                  VM shape (default: VM.Standard.E4.Flex)
     OCI_OCPU_COUNT             vCPU count (default: 2)

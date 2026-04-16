@@ -83,7 +83,7 @@ export default function AIInsightsPage() {
           AI Cost Intelligence
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Deterministic FinOps analytics with GenAI available for explanation, prioritization, and planning.
+          Deterministic FinOps analytics with OCI GenAI in London South available for explanation, prioritization, and planning.
         </p>
       </div>
 

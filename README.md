@@ -18,7 +18,7 @@ The dashboard is the main workspace for:
 - provider connection, CSV billing upload, and scan readiness checks
 - anomaly detection and optimization recommendations
 - deterministic forecasting with baseline, conservative, balanced, and aggressive scenarios plus p10/p50/p90 fan percentiles and budget guardrails
-- OCI GenAI-assisted cost advisor conversations when OCI GenAI credentials are configured
+- OCI GenAI-assisted cost advisor conversations, AI insights, and advisory workflows with London South (`uk-london-1`) as the primary OCI GenAI region
 
 ## Repository Layout
 
@@ -170,6 +170,7 @@ Database config:
 ## OCI Deployment
 
 ```bash
+export OCI_REGION=uk-london-1
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
@@ -188,6 +189,7 @@ Optional OCI deploy environment:
 
 - `OCI_PROFILE`: OCI CLI profile used to resolve the platform-image tenancy when `OCI_IMAGE_COMPARTMENT_ID` is not set
 - `OCI_IMAGE_COMPARTMENT_ID`: explicit image compartment override for platform image lookup
+- `OCI_REGION=uk-london-1`: primary OCI region for hosting and OCI GenAI inference
 
 ## Terraform + Ansible Baseline
 
@@ -198,7 +200,7 @@ terraform -chdir=terraform init
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
-  -var="region=af-johannesburg-1" \
+  -var="region=uk-london-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 

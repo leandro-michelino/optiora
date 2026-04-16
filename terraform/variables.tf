@@ -6,7 +6,7 @@ variable "compartment_id" {
 variable "region" {
   description = "OCI region."
   type        = string
-  default     = "af-johannesburg-1"
+  default     = "uk-london-1"
 }
 
 variable "project_code" {
@@ -24,7 +24,7 @@ variable "environment" {
 variable "region_code" {
   description = "Short region code used in naming."
   type        = string
-  default     = "jnb"
+  default     = "lhr"
 }
 
 variable "name_suffix" {

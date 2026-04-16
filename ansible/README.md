@@ -2,6 +2,8 @@
 
 Terraform stays limited to OCI infrastructure primitives: VCN, subnet, route table, internet gateway, and security list. Ansible owns host provisioning and application runtime configuration.
 
+Primary OCI region defaults to `uk-london-1` so the deployed stack can lean on OCI GenAI by default.
+
 ## First Run
 
 1. Apply or otherwise create the OCI compute host.
@@ -16,6 +18,8 @@ cp ansible/inventory.example.yml ansible/inventory.yml
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ```
+
+When the playbook finishes successfully it now prints a deployment summary with the dashboard URL, AI insights URL, cost advisor URL, API endpoints, SSH command, log commands, and the active OCI GenAI region/endpoint.
 
 ## Source Deployment
 
