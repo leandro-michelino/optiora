@@ -22,8 +22,8 @@ By default, deployed dashboards are directly accessible with no login wall. Auth
 ## Local Preflight
 
 ```bash
-python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
-python3 -m compileall finops_mcp
+python3 -m py_compile $(find ./finops_* -name '*.py')
+python3 -m compileall $(find ./finops_* -type d)
 
 cd dashboard
 npm run type-check
@@ -233,7 +233,7 @@ Developer Laptop
    v
 OCI VM
 ├── /opt/optiora
-│   ├── finops_mcp
+│   ├── backend package
 │   ├── dashboard
 │   ├── .env
 │   └── venv

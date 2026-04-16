@@ -20,7 +20,7 @@ Before declaring `0.9` complete in an environment, all of the following should b
 ### 1. Local validation
 
 ```bash
-python3 -m py_compile finops_mcp/*.py tests/test_auth_flow.py
+python3 -m py_compile $(find ./finops_* -maxdepth 1 -name '*.py') tests/test_auth_flow.py
 
 cd dashboard
 npm run type-check

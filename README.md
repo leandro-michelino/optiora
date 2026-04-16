@@ -22,7 +22,7 @@ The dashboard is the main workspace for:
 
 ## Repository Layout
 
-- `finops_mcp/`: FastAPI backend, auth, credential and CSV import workflows, scan state, provider integrations
+- `backend package`: FastAPI backend, auth, credential and CSV import workflows, scan state, provider integrations
 - `dashboard/`: Next.js dashboard UI
 - `ansible/`: host provisioning and application runtime configuration
 - `deploy/deploy-oci.sh`: laptop-driven OCI compute deployment
@@ -105,8 +105,8 @@ The dashboard is the main workspace for:
 - `GET /api/v1/anomalies`
 - `POST /api/v1/anomalies/external/aws`
 - `GET /api/v1/recommendations`
- - `GET /api/v1/forecast` (supports budget guardrails + fan percentiles)
- - `GET /api/v1/analytics` (adds provider signals and GenAI brief)
+- `GET /api/v1/forecast` (supports budget guardrails + fan percentiles)
+- `GET /api/v1/analytics` (adds provider signals and GenAI brief)
 - `GET /api/v1/provider-accounts/rollups`
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/{alert_id}/acknowledge`
@@ -135,7 +135,7 @@ python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 cp .env.example .env
-python -m finops_mcp.app
+optiora
 ```
 
 If your default `python3` resolves to `3.14`, use `python3.13` (or `python3.12`) for backend setup.
@@ -220,8 +220,8 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ## Verification
 
 ```bash
-python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
-python3 -m compileall finops_mcp
+python3 -m py_compile $(find ./finops_* -name '*.py')
+python3 -m compileall $(find ./finops_* -type d)
 python3 -m unittest discover -s tests
 
 cd dashboard
@@ -246,6 +246,8 @@ Optional CSV columns:
 - `service_name`
 - `account_identifier`
 - `account_name`
+- `account_type`
+- `parent_account_identifier`
 - `region`
 - `period_start`
 - `period_end`

@@ -38,8 +38,8 @@ Purpose: reduce implementation risk before deeper product expansion.
 ### Likely files
 
 - `tests/test_auth_flow.py`
-- `finops_mcp/api.py`
-- `finops_mcp/scanning.py`
+- `backend API module`
+- `backend scanning module`
 - `alembic/versions/*`
 - `TESTING.md`
 - `NEXT_PHASE.md`
@@ -72,15 +72,12 @@ Purpose: move from one credential or one CSV upload per workspace toward real cu
 
 ### Likely files
 
-- `finops_mcp/orm_models.py`
+- `backend ORM models module`
 - `alembic/versions/*`
-- `finops_mcp/api.py`
-- `finops_mcp/scanning.py`
-- `finops_mcp/credentials.py`
-- `finops_mcp/tools/aws_costs.py`
-- `finops_mcp/tools/azure_costs.py`
-- `finops_mcp/tools/gcp_costs.py`
-- `finops_mcp/tools/oci_costs.py`
+- `backend API module`
+- `backend scanning module`
+- `backend credentials module`
+- `backend cost tool modules (aws/azure/gcp/oci)`
 - `dashboard/lib/types.ts`
 - `dashboard/lib/api.ts`
 - `dashboard/app/dashboard/page.tsx`
@@ -107,10 +104,10 @@ Purpose: make the platform useful for finance and cost allocation workflows.
 
 ### Likely files
 
-- `finops_mcp/orm_models.py`
-- `finops_mcp/api.py`
-- `finops_mcp/tools/recommendations.py`
-- `finops_mcp/tools/finops_analytics.py`
+- `backend ORM models module`
+- `backend API module`
+- `backend recommendation tooling module`
+- `backend analytics tooling module`
 - `dashboard/lib/types.ts`
 - `dashboard/lib/api.ts`
 - `dashboard/app/dashboard/costs/page.tsx`
@@ -138,8 +135,8 @@ Purpose: improve the customer-facing value of the product for finance, leadershi
 
 ### Likely files
 
-- `finops_mcp/api.py`
-- `finops_mcp/tools/finops_analytics.py`
+- `backend API module`
+- `backend analytics tooling module`
 - `dashboard/lib/types.ts`
 - `dashboard/lib/api.ts`
 - `dashboard/app/dashboard/page.tsx`

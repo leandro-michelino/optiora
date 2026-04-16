@@ -5,15 +5,15 @@
 Static verification:
 
 ```bash
-python3 -m py_compile finops_mcp/*.py finops_mcp/tools/*.py
-python3 -m compileall finops_mcp
+python3 -m py_compile $(find ./finops_* -name '*.py')
+python3 -m compileall $(find ./finops_* -type d)
 ```
 
 Once backend dependencies are installed:
 
 ```bash
 source .venv/bin/activate
-python -m finops_mcp.app
+optiora
 ```
 
 If `python3` resolves to `3.14`, create your virtualenv with `python3.13` (or `python3.12`) first.
