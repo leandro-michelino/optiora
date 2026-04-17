@@ -7,7 +7,7 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 <p align="center">
   <img
     src="dashboard/public/optiora-animated.svg"
-    alt="OptiOra animated dashboard — cycling through cost overview, anomaly detection, recommendations, and CSV import settings"
+    alt="OptiOra animated dashboard — cycling through imported cost overview, forecasting with OCI GenAI insights, operations history and alerts, and CSV-first settings"
     width="900"
   />
 </p>
