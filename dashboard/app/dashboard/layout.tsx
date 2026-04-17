@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut, Activity } from 'lucide-react'
+import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut, Activity, Building2 } from 'lucide-react'
 
 function DashboardLayoutContent({
   children,
@@ -19,6 +19,7 @@ function DashboardLayoutContent({
     { href: '/dashboard', label: 'Overview', icon: BarChart3 },
     { href: '/dashboard/my-dashboards', label: 'My Dashboards', icon: Grid },
     { href: '/dashboard/costs', label: 'Cloud Costs', icon: Cloud },
+    { href: '/dashboard/accounts', label: 'Account Hierarchy', icon: Building2 },
   ]
 
   const aiNavItems = [

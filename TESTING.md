@@ -35,13 +35,42 @@ Regression tests:
 
 Current backend coverage includes:
 
+**Auth and organization flows** (`tests/test_auth_flow.py`):
+
 - registration, login, refresh-token rotation, and organization membership reads
 - password reset request/completion with one-time reset tokens
 - refresh-token revocation after password reset
 - customer scope rejection for mismatched `customer_id`
 - login rate limiting after repeated failures
-- organization-scoped credential, scan history, alert, and export flows in auth-enabled regression mode
-- CSV cost import replacement behavior and owner/admin role enforcement
+- organization-scoped credential CRUD, scan history, alert, and export flows
+- CSV cost import replacement behavior, validation, and owner/admin role enforcement
+- imported cost hierarchy rollups and finance report exports (CSV and Excel)
+- scheduler status timeline and external AWS anomaly ingestion
+- public-mode info contract and dashboard data endpoints
+- Alembic upgrade/downgrade roundtrip (`base` → `head` → `base` → `head`)
+
+**Platform hardening** (`tests/test_platform_hardening.py`):
+
+- credential delete: success with list emptying, 404 for missing, role enforcement (readonly blocked)
+- scan pause/resume: state transitions `approved` → `paused` → `running`
+- scheduler run-now endpoint returns status payload
+- public-mode CSV upload: upload succeeds without auth, summary and costs reflect import
+- ORM column schema: `imported_cost_records` hierarchy columns, `provider_accounts` table, `audit_logs` columns
+- analyst role: read access allowed for credentials and costs; delete and CSV upload blocked
+
+**Multi-account hierarchy** (`tests/test_epic2_multi_account.py`):
+
+- `cost_allocation_snapshots` table and column presence (`organization_id`, `scan_id`, `provider_account_id`, `region`, `cost_usd`, etc.)
+- `provider_accounts` table has hierarchy columns (`parent_account_id`, `depth`, `native_region`, `is_active`)
+- account inventory endpoint returns org-scoped accounts, supports `?provider=` filter, returns empty for unknown provider
+- account region breakdown endpoint returns seeded regions, correct total cost, and 404 for unknown account
+- rollup response contains `top_regions` field populated from CSV import with region column
+- inventory org scoping: Org A cannot see Org B's accounts and vice versa
+
+**Notifications** (`tests/test_notifications.py`):
+
+- budget alert event creation with email/Slack/Teams channel tracking
+- alert skip conditions for disabled notifications and below-threshold spend
 
 Smoke endpoints:
 
@@ -96,5 +125,5 @@ terraform -chdir=terraform validate
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
 - `./deploy/deploy-oci.sh verify` wraps `tests/smoke_test_0_9.sh` against the currently deployed OCI instance.
-- Next test expansion should prioritize credential CRUD with mocked provider validators, scan approval/progress flows, public-mode dashboard regression coverage, Alembic migration round-trip coverage, and deeper CSV import validation cases.
+- Epic 1 (platform hardening) and Epic 2 (multi-account hierarchy) are fully covered by `test_platform_hardening.py` and `test_epic2_multi_account.py` respectively.
 - Frontend production build is a required deployment gate.

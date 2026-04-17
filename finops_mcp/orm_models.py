@@ -504,6 +504,37 @@ class ProviderAccountSnapshot(Base):
         )
 
 
+class CostAllocationSnapshot(Base):
+    """Per-scan, per-account, per-region cost breakdown for region-level drill-down."""
+
+    __tablename__ = "cost_allocation_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "scan_id",
+            "provider_account_id",
+            "region",
+            name="uq_cost_allocation_snapshot",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    scan_id = Column(String(255), ForeignKey("scan_runs.scan_id"), nullable=False, index=True)
+    provider_account_id = Column(Integer, ForeignKey("provider_accounts.id"), nullable=False, index=True)
+    provider = Column(String(50), nullable=False, index=True)
+    region = Column(String(100), nullable=False, index=True)
+    cost_usd = Column(Float, nullable=False, default=0.0)
+    captured_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return (
+            f"<CostAllocationSnapshot(scan_id={self.scan_id}, "
+            f"provider_account_id={self.provider_account_id}, region={self.region}, "
+            f"cost=${self.cost_usd:.2f})>"
+        )
+
+
 class AuditLog(Base):
     """Immutable organization-scoped audit trail."""
 

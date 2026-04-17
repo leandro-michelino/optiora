@@ -29,6 +29,7 @@ from .access_control import require_role
 from .orm_models import (
     AlertEvent,
     AuditLog,
+    CostAllocationSnapshot,
     CostSnapshot,
     ImportedCostRecord,
     ProviderAccount,
@@ -181,6 +182,11 @@ class ScanDiffResponse(BaseModel):
     entries: List[ScanDiffEntry]
 
 
+class AccountRegionRow(BaseModel):
+    region: str
+    cost_usd: float
+
+
 class ProviderAccountRollupItem(BaseModel):
     account_id: int
     provider: str
@@ -201,6 +207,7 @@ class ProviderAccountRollupItem(BaseModel):
     child_count: int
     scan_id: Optional[str] = None
     captured_at: Optional[str] = None
+    top_regions: List[AccountRegionRow] = []
 
 
 class ProviderAccountRollupResponse(BaseModel):
@@ -212,6 +219,42 @@ class ProviderAccountRollupResponse(BaseModel):
     total_direct_cost_usd: float
     total_rolled_up_cost_usd: float
     items: List[ProviderAccountRollupItem]
+
+
+class ProviderAccountInventoryItem(BaseModel):
+    account_id: int
+    provider: str
+    account_identifier: str
+    account_name: str
+    account_type: str
+    native_region: Optional[str] = None
+    is_active: bool
+    metadata: Dict[str, Any]
+    created_at: str
+    updated_at: Optional[str] = None
+
+
+class ProviderAccountInventoryResponse(BaseModel):
+    organization_id: int
+    customer_id: str
+    total: int
+    accounts: List[ProviderAccountInventoryItem]
+
+
+class AccountRegionBreakdownItem(BaseModel):
+    region: str
+    cost_usd: float
+    scan_id: str
+    captured_at: str
+
+
+class AccountRegionBreakdownResponse(BaseModel):
+    account_id: int
+    provider: str
+    account_name: str
+    scan_id: Optional[str] = None
+    total_cost_usd: float
+    regions: List[AccountRegionBreakdownItem]
 
 
 class SchedulerCounters(BaseModel):
@@ -483,6 +526,7 @@ def _materialize_rollup_items(nodes: Dict[int, Dict[str, Any]]) -> List[Provider
             child_count=int(nodes[node_id].get("child_count") or 0),
             scan_id=nodes[node_id].get("scan_id"),
             captured_at=nodes[node_id].get("captured_at"),
+            top_regions=nodes[node_id].get("top_regions") or [],
         )
         for node_id in ordered_ids
     ]
@@ -617,10 +661,19 @@ def _build_rollups_from_imported_rows(
         service_name = str(row.service_name or "").strip()
         if service_name:
             nodes[account_id].setdefault("_services", set()).add(service_name)
+        region = str(row.region or "").strip()
+        if region:
+            region_costs = nodes[account_id].setdefault("_region_costs", {})
+            region_costs[region] = round(region_costs.get(region, 0.0) + float(row.cost_usd or 0.0), 2)
 
     for node in nodes.values():
         node["direct_service_count"] = len(node.get("_services", set()))
         node.pop("_services", None)
+        region_costs = node.pop("_region_costs", {})
+        node["top_regions"] = [
+            AccountRegionRow(region=r, cost_usd=c)
+            for r, c in sorted(region_costs.items(), key=lambda x: x[1], reverse=True)[:5]
+        ]
 
     items = _materialize_rollup_items(nodes)
     filtered_items = [item for item in items if provider is None or item.provider == provider]
@@ -1564,6 +1617,32 @@ async def get_provider_account_rollups(
             else None
         )
 
+    # Attach top regions to each node from CostAllocationSnapshot.
+    if scan_id and account_by_id:
+        db2 = SessionLocal()
+        try:
+            alloc_rows = (
+                db2.query(CostAllocationSnapshot)
+                .filter(
+                    CostAllocationSnapshot.scan_id == scan_id,
+                    CostAllocationSnapshot.provider_account_id.in_(list(account_by_id.keys())),
+                )
+                .order_by(CostAllocationSnapshot.cost_usd.desc())
+                .all()
+            )
+        finally:
+            db2.close()
+        for alloc in alloc_rows:
+            node = nodes.get(alloc.provider_account_id)
+            if node is None:
+                continue
+            if "top_regions" not in node:
+                node["top_regions"] = []
+            if len(node["top_regions"]) < 5:
+                node["top_regions"].append(
+                    AccountRegionRow(region=alloc.region, cost_usd=round(float(alloc.cost_usd), 2))
+                )
+
     items = _materialize_rollup_items(nodes)
     filtered_items = [item for item in items if provider is None or item.provider == provider]
     total_direct = round(sum(item.direct_cost_usd for item in filtered_items if item.depth > 0 or item.child_count == 0), 2)
@@ -1578,6 +1657,127 @@ async def get_provider_account_rollups(
         total_direct_cost_usd=total_direct,
         total_rolled_up_cost_usd=total_rolled,
         items=filtered_items,
+    )
+
+
+@router.get("/provider-accounts", response_model=ProviderAccountInventoryResponse)
+async def get_provider_account_inventory(
+    provider: Optional[str] = None,
+    account_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ProviderAccountInventoryResponse:
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    organization_id = _organization_id_for_membership(membership)
+
+    db = SessionLocal()
+    try:
+        query = db.query(ProviderAccount).filter(
+            ProviderAccount.customer_id == customer_id,
+            ProviderAccount.organization_id == organization_id,
+            ProviderAccount.is_active == True,
+        )
+        if provider:
+            query = query.filter(ProviderAccount.provider == provider)
+        if account_type:
+            query = query.filter(ProviderAccount.account_type == account_type)
+        accounts = query.order_by(ProviderAccount.provider, ProviderAccount.account_name).all()
+    finally:
+        db.close()
+
+    items = [
+        ProviderAccountInventoryItem(
+            account_id=acc.id,
+            provider=acc.provider,
+            account_identifier=acc.account_identifier,
+            account_name=acc.account_name,
+            account_type=acc.account_type,
+            native_region=acc.native_region,
+            is_active=bool(acc.is_active),
+            metadata=_safe_json_load(acc.metadata_json, {}),
+            created_at=acc.created_at.isoformat() if acc.created_at else "",
+            updated_at=acc.updated_at.isoformat() if acc.updated_at else None,
+        )
+        for acc in accounts
+    ]
+    return ProviderAccountInventoryResponse(
+        organization_id=organization_id,
+        customer_id=customer_id,
+        total=len(items),
+        accounts=items,
+    )
+
+
+@router.get("/provider-accounts/{account_id}/region-breakdown", response_model=AccountRegionBreakdownResponse)
+async def get_account_region_breakdown(
+    account_id: int,
+    scan_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AccountRegionBreakdownResponse:
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    organization_id = _organization_id_for_membership(membership)
+
+    db = SessionLocal()
+    try:
+        account = (
+            db.query(ProviderAccount)
+            .filter(
+                ProviderAccount.id == account_id,
+                ProviderAccount.customer_id == customer_id,
+                ProviderAccount.organization_id == organization_id,
+            )
+            .first()
+        )
+        if account is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        alloc_query = db.query(CostAllocationSnapshot).filter(
+            CostAllocationSnapshot.provider_account_id == account_id,
+            CostAllocationSnapshot.customer_id == customer_id,
+            CostAllocationSnapshot.organization_id == organization_id,
+        )
+        if scan_id:
+            alloc_query = alloc_query.filter(CostAllocationSnapshot.scan_id == scan_id)
+        else:
+            latest_scan = (
+                db.query(CostAllocationSnapshot.scan_id)
+                .filter(
+                    CostAllocationSnapshot.provider_account_id == account_id,
+                    CostAllocationSnapshot.customer_id == customer_id,
+                    CostAllocationSnapshot.organization_id == organization_id,
+                )
+                .order_by(CostAllocationSnapshot.captured_at.desc())
+                .first()
+            )
+            if latest_scan:
+                scan_id = latest_scan[0]
+                alloc_query = alloc_query.filter(CostAllocationSnapshot.scan_id == scan_id)
+
+        allocs = alloc_query.order_by(CostAllocationSnapshot.cost_usd.desc()).all()
+        account_name = account.account_name
+        provider = account.provider
+    finally:
+        db.close()
+
+    regions = [
+        AccountRegionBreakdownItem(
+            region=a.region,
+            cost_usd=round(float(a.cost_usd), 2),
+            scan_id=a.scan_id,
+            captured_at=a.captured_at.isoformat() if a.captured_at else "",
+        )
+        for a in allocs
+    ]
+    return AccountRegionBreakdownResponse(
+        account_id=account_id,
+        provider=provider,
+        account_name=account_name,
+        scan_id=scan_id,
+        total_cost_usd=round(sum(r.cost_usd for r in regions), 2),
+        regions=regions,
     )
 
 
@@ -2375,6 +2575,40 @@ async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str
                                 captured_at=now,
                             )
                         )
+
+                    # Persist per-region cost breakdown for this account node.
+                    region_breakdown = (
+                        account_row.get("region_breakdown")
+                        or (summary.get("region_breakdown") if len(account_rows) == 1 else [])
+                        or []
+                    )
+                    for region_row in region_breakdown:
+                        region_name = str(region_row.get("region") or "global")
+                        region_cost = float(region_row.get("cost_usd") or 0.0)
+                        if region_cost <= 0.0:
+                            continue
+                        existing_alloc = (
+                            db.query(CostAllocationSnapshot)
+                            .filter(
+                                CostAllocationSnapshot.scan_id == scan_id,
+                                CostAllocationSnapshot.provider_account_id == provider_account.id,
+                                CostAllocationSnapshot.region == region_name,
+                            )
+                            .first()
+                        )
+                        if existing_alloc is None:
+                            db.add(
+                                CostAllocationSnapshot(
+                                    organization_id=organization_id,
+                                    customer_id=customer_id,
+                                    scan_id=scan_id,
+                                    provider_account_id=provider_account.id,
+                                    provider=provider,
+                                    region=region_name,
+                                    cost_usd=region_cost,
+                                    captured_at=now,
+                                )
+                            )
 
         permission = (
             db.query(ScanningPermissionRecord)

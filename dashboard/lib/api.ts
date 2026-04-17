@@ -1,9 +1,11 @@
 import {
+  AccountRegionBreakdownResponse,
   AlertEvent,
   AuditLogEntry,
   CostResponse,
   AnomalyResponse,
   PaginatedResponse,
+  ProviderAccountInventoryResponse,
   ProviderAccountRollupResponse,
   RecommendationResponse,
   ScanDiffResponse,
@@ -225,6 +227,26 @@ export async function fetchScanDiff(scanId: string, previousScanId?: string): Pr
 export async function fetchProviderAccountRollups(provider?: string, scanId?: string): Promise<ProviderAccountRollupResponse> {
   return requestJson<ProviderAccountRollupResponse>(
     `/api/v1/provider-accounts/rollups${toQueryString({ provider, scan_id: scanId })}`,
+    {},
+  )
+}
+
+export async function fetchProviderAccountInventory(
+  provider?: string,
+  accountType?: string,
+): Promise<ProviderAccountInventoryResponse> {
+  return requestJson<ProviderAccountInventoryResponse>(
+    `/api/v1/provider-accounts${toQueryString({ provider, account_type: accountType })}`,
+    {},
+  )
+}
+
+export async function fetchAccountRegionBreakdown(
+  accountId: number,
+  scanId?: string,
+): Promise<AccountRegionBreakdownResponse> {
+  return requestJson<AccountRegionBreakdownResponse>(
+    `/api/v1/provider-accounts/${encodeURIComponent(String(accountId))}/region-breakdown${toQueryString({ scan_id: scanId })}`,
     {},
   )
 }

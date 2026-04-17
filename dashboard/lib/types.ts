@@ -254,6 +254,11 @@ export interface AlertEvent {
   created_at: string
 }
 
+export interface AccountRegionRow {
+  region: string
+  cost_usd: number
+}
+
 export interface ProviderAccountRollupItem {
   account_id: number
   provider: string
@@ -274,6 +279,7 @@ export interface ProviderAccountRollupItem {
   child_count: number
   scan_id?: string | null
   captured_at?: string | null
+  top_regions?: AccountRegionRow[]
 }
 
 export interface ProviderAccountRollupResponse {
@@ -308,6 +314,42 @@ export interface ImportedCostSummaryResponse {
   total_cost_usd: number
   providers: string[]
   last_imported_at?: string | null
+}
+
+export interface ProviderAccountInventoryItem {
+  account_id: number
+  provider: string
+  account_identifier: string
+  account_name: string
+  account_type: string
+  native_region?: string | null
+  is_active: boolean
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at?: string | null
+}
+
+export interface ProviderAccountInventoryResponse {
+  organization_id: number
+  customer_id: string
+  total: number
+  accounts: ProviderAccountInventoryItem[]
+}
+
+export interface AccountRegionBreakdownItem {
+  region: string
+  cost_usd: number
+  scan_id: string
+  captured_at: string
+}
+
+export interface AccountRegionBreakdownResponse {
+  account_id: number
+  provider: string
+  account_name: string
+  scan_id?: string | null
+  total_cost_usd: number
+  regions: AccountRegionBreakdownItem[]
 }
 
 export interface FinOpsAnalyticsResponse {
