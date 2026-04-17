@@ -861,10 +861,16 @@ class AuthFlowTest(unittest.TestCase):
                 forecast = public_client.get("/api/v1/forecast")
                 self.assertEqual(forecast.status_code, 200)
                 self.assertIn("cost_context", forecast.json())
+                self.assertIn("forecast_summary", forecast.json())
+                self.assertIn("genai_context", forecast.json())
+                self.assertIn("provider_concentration_hhi", forecast.json().get("model", {}))
 
                 analytics = public_client.get("/api/v1/analytics")
                 self.assertEqual(analytics.status_code, 200)
                 self.assertIn("cost_context", analytics.json())
+                self.assertIn("spend_at_risk_usd", analytics.json())
+                self.assertIn("optimization_capacity_usd", analytics.json())
+                self.assertIn("budget_utilization_percent", analytics.json().get("unit_metrics", {}))
 
                 anomalies_resp = public_client.get("/api/v1/anomalies")
                 self.assertEqual(anomalies_resp.status_code, 200)

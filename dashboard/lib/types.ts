@@ -136,6 +136,7 @@ export interface ForecastPoint {
   p50?: number
   p90?: number
   budget_flag?: 'within' | 'watch' | 'breach-likely' | null
+  budget_breach_probability?: number
 }
 
 export interface ForecastScenario {
@@ -158,6 +159,7 @@ export interface ForecastResponse {
     weighted_volatility: number
     confidence_method: string
     commitment_score?: number
+    provider_concentration_hhi?: number
   }
   history: Array<{ month: string; actual_usd: number }>
   forecast: ForecastPoint[]
@@ -167,8 +169,19 @@ export interface ForecastResponse {
     breaches: number
     first_breach_month: string | null
     breach_severity: 'none' | 'medium' | 'high'
+    average_breach_probability?: number
   } | null
+  forecast_summary?: {
+    annualized_run_rate_usd: number
+    projected_12m_baseline_usd: number
+    projected_12m_balanced_usd: number
+    expected_12m_savings_balanced_usd: number
+  }
   genai_brief?: string
+  genai_context?: {
+    prompt: string
+    focus_areas: string[]
+  }
   scenarios: ForecastScenario[]
 }
 
@@ -364,7 +377,10 @@ export interface FinOpsAnalyticsResponse {
     estimated_waste_rate_percent: number
     savings_to_spend_percent: number
     anomaly_density_per_10k: number
+    budget_utilization_percent?: number
   }
+  spend_at_risk_usd?: number
+  optimization_capacity_usd?: number
   provider_findings: Array<{
     provider: string
     monthly_cost_usd: number

@@ -47,6 +47,7 @@ Current backend coverage includes:
 - imported cost hierarchy rollups and finance report exports (CSV and Excel)
 - scheduler status timeline and external AWS anomaly ingestion
 - public-mode info contract and dashboard data endpoints
+- forecast/analytics response contract checks for deeper FinOps fields (`forecast_summary`, `genai_context`, `provider_concentration_hhi`, `spend_at_risk_usd`, `optimization_capacity_usd`, `budget_utilization_percent`)
 - Alembic upgrade/downgrade roundtrip (`base` → `head` → `base` → `head`)
 
 **Platform hardening** (`tests/test_platform_hardening.py`):

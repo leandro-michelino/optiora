@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from .auth_routes import get_current_membership, get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
@@ -109,6 +109,10 @@ class ScanningApprovalRequest(BaseModel):
     auto_remediate: bool = False
     scan_frequency: str = "daily"
     notification_email: Optional[str] = None
+    monthly_budget_usd: float = 0.0
+    warning_threshold_percent: float = 80.0
+    critical_threshold_percent: float = 100.0
+    notifications_enabled: bool = True
 
 
 class ScanningPermissionResponse(BaseModel):
@@ -118,6 +122,11 @@ class ScanningPermissionResponse(BaseModel):
     providers: List[str]
     scan_frequency: str
     auto_remediate: bool
+    notification_email: Optional[str] = None
+    monthly_budget_usd: float = 0.0
+    warning_threshold_percent: float = 80.0
+    critical_threshold_percent: float = 100.0
+    notifications_enabled: bool = True
     created_at: str
     approved_at: Optional[str] = None
 
@@ -207,7 +216,7 @@ class ProviderAccountRollupItem(BaseModel):
     child_count: int
     scan_id: Optional[str] = None
     captured_at: Optional[str] = None
-    top_regions: List[AccountRegionRow] = []
+    top_regions: List[AccountRegionRow] = Field(default_factory=list)
 
 
 class ProviderAccountRollupResponse(BaseModel):
@@ -310,7 +319,7 @@ class ImportedCostSummaryResponse(BaseModel):
     source_filename: Optional[str] = None
     rows_imported: int = 0
     total_cost_usd: float = 0.0
-    providers: List[str] = []
+    providers: List[str] = Field(default_factory=list)
     last_imported_at: Optional[datetime] = None
 
 
@@ -1128,6 +1137,11 @@ async def approve_scanning(
             customer_id=customer_id,
             auto_remediate=approval.auto_remediate,
             scan_frequency=approval.scan_frequency,
+            notification_email=approval.notification_email,
+            monthly_budget_usd=approval.monthly_budget_usd,
+            warning_threshold_percent=approval.warning_threshold_percent,
+            critical_threshold_percent=approval.critical_threshold_percent,
+            notifications_enabled=approval.notifications_enabled,
         )
         return ScanningPermissionResponse(
             customer_id=approved["customer_id"],
@@ -1136,6 +1150,11 @@ async def approve_scanning(
             providers=approved["providers"],
             scan_frequency=approved["scan_frequency"],
             auto_remediate=approved["auto_remediate"],
+            notification_email=approved.get("notification_email"),
+            monthly_budget_usd=float(approved.get("monthly_budget_usd", 0.0) or 0.0),
+            warning_threshold_percent=float(approved.get("warning_threshold_percent", 80.0) or 80.0),
+            critical_threshold_percent=float(approved.get("critical_threshold_percent", 100.0) or 100.0),
+            notifications_enabled=bool(approved.get("notifications_enabled", True)),
             created_at=approved["created_at"],
             approved_at=approved["approved_at"],
         )
@@ -2329,6 +2348,7 @@ async def dashboard_forecast(
 ) -> Dict[str, Any]:
     _ = current_user
     context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(_customer_id_for_org(membership))
     result = _safe_json_load(
         await finops_analytics.get_forecast(
             {
@@ -2336,6 +2356,7 @@ async def dashboard_forecast(
                 "cloud_provider": cloud_provider,
                 "current_monthly_spend": context["total_cost"],
                 "cost_breakdown": context["breakdown"],
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
                 "fallback_monthly_spend": 0,
             }
         ),
@@ -2354,6 +2375,7 @@ async def dashboard_analytics(
 ) -> Dict[str, Any]:
     _ = current_user
     context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(_customer_id_for_org(membership))
     anomalies_result = _safe_json_load(
         await anomalies.detect_anomalies({"cloud_provider": cloud_provider}),
         {},
@@ -2379,6 +2401,7 @@ async def dashboard_analytics(
                 "cost_breakdown": context["breakdown"],
                 "anomalies": int(anomalies_result.get("anomalies_found", 0) or 0),
                 "monthly_savings": monthly_savings,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
             }
         ),
         {},

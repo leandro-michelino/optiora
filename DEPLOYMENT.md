@@ -169,6 +169,13 @@ curl -X POST http://<instance-ip>:3000/api/ai/chat \
 ./deploy/deploy-oci.sh verify
 ```
 
+Forecasting and analytics validation (budget-aware FinOps model):
+
+```bash
+curl "http://<instance-ip>:8000/api/v1/forecast" | jq '.model, .forecast_summary, .budget_guardrails'
+curl "http://<instance-ip>:8000/api/v1/analytics" | jq '.risk_score, .maturity_score, .spend_at_risk_usd, .optimization_capacity_usd, .unit_metrics'
+```
+
 Optional scheduler smoke test (authenticated mode with owner/admin role):
 
 ```bash

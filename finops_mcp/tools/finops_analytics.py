@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import math
 import hashlib
-import statistics
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -131,6 +130,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     weighted_growth = 0.0
     weighted_volatility = 0.0
     weighted_commitment = 0.0
+    provider_concentration = 0.0
     if current_monthly > 0 and providers:
         for provider, cost in providers.items():
             profile = PROVIDER_PROFILES.get(provider, PROVIDER_PROFILES["aws"])
@@ -138,13 +138,20 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
             weighted_growth += profile["growth"] * weight
             weighted_volatility += profile["volatility"] * weight
             weighted_commitment += profile["commitment"] * weight
+            provider_concentration += weight * weight
     else:
         weighted_growth = 0.012
         weighted_volatility = 0.10
         weighted_commitment = 0.35
+        provider_concentration = 1.0
 
     history = _synthetic_history(current_monthly, 12, weighted_growth, weighted_volatility)
     intercept, slope = _linear_regression(history)
+    # Smoothed baseline to avoid overreacting to short-term waves.
+    smoothing_alpha = 0.35
+    smoothed = history[0] if history else 0.0
+    for value in history[1:]:
+        smoothed = (smoothing_alpha * value) + ((1 - smoothing_alpha) * smoothed)
     residuals = [value - (intercept + slope * index) for index, value in enumerate(history)]
     residual_stddev = math.sqrt(sum(r * r for r in residuals) / max(len(residuals) - 1, 1))
 
@@ -153,6 +160,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     conservative_total = 0.0
     balanced_total = 0.0
     aggressive_total = 0.0
+    budget_breach_probability_sum = 0.0
 
     # Monte Carlo fan using deterministic pseudo-random samples so output is repeatable.
     simulations_per_month = 400
@@ -161,7 +169,9 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
 
     for month_index in range(1, months + 1):
         regression_value = intercept + slope * (len(history) + month_index - 1)
-        seasonal_value = regression_value * SEASONALITY[(month_index - 1) % len(SEASONALITY)]
+        extrapolated_smooth = smoothed * ((1 + weighted_growth) ** month_index)
+        blended = (regression_value * 0.7) + (extrapolated_smooth * 0.3)
+        seasonal_value = blended * SEASONALITY[(month_index - 1) % len(SEASONALITY)]
         baseline = max(seasonal_value, 0.0)
         conservative = baseline * 0.90
         balanced = baseline * 0.82
@@ -182,6 +192,12 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         p10 = _percentile(simulated_values, 0.10)
         p50 = _percentile(simulated_values, 0.50)
         p90 = _percentile(simulated_values, 0.90)
+        breach_probability = 0.0
+        if budget_monthly > 0:
+            breach_probability = sum(1 for val in simulated_values if val > budget_monthly) / max(
+                len(simulated_values),
+                1,
+            )
 
         budget_flag = None
         if budget_monthly > 0:
@@ -196,6 +212,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         conservative_total += conservative
         balanced_total += balanced
         aggressive_total += aggressive
+        budget_breach_probability_sum += breach_probability
         forecast.append(
             {
                 "month": MONTHS[(datetime.now(timezone.utc).replace(tzinfo=None).month + month_index - 1) % 12],
@@ -209,6 +226,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
                 "p50": round(p50, 2),
                 "p90": round(p90, 2),
                 "budget_flag": budget_flag,
+                "budget_breach_probability": round(breach_probability, 4),
             }
         )
 
@@ -259,6 +277,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
             "breaches": len(breaches),
             "first_breach_month": breaches[0]["month"] if breaches else None,
             "breach_severity": "high" if len(breaches) > months * 0.4 else "medium" if breaches else "none",
+            "average_breach_probability": round(budget_breach_probability_sum / max(months, 1), 4),
         }
 
     fan = [
@@ -271,10 +290,11 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         "forecast_months": months,
         "current_monthly_spend_usd": round(current_monthly, 2),
         "model": {
-            "type": "regression_with_deterministic_monte_carlo_fan",
+            "type": "blended_regression_smoothing_with_deterministic_monte_carlo_fan",
             "monthly_growth_rate": round(weighted_growth, 4),
             "weighted_volatility": round(weighted_volatility, 4),
             "commitment_score": round(weighted_commitment, 4),
+            "provider_concentration_hhi": round(provider_concentration, 4),
             "confidence_method": "residual_stddev_plus_provider_volatility",
         },
         "history": [
@@ -284,7 +304,24 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         "forecast": forecast,
         "fan_percentiles": fan,
         "budget_guardrails": budget_guardrails,
+        "forecast_summary": {
+            "annualized_run_rate_usd": round((forecast[0]["baseline"] if forecast else 0.0) * 12, 2),
+            "projected_12m_baseline_usd": round(baseline_total, 2),
+            "projected_12m_balanced_usd": round(balanced_total, 2),
+            "expected_12m_savings_balanced_usd": round(baseline_total - balanced_total, 2),
+        },
         "genai_brief": "Fan chart built with deterministic pseudo-randomness; safe to narrate via GenAI without drifting math.",
+        "genai_context": {
+            "prompt": (
+                "Explain cost trajectory by combining trend, concentration risk, and budget breach probability. "
+                "Use p10/p50/p90 language and keep all numbers unchanged."
+            ),
+            "focus_areas": [
+                "budget-risk",
+                "commitment-coverage",
+                "provider-concentration",
+            ],
+        },
         "scenarios": scenarios,
     }
 
@@ -295,6 +332,7 @@ def build_analytics(params: dict[str, Any]) -> dict[str, Any]:
     current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values()))
     anomalies = int(params.get("anomalies", 0) or 0)
     recommendation_savings = _safe_float(params.get("monthly_savings"), current_monthly * 0.12)
+    budget_monthly = _safe_float(params.get("budget_monthly"))
 
     provider_findings = []
     weighted_waste = 0.0
@@ -332,6 +370,9 @@ def build_analytics(params: dict[str, Any]) -> dict[str, Any]:
     maturity_score = max(0, round(100 - risk_score + min(weighted_commitment * 20, 10), 1))
 
     efficiency_delta = (recommendation_savings / current_monthly) * 100 if current_monthly else 0.0
+    budget_utilization_percent = (current_monthly / budget_monthly) * 100 if budget_monthly > 0 else 0.0
+    spend_at_risk_usd = max(current_monthly - budget_monthly, 0.0) if budget_monthly > 0 else 0.0
+    optimization_capacity_usd = max((current_monthly * weighted_waste) - recommendation_savings, 0.0)
 
     return {
         "generated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
@@ -345,16 +386,20 @@ def build_analytics(params: dict[str, Any]) -> dict[str, Any]:
             "estimated_waste_rate_percent": round(weighted_waste * 100, 1),
             "savings_to_spend_percent": round(efficiency_delta, 1),
             "anomaly_density_per_10k": round((anomalies / max(current_monthly, 1)) * 10000, 2),
+            "budget_utilization_percent": round(budget_utilization_percent, 1),
         },
+        "spend_at_risk_usd": round(spend_at_risk_usd, 2),
+        "optimization_capacity_usd": round(optimization_capacity_usd, 2),
         "provider_findings": provider_findings,
         "provider_signals": provider_signals,
         "actions": [
             "Prioritize high-spend providers with low commitment coverage.",
             "Run scan approval before trusting remediation estimates.",
             "Use balanced scenario as the default executive forecast.",
+            "Use GenAI to produce stakeholder-specific rollout plans from these deterministic metrics.",
         ],
         "genai_advice_prompt": (
-            "Summarize savings opportunities, call out budget breaches, and explain the fan chart bands "
+            "Summarize savings opportunities, call out budget pressure and spend at risk, and explain the fan chart bands "
             "using p10/p50/p90 in plain language without altering the numeric values."
         ),
     }

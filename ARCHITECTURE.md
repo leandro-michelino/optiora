@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-This document reflects the current public-dashboard deployment model and the repo state on April 16, 2026.
+This document reflects the current public-dashboard deployment model and the repo state on April 17, 2026.
 
 ## Runtime Topology
 
@@ -39,6 +39,31 @@ This document reflects the current public-dashboard deployment model and the rep
       │ - scan runs      │
       │ - alerts/audit   │
       └──────────────────┘
+```
+
+## Forecasting and Analytics Engine
+
+```text
+/api/v1/costs + /api/v1/scanning/permission
+   |
+   +--> effective monthly spend + provider mix + budget guardrails
+           |
+           +--> deterministic FinOps model (finops_analytics.py)
+                   |
+                   +--> synthetic history + regression trend
+                   +--> smoothing blend (trend + extrapolation)
+                   +--> deterministic Monte Carlo fan (p10/p50/p90)
+                   +--> concentration/risk metrics (HHI, spend-at-risk)
+                   |
+                   +--> /api/v1/forecast
+                   |      - forecast points + breach probability
+                   |      - scenarios (baseline/conservative/balanced/aggressive)
+                   |      - budget guardrails + executive forecast summary
+                   |
+                   +--> /api/v1/analytics
+                          - risk & maturity scores
+                          - commitment/waste metrics
+                          - optimization capacity + GenAI guidance prompt
 ```
 
 ## Public Access Model

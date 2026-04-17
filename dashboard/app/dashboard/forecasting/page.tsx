@@ -183,7 +183,7 @@ export default function PredictiveAnalyticsPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <div className="card">
               <p className="text-sm text-slate-600 dark:text-slate-400">Current Monthly Spend</p>
               <p className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -200,6 +200,12 @@ export default function PredictiveAnalyticsPage() {
               <p className="text-sm text-slate-600 dark:text-slate-400">Volatility</p>
               <p className="text-2xl font-bold text-slate-900 dark:text-white">
                 {(forecast.model.weighted_volatility * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Provider Concentration (HHI)</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                {forecast.model.provider_concentration_hhi?.toFixed(2) ?? 'n/a'}
               </p>
             </div>
             <div className="card">
@@ -396,6 +402,11 @@ export default function PredictiveAnalyticsPage() {
                         ? ` ${budgetGuardrails.breaches} potential breach months (first: ${budgetGuardrails.first_breach_month ?? 'n/a'})`
                         : ' within bounds across forecast'}
                     </p>
+                    {typeof budgetGuardrails.average_breach_probability === 'number' && (
+                      <p>
+                        Average breach probability: {(budgetGuardrails.average_breach_probability * 100).toFixed(1)}%
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

@@ -17,7 +17,7 @@ The dashboard is the main workspace for:
 - multi-cloud cost overview across AWS, Azure, GCP, and OCI
 - provider connection, CSV billing upload, and scan readiness checks
 - anomaly detection and optimization recommendations
-- deterministic forecasting with baseline, conservative, balanced, and aggressive scenarios plus p10/p50/p90 fan percentiles and budget guardrails
+- deterministic forecasting with baseline/conservative/balanced/aggressive scenarios, p10/p50/p90 fan percentiles, budget guardrails, trend+smoothing blends, provider concentration (HHI), and breach-probability executive metrics
 - OCI GenAI-assisted cost advisor conversations, AI insights, and advisory workflows with London South (`uk-london-1`) as the primary OCI GenAI region
 
 ## Repository Layout
@@ -78,6 +78,7 @@ The dashboard is the main workspace for:
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
 - Dashboard pages now expose a source-state banner so operators can see whether a view is using imported CSV data, live runtime provider data, partial backend data, or an unverified fallback state.
 - Cost overview, forecasting, analytics, and recommendations are driven from either imported CSV billing data or live provider cost data — no hardcoded baselines.
+- Scan approval settings can include budget/threshold guardrails that feed forecasting and analytics risk metrics.
 - Credential/scanning mutations are role-guarded (`owner`/`admin`) when auth is enabled.
 - AI advisor features are OCI GenAI-based; there is no parallel OpenAI/ChatGPT runtime path in this repository.
 - For OCI GenAI signing, prefer `OCI_PRIVATE_KEY_PATH` over inline multiline env values. Inline `OCI_PRIVATE_KEY` is still supported when encoded with literal `\n` escapes.
@@ -107,7 +108,7 @@ The dashboard is the main workspace for:
 - `POST /api/v1/anomalies/external/aws`
 - `GET /api/v1/recommendations`
 - `GET /api/v1/forecast` (supports budget guardrails + fan percentiles)
-- `GET /api/v1/analytics` (adds provider signals and GenAI brief)
+- `GET /api/v1/analytics` (adds provider signals, spend-at-risk metrics, and GenAI guidance prompt)
 - `GET /api/v1/provider-accounts/rollups`
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/{alert_id}/acknowledge`
@@ -244,6 +245,8 @@ HOST=http://<instance-ip> bash tests/smoke_test_0_9.sh
 ```
 
 `tests/smoke_test_0_9.sh` now checks health, public dashboard routes, CSV template/import flow, imported-cost activation, analytics/forecast/rollup endpoints, provider diagnostics, finance exports, and the dashboard AI route. To verify the live credential plus scan path as well, provide `SMOKE_CREDENTIAL_JSON='{"provider":"aws",...}'` (or another supported provider payload) before running it.
+
+Forecast and analytics payloads now include budget-aware and executive-focused fields (`budget_breach_probability`, `average_breach_probability`, `provider_concentration_hhi`, `forecast_summary`, `spend_at_risk_usd`, `optimization_capacity_usd`) while keeping deterministic core math.
 
 ## CSV Billing Import
 
