@@ -45,6 +45,7 @@ dashboard/.next/
 dashboard/out/
 dashboard/build/
 dashboard/node_modules/
+dashboard/test-results/
 dashboard/.env
 dashboard/.env.local
 dashboard/tsconfig.tsbuildinfo
@@ -60,3 +61,4 @@ terraform/terraform.tfvars
 
 # Local scratch / generated artifacts
 tmp/
+.tmp/

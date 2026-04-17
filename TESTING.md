@@ -65,7 +65,22 @@ cd dashboard
 npm run type-check
 npm run lint
 npm run build
+npm run test:e2e
 ```
+
+Browser E2E coverage now validates the public dashboard CSV-first workflow:
+
+- opens `/dashboard/settings` with auth disabled
+- uploads `dashboard/e2e/fixtures/import-costs.csv`
+- confirms the imported CSV becomes the active source on overview, costs, forecasting, AI insights, and recommendations pages
+- confirms operations still exposes the export/report controls after the imported dataset becomes active
+
+Playwright harness files:
+
+- `dashboard/playwright.config.ts`
+- `dashboard/scripts/playwright-backend.sh`
+- `dashboard/scripts/playwright-frontend.sh`
+- `dashboard/e2e/public-dashboard.spec.ts`
 
 ## Terraform
 
@@ -80,5 +95,6 @@ terraform -chdir=terraform validate
 - Python `3.13` test runs currently show `datetime.utcnow()` deprecation warnings from runtime/framework code paths; functional behavior still passes.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
+- `./deploy/deploy-oci.sh verify` wraps `tests/smoke_test_0_9.sh` against the currently deployed OCI instance.
 - Next test expansion should prioritize credential CRUD with mocked provider validators, scan approval/progress flows, public-mode dashboard regression coverage, Alembic migration round-trip coverage, and deeper CSV import validation cases.
 - Frontend production build is a required deployment gate.

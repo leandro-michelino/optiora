@@ -19,23 +19,29 @@ import {
   Target,
 } from 'lucide-react'
 import { CostChart, CostTrendPoint } from '@/components/CostChart'
+import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { ServiceBreakdown, ServiceBreakdownPoint } from '@/components/ServiceBreakdown'
 import { MetricCard } from '@/components/MetricCard'
 import {
   fetchAnomalies,
   fetchApiHealth,
   fetchApiInfo,
-  fetchCosts,
+  fetchCostsStrict,
   fetchCredentials,
+  fetchImportedCostSummary,
   fetchProviderAccountRollups,
+  fetchProviderDiagnostics,
   fetchRecommendations,
   fetchScanningPermission,
 } from '@/lib/api'
+import { buildCostDataSourceStatus } from '@/lib/data-source'
 import {
   AnomalyResponse,
   ApiHealth,
   ApiInfo,
   CostResponse,
+  ImportedCostSummaryResponse,
+  ProviderDiagnostic,
   ProviderAccountRollupResponse,
   RecommendationResponse,
   ScanningPermission,
@@ -62,6 +68,8 @@ interface DashboardState {
   credentials: StoredCredential[]
   permission: ScanningPermission | null
   accountRollup: ProviderAccountRollupResponse | null
+  importedSummary: ImportedCostSummaryResponse | null
+  diagnostics: ProviderDiagnostic[]
   anomalies: AnomalyResponse[]
   recommendations: RecommendationResponse[]
   source: 'live' | 'partial' | 'fallback'
@@ -75,6 +83,8 @@ const initialState: DashboardState = {
   credentials: [],
   permission: null,
   accountRollup: null,
+  importedSummary: null,
+  diagnostics: [],
   anomalies: [],
   recommendations: [],
   source: 'live',
@@ -190,19 +200,30 @@ export default function DashboardPage() {
   const accountRollupSourceLabel = state.accountRollup
     ? state.accountRollup.scan_id
       ? 'Scan snapshot'
-      : 'Imported CSV fallback'
+      : state.importedSummary?.has_data
+        ? 'Imported CSV active'
+        : 'Imported CSV fallback'
     : 'No rollup data'
+  const dataSourceStatus = buildCostDataSourceStatus({
+    health: state.health,
+    importedSummary: state.importedSummary,
+    diagnostics: state.diagnostics,
+    primaryLoaded: Boolean(state.costs),
+    pageName: 'Overview',
+  })
 
   async function loadDashboard() {
     setLoading(true)
-    const [costs, health, info, credentials, permission, accountRollup, anomalies, recommendations] =
+    const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations] =
       await Promise.allSettled([
-        fetchCosts(),
+        fetchCostsStrict(),
         fetchApiHealth(),
         fetchApiInfo(),
         fetchCredentials(),
         fetchScanningPermission(),
         fetchProviderAccountRollups(),
+        fetchImportedCostSummary(),
+        fetchProviderDiagnostics(),
         fetchAnomalies(),
         fetchRecommendations(),
       ])
@@ -214,10 +235,19 @@ export default function DashboardPage() {
       credentials: credentials.status === 'fulfilled' ? credentials.value.credentials || [] : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
       accountRollup: accountRollup.status === 'fulfilled' ? accountRollup.value : null,
+      importedSummary: importedSummary.status === 'fulfilled' ? importedSummary.value : null,
+      diagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
       anomalies: anomalies.status === 'fulfilled' ? anomalies.value.items : [],
       recommendations: recommendations.status === 'fulfilled' ? recommendations.value.items : [],
       source: health.status === 'fulfilled' && credentials.status === 'fulfilled' ? 'live' : 'partial',
-      error: health.status === 'rejected' ? 'Backend health is unavailable. Cost widgets may be using safe fallback data.' : null,
+      error:
+        costs.status === 'rejected'
+          ? costs.reason instanceof Error
+            ? costs.reason.message
+            : 'Unable to load overview cost data from the backend.'
+          : health.status === 'rejected'
+            ? 'Backend health is unavailable. Verify the API before trusting this workspace view.'
+            : null,
     }
 
     if (!nextState.costs) {
@@ -259,7 +289,7 @@ export default function DashboardPage() {
               API {state.health?.status || 'unknown'}
             </Badge>
             <Badge variant="outline" className="rounded-md">
-              {state.source === 'live' ? 'Live workspace' : state.source === 'partial' ? 'Partial data' : 'Fallback data'}
+              {dataSourceStatus.label}
             </Badge>
             <Badge variant="outline" className="rounded-md">
               {connectedProviders.length}/{supportedProviders.length} providers connected
@@ -292,6 +322,8 @@ export default function DashboardPage() {
           <AlertDescription>{state.error}</AlertDescription>
         </Alert>
       )}
+
+      <DataSourceBanner status={dataSourceStatus} />
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard

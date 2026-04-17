@@ -2,15 +2,25 @@
 
 import { useEffect, useState } from 'react'
 import { AlertTriangle, TrendingUp } from 'lucide-react'
-import { fetchAnomalies } from '@/lib/api'
-import { AnomalyResponse } from '@/lib/types'
+import {
+  fetchAnomaliesStrict,
+  fetchApiHealth,
+  fetchProviderDiagnostics,
+} from '@/lib/api'
+import { DataSourceBanner } from '@/components/DataSourceBanner'
+import { buildLiveDataSourceStatus } from '@/lib/data-source'
+import { AnomalyResponse, ApiHealth, ProviderDiagnostic } from '@/lib/types'
 
 interface PageState {
   items: AnomalyResponse[]
   total: number
   limit: number
   offset: number
+  health: ApiHealth | null
+  diagnostics: ProviderDiagnostic[]
+  loaded: boolean
   loading: boolean
+  error: string | null
 }
 
 export default function AnomaliesPage() {
@@ -19,17 +29,32 @@ export default function AnomaliesPage() {
     total: 0,
     limit: 10,
     offset: 0,
+    health: null,
+    diagnostics: [],
+    loaded: false,
     loading: true,
+    error: null,
   })
 
   async function loadPage(offset: number, limit: number) {
-    setState((prev) => ({ ...prev, loading: true }))
+    setState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      const res = await fetchAnomalies({ offset, limit })
-      setState({ ...res, loading: false })
+      const res = await fetchAnomaliesStrict({ offset, limit })
+      setState((prev) => ({
+        ...prev,
+        ...res,
+        loaded: true,
+        loading: false,
+        error: null,
+      }))
     } catch (error) {
-      console.warn('Failed to load anomalies', error)
-      setState((prev) => ({ ...prev, loading: false }))
+      setState((prev) => ({
+        ...prev,
+        offset,
+        limit,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Failed to load anomalies.',
+      }))
     }
   }
 
@@ -37,16 +62,30 @@ export default function AnomaliesPage() {
     let cancelled = false
 
     async function loadInitialPage() {
-      try {
-        const res = await fetchAnomalies({ offset: 0, limit: state.limit })
-        if (!cancelled) {
-          setState({ ...res, loading: false })
+      const [anomaliesResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+        fetchAnomaliesStrict({ offset: 0, limit: state.limit }),
+        fetchApiHealth(),
+        fetchProviderDiagnostics(),
+      ])
+
+      if (!cancelled) {
+        const nextState: PageState = {
+          items: anomaliesResult.status === 'fulfilled' ? anomaliesResult.value.items : [],
+          total: anomaliesResult.status === 'fulfilled' ? anomaliesResult.value.total : 0,
+          limit: anomaliesResult.status === 'fulfilled' ? anomaliesResult.value.limit : state.limit,
+          offset: anomaliesResult.status === 'fulfilled' ? anomaliesResult.value.offset : 0,
+          health: healthResult.status === 'fulfilled' ? healthResult.value : null,
+          diagnostics: diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [],
+          loaded: anomaliesResult.status === 'fulfilled',
+          loading: false,
+          error:
+            anomaliesResult.status === 'rejected'
+              ? anomaliesResult.reason instanceof Error
+                ? anomaliesResult.reason.message
+                : 'Failed to load anomalies.'
+              : null,
         }
-      } catch (error) {
-        console.warn('Failed to load anomalies', error)
-        if (!cancelled) {
-          setState((prev) => ({ ...prev, loading: false }))
-        }
+        setState(nextState)
       }
     }
 
@@ -55,6 +94,13 @@ export default function AnomaliesPage() {
       cancelled = true
     }
   }, [state.limit])
+
+  const dataSourceStatus = buildLiveDataSourceStatus({
+    health: state.health,
+    diagnostics: state.diagnostics,
+    primaryLoaded: state.loaded,
+    pageName: 'Anomalies',
+  })
 
   return (
     <div className="space-y-8">
@@ -66,6 +112,14 @@ export default function AnomaliesPage() {
           Detected unusual cost patterns and sudden spend spikes across your connected providers.
         </p>
       </div>
+
+      <DataSourceBanner status={dataSourceStatus} />
+
+      {state.error && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          {state.error}
+        </div>
+      )}
 
       {state.loading ? (
         <div className="text-slate-600 dark:text-slate-400">Loading anomalies...</div>

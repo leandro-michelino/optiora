@@ -28,6 +28,7 @@ import {
   fetchApiInfo,
   fetchAuditLogs,
   fetchCredentials,
+  fetchProviderDiagnostics,
   fetchSchedulerStatus,
   fetchScanDiff,
   fetchScanHistory,
@@ -45,7 +46,10 @@ import {
   SchedulerStatusResponse,
   StoredCredential,
   ScanStartResponse,
+  ProviderDiagnostic,
 } from '@/lib/types'
+import { buildLiveDataSourceStatus } from '@/lib/data-source'
+import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -62,6 +66,7 @@ interface OperationsState {
   health: ApiHealth | null
   info: ApiInfo | null
   credentials: StoredCredential[]
+  providerDiagnostics: ProviderDiagnostic[]
   permission: ScanningPermission | null
   scan: ScanStartResponse | null
   scheduler: SchedulerStatusResponse | null
@@ -76,6 +81,7 @@ const initialState: OperationsState = {
   health: null,
   info: null,
   credentials: [],
+  providerDiagnostics: [],
   permission: null,
   scan: null,
   scheduler: null,
@@ -142,18 +148,29 @@ export default function OperationsPage() {
     () => state.credentials.filter((credential) => credential.is_valid),
     [state.credentials],
   )
+  const runtimeProviders = useMemo(
+    () => state.providerDiagnostics.filter((item) => item.configured),
+    [state.providerDiagnostics],
+  )
 
   const supportedProviders = state.info?.supported_providers || ['aws', 'azure', 'gcp', 'oci']
   const scanApproved = state.permission?.state === 'approved' || state.permission?.state === 'running'
+  const dataSourceStatus = buildLiveDataSourceStatus({
+    health: state.health,
+    diagnostics: state.providerDiagnostics,
+    primaryLoaded: Boolean(state.info || state.history.length || state.alerts.length || state.auditLogs.length),
+    pageName: 'Operations',
+  })
 
   async function loadOperations() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
 
-    const [health, info, credentials, permission, scheduler, history, alerts, auditLogs] = await Promise.allSettled([
+    const [health, info, credentials, diagnostics, permission, scheduler, history, alerts, auditLogs] = await Promise.allSettled([
       fetchApiHealth(),
       fetchApiInfo(),
       fetchCredentials(),
+      fetchProviderDiagnostics(),
       fetchScanningPermission(),
       fetchSchedulerStatus(),
       fetchScanHistory(8),
@@ -177,6 +194,7 @@ export default function OperationsPage() {
       health: health.status === 'fulfilled' ? health.value : null,
       info: info.status === 'fulfilled' ? info.value : null,
       credentials: credentials.status === 'fulfilled' ? credentials.value.credentials || [] : [],
+      providerDiagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
       scheduler: scheduler.status === 'fulfilled' ? scheduler.value : null,
       history: historyItems,
@@ -247,6 +265,8 @@ export default function OperationsPage() {
         </div>
       )}
 
+      <DataSourceBanner status={dataSourceStatus} />
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <CapabilityCard
           title="API"
@@ -258,9 +278,16 @@ export default function OperationsPage() {
         <CapabilityCard
           title="Providers"
           value={`${connectedProviders.length}/${supportedProviders.length}`}
-          detail="Validated billing connections"
+          detail="Validated credential submissions"
           ok={connectedProviders.length > 0}
           icon={Cloud}
+        />
+        <CapabilityCard
+          title="Runtime Access"
+          value={`${runtimeProviders.length}/${supportedProviders.length}`}
+          detail="Backend providers configured for live data"
+          ok={runtimeProviders.length > 0}
+          icon={Network}
         />
         <CapabilityCard
           title="Scanning"
@@ -268,13 +295,6 @@ export default function OperationsPage() {
           detail={state.permission?.scan_frequency || 'Approval required before scans'}
           ok={scanApproved}
           icon={Activity}
-        />
-        <CapabilityCard
-          title="Infrastructure"
-          value="Terraform + Ansible"
-          detail="Network and host provisioning split"
-          ok
-          icon={Network}
         />
       </div>
 
@@ -291,20 +311,31 @@ export default function OperationsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Provider</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Runtime</TableHead>
+                  <TableHead>Validated</TableHead>
                   <TableHead>Last Tested</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {supportedProviders.map((provider) => {
                   const credential = state.credentials.find((item) => item.provider === provider)
+                  const diagnostic = state.providerDiagnostics.find((item) => item.provider === provider)
                   const valid = Boolean(credential?.is_valid)
+                  const runtimeReady = Boolean(diagnostic?.configured)
                   return (
                     <TableRow key={provider}>
                       <TableCell className="font-medium uppercase">{provider}</TableCell>
                       <TableCell>
+                        <Badge
+                          data-testid={`runtime-provider-status-${provider}`}
+                          className={`rounded-md border ${statusTone(runtimeReady)}`}
+                        >
+                          {runtimeReady ? 'Configured' : 'Missing runtime secret'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
                         <Badge className={`rounded-md border ${statusTone(valid)}`}>
-                          {valid ? 'Connected' : 'Needs credentials'}
+                          {valid ? 'Validated' : 'Needs validation'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">
@@ -344,6 +375,7 @@ export default function OperationsPage() {
             </div>
 
             <Button
+              data-testid="start-scan-button"
               onClick={() => void handleStartScan()}
               disabled={!scanApproved || scanLoading || connectedProviders.length === 0}
               className="w-full rounded-lg"
@@ -397,7 +429,12 @@ export default function OperationsPage() {
         <Card className="rounded-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Recent Scan History</CardTitle>
-            <Button variant="outline" className="rounded-lg" onClick={() => void downloadScanHistoryCsv()}>
+            <Button
+              variant="outline"
+              className="rounded-lg"
+              data-testid="scan-history-export"
+              onClick={() => void downloadScanHistoryCsv()}
+            >
               Export CSV
             </Button>
           </CardHeader>
@@ -440,6 +477,7 @@ export default function OperationsPage() {
               variant="outline"
               className="rounded-lg"
               disabled={!state.latestDiff}
+              data-testid="scan-diff-export"
               onClick={() => state.latestDiff ? void downloadScanDiffCsv(state.latestDiff.current_scan_id, state.latestDiff.previous_scan_id || undefined) : undefined}
             >
               Export CSV
@@ -526,7 +564,12 @@ export default function OperationsPage() {
         <Card className="rounded-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Alerts</CardTitle>
-            <Button variant="outline" className="rounded-lg" onClick={() => void downloadAlertsCsv()}>
+            <Button
+              variant="outline"
+              className="rounded-lg"
+              data-testid="alerts-export"
+              onClick={() => void downloadAlertsCsv()}
+            >
               Export CSV
             </Button>
           </CardHeader>
@@ -563,10 +606,20 @@ export default function OperationsPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Finance Reports</CardTitle>
             <div className="flex gap-2">
-              <Button variant="outline" className="rounded-lg" onClick={() => void downloadExecutiveSummaryCsv()}>
+              <Button
+                variant="outline"
+                className="rounded-lg"
+                data-testid="executive-csv-export"
+                onClick={() => void downloadExecutiveSummaryCsv()}
+              >
                 Executive CSV
               </Button>
-              <Button variant="outline" className="rounded-lg" onClick={() => void downloadExecutiveSummaryExcel()}>
+              <Button
+                variant="outline"
+                className="rounded-lg"
+                data-testid="executive-excel-export"
+                onClick={() => void downloadExecutiveSummaryExcel()}
+              >
                 Executive Excel
               </Button>
             </div>
@@ -584,7 +637,12 @@ export default function OperationsPage() {
         <Card className="rounded-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Audit Trail</CardTitle>
-            <Button variant="outline" className="rounded-lg" onClick={() => void downloadAuditLogsCsv()}>
+            <Button
+              variant="outline"
+              className="rounded-lg"
+              data-testid="audit-export"
+              onClick={() => void downloadAuditLogsCsv()}
+            >
               Export CSV
             </Button>
           </CardHeader>

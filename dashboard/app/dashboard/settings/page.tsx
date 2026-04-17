@@ -222,6 +222,9 @@ export default function SettingsPage() {
         <p className="text-slate-600 dark:text-slate-400">
           Manage your cloud provider credentials, CSV billing imports, and scanning preferences
         </p>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Credential secrets are validated on the backend but not stored permanently. For live provider collection after validation, configure runtime provider secrets on the OptiOra host as well.
+        </p>
         {organization && (
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
             Active organization: <strong>{organization.name}</strong> · role: <strong>{organization.role}</strong>
@@ -271,6 +274,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => void downloadImportedCostTemplateCsv()}
+                data-testid="csv-template-download"
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
                 <Download className="h-4 w-4" />
@@ -279,6 +283,7 @@ export default function SettingsPage() {
 
               <div className="space-y-3">
                 <input
+                  data-testid="csv-upload-input"
                   type="file"
                   accept=".csv,text/csv"
                   disabled={!canManageCloudSettings || uploadingCsv}
@@ -293,6 +298,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => void handleCsvUpload()}
+                  data-testid="csv-upload-submit"
                   disabled={!canManageCloudSettings || !selectedCsvFile || uploadingCsv}
                   className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
                 >
@@ -306,7 +312,10 @@ export default function SettingsPage() {
               </div>
 
               {csvUploadMessage && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                <div
+                  data-testid="csv-upload-message"
+                  className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200"
+                >
                   {csvUploadMessage}
                 </div>
               )}
@@ -398,7 +407,7 @@ export default function SettingsPage() {
                 No CSV cost import is active yet.
               </div>
             ) : (
-              <div className="space-y-3 text-sm">
+              <div data-testid="imported-cost-summary" className="space-y-3 text-sm">
                 <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-900/50">
                   <div className="font-medium text-slate-900 dark:text-white">
                     {importedCostSummary.source_filename || 'CSV import'}

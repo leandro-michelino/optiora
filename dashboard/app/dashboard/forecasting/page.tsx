@@ -13,8 +13,22 @@ import {
   YAxis,
 } from 'recharts'
 import { AlertCircle, Download, Target, TrendingUp } from 'lucide-react'
-import { fetchForecast } from '@/lib/api'
-import { ForecastPoint, ForecastResponse, ForecastScenario } from '@/lib/types'
+import {
+  fetchApiHealth,
+  fetchForecast,
+  fetchImportedCostSummary,
+  fetchProviderDiagnostics,
+} from '@/lib/api'
+import { DataSourceBanner } from '@/components/DataSourceBanner'
+import { buildCostDataSourceStatus } from '@/lib/data-source'
+import {
+  ApiHealth,
+  ForecastPoint,
+  ForecastResponse,
+  ForecastScenario,
+  ImportedCostSummaryResponse,
+  ProviderDiagnostic,
+} from '@/lib/types'
 
 const scenarioColors: Record<string, string> = {
   baseline: '#64748b',
@@ -73,65 +87,65 @@ ${projectionRows}
 
 export default function PredictiveAnalyticsPage() {
   const [forecast, setForecast] = useState<ForecastResponse | null>(null)
+  const [health, setHealth] = useState<ApiHealth | null>(null)
+  const [importedSummary, setImportedSummary] = useState<ImportedCostSummaryResponse | null>(null)
+  const [diagnostics, setDiagnostics] = useState<ProviderDiagnostic[]>([])
   const [selectedScenario, setSelectedScenario] = useState('balanced')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadForecast() {
-      try {
-        const data = await fetchForecast(12)
-        setForecast(data)
-        if (data.scenarios?.[2]) {
-          setSelectedScenario(data.scenarios[2].name)
+      const [forecastResult, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+        fetchForecast(12),
+        fetchImportedCostSummary(),
+        fetchApiHealth(),
+        fetchProviderDiagnostics(),
+      ])
+
+      if (forecastResult.status === 'fulfilled') {
+        setForecast(forecastResult.value)
+        if (forecastResult.value.scenarios?.[2]) {
+          setSelectedScenario(forecastResult.value.scenarios[2].name)
         }
-      } catch (forecastError) {
+      } else {
         setError(
-          forecastError instanceof Error
-            ? forecastError.message
+          forecastResult.reason instanceof Error
+            ? forecastResult.reason.message
             : 'Unable to load forecast data.',
         )
-      } finally {
-        setLoading(false)
       }
+
+      setImportedSummary(importedResult.status === 'fulfilled' ? importedResult.value : null)
+      setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
+      setDiagnostics(diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [])
+      setLoading(false)
     }
 
     void loadForecast()
   }, [])
+  const dataSourceStatus = buildCostDataSourceStatus({
+    health,
+    importedSummary,
+    diagnostics,
+    primaryLoaded: Boolean(forecast),
+    pageName: 'Forecasting',
+  })
 
-  if (loading) {
-    return (
-      <div className="space-y-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded w-1/3"></div>
-          <div className="h-64 bg-slate-200 dark:bg-slate-700 rounded"></div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !forecast) {
-    return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-        {error || 'Forecast data is unavailable.'}
-      </div>
-    )
-  }
-
-  const selectedScenarioData =
-    forecast.scenarios.find((scenario) => scenario.name === selectedScenario) ||
-    forecast.scenarios[0]
-
-  const fanBands = forecast.fan_percentiles || forecast.forecast.map((row) => ({
-    month: row.month,
-    p10: row.p10 ?? row.lower_bound,
-    p50: row.p50 ?? row.baseline,
-    p90: row.p90 ?? row.upper_bound,
-    budget_flag: row.budget_flag,
-  }))
-
-  const budgetGuardrails = forecast.budget_guardrails
-  const selectedColor = scenarioColors[selectedScenarioData.name] || '#10b981'
+  const selectedScenarioData = forecast
+    ? forecast.scenarios.find((scenario) => scenario.name === selectedScenario) || forecast.scenarios[0]
+    : null
+  const fanBands = forecast
+    ? forecast.fan_percentiles || forecast.forecast.map((row) => ({
+      month: row.month,
+      p10: row.p10 ?? row.lower_bound,
+      p50: row.p50 ?? row.baseline,
+      p90: row.p90 ?? row.upper_bound,
+      budget_flag: row.budget_flag,
+    }))
+    : []
+  const budgetGuardrails = forecast?.budget_guardrails || null
+  const selectedColor = selectedScenarioData ? (scenarioColors[selectedScenarioData.name] || '#10b981') : '#10b981'
 
   return (
     <div className="space-y-8">
@@ -145,233 +159,250 @@ export default function PredictiveAnalyticsPage() {
             12-month forecast using provider-weighted seasonality, trend, and volatility.
           </p>
         </div>
-        <button
-          onClick={() => downloadScenarioCSV(selectedScenarioData, forecast.forecast)}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition"
-        >
-          <Download className="w-4 h-4" />
-          Export CSV
-        </button>
+        {selectedScenarioData && forecast && (
+          <button
+            onClick={() => downloadScenarioCSV(selectedScenarioData, forecast.forecast)}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition"
+          >
+            <Download className="w-4 h-4" />
+            Export CSV
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div className="card">
-          <p className="text-sm text-slate-600 dark:text-slate-400">Current Monthly Spend</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white">
-            {formatCurrency(forecast.current_monthly_spend_usd)}
-          </p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-slate-600 dark:text-slate-400">Model Growth</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white">
-            {(forecast.model.monthly_growth_rate * 100).toFixed(2)}%
-          </p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-slate-600 dark:text-slate-400">Volatility</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white">
-            {(forecast.model.weighted_volatility * 100).toFixed(1)}%
-          </p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-slate-600 dark:text-slate-400">Scenario Savings</p>
-          <p className="text-2xl font-bold text-emerald-600">
-            {formatCurrency(selectedScenarioData.savings_usd)}
-          </p>
-        </div>
-      </div>
+      <DataSourceBanner status={dataSourceStatus} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="card bg-white dark:bg-slate-800">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
-              Forecast Trajectory
-            </h2>
-            <ResponsiveContainer width="100%" height={400}>
-              <AreaChart data={forecast.forecast} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="month" stroke="#64748b" />
-                <YAxis stroke="#64748b" tickFormatter={(value: number) => `$${(value / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  formatter={(value) => formatCurrency(value as number)}
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                    border: 'none',
-                    borderRadius: '8px',
-                  }}
-                  labelStyle={{ color: '#e2e8f0' }}
-                />
-                <Legend />
-                <Area
-                  type="monotone"
-                  dataKey="upper_bound"
-                  fill="#cbd5e1"
-                  stroke="#cbd5e1"
-                  name="Upper Bound"
-                  fillOpacity={0.25}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="lower_bound"
-                  fill="#ffffff"
-                  stroke="#cbd5e1"
-                  name="Lower Bound"
-                  fillOpacity={0.1}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="baseline"
-                  stroke="#64748b"
-                  strokeWidth={2}
-                  dot={false}
-                  name="Baseline"
-                />
-                <Line
-                  type="monotone"
-                  dataKey="p10"
-                  stroke="#0ea5e9"
-                  strokeWidth={1.5}
-                  dot={false}
-                  name="p10 (fan)"
-                  strokeDasharray="4 4"
-                  data={fanBands}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="p50"
-                  stroke="#14b8a6"
-                  strokeWidth={2}
-                  dot={false}
-                  name="p50 (fan)"
-                  data={fanBands}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="p90"
-                  stroke="#f97316"
-                  strokeWidth={1.5}
-                  dot={false}
-                  name="p90 (fan)"
-                  strokeDasharray="4 4"
-                  data={fanBands}
-                />
-                <Line
-                  type="monotone"
-                  dataKey={selectedScenarioData.name}
-                  stroke={selectedColor}
-                  strokeWidth={3}
-                  dot={false}
-                  name={selectedScenarioData.name}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+      {loading ? (
+        <div className="animate-pulse space-y-4">
+          <div className="h-10 rounded bg-slate-200 dark:bg-slate-700 w-1/3"></div>
+          <div className="h-64 rounded bg-slate-200 dark:bg-slate-700"></div>
+        </div>
+      ) : error || !forecast || !selectedScenarioData ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          {error || 'Forecast data is unavailable.'}
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Current Monthly Spend</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                {formatCurrency(forecast.current_monthly_spend_usd)}
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Model Growth</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                {(forecast.model.monthly_growth_rate * 100).toFixed(2)}%
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Volatility</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                {(forecast.model.weighted_volatility * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Scenario Savings</p>
+              <p className="text-2xl font-bold text-emerald-600">
+                {formatCurrency(selectedScenarioData.savings_usd)}
+              </p>
+            </div>
           </div>
 
-          {selectedScenarioData.name !== 'baseline' && (
-            <div className="card bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
-              <div className="flex items-start gap-4">
-                <AlertCircle className="w-6 h-6 text-emerald-600 flex-shrink-0 mt-1" />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-emerald-900 dark:text-emerald-200 mb-2">
-                    {selectedScenarioData.name} scenario
-                  </h3>
-                  <p className="text-sm text-emerald-800 dark:text-emerald-300 mb-4">
-                    {selectedScenarioData.description}
-                  </p>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-400">Savings</p>
-                      <p className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
-                        {formatCurrency(selectedScenarioData.savings_usd)}
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <div className="card bg-white dark:bg-slate-800">
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
+                  Forecast Trajectory
+                </h2>
+                <ResponsiveContainer width="100%" height={400}>
+                  <AreaChart data={forecast.forecast} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="month" stroke="#64748b" />
+                    <YAxis stroke="#64748b" tickFormatter={(value: number) => `$${(value / 1000).toFixed(0)}k`} />
+                    <Tooltip
+                      formatter={(value) => formatCurrency(value as number)}
+                      contentStyle={{
+                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                        border: 'none',
+                        borderRadius: '8px',
+                      }}
+                      labelStyle={{ color: '#e2e8f0' }}
+                    />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="upper_bound"
+                      fill="#cbd5e1"
+                      stroke="#cbd5e1"
+                      name="Upper Bound"
+                      fillOpacity={0.25}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="lower_bound"
+                      fill="#ffffff"
+                      stroke="#cbd5e1"
+                      name="Lower Bound"
+                      fillOpacity={0.1}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="baseline"
+                      stroke="#64748b"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Baseline"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="p10"
+                      stroke="#0ea5e9"
+                      strokeWidth={1.5}
+                      dot={false}
+                      name="p10 (fan)"
+                      strokeDasharray="4 4"
+                      data={fanBands}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="p50"
+                      stroke="#14b8a6"
+                      strokeWidth={2}
+                      dot={false}
+                      name="p50 (fan)"
+                      data={fanBands}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="p90"
+                      stroke="#f97316"
+                      strokeWidth={1.5}
+                      dot={false}
+                      name="p90 (fan)"
+                      strokeDasharray="4 4"
+                      data={fanBands}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey={selectedScenarioData.name}
+                      stroke={selectedColor}
+                      strokeWidth={3}
+                      dot={false}
+                      name={selectedScenarioData.name}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              {selectedScenarioData.name !== 'baseline' && (
+                <div className="card bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
+                  <div className="flex items-start gap-4">
+                    <AlertCircle className="w-6 h-6 text-emerald-600 flex-shrink-0 mt-1" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-emerald-900 dark:text-emerald-200 mb-2">
+                        {selectedScenarioData.name} scenario
+                      </h3>
+                      <p className="text-sm text-emerald-800 dark:text-emerald-300 mb-4">
+                        {selectedScenarioData.description}
                       </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-400">Reduction</p>
-                      <p className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
-                        {selectedScenarioData.savings_percent.toFixed(1)}%
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-emerald-700 dark:text-emerald-400">Timeline</p>
-                      <p className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
-                        {selectedScenarioData.implementation_weeks} weeks
-                      </p>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-xs text-emerald-700 dark:text-emerald-400">Savings</p>
+                          <p className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
+                            {formatCurrency(selectedScenarioData.savings_usd)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-emerald-700 dark:text-emerald-400">Reduction</p>
+                          <p className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
+                            {selectedScenarioData.savings_percent.toFixed(1)}%
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-emerald-700 dark:text-emerald-400">Timeline</p>
+                          <p className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
+                            {selectedScenarioData.implementation_weeks} weeks
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white px-1">
+                Optimization Scenarios
+              </h2>
+
+              {forecast.scenarios.map((scenario) => (
+                <button
+                  key={scenario.name}
+                  onClick={() => setSelectedScenario(scenario.name)}
+                  className={`w-full p-4 rounded-lg border-2 transition text-left ${
+                    selectedScenario === scenario.name
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                      : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h4 className="font-semibold text-slate-900 dark:text-white capitalize">
+                      {scenario.name}
+                    </h4>
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0 mt-1.5"
+                      style={{ backgroundColor: scenarioColors[scenario.name] || '#10b981' }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">{scenario.description}</p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">Savings</span>
+                      <span className="font-semibold text-slate-900 dark:text-white">
+                        {formatCurrency(scenario.savings_usd)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">Risk</span>
+                      <span className="font-semibold text-slate-900 dark:text-white capitalize">
+                        {scenario.risk_level}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+
+              <div className="card bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/20">
+                <h3 className="font-semibold text-blue-900 dark:text-blue-200 mb-3 flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Model Notes
+                </h3>
+                <ol className="text-xs text-blue-800 dark:text-blue-300 space-y-2 list-decimal list-inside">
+                  <li>Baseline uses trend and provider-weighted seasonality.</li>
+                  <li>Fan shows deterministic p10 / p50 / p90 Monte Carlo percentiles.</li>
+                  <li>Budget guardrails flag likely breaches at p90.</li>
+                  <li>Balanced is the recommended executive planning view.</li>
+                  <li>GenAI can narrate actions; math remains deterministic.</li>
+                </ol>
+                {budgetGuardrails && (
+                  <div className="mt-3 text-xs text-blue-800 dark:text-blue-200">
+                    <p className="font-semibold">Budget guardrails</p>
+                    <p>
+                      Monthly budget: {formatCurrency(budgetGuardrails.budget_monthly_usd)} —
+                      {budgetGuardrails.breaches > 0
+                        ? ` ${budgetGuardrails.breaches} potential breach months (first: ${budgetGuardrails.first_breach_month ?? 'n/a'})`
+                        : ' within bounds across forecast'}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white px-1">
-            Optimization Scenarios
-          </h2>
-
-          {forecast.scenarios.map((scenario) => (
-            <button
-              key={scenario.name}
-              onClick={() => setSelectedScenario(scenario.name)}
-              className={`w-full p-4 rounded-lg border-2 transition text-left ${
-                selectedScenario === scenario.name
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                  : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <h4 className="font-semibold text-slate-900 dark:text-white capitalize">
-                  {scenario.name}
-                </h4>
-                <div
-                  className="w-3 h-3 rounded-full flex-shrink-0 mt-1.5"
-                  style={{ backgroundColor: scenarioColors[scenario.name] || '#10b981' }}
-                ></div>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">{scenario.description}</p>
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Savings</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">
-                    {formatCurrency(scenario.savings_usd)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Risk</span>
-                  <span className="font-semibold text-slate-900 dark:text-white capitalize">
-                    {scenario.risk_level}
-                  </span>
-                </div>
-              </div>
-            </button>
-          ))}
-
-          <div className="card bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/20">
-            <h3 className="font-semibold text-blue-900 dark:text-blue-200 mb-3 flex items-center gap-2">
-              <Target className="w-4 h-4" />
-              Model Notes
-            </h3>
-            <ol className="text-xs text-blue-800 dark:text-blue-300 space-y-2 list-decimal list-inside">
-              <li>Baseline uses trend and provider-weighted seasonality.</li>
-              <li>Fan shows deterministic p10 / p50 / p90 Monte Carlo percentiles.</li>
-              <li>Budget guardrails flag likely breaches at p90.</li>
-              <li>Balanced is the recommended executive planning view.</li>
-              <li>GenAI can narrate actions; math remains deterministic.</li>
-            </ol>
-            {budgetGuardrails && (
-              <div className="mt-3 text-xs text-blue-800 dark:text-blue-200">
-                <p className="font-semibold">Budget guardrails</p>
-                <p>
-                  Monthly budget: {formatCurrency(budgetGuardrails.budget_monthly_usd)} —
-                  {budgetGuardrails.breaches > 0
-                    ? ` ${budgetGuardrails.breaches} potential breach months (first: ${budgetGuardrails.first_breach_month ?? 'n/a'})`
-                    : ' within bounds across forecast'}
-                </p>
-              </div>
-            )}
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }

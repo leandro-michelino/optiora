@@ -2,14 +2,31 @@
 
 import { useEffect, useState } from 'react'
 import { DollarSign, Lightbulb, TrendingDown } from 'lucide-react'
-import { fetchRecommendations } from '@/lib/api'
-import { RecommendationResponse } from '@/lib/types'
+import {
+  fetchApiHealth,
+  fetchImportedCostSummary,
+  fetchProviderDiagnostics,
+  fetchRecommendationsStrict,
+} from '@/lib/api'
+import { DataSourceBanner } from '@/components/DataSourceBanner'
+import { buildCostDataSourceStatus } from '@/lib/data-source'
+import {
+  ApiHealth,
+  ImportedCostSummaryResponse,
+  ProviderDiagnostic,
+  RecommendationResponse,
+} from '@/lib/types'
 
 interface RecommendationState {
   items: RecommendationResponse[]
   total: number
   limit: number
   offset: number
+  health: ApiHealth | null
+  importedSummary: ImportedCostSummaryResponse | null
+  diagnostics: ProviderDiagnostic[]
+  loaded: boolean
+  error: string | null
 }
 
 function difficultyTone(difficulty: string): string {
@@ -31,22 +48,54 @@ export default function RecommendationsPage() {
     total: 0,
     limit: 12,
     offset: 0,
+    health: null,
+    importedSummary: null,
+    diagnostics: [],
+    loaded: false,
+    error: null,
   })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function loadRecommendations() {
       setLoading(true)
-      try {
-        const response = await fetchRecommendations({ limit: state.limit, offset: state.offset })
-        setState(response)
-      } finally {
-        setLoading(false)
-      }
+      const [response, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+        fetchRecommendationsStrict({ limit: state.limit, offset: state.offset }),
+        fetchImportedCostSummary(),
+        fetchApiHealth(),
+        fetchProviderDiagnostics(),
+      ])
+
+      setState((current) => ({
+        ...current,
+        items: response.status === 'fulfilled' ? response.value.items : [],
+        total: response.status === 'fulfilled' ? response.value.total : 0,
+        limit: response.status === 'fulfilled' ? response.value.limit : current.limit,
+        offset: response.status === 'fulfilled' ? response.value.offset : current.offset,
+        health: healthResult.status === 'fulfilled' ? healthResult.value : null,
+        importedSummary: importedResult.status === 'fulfilled' ? importedResult.value : null,
+        diagnostics: diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [],
+        loaded: response.status === 'fulfilled',
+        error:
+          response.status === 'rejected'
+            ? response.reason instanceof Error
+              ? response.reason.message
+              : 'Unable to load recommendations.'
+            : null,
+      }))
+      setLoading(false)
     }
 
     void loadRecommendations()
   }, [state.limit, state.offset])
+
+  const dataSourceStatus = buildCostDataSourceStatus({
+    health: state.health,
+    importedSummary: state.importedSummary,
+    diagnostics: state.diagnostics,
+    primaryLoaded: state.loaded,
+    pageName: 'Recommendations',
+  })
 
   return (
     <div className="space-y-8">
@@ -58,6 +107,14 @@ export default function RecommendationsPage() {
           Live recommendations ranked by potential savings, ROI, and delivery difficulty.
         </p>
       </div>
+
+      <DataSourceBanner status={dataSourceStatus} />
+
+      {state.error && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          {state.error}
+        </div>
+      )}
 
       {loading ? (
         <div className="text-slate-600 dark:text-slate-400">Loading recommendations...</div>

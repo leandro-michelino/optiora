@@ -1,20 +1,31 @@
 #!/usr/bin/env bash
-# Public-dashboard smoke test — verifies a running OptiOra deployment end-to-end.
+# Public-dashboard verification for a running OptiOra deployment.
 #
 # Usage:
 #   HOST=http://<instance-ip> bash tests/smoke_test_0_9.sh
 #
-# Set HOST to the base URL of the deployment (no trailing slash).
-# Exits 0 on success, 1 on any failure.
+# Optional overrides:
+#   API_BASE=http://<instance-ip>:8000
+#   DASHBOARD_BASE=http://<instance-ip>:3000
+#   SMOKE_CREDENTIAL_JSON='{"provider":"aws",...}'
+#   SMOKE_SCAN_POLL_SECONDS=180
 
 set -euo pipefail
 
 HOST="${HOST:-http://localhost}"
-API="${HOST}:8000"
-DASHBOARD="${HOST}:3000"
-
+API_BASE="${API_BASE:-${HOST}:8000}"
+DASHBOARD_BASE="${DASHBOARD_BASE:-${HOST}:3000}"
+SMOKE_CREDENTIAL_JSON="${SMOKE_CREDENTIAL_JSON:-}"
+SMOKE_SCAN_POLL_SECONDS="${SMOKE_SCAN_POLL_SECONDS:-180}"
+TMP_DIR="$(mktemp -d)"
 PASS=0
 FAIL=0
+SKIP=0
+
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
 _check() {
     local label="$1"
@@ -23,201 +34,361 @@ _check() {
         echo "  [PASS] $label"
         PASS=$((PASS + 1))
     else
-        echo "  [FAIL] $label — $result"
+        echo "  [FAIL] $label -- $result"
         FAIL=$((FAIL + 1))
     fi
 }
 
+_skip() {
+    local label="$1"
+    local reason="$2"
+    echo "  [SKIP] $label -- $reason"
+    SKIP=$((SKIP + 1))
+}
+
 _http_status() {
-    curl -s -o /dev/null -w "%{http_code}" "$@"
+    curl -sS -o /dev/null -w "%{http_code}" "$@"
 }
 
 _http_body() {
-    curl -s "$@"
+    curl -sS "$@"
+}
+
+_json_get() {
+    local payload="$1"
+    local path="$2"
+    printf '%s' "$payload" | python3 - "$path" <<'PY'
+import json
+import sys
+
+path = sys.argv[1].split(".")
+data = json.load(sys.stdin)
+value = data
+for part in path:
+    if part == "":
+        continue
+    if isinstance(value, list):
+        value = value[int(part)]
+    else:
+        value = value.get(part)
+if isinstance(value, bool):
+    print("true" if value else "false")
+elif value is None:
+    print("")
+elif isinstance(value, (dict, list)):
+    print(json.dumps(value))
+else:
+    print(value)
+PY
+}
+
+_json_number_ge() {
+    local payload="$1"
+    local path="$2"
+    local minimum="$3"
+    printf '%s' "$payload" | python3 - "$path" "$minimum" <<'PY'
+import json
+import sys
+
+path = sys.argv[1].split(".")
+minimum = float(sys.argv[2])
+value = json.load(sys.stdin)
+for part in path:
+    if part == "":
+        continue
+    if isinstance(value, list):
+        value = value[int(part)]
+    else:
+        value = value.get(part)
+try:
+    sys.exit(0 if float(value) >= minimum else 1)
+except Exception:
+    sys.exit(1)
+PY
+}
+
+_json_array_len_ge() {
+    local payload="$1"
+    local path="$2"
+    local minimum="$3"
+    printf '%s' "$payload" | python3 - "$path" "$minimum" <<'PY'
+import json
+import sys
+
+path = sys.argv[1].split(".")
+minimum = int(sys.argv[2])
+value = json.load(sys.stdin)
+for part in path:
+    if part == "":
+        continue
+    if isinstance(value, list):
+        value = value[int(part)]
+    else:
+        value = value.get(part)
+sys.exit(0 if isinstance(value, list) and len(value) >= minimum else 1)
+PY
+}
+
+_request_json_status() {
+    local method="$1"
+    local url="$2"
+    local payload="$3"
+    curl -sS -o /dev/null -w "%{http_code}" \
+        -X "$method" \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$url"
+}
+
+_request_json_body() {
+    local method="$1"
+    local url="$2"
+    local payload="$3"
+    curl -sS \
+        -X "$method" \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$url"
+}
+
+_request_json_once() {
+    local method="$1"
+    local url="$2"
+    local payload="$3"
+    local response_file="$4"
+    curl -sS \
+        -o "$response_file" \
+        -w "%{http_code}" \
+        -X "$method" \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "$url"
+}
+
+_wait_for_scan_terminal_state() {
+    local scan_id="$1"
+    local deadline=$((SECONDS + SMOKE_SCAN_POLL_SECONDS))
+    local progress_body=""
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        progress_body=$(_http_body "${API_BASE}/api/v1/scanning/${scan_id}/progress" || true)
+        state=$(_json_get "$progress_body" "state")
+        if [ "$state" = "completed" ] || [ "$state" = "failed" ]; then
+            printf '%s' "$progress_body"
+            return 0
+        fi
+        sleep 5
+    done
+    printf '%s' "$progress_body"
+    return 1
 }
 
 echo ""
-echo "=== OptiOra Public Dashboard Smoke Test ==="
-echo "API:       $API"
-echo "Dashboard: $DASHBOARD"
+echo "=== OptiOra Deployment Verification ==="
+echo "API:       $API_BASE"
+echo "Dashboard: $DASHBOARD_BASE"
 echo ""
 
-# ------------------------------------------------------------------
-# 1. Backend health
-# ------------------------------------------------------------------
 echo "--- 1. Backend health ---"
+status=$(_http_status "${API_BASE}/health")
+[ "$status" = "200" ] && _check "GET /health returns 200" "ok" || _check "GET /health returns 200" "HTTP $status"
 
-status=$(_http_status "${API}/api/v1/health")
-[ "$status" = "200" ] && _check "GET /api/v1/health returns 200" "ok" \
-    || _check "GET /api/v1/health returns 200" "HTTP $status"
+health_body=$(_http_body "${API_BASE}/health")
+[ "$(_json_get "$health_body" "status")" = "healthy" ] \
+    && _check "/health reports healthy" "ok" \
+    || _check "/health reports healthy" "body: $health_body"
 
-body=$(_http_body "${API}/api/v1/health")
-echo "$body" | grep -q '"status":"healthy"' \
-    && _check "/health body contains status:healthy" "ok" \
-    || _check "/health body contains status:healthy" "body: $body"
+status=$(_http_status "${API_BASE}/api/v1/info")
+[ "$status" = "200" ] && _check "GET /api/v1/info returns 200" "ok" || _check "GET /api/v1/info returns 200" "HTTP $status"
 
-status=$(_http_status "${API}/api/v1/info")
-[ "$status" = "200" ] && _check "GET /api/v1/info returns 200" "ok" \
-    || _check "GET /api/v1/info returns 200" "HTTP $status"
-
-# ------------------------------------------------------------------
-# 2. Dashboard accessibility (no login wall in public mode)
-# ------------------------------------------------------------------
 echo ""
-echo "--- 2. Dashboard accessibility ---"
+echo "--- 2. Public dashboard routes ---"
+for route in "" "/dashboard" "/dashboard/costs" "/dashboard/forecasting" "/dashboard/ai-insights" "/dashboard/anomalies" "/dashboard/recommendations" "/dashboard/operations" "/dashboard/settings"; do
+    status=$(_http_status "${DASHBOARD_BASE}${route}")
+    [ "$status" = "200" ] \
+        && _check "GET ${route:-/} returns 200" "ok" \
+        || _check "GET ${route:-/} returns 200" "HTTP $status"
+done
 
-status=$(_http_status "${DASHBOARD}")
-[ "$status" = "200" ] \
-    && _check "Dashboard root returns 200" "ok" \
-    || _check "Dashboard root returns 200" "HTTP $status"
-
-body=$(_http_body "${DASHBOARD}/dashboard" 2>/dev/null || true)
-echo "$body" | grep -qi "login\|sign.in\|password" \
-    && _check "Dashboard does not show login wall" "login form detected — check ENABLE_AUTH=false" \
+dashboard_body=$(_http_body "${DASHBOARD_BASE}/dashboard" || true)
+echo "$dashboard_body" | grep -qi "login\|sign.in\|password" \
+    && _check "Dashboard does not show login wall" "login form detected -- check public mode" \
     || _check "Dashboard does not show login wall" "ok"
 
-# ------------------------------------------------------------------
-# 3. CSV template download
-# ------------------------------------------------------------------
 echo ""
-echo "--- 3. CSV template ---"
-
-status=$(_http_status "${API}/api/v1/imports/costs/template.csv")
+echo "--- 3. CSV template and import ---"
+status=$(_http_status "${API_BASE}/api/v1/imports/costs/template.csv")
 [ "$status" = "200" ] \
     && _check "GET /imports/costs/template.csv returns 200" "ok" \
     || _check "GET /imports/costs/template.csv returns 200" "HTTP $status"
 
-body=$(_http_body "${API}/api/v1/imports/costs/template.csv")
-echo "$body" | grep -q "provider" \
-    && _check "Template CSV contains provider column" "ok" \
-    || _check "Template CSV contains provider column" "missing provider column"
-
-# ------------------------------------------------------------------
-# 4. CSV import
-# ------------------------------------------------------------------
-echo ""
-echo "--- 4. CSV import ---"
+template_body=$(_http_body "${API_BASE}/api/v1/imports/costs/template.csv")
+echo "$template_body" | grep -q "provider,cost_usd" \
+    && _check "Template CSV contains provider and cost_usd columns" "ok" \
+    || _check "Template CSV contains provider and cost_usd columns" "missing expected header"
 
 upload_response=$(_http_body -X POST \
     -F "file=@-;filename=smoke-test.csv;type=text/csv" \
-    "${API}/api/v1/imports/costs/csv" <<'EOF'
-provider,cost_usd,service_name,account_identifier,region,currency
-aws,250.00,EC2,smoke-acct-1,us-east-1,USD
-azure,150.00,Compute,smoke-sub-1,eastus,USD
+    "${API_BASE}/api/v1/imports/costs/csv" <<'EOF'
+provider,cost_usd,service_name,account_identifier,account_name,account_type,parent_account_identifier,region,currency
+aws,250.00,EC2,smoke-acct-1,AWS Smoke,account,aws-root,us-east-1,USD
+azure,150.00,Compute,smoke-sub-1,Azure Smoke,subscription,mg-smoke,eastus,USD
 EOF
 )
 
-echo "$upload_response" | grep -q '"rows_imported":2' \
+[ "$(_json_get "$upload_response" "rows_imported")" = "2" ] \
     && _check "CSV upload imports 2 rows" "ok" \
     || _check "CSV upload imports 2 rows" "response: $upload_response"
 
-summary_body=$(_http_body "${API}/api/v1/imports/costs/summary")
-echo "$summary_body" | grep -q '"has_data":true' \
-    && _check "Import summary shows has_data:true" "ok" \
-    || _check "Import summary shows has_data:true" "body: $summary_body"
+summary_body=$(_http_body "${API_BASE}/api/v1/imports/costs/summary")
+[ "$(_json_get "$summary_body" "has_data")" = "true" ] \
+    && _check "Import summary shows active data" "ok" \
+    || _check "Import summary shows active data" "body: $summary_body"
 
-# ------------------------------------------------------------------
-# 5. Dashboard data endpoints
-# ------------------------------------------------------------------
+[ "$(_json_get "$summary_body" "rows_imported")" = "2" ] \
+    && _check "Import summary row count matches upload" "ok" \
+    || _check "Import summary row count matches upload" "body: $summary_body"
+
 echo ""
-echo "--- 5. Dashboard data endpoints ---"
+echo "--- 4. Imported CSV becomes active cost source ---"
+costs_body=$(_http_body "${API_BASE}/api/v1/costs")
+_json_number_ge "$costs_body" "totalCost" "400" \
+    && _check "/api/v1/costs totalCost reflects uploaded CSV" "ok" \
+    || _check "/api/v1/costs totalCost reflects uploaded CSV" "body: $costs_body"
 
-for endpoint in costs forecast analytics anomalies recommendations; do
-    status=$(_http_status "${API}/api/v1/${endpoint}")
+forecast_body=$(_http_body "${API_BASE}/api/v1/forecast")
+_json_number_ge "$forecast_body" "current_monthly_spend_usd" "400" \
+    && _check "/api/v1/forecast reflects imported spend" "ok" \
+    || _check "/api/v1/forecast reflects imported spend" "body: $forecast_body"
+
+_json_number_ge "$forecast_body" "cost_context.total_cost" "400" \
+    && _check "/api/v1/forecast exposes imported cost_context" "ok" \
+    || _check "/api/v1/forecast exposes imported cost_context" "body: $forecast_body"
+
+analytics_body=$(_http_body "${API_BASE}/api/v1/analytics")
+_json_number_ge "$analytics_body" "current_monthly_spend_usd" "400" \
+    && _check "/api/v1/analytics reflects imported spend" "ok" \
+    || _check "/api/v1/analytics reflects imported spend" "body: $analytics_body"
+
+rollup_body=$(_http_body "${API_BASE}/api/v1/provider-accounts/rollups")
+_json_array_len_ge "$rollup_body" "items" "1" \
+    && _check "/api/v1/provider-accounts/rollups returns hierarchy items" "ok" \
+    || _check "/api/v1/provider-accounts/rollups returns hierarchy items" "body: $rollup_body"
+
+echo ""
+echo "--- 5. Provider diagnostics, exports, and AI route ---"
+diagnostics_body=$(_http_body "${API_BASE}/api/v1/provider-diagnostics")
+if python3 - "$diagnostics_body" <<'PY'
+import json
+import sys
+data = json.loads(sys.argv[1])
+sys.exit(0 if isinstance(data, list) and len(data) >= 1 else 1)
+PY
+then
+    _check "/api/v1/provider-diagnostics returns provider rows" "ok"
+else
+    _check "/api/v1/provider-diagnostics returns provider rows" "body: $diagnostics_body"
+fi
+
+for endpoint in "/api/v1/alerts.csv" "/api/v1/audit-logs.csv" "/api/v1/reports/executive-summary.csv" "/api/v1/reports/executive-summary.xls" "/api/v1/scanning/history.csv"; do
+    status=$(_http_status "${API_BASE}${endpoint}")
     [ "$status" = "200" ] \
-        && _check "GET /api/v1/${endpoint} returns 200" "ok" \
-        || _check "GET /api/v1/${endpoint} returns 200" "HTTP $status"
+        && _check "GET ${endpoint} returns 200" "ok" \
+        || _check "GET ${endpoint} returns 200" "HTTP $status"
 done
 
-costs_body=$(_http_body "${API}/api/v1/costs")
-echo "$costs_body" | grep -q '"totalCost"' \
-    && _check "/costs body contains totalCost" "ok" \
-    || _check "/costs body contains totalCost" "body: $costs_body"
-
-costs_value=$(echo "$costs_body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('totalCost',0))" 2>/dev/null || echo "0")
-python3 -c "import sys; sys.exit(0 if float('$costs_value') >= 400 else 1)" 2>/dev/null \
-    && _check "/costs totalCost reflects uploaded CSV (>=400)" "ok" \
-    || _check "/costs totalCost reflects uploaded CSV (>=400)" "got $costs_value"
-
-forecast_body=$(_http_body "${API}/api/v1/forecast")
-echo "$forecast_body" | grep -q '"cost_context"' \
-    && _check "/forecast body contains cost_context" "ok" \
-    || _check "/forecast body contains cost_context" "body: $forecast_body"
-
-# ------------------------------------------------------------------
-# 6. Provider account rollups
-# ------------------------------------------------------------------
-echo ""
-echo "--- 6. Provider account rollups ---"
-
-rollup_body=$(_http_body "${API}/api/v1/provider-accounts/rollups")
-echo "$rollup_body" | grep -q '"items"' \
-    && _check "/provider-accounts/rollups returns items" "ok" \
-    || _check "/provider-accounts/rollups returns items" "body: $rollup_body"
-
-# ------------------------------------------------------------------
-# 7. Exports
-# ------------------------------------------------------------------
-echo ""
-echo "--- 7. Exports ---"
-
-status=$(_http_status "${API}/api/v1/alerts.csv")
-[ "$status" = "200" ] \
-    && _check "GET /alerts.csv returns 200" "ok" \
-    || _check "GET /alerts.csv returns 200" "HTTP $status"
-
-status=$(_http_status "${API}/api/v1/audit-logs.csv")
-[ "$status" = "200" ] \
-    && _check "GET /audit-logs.csv returns 200" "ok" \
-    || _check "GET /audit-logs.csv returns 200" "HTTP $status"
-
-status=$(_http_status "${API}/api/v1/reports/executive-summary.csv")
-[ "$status" = "200" ] \
-    && _check "GET /reports/executive-summary.csv returns 200" "ok" \
-    || _check "GET /reports/executive-summary.csv returns 200" "HTTP $status"
-
-status=$(_http_status "${API}/api/v1/reports/executive-summary.xls")
-[ "$status" = "200" ] \
-    && _check "GET /reports/executive-summary.xls returns 200" "ok" \
-    || _check "GET /reports/executive-summary.xls returns 200" "HTTP $status"
-
-exec_body=$(_http_body "${API}/api/v1/reports/executive-summary.csv")
+exec_body=$(_http_body "${API_BASE}/api/v1/reports/executive-summary.csv")
 echo "$exec_body" | grep -q "Total Monthly Cost USD" \
-    && _check "Executive summary CSV contains Total Monthly Cost USD" "ok" \
-    || _check "Executive summary CSV contains Total Monthly Cost USD" "missing expected field"
+    && _check "Executive summary CSV contains finance headers" "ok" \
+    || _check "Executive summary CSV contains finance headers" "body: $exec_body"
 
-# ------------------------------------------------------------------
-# 8. Scan history (may be empty on fresh deploy)
-# ------------------------------------------------------------------
+ai_status=$(_request_json_status "POST" "${DASHBOARD_BASE}/api/ai/chat" '{"message":"Summarize the current workspace cost source.","conversationHistory":[]}')
+[ "$ai_status" = "200" ] \
+    && _check "POST /api/ai/chat returns 200" "ok" \
+    || _check "POST /api/ai/chat returns 200" "HTTP $ai_status"
+
 echo ""
-echo "--- 8. Scan history ---"
+echo "--- 6. Optional live credential and scan flow ---"
+if [ -z "$SMOKE_CREDENTIAL_JSON" ]; then
+    _skip "Credential validation/add + scan flow" "Set SMOKE_CREDENTIAL_JSON with a real provider payload to verify live credential flow."
+else
+    validate_response_file="${TMP_DIR}/validate.json"
+    validate_status=$(_request_json_once "POST" "${API_BASE}/api/v1/credentials/validate" "$SMOKE_CREDENTIAL_JSON" "$validate_response_file")
+    validate_body="$(cat "$validate_response_file")"
+    [ "$validate_status" = "200" ] \
+        && _check "POST /api/v1/credentials/validate returns 200" "ok" \
+        || _check "POST /api/v1/credentials/validate returns 200" "HTTP $validate_status"
 
-status=$(_http_status "${API}/api/v1/scanning/history")
-[ "$status" = "200" ] \
-    && _check "GET /scanning/history returns 200" "ok" \
-    || _check "GET /scanning/history returns 200" "HTTP $status"
+    [ "$(_json_get "$validate_body" "is_valid")" = "true" ] \
+        && _check "Credential validation reports is_valid=true" "ok" \
+        || _check "Credential validation reports is_valid=true" "body: $validate_body"
 
-status=$(_http_status "${API}/api/v1/scanning/history.csv")
-[ "$status" = "200" ] \
-    && _check "GET /scanning/history.csv returns 200" "ok" \
-    || _check "GET /scanning/history.csv returns 200" "HTTP $status"
+    add_response_file="${TMP_DIR}/add.json"
+    add_status=$(_request_json_once "POST" "${API_BASE}/api/v1/credentials/add" "$SMOKE_CREDENTIAL_JSON" "$add_response_file")
+    [ "$add_status" = "200" ] \
+        && _check "POST /api/v1/credentials/add returns 200" "ok" \
+        || _check "POST /api/v1/credentials/add returns 200" "HTTP $add_status"
 
-status=$(_http_status "${API}/api/v1/scanning/scheduler/status")
-[ "$status" = "200" ] \
-    && _check "GET /scanning/scheduler/status returns 200" "ok" \
-    || _check "GET /scanning/scheduler/status returns 200" "HTTP $status"
+    provider="$(_json_get "$SMOKE_CREDENTIAL_JSON" "provider")"
+    listed_credentials=$(_http_body "${API_BASE}/api/v1/credentials")
+    echo "$listed_credentials" | grep -qi "\"provider\":\"${provider}\"" \
+        && _check "Credential list includes added provider" "ok" \
+        || _check "Credential list includes added provider" "body: $listed_credentials"
 
-# ------------------------------------------------------------------
-# Summary
-# ------------------------------------------------------------------
+    approve_status=$(_request_json_status "POST" "${API_BASE}/api/v1/scanning/approve" '{"scan_frequency":"daily","auto_remediate":false}')
+    [ "$approve_status" = "200" ] \
+        && _check "POST /api/v1/scanning/approve returns 200" "ok" \
+        || _check "POST /api/v1/scanning/approve returns 200" "HTTP $approve_status"
+
+    start_payload="{\"providers\":[\"${provider}\"]}"
+    start_response_file="${TMP_DIR}/start.json"
+    start_status=$(_request_json_once "POST" "${API_BASE}/api/v1/scanning/start" "$start_payload" "$start_response_file")
+    start_body="$(cat "$start_response_file")"
+    [ "$start_status" = "200" ] \
+        && _check "POST /api/v1/scanning/start returns 200" "ok" \
+        || _check "POST /api/v1/scanning/start returns 200" "HTTP $start_status"
+
+    scan_id="$(_json_get "$start_body" "scan_id")"
+    if [ -n "$scan_id" ]; then
+        _check "Scan start returns scan_id" "ok"
+    else
+        _check "Scan start returns scan_id" "body: $start_body"
+    fi
+
+    if [ -n "$scan_id" ]; then
+        if progress_body=$(_wait_for_scan_terminal_state "$scan_id"); then
+            terminal_state="$(_json_get "$progress_body" "state")"
+            [ "$terminal_state" = "completed" ] \
+                && _check "Scan reaches completed state" "ok" \
+                || _check "Scan reaches completed state" "body: $progress_body"
+        else
+            _check "Scan reaches completed state" "timed out waiting for $scan_id"
+        fi
+
+        history_body=$(_http_body "${API_BASE}/api/v1/scanning/history")
+        echo "$history_body" | grep -q "\"scan_id\":\"${scan_id}\"" \
+            && _check "Scan history contains started scan" "ok" \
+            || _check "Scan history contains started scan" "body: $history_body"
+
+        diff_status=$(_http_status "${API_BASE}/api/v1/scanning/${scan_id}/diff")
+        [ "$diff_status" = "200" ] \
+            && _check "GET /api/v1/scanning/${scan_id}/diff returns 200" "ok" \
+            || _check "GET /api/v1/scanning/${scan_id}/diff returns 200" "HTTP $diff_status"
+
+        diff_csv_status=$(_http_status "${API_BASE}/api/v1/scanning/${scan_id}/diff.csv")
+        [ "$diff_csv_status" = "200" ] \
+            && _check "GET /api/v1/scanning/${scan_id}/diff.csv returns 200" "ok" \
+            || _check "GET /api/v1/scanning/${scan_id}/diff.csv returns 200" "HTTP $diff_csv_status"
+    fi
+fi
+
 echo ""
-echo "=== Results: ${PASS} passed, ${FAIL} failed ==="
+echo "=== Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped ==="
 echo ""
 
 if [ "$FAIL" -gt 0 ]; then
-    echo "SMOKE TEST FAILED — resolve the above failures before declaring the environment ready."
+    echo "VERIFICATION FAILED -- resolve the failed checks before declaring the environment ready."
     exit 1
-else
-    echo "SMOKE TEST PASSED — deployment meets the current public-dashboard exit gate."
-    exit 0
 fi
+
+echo "VERIFICATION PASSED -- deployment meets the current OptiOra public-dashboard verification gate."
+exit 0

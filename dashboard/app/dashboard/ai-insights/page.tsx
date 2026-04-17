@@ -11,8 +11,22 @@ import {
   TrendingDown,
   Zap,
 } from 'lucide-react'
-import { fetchFinOpsAnalytics, fetchRecommendations } from '@/lib/api'
-import { FinOpsAnalyticsResponse, RecommendationResponse } from '@/lib/types'
+import {
+  fetchApiHealth,
+  fetchFinOpsAnalytics,
+  fetchImportedCostSummary,
+  fetchProviderDiagnostics,
+  fetchRecommendations,
+} from '@/lib/api'
+import { DataSourceBanner } from '@/components/DataSourceBanner'
+import { buildCostDataSourceStatus } from '@/lib/data-source'
+import {
+  ApiHealth,
+  FinOpsAnalyticsResponse,
+  ImportedCostSummaryResponse,
+  ProviderDiagnostic,
+  RecommendationResponse,
+} from '@/lib/types'
 
 function formatCurrency(value: number): string {
   return value.toLocaleString('en-US', {
@@ -25,55 +39,57 @@ function formatCurrency(value: number): string {
 export default function AIInsightsPage() {
   const [analytics, setAnalytics] = useState<FinOpsAnalyticsResponse | null>(null)
   const [recommendations, setRecommendations] = useState<RecommendationResponse[]>([])
+  const [health, setHealth] = useState<ApiHealth | null>(null)
+  const [importedSummary, setImportedSummary] = useState<ImportedCostSummaryResponse | null>(null)
+  const [diagnostics, setDiagnostics] = useState<ProviderDiagnostic[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedInsight, setSelectedInsight] = useState<RecommendationResponse | null>(null)
 
   useEffect(() => {
     async function loadInsights() {
-      try {
-        const [analyticsResult, recommendationsResult] = await Promise.all([
-          fetchFinOpsAnalytics(),
-          fetchRecommendations(),
-        ])
-        setAnalytics(analyticsResult)
-        setRecommendations(recommendationsResult.items)
-      } catch (insightError) {
+      const [analyticsResult, recommendationsResult, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+        fetchFinOpsAnalytics(),
+        fetchRecommendations(),
+        fetchImportedCostSummary(),
+        fetchApiHealth(),
+        fetchProviderDiagnostics(),
+      ])
+
+      if (analyticsResult.status === 'fulfilled') {
+        setAnalytics(analyticsResult.value)
+      } else {
         setError(
-          insightError instanceof Error
-            ? insightError.message
+          analyticsResult.reason instanceof Error
+            ? analyticsResult.reason.message
             : 'Unable to load AI insight inputs.',
         )
-      } finally {
-        setLoading(false)
       }
+
+      setRecommendations(
+        recommendationsResult.status === 'fulfilled' ? recommendationsResult.value.items : [],
+      )
+      setImportedSummary(importedResult.status === 'fulfilled' ? importedResult.value : null)
+      setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
+      setDiagnostics(diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [])
+      setLoading(false)
     }
 
     void loadInsights()
   }, [])
+  const dataSourceStatus = buildCostDataSourceStatus({
+    health,
+    importedSummary,
+    diagnostics,
+    primaryLoaded: Boolean(analytics),
+    pageName: 'AI Insights',
+  })
 
-  if (loading) {
-    return (
-      <div className="space-y-8">
-        <div className="animate-pulse">
-          <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded w-1/3 mb-4"></div>
-          <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded w-2/3"></div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !analytics) {
-    return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-        {error || 'Analytics are unavailable.'}
-      </div>
-    )
-  }
-
-  const topFindings = [...analytics.provider_findings]
-    .sort((a, b) => b.estimated_waste_usd - a.estimated_waste_usd)
-    .slice(0, 3)
+  const topFindings = analytics
+    ? [...analytics.provider_findings]
+      .sort((a, b) => b.estimated_waste_usd - a.estimated_waste_usd)
+      .slice(0, 3)
+    : []
 
   return (
     <div className="space-y-8">
@@ -87,6 +103,19 @@ export default function AIInsightsPage() {
         </p>
       </div>
 
+      <DataSourceBanner status={dataSourceStatus} />
+
+      {loading ? (
+        <div className="animate-pulse">
+          <div className="mb-4 h-10 w-1/3 rounded bg-slate-200 dark:bg-slate-700"></div>
+          <div className="h-6 w-2/3 rounded bg-slate-200 dark:bg-slate-700"></div>
+        </div>
+      ) : error || !analytics ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          {error || 'Analytics are unavailable.'}
+        </div>
+      ) : (
+        <>
       <div className="p-6 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg text-white shadow-lg">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4">
@@ -243,6 +272,8 @@ export default function AIInsightsPage() {
           </Link>
         </div>
       </div>
+        </>
+      )}
 
       {selectedInsight && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">

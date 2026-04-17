@@ -26,7 +26,10 @@ def _resolve_allowed_origins() -> list[str]:
     origins = {
         "http://localhost:3000",
         "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
         "https://localhost:3000",
+        "https://127.0.0.1:3000",
     }
     frontend_url = os.getenv("FRONTEND_URL", "").strip()
     if frontend_url:

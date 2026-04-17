@@ -18,6 +18,7 @@ import {
   FinOpsAnalyticsResponse,
   ImportedCostSummaryResponse,
   ImportedCostUploadResponse,
+  ProviderDiagnostic,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -81,11 +82,15 @@ async function requestJson<T>(
 
 export async function fetchCosts(): Promise<CostResponse> {
   try {
-    return await requestJson<CostResponse>('/api/v1/costs')
+    return await fetchCostsStrict()
   } catch (error) {
     console.warn('Failed to fetch costs from backend, using safe fallback data', error)
     return safeFallbackCostData as CostResponse
   }
+}
+
+export async function fetchCostsStrict(): Promise<CostResponse> {
+  return requestJson<CostResponse>('/api/v1/costs')
 }
 
 function paginate<T>(items: T[], query: ListQuery = {}): PaginatedResponse<T> {
@@ -133,25 +138,33 @@ function saveBlob(blob: Blob, filename: string) {
 
 export async function fetchAnomalies(query: ListQuery = {}): Promise<PaginatedResponse<AnomalyResponse>> {
   try {
-    const rows = await requestJson<AnomalyResponse[]>('/api/v1/anomalies')
-    return paginate(rows, query)
+    return await fetchAnomaliesStrict(query)
   } catch (error) {
     console.warn('Failed to fetch anomalies, using empty list', error)
     return paginate([], query)
   }
 }
 
+export async function fetchAnomaliesStrict(query: ListQuery = {}): Promise<PaginatedResponse<AnomalyResponse>> {
+  const rows = await requestJson<AnomalyResponse[]>('/api/v1/anomalies')
+  return paginate(rows, query)
+}
+
 export async function fetchRecommendations(query: ListQuery = {}): Promise<PaginatedResponse<RecommendationResponse>> {
   try {
-    const rows = await requestJson<RecommendationResponse[]>(
-      '/api/v1/recommendations',
-      {},
-    )
-    return paginate(rows, query)
+    return await fetchRecommendationsStrict(query)
   } catch (error) {
     console.warn('Failed to fetch recommendations, using empty list', error)
     return paginate([], query)
   }
+}
+
+export async function fetchRecommendationsStrict(query: ListQuery = {}): Promise<PaginatedResponse<RecommendationResponse>> {
+  const rows = await requestJson<RecommendationResponse[]>(
+    '/api/v1/recommendations',
+    {},
+  )
+  return paginate(rows, query)
 }
 
 export async function fetchApiHealth(): Promise<ApiHealth> {
@@ -222,6 +235,10 @@ export async function fetchImportedCostSummary(): Promise<ImportedCostSummaryRes
   } catch {
     return null
   }
+}
+
+export async function fetchProviderDiagnostics(): Promise<ProviderDiagnostic[]> {
+  return requestJson<ProviderDiagnostic[]>('/api/v1/provider-diagnostics')
 }
 
 export async function uploadImportedCostCsv(file: File): Promise<ImportedCostUploadResponse> {

@@ -76,6 +76,7 @@ The dashboard is the main workspace for:
 - When imported CSV cost data exists for a workspace, cost-oriented endpoints use that imported dataset before falling back to live provider summaries.
 - Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
+- Dashboard pages now expose a source-state banner so operators can see whether a view is using imported CSV data, live runtime provider data, partial backend data, or an unverified fallback state.
 - Cost overview, forecasting, analytics, and recommendations are driven from either imported CSV billing data or live provider cost data — no hardcoded baselines.
 - Credential/scanning mutations are role-guarded (`owner`/`admin`) when auth is enabled.
 - AI advisor features are OCI GenAI-based; there is no parallel OpenAI/ChatGPT runtime path in this repository.
@@ -175,6 +176,7 @@ export OCI_REGION=uk-london-1
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
+./deploy/deploy-oci.sh verify
 ```
 
 Deployment script behavior:
@@ -229,9 +231,19 @@ cd dashboard
 npm run type-check
 npm run lint
 npm run build
+npm run test:e2e
 
 terraform -chdir=../terraform validate
 ```
+
+OCI/public-dashboard verification:
+
+```bash
+./deploy/deploy-oci.sh verify
+HOST=http://<instance-ip> bash tests/smoke_test_0_9.sh
+```
+
+`tests/smoke_test_0_9.sh` now checks health, public dashboard routes, CSV template/import flow, imported-cost activation, analytics/forecast/rollup endpoints, provider diagnostics, finance exports, and the dashboard AI route. To verify the live credential plus scan path as well, provide `SMOKE_CREDENTIAL_JSON='{"provider":"aws",...}'` (or another supported provider payload) before running it.
 
 ## CSV Billing Import
 
@@ -258,6 +270,7 @@ Current CSV rules:
 
 - file must be UTF-8 encoded
 - `provider` must be one of `aws`, `azure`, `gcp`, or `oci`
+- uploaded CSV data becomes the active cost source for cost, forecast, analytics, and recommendation pages until it is replaced by a newer CSV import
 - `currency` defaults to `USD` and only `USD` is currently accepted
 
 ## Smoke Test

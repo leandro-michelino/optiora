@@ -1,408 +1,403 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { Cloud, TrendingUp, TrendingDown, Share2, Download, AlertCircle, CheckCircle2, Zap } from 'lucide-react'
-import { fetchCosts, fetchRecommendations } from '@/lib/api'
-import { RecommendationResponse } from '@/lib/types'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import {
+  Cloud,
+  Download,
+  Layers3,
+  Map,
+  TrendingUp,
+  Zap,
+} from 'lucide-react'
+import {
+  downloadExecutiveSummaryCsv,
+  downloadExecutiveSummaryExcel,
+  fetchApiHealth,
+  fetchCostsStrict,
+  fetchImportedCostSummary,
+  fetchProviderAccountRollups,
+  fetchProviderDiagnostics,
+  fetchRecommendationsStrict,
+} from '@/lib/api'
+import { buildCostDataSourceStatus } from '@/lib/data-source'
+import { DataSourceBanner } from '@/components/DataSourceBanner'
+import {
+  ApiHealth,
+  CostResponse,
+  ImportedCostSummaryResponse,
+  PaginatedResponse,
+  ProviderAccountRollupResponse,
+  ProviderDiagnostic,
+  RecommendationResponse,
+} from '@/lib/types'
 
-interface Service {
-  name: string
-  cost: number
-  trend: number // percentage change
-  lastMonth?: number
+const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#14b8a6']
+
+interface CostsPageState {
+  costs: CostResponse | null
+  recommendations: PaginatedResponse<RecommendationResponse>
+  rollups: ProviderAccountRollupResponse | null
+  importedSummary: ImportedCostSummaryResponse | null
+  health: ApiHealth | null
+  diagnostics: ProviderDiagnostic[]
+  loading: boolean
+  error: string | null
 }
 
-interface CostData {
-  cloud: string
-  cost: number
-  lastMonth: number
-  services: Service[]
-  savingsPotential: number
+const initialRecommendationState: PaginatedResponse<RecommendationResponse> = {
+  items: [],
+  total: 0,
+  limit: 5,
+  offset: 0,
 }
 
-interface CompetitorComparison {
-  feature: string
-  optiora: string
-  kubecost: string
-  vantage: string
-  cloudhealth: string
+const initialState: CostsPageState = {
+  costs: null,
+  recommendations: initialRecommendationState,
+  rollups: null,
+  importedSummary: null,
+  health: null,
+  diagnostics: [],
+  loading: true,
+  error: null,
 }
 
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']
+function formatCurrency(value: number): string {
+  return value.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  })
+}
 
-const competitorData: CompetitorComparison[] = [
-  {
-    feature: 'Multi-Cloud Support',
-    optiora: '✅ True Equal (AWS, Azure, GCP, OCI)',
-    kubecost: '❌ Kubernetes only',
-    vantage: '⚠️ Limited, API only',
-    cloudhealth: '❌ VMware-biased'
-  },
-  {
-    feature: 'AI-Powered Insights',
-    optiora: '✅ OCI GenAI (explainable)',
-    kubecost: '❌ Rule-based only',
-    vantage: '❌ Basic heuristics',
-    cloudhealth: '❌ No AI features'
-  },
-  {
-    feature: 'Chat Interface',
-    optiora: '✅ Cost Advisor ChatBot',
-    kubecost: '❌ No chat',
-    vantage: '❌ No chat',
-    cloudhealth: '❌ No chat'
-  },
-  {
-    feature: 'Predictive Analytics',
-    optiora: '✅ 12-month scenarios',
-    kubecost: '❌ No forecasting',
-    vantage: '⚠️ Basic only',
-    cloudhealth: '⚠️ Limited'
-  },
-  {
-    feature: 'Deployment',
-    optiora: '✅ Self-hosted (OCI)',
-    kubecost: '❌ Kubernetes only',
-    vantage: '❌ SaaS only',
-    cloudhealth: '❌ SaaS only'
-  },
-  {
-    feature: 'Cost',
-    optiora: '✅ Open model',
-    kubecost: '⚠️ Free +Premium',
-    vantage: '❌ $$$$$',
-    cloudhealth: '❌ $$$$$$'
-  }
-]
+function formatPreciseCurrency(value: number): string {
+  return value.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
 
 export default function CostsPage() {
-  const [costs, setCosts] = useState<CostData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [recs, setRecs] = useState<{ items: RecommendationResponse[]; total: number; limit: number; offset: number }>({ items: [], total: 0, limit: 5, offset: 0 })
+  const [state, setState] = useState<CostsPageState>(initialState)
+
+  async function loadRecommendations(offset: number, limit: number) {
+    try {
+      const recommendations = await fetchRecommendationsStrict({ offset, limit })
+      setState((current) => ({
+        ...current,
+        recommendations,
+      }))
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        recommendations: {
+          ...current.recommendations,
+          offset,
+          limit,
+        },
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Unable to load recommendations.',
+      }))
+    }
+  }
 
   useEffect(() => {
-    async function loadCosts() {
-      try {
-        const data = await fetchCosts()
-        const providerRows = Object.entries(data.breakdown).map(([provider, value]) => {
-          const lastMonth = value.cost / (1 + (data.trend || 0) / 100)
-          return {
-            cloud: provider.toUpperCase(),
-            cost: value.cost,
-            lastMonth: Number.isFinite(lastMonth) ? Math.round(lastMonth) : value.cost,
-            savingsPotential: Math.round(data.potentialSavings * (value.percentage / 100)),
-            services: [
-              {
-                name: `${provider.toUpperCase()} billing`,
-                cost: value.cost,
-                trend: data.trend,
-                lastMonth: Number.isFinite(lastMonth) ? Math.round(lastMonth) : value.cost,
-              },
-            ],
-          }
-        })
-        setCosts(providerRows)
-        // load recommendations (paged)
-        const recData = await fetchRecommendations({ limit: recs.limit, offset: recs.offset })
-        setRecs(recData)
-      } finally {
-        setLoading(false)
-      }
+    async function loadCostsPage() {
+      const [
+        costs,
+        recommendations,
+        rollups,
+        importedSummary,
+        health,
+        diagnostics,
+      ] = await Promise.allSettled([
+        fetchCostsStrict(),
+        fetchRecommendationsStrict({ limit: initialRecommendationState.limit, offset: 0 }),
+        fetchProviderAccountRollups(),
+        fetchImportedCostSummary(),
+        fetchApiHealth(),
+        fetchProviderDiagnostics(),
+      ])
+
+      setState({
+        costs: costs.status === 'fulfilled' ? costs.value : null,
+        recommendations: recommendations.status === 'fulfilled' ? recommendations.value : initialRecommendationState,
+        rollups: rollups.status === 'fulfilled' ? rollups.value : null,
+        importedSummary: importedSummary.status === 'fulfilled' ? importedSummary.value : null,
+        health: health.status === 'fulfilled' ? health.value : null,
+        diagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
+        loading: false,
+        error:
+          costs.status === 'rejected'
+            ? costs.reason instanceof Error
+              ? costs.reason.message
+              : 'Unable to load cloud cost data.'
+            : null,
+      })
     }
 
-    void loadCosts()
-    // recs.limit/offset intentionally fixed during initial load; pagination handled by buttons
-  }, [recs.limit, recs.offset])
+    void loadCostsPage()
+  }, [])
 
-  const totalCost = costs.reduce((sum, c) => sum + c.cost, 0)
-  const totalLastMonth = costs.reduce((sum, c) => sum + c.lastMonth, 0)
-  const totalTrend = totalLastMonth > 0
-    ? parseFloat(((totalCost - totalLastMonth) / totalLastMonth * 100).toFixed(1))
-    : 0
-  const totalSavingsPotential = costs.reduce((sum, c) => sum + c.savingsPotential, 0)
-
-  const chartData = costs.map(c => ({
-    name: c.cloud,
-    cost: c.cost,
-    lastMonth: c.lastMonth
-  }))
-
-  const pieData = costs.map(c => ({
-    name: c.cloud,
-    value: c.cost
-  }))
-
-  const allServices = costs.flatMap(cloud =>
-    cloud.services.map(service => ({
-      service: `${service.name} (${cloud.cloud})`,
-      cost: service.cost,
-      trend: service.trend,
-      cloud: cloud.cloud
-    }))
-  ).sort((a, b) => b.cost - a.cost)
-
-  if (loading) {
+  if (state.loading) {
     return <div className="flex items-center justify-center h-64">Loading costs breakdown...</div>
   }
 
+  const dataSourceStatus = buildCostDataSourceStatus({
+    health: state.health,
+    importedSummary: state.importedSummary,
+    diagnostics: state.diagnostics,
+    primaryLoaded: Boolean(state.costs),
+    pageName: 'Cloud Costs',
+  })
+
+  const breakdownRows = Object.entries(state.costs?.breakdown || {}).sort(
+    (left, right) => right[1].cost - left[1].cost,
+  )
+  const totalCost = state.costs?.totalCost || 0
+  const potentialSavings = state.costs?.potentialSavings || 0
+  const topProvider = breakdownRows[0]
+  const regionRows = (state.costs?.regionBreakdown || []).slice(0, 8)
+  const rollupRows = [...(state.rollups?.items || [])]
+    .filter((item) => item.account_type !== 'provider')
+    .sort((left, right) => right.rolled_up_cost_usd - left.rolled_up_cost_usd)
+    .slice(0, 8)
+  const chartData = breakdownRows.map(([provider, value]) => ({
+    provider: provider.toUpperCase(),
+    cost: value.cost,
+    percentage: value.percentage,
+  }))
+
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+        <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">
           Cost Breakdown & Analysis
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Advanced multi-cloud cost analysis with AI-powered insights
+          Real provider spend, hierarchy rollups, and exportable finance views from the backend.
         </p>
       </div>
 
-      {/* Summary Cards */}
+      {state.error && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          {state.error}
+        </div>
+      )}
+
+      <DataSourceBanner status={dataSourceStatus} />
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900 dark:to-blue-800 p-6 rounded-lg border border-blue-200 dark:border-blue-700">
-          <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-2">Total Monthly Spend</p>
-          <p className="text-3xl font-bold text-blue-900 dark:text-blue-100">${totalCost.toLocaleString()}</p>
-          <p className={`text-sm mt-2 flex items-center gap-1 ${totalTrend > 0 ? 'text-red-600' : 'text-green-600'}`}>
-            {totalTrend > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-            {Math.abs(totalTrend)}% vs last month
+        <div className="card">
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Total Monthly Spend</p>
+          <p className="text-3xl font-bold text-slate-900 dark:text-white">{formatCurrency(totalCost)}</p>
+          <p className="text-sm mt-2 text-slate-600 dark:text-slate-400">
+            {breakdownRows.length > 0 ? `${breakdownRows.length} provider buckets` : 'No provider cost buckets yet'}
           </p>
         </div>
 
-        <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900 dark:to-green-800 p-6 rounded-lg border border-green-200 dark:border-green-700">
-          <p className="text-sm font-medium text-green-600 dark:text-green-400 mb-2">Savings Potential</p>
-          <p className="text-3xl font-bold text-green-900 dark:text-green-100">${totalSavingsPotential.toLocaleString()}</p>
-          <p className="text-sm mt-2 text-green-700 dark:text-green-300">{(totalSavingsPotential / totalCost * 100).toFixed(1)}% of total spend</p>
+        <div className="card">
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Potential Savings</p>
+          <p className="text-3xl font-bold text-emerald-600">{formatCurrency(potentialSavings)}</p>
+          <p className="text-sm mt-2 text-slate-600 dark:text-slate-400">
+            {totalCost > 0 ? `${((potentialSavings / totalCost) * 100).toFixed(1)}% of current spend` : 'Savings estimate pending'}
+          </p>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900 dark:to-purple-800 p-6 rounded-lg border border-purple-200 dark:border-purple-700">
-          <p className="text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">Cloud Providers</p>
-          <p className="text-3xl font-bold text-purple-900 dark:text-purple-100">{costs.length}</p>
-          <p className="text-sm mt-2 text-purple-700 dark:text-purple-300">Equal multi-cloud support</p>
+        <div className="card">
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Top Provider</p>
+          <p className="text-3xl font-bold text-slate-900 dark:text-white">
+            {topProvider ? topProvider[0].toUpperCase() : 'None'}
+          </p>
+          <p className="text-sm mt-2 text-slate-600 dark:text-slate-400">
+            {topProvider ? formatCurrency(topProvider[1].cost) : 'Connect a provider or import CSV'}
+          </p>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-900 dark:to-amber-800 p-6 rounded-lg border border-amber-200 dark:border-amber-700">
-          <p className="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">Services Monitored</p>
-          <p className="text-3xl font-bold text-amber-900 dark:text-amber-100">{allServices.length}</p>
-          <p className="text-sm mt-2 text-amber-700 dark:text-amber-300">With trend analysis</p>
+        <div className="card">
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2">Rollup Nodes</p>
+          <p className="text-3xl font-bold text-slate-900 dark:text-white">
+            {state.rollups?.items.length || 0}
+          </p>
+          <p className="text-sm mt-2 text-slate-600 dark:text-slate-400">
+            Hierarchy nodes available for account-level drill-down
+          </p>
         </div>
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar Chart */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="card">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-blue-600" />
+            <Cloud className="w-5 h-5 text-blue-600" />
             Provider Spend Comparison
           </h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value: any) => `$${(value || 0).toLocaleString()}`} />
-              <Legend />
-              <Bar dataKey="cost" fill="#3B82F6" name="This Month" />
-              <Bar dataKey="lastMonth" fill="#93C5FD" name="Last Month" />
-            </BarChart>
-          </ResponsiveContainer>
+          {chartData.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No provider spend is available yet.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="provider" />
+                <YAxis tickFormatter={(value: number) => `$${(value / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(value) => formatPreciseCurrency(Number(value ?? 0))} />
+                <Bar dataKey="cost" radius={[8, 8, 0, 0]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={entry.provider} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
-        {/* Pie Chart */}
         <div className="card">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-            <Cloud className="w-5 h-5 text-purple-600" />
+            <TrendingUp className="w-5 h-5 text-purple-600" />
             Provider Distribution
           </h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={pieData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }: any) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value: any) => `$${(value || 0).toLocaleString()}`} />
-            </PieChart>
-          </ResponsiveContainer>
+          {chartData.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Provider distribution will appear once spend data is available.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  dataKey="cost"
+                  nameKey="provider"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={96}
+                  label={({ name, percent }) => `${String(name || '')} ${((percent || 0) * 100).toFixed(0)}%`}
+                >
+                  {chartData.map((entry, index) => (
+                    <Cell key={entry.provider} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => formatPreciseCurrency(Number(value ?? 0))} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
-      {/* Top Services Table */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="card">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            <Layers3 className="w-5 h-5 text-indigo-600" />
+            Top Account Rollups
+          </h2>
+          {rollupRows.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Rollup nodes will appear after CSV imports or completed scans populate account hierarchy snapshots.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {rollupRows.map((item) => (
+                <div key={`${item.provider}-${item.account_identifier}`} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm uppercase text-slate-500 dark:text-slate-400">{item.provider}</div>
+                      <div className="font-semibold text-slate-900 dark:text-white">{item.account_name}</div>
+                      <div className="text-sm text-slate-600 dark:text-slate-400">
+                        {item.account_type} · {item.child_count} child node(s) · {item.rolled_up_service_count} service signal(s)
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold text-slate-900 dark:text-white">
+                        {formatPreciseCurrency(item.rolled_up_cost_usd)}
+                      </div>
+                      <div className="text-sm text-emerald-600 dark:text-emerald-400">
+                        Savings {formatPreciseCurrency(item.rolled_up_savings_identified_usd)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            <Map className="w-5 h-5 text-amber-600" />
+            Region Breakdown
+          </h2>
+          {regionRows.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Region data will appear when imported CSVs or provider APIs include regional breakdowns.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {regionRows.map((row, index) => (
+                <div key={`${row.region}-${index}`} className="rounded-lg bg-slate-50 p-4 dark:bg-slate-900">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="font-medium text-slate-900 dark:text-white">{row.region}</div>
+                    <div className="font-semibold text-slate-900 dark:text-white">
+                      {formatPreciseCurrency(row.cost_usd)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="card">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 text-orange-600" />
-          Top Services by Cost
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-700">
-                <th className="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Service</th>
-                <th className="text-right py-3 px-4 font-semibold text-slate-900 dark:text-white">Cost</th>
-                <th className="text-center py-3 px-4 font-semibold text-slate-900 dark:text-white">Trend</th>
-                <th className="text-right py-3 px-4 font-semibold text-slate-900 dark:text-white">% of Total</th>
-                <th className="text-center py-3 px-4 font-semibold text-slate-900 dark:text-white">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allServices.slice(0, 10).map((service, idx) => (
-                <tr key={idx} className="border-b border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
-                  <td className="py-3 px-4 text-slate-900 dark:text-white font-medium">{service.service}</td>
-                  <td className="py-3 px-4 text-right font-semibold text-slate-900 dark:text-white">${service.cost.toLocaleString()}</td>
-                  <td className="py-3 px-4 text-center">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium ${
-                      service.trend > 0 ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
-                    }`}>
-                      {service.trend > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                      {service.trend > 0 ? '+' : ''}{service.trend}%
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right text-slate-600 dark:text-slate-400">{(service.cost / totalCost * 100).toFixed(1)}%</td>
-                  <td className="py-3 px-4 text-center">
-                    <button className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium text-sm">
-                      Optimize
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Cloud Provider Breakdown */}
-      <div className="space-y-6">
-        {costs.map((cloud) => (
-          <div key={cloud.cloud} className="card">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${
-                  cloud.cloud === 'AWS' ? 'bg-orange-100 dark:bg-orange-900' :
-                  cloud.cloud === 'Azure' ? 'bg-blue-100 dark:bg-blue-900' :
-                  cloud.cloud === 'GCP' ? 'bg-red-100 dark:bg-red-900' :
-                  'bg-purple-100 dark:bg-purple-900'
-                }`}>
-                  <Cloud className={`w-6 h-6 ${
-                    cloud.cloud === 'AWS' ? 'text-orange-600' :
-                    cloud.cloud === 'Azure' ? 'text-blue-600' :
-                    cloud.cloud === 'GCP' ? 'text-red-600' :
-                    'text-purple-600'
-                  }`} />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-semibold text-slate-900 dark:text-white">{cloud.cloud}</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {cloud.services.length} services monitored
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-3xl font-bold text-slate-900 dark:text-white">
-                  ${cloud.cost.toLocaleString()}
-                </p>
-                <p className={`text-sm font-medium mt-1 flex items-center justify-end gap-1 ${
-                  cloud.cost > cloud.lastMonth ? 'text-red-600' : 'text-green-600'
-                }`}>
-                  {cloud.cost > cloud.lastMonth ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                  {cloud.cost > cloud.lastMonth ? '+' : ''}{((cloud.cost - cloud.lastMonth) / cloud.lastMonth * 100).toFixed(1)}%
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-              {cloud.services.map((service) => (
-                <div key={service.name} className="p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">{service.name}</p>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">${service.cost.toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">
-              <span className="inline-block px-3 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-sm rounded-full">
-                💰 ${cloud.savingsPotential.toLocaleString()} savings potential
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Competitor Comparison */}
-      <div className="card bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-          <CheckCircle2 className="w-6 h-6 text-green-600" />
-          Why OptiOra Beats Competitors
-        </h2>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b-2 border-slate-300 dark:border-slate-600">
-                <th className="text-left py-4 px-4 font-semibold text-slate-900 dark:text-white">Feature</th>
-                <th className="text-left py-4 px-4 font-semibold text-green-600 dark:text-green-400">OptiOra</th>
-                <th className="text-left py-4 px-4 font-semibold text-slate-600 dark:text-slate-400">Kubecost</th>
-                <th className="text-left py-4 px-4 font-semibold text-slate-600 dark:text-slate-400">Vantage</th>
-                <th className="text-left py-4 px-4 font-semibold text-slate-600 dark:text-slate-400">CloudHealth</th>
-              </tr>
-            </thead>
-            <tbody>
-              {competitorData.map((row, idx) => (
-                <tr key={idx} className="border-b border-slate-200 dark:border-slate-700">
-                  <td className="py-4 px-4 font-medium text-slate-900 dark:text-white">{row.feature}</td>
-                  <td className="py-4 px-4 text-slate-900 dark:text-white">{row.optiora}</td>
-                  <td className="py-4 px-4 text-slate-600 dark:text-slate-400">{row.kubecost}</td>
-                  <td className="py-4 px-4 text-slate-600 dark:text-slate-400">{row.vantage}</td>
-                  <td className="py-4 px-4 text-slate-600 dark:text-slate-400">{row.cloudhealth}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-6 p-4 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg">
-          <p className="text-green-900 dark:text-green-100 font-medium">
-            ✨ OptiOra combines the best of all worlds: true multi-cloud support, AI-powered intelligence, chat interface for easy access, predictive forecasting, self-hosted deployment options, and transparent pricing. We're not just better—we're fundamentally different.
-          </p>
-        </div>
-      </div>
-
-      {/* Recommendations (paged) */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Top Recommendations</h2>
-          {recs.total > recs.limit && (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-4">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+            Top Recommendations
+          </h2>
+          {state.recommendations.total > state.recommendations.limit && (
             <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
               <button
-                disabled={recs.offset === 0}
-                onClick={async () => {
-                  const nextOffset = Math.max(0, recs.offset - recs.limit)
-                  const data = await fetchRecommendations({ limit: recs.limit, offset: nextOffset })
-                  setRecs(data)
-                }}
+                disabled={state.recommendations.offset === 0}
+                onClick={() =>
+                  void loadRecommendations(
+                    Math.max(0, state.recommendations.offset - state.recommendations.limit),
+                    state.recommendations.limit,
+                  )
+                }
                 className="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-50"
               >
                 Previous
               </button>
               <span>
-                Showing {recs.offset + 1}-{Math.min(recs.offset + recs.limit, recs.total)} of {recs.total}
+                Showing {state.recommendations.offset + 1}-
+                {Math.min(
+                  state.recommendations.offset + state.recommendations.limit,
+                  state.recommendations.total,
+                )}{' '}
+                of {state.recommendations.total}
               </span>
               <button
-                disabled={recs.offset + recs.limit >= recs.total}
-                onClick={async () => {
-                  const nextOffset = recs.offset + recs.limit
-                  const data = await fetchRecommendations({ limit: recs.limit, offset: nextOffset })
-                  setRecs(data)
-                }}
+                disabled={state.recommendations.offset + state.recommendations.limit >= state.recommendations.total}
+                onClick={() =>
+                  void loadRecommendations(
+                    state.recommendations.offset + state.recommendations.limit,
+                    state.recommendations.limit,
+                  )
+                }
                 className="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-50"
               >
                 Next
@@ -412,42 +407,75 @@ export default function CostsPage() {
         </div>
 
         <div className="space-y-4">
-          {recs.items.map((rec) => (
-            <div key={rec.id} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-              <div className="flex justify-between items-start gap-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">{rec.service}</span>
-                    <span className="text-sm px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">{rec.cloud}</span>
-                    <span className="text-sm px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded capitalize">{rec.difficulty}</span>
+          {state.recommendations.items.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No optimization recommendations are available yet.
+            </p>
+          ) : (
+            state.recommendations.items.map((recommendation) => (
+              <div
+                key={recommendation.id}
+                className="rounded-lg border border-slate-200 p-4 dark:border-slate-700"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <span className="rounded bg-slate-100 px-2 py-1 text-xs dark:bg-slate-700">
+                        {recommendation.service}
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-1 text-xs uppercase dark:bg-slate-700">
+                        {recommendation.cloud}
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-1 text-xs capitalize dark:bg-slate-700">
+                        {recommendation.difficulty}
+                      </span>
+                    </div>
+                    <div className="font-semibold text-slate-900 dark:text-white">
+                      {recommendation.title}
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                      {recommendation.description}
+                    </p>
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{rec.title}</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{rec.description}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">${rec.savings.toLocaleString()}</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">ROI: {rec.roi}%</p>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-emerald-600">
+                      {formatCurrency(recommendation.savings)}
+                    </div>
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      ROI {recommendation.roi}%
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex gap-4">
-        <button className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+      <div className="flex flex-wrap gap-4">
+        <button
+          type="button"
+          onClick={() => void downloadExecutiveSummaryCsv()}
+          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
+        >
           <Download className="w-5 h-5" />
-          Export Report
+          Export Executive CSV
         </button>
-        <button className="flex items-center gap-2 px-6 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-lg font-medium transition">
-          <Share2 className="w-5 h-5" />
-          Share Analysis
+        <button
+          type="button"
+          onClick={() => void downloadExecutiveSummaryExcel()}
+          className="flex items-center gap-2 px-6 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-lg font-medium transition"
+        >
+          <Download className="w-5 h-5" />
+          Export Executive Excel
         </button>
-        <button className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition">
+        <a
+          href="/dashboard/ai-insights"
+          className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
+        >
           <Zap className="w-5 h-5" />
-          Get AI Insights
-        </button>
+          Open AI Insights
+        </a>
       </div>
     </div>
   )

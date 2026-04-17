@@ -91,7 +91,19 @@ Dashboard Settings
        Imported cost rows persisted
           |
           +--> cost overview / forecast / analytics / recommendations use imported cost context
+          +--> source-state banners switch to Imported CSV
           +--> audit event recorded
+```
+
+## Source-State Banner Model
+
+```text
+Backend health + imported summary + provider diagnostics
+   |
+   +--> imported + loaded data  -> Imported CSV
+   +--> runtime configured      -> Live backend
+   +--> health but limited data -> Partial data
+   +--> no backend confirmation -> Backend unavailable
 ```
 
 ## Scheduler and Diff Flow
@@ -154,6 +166,7 @@ ENABLE_AUTH=false
 Developer laptop
    |
    | ./deploy/deploy-oci.sh compute
+   | ./deploy/deploy-oci.sh verify
    v
 OCI VM
    |
@@ -162,6 +175,7 @@ OCI VM
    +--> render /opt/optiora/.env
    +--> alembic upgrade head
    +--> restart systemd services
+   +--> smoke verify dashboard, API, CSV import, exports, diagnostics, AI route
 ```
 
 ### Terraform + Ansible

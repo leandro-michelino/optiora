@@ -15,7 +15,7 @@ export interface CostResponse {
   }
   regionBreakdown?: Array<{
     region: string
-    cost: number
+    cost_usd: number
   }>
 }
 
@@ -67,6 +67,16 @@ export interface ApiInfo {
   supported_providers: string[]
   features: Record<string, boolean>
 }
+
+export interface ProviderDiagnostic {
+  provider: string
+  configured: boolean
+  required_settings: string[]
+  missing_settings: string[]
+  recommendation: string
+}
+
+export type DataSourceState = 'live' | 'imported' | 'partial' | 'fallback'
 
 export interface StoredCredential {
   provider: string

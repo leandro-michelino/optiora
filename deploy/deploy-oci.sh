@@ -86,6 +86,7 @@ ${YELLOW}USAGE:${NC}
 ${YELLOW}COMMANDS:${NC}
     compute              Create/start instance and deploy local code (default)
     status               Check current deployment status
+    verify               Run end-to-end verification against the deployed dashboard and API
     logs                 Show SSH commands to inspect logs
     stop                 Stop deployed compute instance
     start                Start deployed compute instance
@@ -790,6 +791,7 @@ deploy_compute() {
     log_step "Deployment Complete"
     log_success "Dashboard: http://$public_ip:3000"
     log_success "API: http://$public_ip:8000"
+    log_info "Verification: ./deploy/deploy-oci.sh verify"
     log_info "On VM, logs are in /var/log/optiora-api.log and /var/log/optiora-dashboard.log"
 }
 
@@ -871,6 +873,29 @@ view_logs() {
     echo "sudo tail -f /var/log/optiora-setup.log"
 }
 
+verify_deployment() {
+    log_step "Running Deployment Verification"
+
+    local instance_id
+    local public_ip
+
+    if ! instance_id=$(get_instance_id); then
+        log_error "No deployment found"
+        return 1
+    fi
+
+    public_ip=$(get_public_ip_for_instance "$instance_id")
+    if [ -z "$public_ip" ] || [ "$public_ip" = "null" ]; then
+        log_error "Could not resolve public IP"
+        return 1
+    fi
+
+    HOST="http://${public_ip}" \
+    API_BASE="http://${public_ip}:8000" \
+    DASHBOARD_BASE="http://${public_ip}:3000" \
+    bash "$(dirname "$0")/../tests/smoke_test_0_9.sh"
+}
+
 destroy_deployment() {
     log_step "Destroy Deployment"
     log_warning "This permanently terminates the compute instance and attached storage."
@@ -919,6 +944,10 @@ main() {
         logs)
             check_prerequisites
             view_logs
+            ;;
+        verify)
+            check_prerequisites
+            verify_deployment
             ;;
         stop)
             check_prerequisites

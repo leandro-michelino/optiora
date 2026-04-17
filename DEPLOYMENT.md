@@ -57,6 +57,7 @@ export OCI_REGION=uk-london-1
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
+./deploy/deploy-oci.sh verify
 ```
 
 ### GenAI-ready deployment checklist
@@ -68,6 +69,8 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 - After deploy, test AI chat via the dashboard or with a JSON `POST` to `/api/ai/chat`.
 
 Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
+
+`./deploy/deploy-oci.sh verify` resolves the deployed instance IP and runs `tests/smoke_test_0_9.sh` against the live dashboard/API pair.
 
 ## What The Deploy Script Fixes Automatically
 
@@ -87,6 +90,7 @@ The quick deploy path also runs `alembic upgrade head` on the VM before restarti
 ```bash
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
+./deploy/deploy-oci.sh verify
 ./deploy/deploy-oci.sh logs
 ./deploy/deploy-oci.sh stop
 ./deploy/deploy-oci.sh start
@@ -162,6 +166,7 @@ curl http://<instance-ip>:3000
 curl -X POST http://<instance-ip>:3000/api/ai/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Summarize the main cost drivers in this workspace.","conversationHistory":[]}'
+./deploy/deploy-oci.sh verify
 ```
 
 Optional scheduler smoke test (authenticated mode with owner/admin role):
@@ -177,6 +182,15 @@ Manual product checks:
 3. Confirm the costs overview reflects the imported CSV totals.
 4. If live provider validation is in scope, add one cloud credential, approve scanning, and start a scan.
 5. Confirm history, diff, alerts, and CSV exports still work after deployment.
+
+Optional live credential verification:
+
+```bash
+SMOKE_CREDENTIAL_JSON='{"provider":"aws","access_key_id":"...","secret_access_key":"...","region":"us-east-1"}' \
+./deploy/deploy-oci.sh verify
+```
+
+When `SMOKE_CREDENTIAL_JSON` is provided, the verify flow also exercises credential validation, credential add, scan approval, scan start, history lookup, and diff export for that provider.
 
 On the VM:
 

@@ -1,0 +1,4 @@
+provider,cost_usd,service_name,account_identifier,account_name,account_type,parent_account_identifier,region,period_start,period_end,currency
+aws,210.50,EC2,acct-aws-prod,AWS Prod,account,aws-root,us-east-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD
+azure,120.25,Virtual Machines,sub-az-finops,Azure FinOps,subscription,mg-finops,uk south,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD
+oci,80.00,Compute,comp-oci-finops,OCI FinOps,compartment,tenancy-main,uk-london-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD
