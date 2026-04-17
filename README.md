@@ -275,14 +275,6 @@ Current CSV rules:
 - `provider` must be one of `aws`, `azure`, `gcp`, or `oci`
 - uploaded CSV data becomes the active cost source for cost, forecast, analytics, and recommendation pages until it is replaced by a newer CSV import
 - `currency` defaults to `USD` and only `USD` is currently accepted
-
-## Smoke Test
-
-Use the bundled public-dashboard smoke test against a running environment:
-
-```bash
-HOST=http://<instance-ip> bash tests/smoke_test_0_9.sh
-```
 - each new upload replaces the previous imported billing dataset for that workspace
 
 ## Documentation
