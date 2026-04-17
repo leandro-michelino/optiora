@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 
 const fixtureCsv = path.join(__dirname, 'fixtures', 'import-costs.csv')
 
-test('public dashboard activates imported CSV data and keeps exports available', async ({ page }) => {
+test('public dashboard uses imported CSV as a fallback source and keeps exports available', async ({ page }) => {
   await page.goto('/dashboard/settings')
   await expect(page.getByRole('heading', { name: 'Cloud Settings' })).toBeVisible()
   await expect(page.getByTestId('csv-template-download')).toBeVisible()
@@ -11,7 +11,7 @@ test('public dashboard activates imported CSV data and keeps exports available',
   await page.getByTestId('csv-upload-input').setInputFiles(fixtureCsv)
   await page.getByTestId('csv-upload-submit').click()
 
-  await expect(page.getByTestId('csv-upload-message')).toContainText('active cost source')
+  await expect(page.getByTestId('csv-upload-message')).toContainText('optional manual billing source')
   await expect(page.getByTestId('imported-cost-summary')).toContainText('import-costs.csv')
   await expect(page.getByTestId('imported-cost-summary')).toContainText('410.75')
 

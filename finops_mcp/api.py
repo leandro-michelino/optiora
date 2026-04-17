@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -45,7 +45,7 @@ from .orm_models import (
 )
 from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, finops_analytics, recommendations
-from .tools import azure_costs, gcp_costs, oci_costs
+from .tools import azure_costs, gcp_costs, oci_costs, genai_advisor
 from . import __version__
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,6 @@ _scheduler_running = False
 
 
 def _utcnow() -> datetime:
-    """Return current naive UTC datetime. Replaces deprecated _utcnow()."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
@@ -872,15 +871,22 @@ async def _cost_context(
     period: str = "month",
     cloud_provider: str = "all",
 ) -> Dict[str, Any]:
-    imported_context = _imported_cost_context(
-        membership,
-        db,
-        cloud_provider=cloud_provider,
-    )
-    if imported_context is not None:
-        return imported_context
-
     providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
+    configured_live_providers = {
+        diagnostic.provider
+        for diagnostic in _provider_diagnostics()
+        if diagnostic.configured and diagnostic.provider in providers
+    }
+
+    if not configured_live_providers:
+        imported_context = _imported_cost_context(
+            membership,
+            db,
+            cloud_provider=cloud_provider,
+        )
+        if imported_context is not None:
+            return imported_context
+
     breakdown: Dict[str, Dict[str, float]] = {}
     region_breakdown: Dict[str, float] = {}
     total_cost = 0.0
@@ -906,6 +912,7 @@ async def _cost_context(
         "cloud_provider": cloud_provider,
         "total_cost": round(total_cost, 2),
         "breakdown": breakdown,
+        "source": "live_provider_api" if configured_live_providers else "live_backend",
         "region_breakdown": [
             {"region": region, "cost_usd": round(cost, 2)}
             for region, cost in sorted(region_breakdown.items(), key=lambda item: item[1], reverse=True)
@@ -1722,7 +1729,7 @@ async def get_provider_account_inventory(
         query = db.query(ProviderAccount).filter(
             ProviderAccount.customer_id == customer_id,
             ProviderAccount.organization_id == organization_id,
-            ProviderAccount.is_active == True,
+            ProviderAccount.is_active.is_(True),
         )
         if provider:
             query = query.filter(ProviderAccount.provider == provider)
@@ -2454,7 +2461,175 @@ async def dashboard_analytics(
         {},
     )
     result["cost_context"] = context
+    # Attach backend GenAI narrative when OCI GenAI is configured
+    narrative, prompt = genai_advisor.generate_spend_narrative(result)
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
     return result
+
+
+@router.get("/analytics/attribution")
+async def analytics_attribution(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Pareto cost driver attribution — which providers/services account for 80% of spend."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_cost_attribution({
+            "cloud_provider": cloud_provider,
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+        }),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/commitment-optimization")
+async def analytics_commitment_optimization(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Model the ROI of increasing RI/Savings Plan coverage across coverage tiers."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_commitment_optimization({
+            "cloud_provider": cloud_provider,
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+        }),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/maturity")
+async def analytics_maturity(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """FinOps maturity assessment mapped to CRAWL/WALK/RUN/OPTIMIZE levels."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    customer_id = _customer_id_for_org(membership)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    anomalies_result = _safe_json_load(
+        await anomalies.detect_anomalies({"cloud_provider": cloud_provider}), {}
+    )
+    historical = _historical_monthly_spend_from_snapshots(
+        db=db, customer_id=customer_id, cloud_provider=cloud_provider, months=18
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_maturity_assessment({
+            "cloud_provider": cloud_provider,
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+            "anomalies": int(anomalies_result.get("anomalies_found", 0) or 0),
+            "history_coverage_months": len(historical),
+            "scheduler_enabled": bool(permission.get("scan_frequency")),
+            "auto_remediate": bool(permission.get("auto_remediate", False)),
+        }),
+        {},
+    )
+    # Attach GenAI narrative if OCI GenAI is configured
+    narrative, prompt = genai_advisor.generate_maturity_narrative(result)
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/unit-economics")
+async def analytics_unit_economics(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Unit cost trends, waste-to-spend ratio, and dollar efficiency score."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    analytics_result = _safe_json_load(
+        await finops_analytics.get_analytics({
+            "cloud_provider": cloud_provider,
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+            "anomalies": 0,
+            "monthly_savings": 0,
+        }),
+        {},
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_unit_economics({
+            "current_monthly_spend": context["total_cost"],
+            "estimated_waste_usd": analytics_result.get("estimated_monthly_waste_usd", 0),
+            "identified_savings_usd": analytics_result.get("identified_monthly_savings_usd", 0),
+            "anomalies": 0,
+        }),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
+class GenAIAnalyzeRequest(BaseModel):
+    analysis_type: Literal["spend", "anomaly", "optimization", "maturity", "budget_risk"] = "spend"
+    context: Dict[str, Any] = Field(default_factory=dict)
+    anomaly: Optional[Dict[str, Any]] = None
+
+
+@router.post("/genai/analyze")
+async def genai_analyze(
+    request: GenAIAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Call OCI GenAI to generate a narrative for the requested analysis type.
+
+    Falls back to returning the prompt when OCI GenAI is not configured,
+    so the frontend Cost Advisor can use it directly.
+    """
+    _ = current_user
+    ctx = request.context
+    if not ctx.get("current_monthly_spend_usd"):
+        cost_ctx = await _cost_context(membership, db, "month", "all")
+        ctx.setdefault("current_monthly_spend_usd", cost_ctx.get("total_cost", 0))
+
+    narrative: Optional[str] = None
+    prompt: str = ""
+
+    if request.analysis_type == "spend":
+        narrative, prompt = genai_advisor.generate_spend_narrative(ctx)
+    elif request.analysis_type == "anomaly":
+        anomaly_ctx = request.anomaly or {}
+        narrative, prompt = genai_advisor.generate_anomaly_explanation(anomaly_ctx, ctx)
+    elif request.analysis_type == "optimization":
+        narrative, prompt = genai_advisor.generate_optimization_brief(ctx)
+    elif request.analysis_type == "maturity":
+        narrative, prompt = genai_advisor.generate_maturity_narrative(ctx)
+    elif request.analysis_type == "budget_risk":
+        guardrails = ctx.get("budget_guardrails") or ctx
+        narrative, prompt = genai_advisor.generate_budget_risk_alert(guardrails, ctx)
+
+    return {
+        "analysis_type": request.analysis_type,
+        "narrative": narrative,
+        "prompt": prompt,
+        "genai_configured": genai_advisor._is_configured(),
+        "fallback_mode": narrative is None,
+    }
 
 
 @router.get("/provider-diagnostics", response_model=List[ProviderDiagnostic])
@@ -2487,7 +2662,13 @@ async def api_info() -> Dict[str, Any]:
             "dashboard_endpoints": True,
             "finops_analytics": True,
             "forecasting": True,
+            "cost_attribution": True,
+            "commitment_optimization": True,
+            "maturity_assessment": True,
+            "unit_economics": True,
+            "anomaly_scoring": True,
             "genai_advisor": True,
+            "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,
             "audit_logging": True,
             "budget_alerts": True,
@@ -2497,6 +2678,7 @@ async def api_info() -> Dict[str, Any]:
             "excel_exports": True,
             "executive_reports": True,
             "provider_hierarchy": True,
+            "account_region_breakdown": True,
         },
     }
 

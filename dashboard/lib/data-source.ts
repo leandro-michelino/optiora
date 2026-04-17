@@ -28,7 +28,7 @@ function importedCsvDescription(importedSummary: ImportedCostSummaryResponse): s
   const importedAt = importedSummary.last_imported_at
     ? new Date(importedSummary.last_imported_at).toLocaleString()
     : 'recently'
-  return `${filename} is active for this workspace with ${rows} imported row(s), last updated ${importedAt}.`
+  return `${filename} is available as an optional manual billing source for this workspace with ${rows} imported row(s), last updated ${importedAt}.`
 }
 
 export function buildCostDataSourceStatus({
@@ -47,21 +47,21 @@ export function buildCostDataSourceStatus({
   const healthOk = health?.status === 'healthy'
   const configuredProviders = diagnostics.filter((item) => item.configured)
 
-  if (primaryLoaded && importedSummary?.has_data) {
-    return {
-      state: 'imported',
-      label: 'Imported CSV',
-      title: `${pageName} is using imported billing data`,
-      description: importedCsvDescription(importedSummary),
-    }
-  }
-
   if (primaryLoaded && configuredProviders.length > 0) {
     return {
       state: 'live',
       label: 'Live backend',
       title: `${pageName} is using live backend data`,
-      description: `Runtime provider access is configured for ${formatProviderList(diagnostics)}.`,
+      description: `Runtime provider access is configured for ${formatProviderList(diagnostics)}. Live provider APIs are preferred when available.`,
+    }
+  }
+
+  if (primaryLoaded && importedSummary?.has_data) {
+    return {
+      state: 'imported',
+      label: 'Imported CSV',
+      title: `${pageName} is using imported billing data`,
+      description: `${importedCsvDescription(importedSummary)} Live provider APIs are preferred when configured.`,
     }
   }
 
@@ -72,7 +72,7 @@ export function buildCostDataSourceStatus({
       title: `${pageName} has limited runtime data`,
       description:
         configuredProviders.length === 0
-          ? 'No live provider runtime is configured yet. Upload a CSV or configure provider secrets on the backend host to replace empty backend responses.'
+          ? 'No live provider runtime is configured yet. Connect cloud providers on the backend host for the preferred data path, or upload a CSV as an optional manual fallback.'
           : `Some backend signals are available, but ${pageName.toLowerCase()} cannot confirm a full live dataset right now.`,
     }
   }

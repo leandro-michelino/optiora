@@ -98,7 +98,7 @@ npm run build
 npm run test:e2e
 ```
 
-Browser E2E coverage now validates the public dashboard CSV-first workflow:
+Browser E2E coverage now validates the public dashboard optional CSV fallback workflow:
 
 - opens `/dashboard/settings` with auth disabled
 - uploads `dashboard/e2e/fixtures/import-costs.csv`

@@ -4,13 +4,7 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 
 ## Dashboard Preview
 
-<p align="center">
-  <img
-    src="dashboard/public/optiora-animated.svg"
-    alt="OptiOra animated dashboard — cycling through imported cost overview, forecasting with OCI GenAI insights, operations history and alerts, and CSV-first settings"
-    width="900"
-  />
-</p>
+![OptiOra animated dashboard — cycling through provider-backed overview, forecasting with OCI GenAI insights, operations history and alerts, and optional CSV settings](dashboard/public/optiora-animated.svg)
 
 The dashboard is the main workspace for:
 
@@ -72,8 +66,8 @@ The dashboard is the main workspace for:
 - Dashboard access is public by default. Authentication and RBAC are optional deployment hardening steps and stay disabled unless you explicitly set `ENABLE_AUTH=true` and `NEXT_PUBLIC_ENABLE_AUTH=true`.
 - When auth is disabled, backend auth dependencies resolve to the seeded public workspace identity so dashboard APIs still work without login.
 - Raw cloud secrets are validated server-side but not persisted; only sanitized metadata is stored.
-- Workspace owners/admins can upload UTF-8 CSV billing data as a manual cost source. Native Excel import is intentionally not supported yet.
-- When imported CSV cost data exists for a workspace, cost-oriented endpoints use that imported dataset before falling back to live provider summaries.
+- Workspace owners/admins can upload UTF-8 CSV billing data as an optional manual cost source. Native Excel import is intentionally not supported yet.
+- OptiOra prefers live provider APIs/runtime credentials when they are configured. Imported CSV data is used as a manual fallback when live runtime access is not available.
 - Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
 - Dashboard pages now expose a source-state banner so operators can see whether a view is using imported CSV data, live runtime provider data, partial backend data, or an unverified fallback state.
@@ -107,9 +101,16 @@ The dashboard is the main workspace for:
 - `GET /api/v1/anomalies`
 - `POST /api/v1/anomalies/external/aws`
 - `GET /api/v1/recommendations`
-- `GET /api/v1/forecast` (supports budget guardrails + fan percentiles)
-- `GET /api/v1/analytics` (adds provider signals, spend-at-risk metrics, and GenAI guidance prompt)
-- `GET /api/v1/provider-accounts/rollups`
+- `GET /api/v1/forecast` (budget guardrails, fan percentiles, cost velocity, backtesting)
+- `GET /api/v1/analytics` (risk/maturity scores, waste, commitment, MoM velocity, GenAI narrative)
+- `GET /api/v1/analytics/attribution` (Pareto cost driver analysis, HHI concentration)
+- `GET /api/v1/analytics/commitment-optimization` (RI/Savings Plan ROI at 50/65/80% tiers)
+- `GET /api/v1/analytics/maturity` (CRAWL/WALK/RUN/OPTIMIZE assessment, GenAI narrative)
+- `GET /api/v1/analytics/unit-economics` (cost-per-resource, waste-to-spend, dollar efficiency)
+- `POST /api/v1/genai/analyze` (backend OCI GenAI narration: spend / anomaly / optimization / maturity / budget-risk)
+- `GET /api/v1/provider-accounts/rollups` (hierarchy tree with rolled-up costs + top_regions)
+- `GET /api/v1/provider-accounts` (flat account inventory, filterable by provider)
+- `GET /api/v1/provider-accounts/{id}/region-breakdown` (per-region cost rows)
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/{alert_id}/acknowledge`
 - `GET /api/v1/alerts.csv`
@@ -250,7 +251,7 @@ Forecast and analytics payloads now include budget-aware and executive-focused f
 
 ## CSV Billing Import
 
-OptiOra currently supports CSV upload for manual billing ingestion. Excel import is not supported yet.
+OptiOra currently supports CSV upload for optional manual billing ingestion. Excel import is not supported yet.
 
 Required CSV columns:
 
@@ -273,7 +274,7 @@ Current CSV rules:
 
 - file must be UTF-8 encoded
 - `provider` must be one of `aws`, `azure`, `gcp`, or `oci`
-- uploaded CSV data becomes the active cost source for cost, forecast, analytics, and recommendation pages until it is replaced by a newer CSV import
+- uploaded CSV data remains available as a manual billing source for cost, forecast, analytics, and recommendation pages when live provider runtime is not configured
 - `currency` defaults to `USD` and only `USD` is currently accepted
 - each new upload replaces the previous imported billing dataset for that workspace
 

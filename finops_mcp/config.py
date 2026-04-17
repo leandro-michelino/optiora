@@ -45,6 +45,12 @@ class Config:
     oci_profile: str = os.getenv("OCI_PROFILE", "DEFAULT")
     oci_region: str = os.getenv("OCI_REGION", "uk-london-1")
 
+    # OCI Generative AI (backend-side inference for analytics narration)
+    oci_genai_endpoint: str = os.getenv("OCI_GENAI_ENDPOINT", "")
+    oci_genai_model: str = os.getenv("OCI_GENAI_MODEL", "meta.llama-3-70b-instruct")
+    oci_genai_compartment_id: str = os.getenv("OCI_COMPARTMENT_OCID", os.getenv("OCI_GENAI_COMPARTMENT_ID", ""))
+    oci_genai_max_tokens: int = int(os.getenv("OCI_GENAI_MAX_TOKENS", "800"))
+
     # OCI Database (PostgreSQL for audit logs)
     database_url: str = os.getenv("DATABASE_URL", "")
     oci_db_host: str = os.getenv("OCI_DB_HOST", "")

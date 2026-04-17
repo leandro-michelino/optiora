@@ -2,7 +2,7 @@ compartment_id = "ocid1.compartment.oc1..your_compartment_ocid"
 region         = "uk-london-1"
 
 # Restrict ingress to your laptop public IP only.
-laptop_cidr = "79.112.21.102/32"
+laptop_cidr = "<your_laptop_public_ip>/32"
 # Keep outbound access open by default so the VM can install packages and reach cloud APIs.
 egress_cidr = "0.0.0.0/0"
 

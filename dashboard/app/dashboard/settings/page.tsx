@@ -200,7 +200,7 @@ export default function SettingsPage() {
     try {
       const result = await uploadImportedCostCsv(selectedCsvFile)
       setCsvUploadMessage(
-        `Imported ${result.rows_imported} row(s) from ${result.filename}. Uploaded CSV data is now the active cost source for this workspace.`,
+        `Imported ${result.rows_imported} row(s) from ${result.filename}. The CSV is now available as an optional manual billing source for this workspace. Live provider APIs remain the preferred source whenever runtime cloud access is configured.`,
       )
       setSelectedCsvFile(null)
       await loadImportedCosts()
@@ -220,10 +220,10 @@ export default function SettingsPage() {
           Cloud Settings
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Manage your cloud provider credentials, CSV billing imports, and scanning preferences
+          Manage your cloud provider credentials, optional CSV billing imports, and scanning preferences
         </p>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Credential secrets are validated on the backend but not stored permanently. For live provider collection after validation, configure runtime provider secrets on the OptiOra host as well.
+          OptiOra prefers live cloud provider APIs and runtime credentials. CSV upload is optional for manual finance imports, backfill, or cases where live runtime access is not configured yet.
         </p>
         {organization && (
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
@@ -245,7 +245,7 @@ export default function SettingsPage() {
           
           {/* Add Credentials Section */}
           <div>
-            <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Add Cloud Provider</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Preferred: Connect Cloud Provider</h2>
             {canManageCloudSettings ? (
               <CredentialForm onSubmit={handleCredentialSubmitted} />
             ) : (
@@ -256,12 +256,12 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Upload Cost CSV</h2>
+            <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Optional: Upload Cost CSV</h2>
             <div className="card space-y-4">
               <div>
-                <div className="font-medium text-slate-900 dark:text-white">CSV only for now</div>
+                <div className="font-medium text-slate-900 dark:text-white">Manual fallback import</div>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                  Upload a UTF-8 CSV to use manual billing data instead of live provider collection. Use the template below for finance-friendly imports with account and region rollups.
+                  Upload a UTF-8 CSV only when you want a manual billing dataset for backfill, finance reconciliation, or environments where live provider APIs are not available yet. Use the template below for account and region rollups.
                 </p>
               </div>
 
@@ -269,6 +269,8 @@ export default function SettingsPage() {
                 Required columns: <code>provider</code>, <code>cost_usd</code>
                 <br />
                 Optional columns: <code>service_name</code>, <code>account_identifier</code>, <code>account_name</code>, <code>region</code>, <code>period_start</code>, <code>period_end</code>, <code>currency</code>
+                <br />
+                Live provider APIs remain the preferred source whenever runtime cloud access is configured.
               </div>
 
               <button
@@ -404,7 +406,7 @@ export default function SettingsPage() {
               </div>
             ) : !importedCostSummary?.has_data ? (
               <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-900/50 dark:text-slate-400">
-                No CSV cost import is active yet.
+                No optional CSV billing import has been uploaded for this workspace.
               </div>
             ) : (
               <div data-testid="imported-cost-summary" className="space-y-3 text-sm">
@@ -433,6 +435,9 @@ export default function SettingsPage() {
                 <div className="text-slate-600 dark:text-slate-400">
                   Providers: {importedCostSummary.providers.map((provider) => provider.toUpperCase()).join(', ')}
                 </div>
+                <div className="text-slate-600 dark:text-slate-400">
+                  This imported dataset is available as a manual source. Live provider APIs remain preferred whenever runtime credentials are configured on the OptiOra host.
+                </div>
               </div>
             )}
           </div>
@@ -443,10 +448,10 @@ export default function SettingsPage() {
       <div className="card bg-white dark:bg-slate-800">
         <h3 className="font-semibold mb-3 text-slate-900 dark:text-white">How it works</h3>
         <ol className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
-          <li><strong>1. Choose a source:</strong> Connect live cloud credentials or upload a billing CSV</li>
+          <li><strong>1. Preferred path:</strong> Connect live cloud credentials so OptiOra can use provider APIs directly</li>
           <li><strong>2. Validate:</strong> OptiOra tests provider API access when live credentials are used</li>
           <li><strong>3. Approve scanning:</strong> Review and approve cost analysis settings for live scans</li>
-          <li><strong>4. Begin analysis:</strong> OptiOra uses the active cost source to power dashboards and recommendations</li>
+          <li><strong>4. Optional fallback:</strong> Upload a billing CSV only when you need a manual source for backfill or when live runtime access is not configured</li>
         </ol>
       </div>
 
