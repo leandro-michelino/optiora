@@ -246,7 +246,7 @@ HOST=http://<instance-ip> bash tests/smoke_test_0_9.sh
 
 `tests/smoke_test_0_9.sh` now checks health, public dashboard routes, CSV template/import flow, imported-cost activation, analytics/forecast/rollup endpoints, provider diagnostics, finance exports, and the dashboard AI route. To verify the live credential plus scan path as well, provide `SMOKE_CREDENTIAL_JSON='{"provider":"aws",...}'` (or another supported provider payload) before running it.
 
-Forecast and analytics payloads now include budget-aware and executive-focused fields (`budget_breach_probability`, `average_breach_probability`, `provider_concentration_hhi`, `forecast_summary`, `spend_at_risk_usd`, `optimization_capacity_usd`) while keeping deterministic core math.
+Forecast and analytics payloads now include budget-aware and executive-focused fields (`budget_breach_probability`, `average_breach_probability`, `provider_concentration_hhi`, `forecast_summary`, `spend_at_risk_usd`, `optimization_capacity_usd`) while keeping deterministic core math. Forecasting now prefers persisted monthly history from `CostSnapshot` rows when enough points exist, reports `history_source`/`history_coverage_months`, and includes holdout backtesting (`backtesting.mape_percent`, `backtesting.wmape_percent`) for model trust.
 
 ## CSV Billing Import
 

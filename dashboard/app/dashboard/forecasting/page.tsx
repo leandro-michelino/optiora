@@ -216,6 +216,37 @@ export default function PredictiveAnalyticsPage() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">History Source</p>
+              <p className="text-xl font-bold text-slate-900 dark:text-white capitalize">
+                {(forecast.history_source || 'synthetic').replace('_', ' ')}
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">History Coverage</p>
+              <p className="text-xl font-bold text-slate-900 dark:text-white">
+                {forecast.history_coverage_months ?? forecast.history.length} months
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Backtest MAPE</p>
+              <p className="text-xl font-bold text-slate-900 dark:text-white">
+                {typeof forecast.backtesting?.mape_percent === 'number'
+                  ? `${forecast.backtesting.mape_percent.toFixed(2)}%`
+                  : 'n/a'}
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Backtest wMAPE</p>
+              <p className="text-xl font-bold text-slate-900 dark:text-white">
+                {typeof forecast.backtesting?.wmape_percent === 'number'
+                  ? `${forecast.backtesting.wmape_percent.toFixed(2)}%`
+                  : 'n/a'}
+              </p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">
               <div className="card bg-white dark:bg-slate-800">
@@ -391,6 +422,8 @@ export default function PredictiveAnalyticsPage() {
                   <li>Fan shows deterministic p10 / p50 / p90 Monte Carlo percentiles.</li>
                   <li>Budget guardrails flag likely breaches at p90.</li>
                   <li>Balanced is the recommended executive planning view.</li>
+                  <li>History prefers persisted cost snapshots when enough months exist.</li>
+                  <li>Backtesting reports MAPE / wMAPE on a short holdout window.</li>
                   <li>GenAI can narrate actions; math remains deterministic.</li>
                 </ol>
                 {budgetGuardrails && (

@@ -112,6 +112,85 @@ def _provider_inputs(cost_breakdown: dict[str, Any]) -> dict[str, float]:
     return providers
 
 
+def _normalized_history_points(raw_history: Any) -> list[float]:
+    if not isinstance(raw_history, list):
+        return []
+    points: list[float] = []
+    for row in raw_history:
+        if isinstance(row, dict):
+            points.append(max(_safe_float(row.get("actual_usd"), 0.0), 0.0))
+        else:
+            points.append(max(_safe_float(row, 0.0), 0.0))
+    return [value for value in points if value >= 0.0]
+
+
+def _project_baseline_series(
+    history: list[float],
+    horizon: int,
+    weighted_growth: float,
+    weighted_volatility: float,
+) -> tuple[list[dict[str, float]], float]:
+    intercept, slope = _linear_regression(history)
+    smoothing_alpha = 0.35
+    smoothed = history[0] if history else 0.0
+    for value in history[1:]:
+        smoothed = (smoothing_alpha * value) + ((1 - smoothing_alpha) * smoothed)
+    residuals = [value - (intercept + slope * index) for index, value in enumerate(history)]
+    residual_stddev = math.sqrt(sum(r * r for r in residuals) / max(len(residuals) - 1, 1))
+
+    projected: list[dict[str, float]] = []
+    for month_index in range(1, horizon + 1):
+        regression_value = intercept + slope * (len(history) + month_index - 1)
+        extrapolated_smooth = smoothed * ((1 + weighted_growth) ** month_index)
+        blended = (regression_value * 0.7) + (extrapolated_smooth * 0.3)
+        seasonal_value = blended * SEASONALITY[(month_index - 1) % len(SEASONALITY)]
+        baseline = max(seasonal_value, 0.0)
+        confidence_width = residual_stddev + (baseline * weighted_volatility * math.sqrt(month_index) * 0.35)
+        projected.append(
+            {
+                "baseline": baseline,
+                "lower_bound": max(baseline - confidence_width, 0.0),
+                "upper_bound": baseline + confidence_width,
+            }
+        )
+    return projected, residual_stddev
+
+
+def _backtesting_metrics(history: list[float], weighted_growth: float, weighted_volatility: float) -> dict[str, Any] | None:
+    if len(history) < 8:
+        return None
+
+    holdout = min(3, max(1, len(history) // 4))
+    if len(history) - holdout < 5:
+        return None
+
+    train = history[:-holdout]
+    actual = history[-holdout:]
+    projected, _ = _project_baseline_series(train, holdout, weighted_growth, weighted_volatility)
+    predicted = [row["baseline"] for row in projected]
+
+    ape_values: list[float] = []
+    abs_error_sum = 0.0
+    actual_sum = 0.0
+    for a, p in zip(actual, predicted):
+        abs_error = abs(a - p)
+        abs_error_sum += abs_error
+        actual_sum += a
+        if a > 0:
+            ape_values.append(abs_error / a)
+
+    mape = (sum(ape_values) / len(ape_values) * 100) if ape_values else None
+    wmape = (abs_error_sum / actual_sum * 100) if actual_sum > 0 else None
+    return {
+        "window_months": holdout,
+        "mape_percent": round(mape, 2) if mape is not None else None,
+        "wmape_percent": round(wmape, 2) if wmape is not None else None,
+        "training_points": len(train),
+        "actual_points": [round(value, 2) for value in actual],
+        "predicted_points": [round(value, 2) for value in predicted],
+    }
+
+
 def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     """Deterministic forecast with a Monte Carlo fan for risk-aware planning."""
 
@@ -121,9 +200,12 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     cost_breakdown = params.get("cost_breakdown") or {}
     providers = _provider_inputs(cost_breakdown)
     budget_monthly = _safe_float(params.get("budget_monthly"))
+    external_history = _normalized_history_points(params.get("historical_monthly_spend"))
 
     if current_monthly <= 0:
         current_monthly = sum(providers.values())
+    if current_monthly <= 0 and external_history:
+        current_monthly = external_history[-1]
     if current_monthly <= 0:
         current_monthly = _safe_float(params.get("fallback_monthly_spend"), 0.0)
 
@@ -145,15 +227,15 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         weighted_commitment = 0.35
         provider_concentration = 1.0
 
-    history = _synthetic_history(current_monthly, 12, weighted_growth, weighted_volatility)
-    intercept, slope = _linear_regression(history)
-    # Smoothed baseline to avoid overreacting to short-term waves.
-    smoothing_alpha = 0.35
-    smoothed = history[0] if history else 0.0
-    for value in history[1:]:
-        smoothed = (smoothing_alpha * value) + ((1 - smoothing_alpha) * smoothed)
-    residuals = [value - (intercept + slope * index) for index, value in enumerate(history)]
-    residual_stddev = math.sqrt(sum(r * r for r in residuals) / max(len(residuals) - 1, 1))
+    history_source = "cost_snapshots" if len(external_history) >= 6 else "synthetic"
+    history = external_history[-18:] if history_source == "cost_snapshots" else _synthetic_history(
+        current_monthly,
+        12,
+        weighted_growth,
+        weighted_volatility,
+    )
+    projected_baseline, _ = _project_baseline_series(history, months, weighted_growth, weighted_volatility)
+    backtesting = _backtesting_metrics(history, weighted_growth, weighted_volatility)
 
     forecast = []
     baseline_total = 0.0
@@ -168,15 +250,11 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     samples = _deterministic_random_sequence(seed_material, simulations_per_month * months)
 
     for month_index in range(1, months + 1):
-        regression_value = intercept + slope * (len(history) + month_index - 1)
-        extrapolated_smooth = smoothed * ((1 + weighted_growth) ** month_index)
-        blended = (regression_value * 0.7) + (extrapolated_smooth * 0.3)
-        seasonal_value = blended * SEASONALITY[(month_index - 1) % len(SEASONALITY)]
-        baseline = max(seasonal_value, 0.0)
+        projection = projected_baseline[month_index - 1]
+        baseline = projection["baseline"]
         conservative = baseline * 0.90
         balanced = baseline * 0.82
         aggressive = baseline * 0.72
-        confidence_width = residual_stddev + (baseline * weighted_volatility * math.sqrt(month_index) * 0.35)
 
         # Simulate month volatility with deterministic samples
         month_samples = samples[(month_index - 1) * simulations_per_month : month_index * simulations_per_month]
@@ -220,8 +298,8 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
                 "conservative": round(conservative, 2),
                 "balanced": round(balanced, 2),
                 "aggressive": round(aggressive, 2),
-                "lower_bound": round(max(baseline - confidence_width, 0.0), 2),
-                "upper_bound": round(baseline + confidence_width, 2),
+                "lower_bound": round(projection["lower_bound"], 2),
+                "upper_bound": round(projection["upper_bound"], 2),
                 "p10": round(p10, 2),
                 "p50": round(p50, 2),
                 "p90": round(p90, 2),
@@ -288,6 +366,8 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     return {
         "generated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "forecast_months": months,
+        "history_source": history_source,
+        "history_coverage_months": len(history),
         "current_monthly_spend_usd": round(current_monthly, 2),
         "model": {
             "type": "blended_regression_smoothing_with_deterministic_monte_carlo_fan",
@@ -304,6 +384,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         "forecast": forecast,
         "fan_percentiles": fan,
         "budget_guardrails": budget_guardrails,
+        "backtesting": backtesting,
         "forecast_summary": {
             "annualized_run_rate_usd": round((forecast[0]["baseline"] if forecast else 0.0) * 12, 2),
             "projected_12m_baseline_usd": round(baseline_total, 2),

@@ -152,6 +152,8 @@ export interface ForecastScenario {
 export interface ForecastResponse {
   generated_at: string
   forecast_months: number
+  history_source?: 'cost_snapshots' | 'synthetic' | string
+  history_coverage_months?: number
   current_monthly_spend_usd: number
   model: {
     type: string
@@ -170,6 +172,14 @@ export interface ForecastResponse {
     first_breach_month: string | null
     breach_severity: 'none' | 'medium' | 'high'
     average_breach_probability?: number
+  } | null
+  backtesting?: {
+    window_months: number
+    mape_percent: number | null
+    wmape_percent: number | null
+    training_points: number
+    actual_points: number[]
+    predicted_points: number[]
   } | null
   forecast_summary?: {
     annualized_run_rate_usd: number

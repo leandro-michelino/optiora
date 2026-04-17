@@ -28,6 +28,7 @@ import {
   fetchApiInfo,
   fetchCostsStrict,
   fetchCredentials,
+  fetchFinOpsAnalytics,
   fetchImportedCostSummary,
   fetchProviderAccountRollups,
   fetchProviderDiagnostics,
@@ -40,6 +41,7 @@ import {
   ApiHealth,
   ApiInfo,
   CostResponse,
+  FinOpsAnalyticsResponse,
   ImportedCostSummaryResponse,
   ProviderDiagnostic,
   ProviderAccountRollupResponse,
@@ -72,6 +74,7 @@ interface DashboardState {
   diagnostics: ProviderDiagnostic[]
   anomalies: AnomalyResponse[]
   recommendations: RecommendationResponse[]
+  analytics: FinOpsAnalyticsResponse | null
   source: 'live' | 'partial' | 'fallback'
   error: string | null
 }
@@ -87,6 +90,7 @@ const initialState: DashboardState = {
   diagnostics: [],
   anomalies: [],
   recommendations: [],
+  analytics: null,
   source: 'live',
   error: null,
 }
@@ -155,6 +159,9 @@ function exportCsv(state: DashboardState) {
     ['Active anomalies', state.anomalies.length],
     ['Connected providers', state.credentials.filter((credential) => credential.is_valid).length],
     ['Scan state', state.permission?.state || 'not configured'],
+    ['Spend at risk (USD)', state.analytics?.spend_at_risk_usd ?? 0],
+    ['Optimization capacity (USD)', state.analytics?.optimization_capacity_usd ?? 0],
+    ['Budget utilization (%)', state.analytics?.unit_metrics?.budget_utilization_percent ?? 0],
     [],
     ['Provider', 'Cost', 'Percentage', 'Credential Status'],
   ]
@@ -214,7 +221,7 @@ export default function DashboardPage() {
 
   async function loadDashboard() {
     setLoading(true)
-    const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations] =
+    const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations, analytics] =
       await Promise.allSettled([
         fetchCostsStrict(),
         fetchApiHealth(),
@@ -226,6 +233,7 @@ export default function DashboardPage() {
         fetchProviderDiagnostics(),
         fetchAnomalies(),
         fetchRecommendations(),
+        fetchFinOpsAnalytics(),
       ])
 
     const nextState: DashboardState = {
@@ -239,6 +247,7 @@ export default function DashboardPage() {
       diagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
       anomalies: anomalies.status === 'fulfilled' ? anomalies.value.items : [],
       recommendations: recommendations.status === 'fulfilled' ? recommendations.value.items : [],
+      analytics: analytics.status === 'fulfilled' ? analytics.value : null,
       source: health.status === 'fulfilled' && credentials.status === 'fulfilled' ? 'live' : 'partial',
       error:
         costs.status === 'rejected'
@@ -349,6 +358,27 @@ export default function DashboardPage() {
           label="Scan Readiness"
           value={scanApproved ? 'Approved' : 'Pending'}
           color={scanApproved ? 'bg-gradient-to-br from-cyan-500 to-cyan-600' : 'bg-gradient-to-br from-amber-500 to-amber-600'}
+        />
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-3">
+        <MetricCard
+          icon={Target}
+          label="Spend At Risk"
+          value={formatCurrency(state.analytics?.spend_at_risk_usd || 0)}
+          color="bg-gradient-to-br from-amber-500 to-amber-600"
+        />
+        <MetricCard
+          icon={DollarSign}
+          label="Optimization Capacity"
+          value={formatCurrency(state.analytics?.optimization_capacity_usd || 0)}
+          color="bg-gradient-to-br from-indigo-500 to-indigo-600"
+        />
+        <MetricCard
+          icon={Activity}
+          label="Budget Utilization"
+          value={`${(state.analytics?.unit_metrics?.budget_utilization_percent || 0).toFixed(1)}%`}
+          color="bg-gradient-to-br from-violet-500 to-violet-600"
         />
       </div>
 

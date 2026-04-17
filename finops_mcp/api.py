@@ -913,6 +913,33 @@ async def _cost_context(
     }
 
 
+def _historical_monthly_spend_from_snapshots(
+    db: Session,
+    customer_id: str,
+    cloud_provider: str,
+    months: int = 18,
+) -> List[float]:
+    """Build monthly spend history from persisted cost snapshots.
+
+    Returns ascending monthly totals (oldest -> newest).
+    """
+    query = db.query(CostSnapshot).filter(CostSnapshot.customer_id == customer_id)
+    if cloud_provider != "all":
+        query = query.filter(CostSnapshot.provider == cloud_provider)
+    rows = query.order_by(CostSnapshot.captured_at.desc()).limit(500).all()
+
+    month_totals: Dict[str, float] = {}
+    for row in rows:
+        anchor = row.period_end or row.period_start or row.captured_at
+        if anchor is None:
+            continue
+        month_key = anchor.strftime("%Y-%m")
+        month_totals[month_key] = month_totals.get(month_key, 0.0) + float(row.total_cost_usd or 0.0)
+
+    ordered = sorted(month_totals.items())
+    return [round(value, 2) for _, value in ordered[-months:]]
+
+
 def _setting_missing(value: Any) -> bool:
     text = str(value or "").strip().lower()
     if not text:
@@ -2154,6 +2181,11 @@ async def _executive_summary_rows(
         membership=membership,
         db=db,
     )
+    forecast = await dashboard_forecast(
+        current_user=current_user,
+        membership=membership,
+        db=db,
+    )
     rollups = await get_provider_account_rollups(
         current_user=current_user,
         membership=membership,
@@ -2175,6 +2207,13 @@ async def _executive_summary_rows(
             ["Summary", "Risk Score", analytics.get("risk_score", 0)],
             ["Summary", "Maturity Score", analytics.get("maturity_score", 0)],
             ["Summary", "Commitment Coverage Percent", analytics.get("commitment_coverage_percent", 0)],
+            ["Summary", "Spend At Risk USD", round(float(analytics.get("spend_at_risk_usd", 0.0) or 0.0), 2)],
+            ["Summary", "Optimization Capacity USD", round(float(analytics.get("optimization_capacity_usd", 0.0) or 0.0), 2)],
+            ["Summary", "Budget Utilization Percent", analytics.get("unit_metrics", {}).get("budget_utilization_percent", 0)],
+            ["Summary", "Forecast History Source", forecast.get("history_source", "synthetic")],
+            ["Summary", "Forecast Backtest MAPE %", (forecast.get("backtesting") or {}).get("mape_percent")],
+            ["Summary", "Forecast Backtest wMAPE %", (forecast.get("backtesting") or {}).get("wmape_percent")],
+            ["Summary", "Average Breach Probability", (forecast.get("budget_guardrails") or {}).get("average_breach_probability")],
             ["Summary", "Open Alerts", len([row for row in alerts if not row.get("acknowledged_at")])],
             ["Summary", "Rollup Nodes", len(rollups.items)],
         ]
@@ -2347,8 +2386,15 @@ async def dashboard_forecast(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     _ = current_user
+    customer_id = _customer_id_for_org(membership)
     context = await _cost_context(membership, db, "month", cloud_provider)
-    permission = ScanningManager(db).get_permission_status(_customer_id_for_org(membership))
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+        months=18,
+    )
     result = _safe_json_load(
         await finops_analytics.get_forecast(
             {
@@ -2356,6 +2402,7 @@ async def dashboard_forecast(
                 "cloud_provider": cloud_provider,
                 "current_monthly_spend": context["total_cost"],
                 "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
                 "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
                 "fallback_monthly_spend": 0,
             }
