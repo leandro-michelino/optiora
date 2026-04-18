@@ -604,6 +604,53 @@ class AlertRoutingPolicy(Base):
         )
 
 
+class ExportJob(Base):
+    """Scheduled report export job definition."""
+
+    __tablename__ = "export_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    name = Column(String(160), nullable=False)
+    report_type = Column(String(80), nullable=False, default="executive_summary")
+    export_format = Column(String(20), nullable=False, default="csv")
+    schedule_frequency = Column(String(20), nullable=False, default="weekly")
+    is_active = Column(Boolean, default=True)
+    last_run_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self):
+        return (
+            f"<ExportJob(org_id={self.organization_id}, name={self.name}, "
+            f"report={self.report_type}, format={self.export_format})>"
+        )
+
+
+class ExportJobRun(Base):
+    """Execution history for export jobs."""
+
+    __tablename__ = "export_job_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    export_job_id = Column(Integer, ForeignKey("export_jobs.id"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    status = Column(String(30), nullable=False, default="queued")
+    output_filename = Column(String(255), nullable=True)
+    row_count = Column(Integer, nullable=False, default=0)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return (
+            f"<ExportJobRun(job_id={self.export_job_id}, status={self.status}, "
+            f"rows={self.row_count})>"
+        )
+
+
 # Dependency
 def get_db():
     """FastAPI dependency for database session."""

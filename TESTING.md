@@ -46,6 +46,8 @@ Current backend coverage includes:
 - CSV cost import replacement behavior, validation, and owner/admin role enforcement
 - imported cost hierarchy rollups and finance report exports (CSV and Excel)
 - scheduler status timeline and external AWS anomaly ingestion
+- export job create/run/history APIs and scheduled run records
+- external GCP budget Pub/Sub ingestion into normalized alert events
 - public-mode info contract and dashboard data endpoints
 - forecast/analytics response contract checks for deeper FinOps fields (`forecast_summary`, `genai_context`, `provider_concentration_hhi`, `spend_at_risk_usd`, `optimization_capacity_usd`, `budget_utilization_percent`)
 - Alembic upgrade/downgrade roundtrip (`base` → `head` → `base` → `head`)

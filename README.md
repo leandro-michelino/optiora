@@ -123,6 +123,11 @@ The dashboard is the main workspace for:
 - `GET /api/v1/audit-logs.csv`
 - `GET /api/v1/reports/executive-summary.csv`
 - `GET /api/v1/reports/executive-summary.xls`
+- `GET /api/v1/exports/jobs`
+- `POST /api/v1/exports/jobs`
+- `POST /api/v1/exports/jobs/{job_id}/run`
+- `GET /api/v1/exports/jobs/{job_id}/runs`
+- `POST /api/v1/anomalies/external/gcp/pubsub`
 - `GET /api/v1/provider-diagnostics`
 - `GET /api/v1/info`
 

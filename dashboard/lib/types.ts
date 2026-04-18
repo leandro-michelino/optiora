@@ -304,6 +304,31 @@ export interface NotificationDestinationTestResponse {
   detail: string
 }
 
+export interface ExportJob {
+  id: number
+  organization_id: number
+  customer_id: string
+  name: string
+  report_type: 'executive_summary' | string
+  export_format: 'csv' | 'xls' | string
+  schedule_frequency: 'daily' | 'weekly' | 'monthly' | string
+  is_active: boolean
+  last_run_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ExportJobRun {
+  id: number
+  export_job_id: number
+  status: string
+  output_filename?: string | null
+  row_count: number
+  error_message?: string | null
+  created_at: string
+  completed_at?: string | null
+}
+
 export interface AccountRegionRow {
   region: string
   cost_usd: number

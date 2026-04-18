@@ -38,6 +38,7 @@ class Config:
     gcp_project_ids: str = os.getenv("GCP_PROJECT_IDS", "")
     gcp_folder_id: str = os.getenv("GCP_FOLDER_ID", "")
     gcp_organization_id: str = os.getenv("GCP_ORGANIZATION_ID", "")
+    gcp_pubsub_ingest_token: str = os.getenv("GCP_PUBSUB_INGEST_TOKEN", "")
 
     # OCI (Oracle Cloud Infrastructure)
     # Used for: (1) hosting the API backend, (2) analyzing OCI costs via Usage API

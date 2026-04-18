@@ -284,6 +284,16 @@ class RollupTopRegionsFromCsvTest(unittest.TestCase):
                 files={"file": ("rollup-regions.csv", csv_content.encode(), "text/csv")},
             )
             cls.upload_ok = upload.status_code == 200
+            cls.client.post(
+                "/api/v1/scanning/approve",
+                json={
+                    "scan_frequency": "daily",
+                    "monthly_budget_usd": 500.0,
+                    "warning_threshold_percent": 80.0,
+                    "critical_threshold_percent": 100.0,
+                    "auto_remediate": False,
+                },
+            )
         finally:
             if prev_auth is None:
                 os.environ.pop("ENABLE_AUTH", None)
@@ -336,6 +346,19 @@ class RollupTopRegionsFromCsvTest(unittest.TestCase):
         top_regions = account_items[0].get("top_regions", [])
         region_names = {r["region"] for r in top_regions}
         self.assertIn("us-east-1", region_names, "us-east-1 should appear in top_regions for acct-csv-001")
+
+    def test_rollup_contains_budget_fields_when_budget_is_approved(self) -> None:
+        resp = self.client.get("/api/v1/provider-accounts/rollups")
+        self.assertEqual(resp.status_code, 200)
+        items = resp.json().get("items", [])
+        account_items = [i for i in items if i.get("account_identifier") == "acct-csv-001"]
+        if not account_items:
+            self.skipTest("acct-csv-001 not found in rollup items")
+
+        row = account_items[0]
+        self.assertIn("budget_monthly_usd", row)
+        self.assertIn("rolled_up_budget_monthly_usd", row)
+        self.assertIn("budget_status", row)
 
 
 class AccountInventoryOrgScopeTest(unittest.TestCase):

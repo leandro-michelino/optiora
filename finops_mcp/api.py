@@ -12,12 +12,15 @@ import io
 import json
 import logging
 import os
+import base64
+import binascii
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -37,6 +40,8 @@ from .orm_models import (
     AuditLog,
     CostAllocationSnapshot,
     CostSnapshot,
+    ExportJob,
+    ExportJobRun,
     ImportedCostRecord,
     ProviderAccount,
     ProviderAccountLink,
@@ -219,6 +224,11 @@ class ProviderAccountRollupItem(BaseModel):
     direct_service_count: int
     rolled_up_service_count: int
     child_count: int
+    budget_monthly_usd: Optional[float] = None
+    rolled_up_budget_monthly_usd: Optional[float] = None
+    budget_utilization_percent: Optional[float] = None
+    rolled_up_budget_utilization_percent: Optional[float] = None
+    budget_status: Optional[str] = None
     scan_id: Optional[str] = None
     captured_at: Optional[str] = None
     top_regions: List[AccountRegionRow] = Field(default_factory=list)
@@ -346,6 +356,44 @@ class SchedulerStatusResponse(BaseModel):
 
 class ExternalAWSAnomalyIngestRequest(BaseModel):
     events: List[Dict[str, Any]]
+
+
+class ExternalGCPPubSubIngestRequest(BaseModel):
+    message: Dict[str, Any]
+    subscription: Optional[str] = None
+
+
+class ExportJobRequest(BaseModel):
+    name: str
+    report_type: Literal["executive_summary"] = "executive_summary"
+    export_format: Literal["csv", "xls"] = "csv"
+    schedule_frequency: Literal["daily", "weekly", "monthly"] = "weekly"
+    is_active: bool = True
+
+
+class ExportJobResponse(BaseModel):
+    id: int
+    organization_id: int
+    customer_id: str
+    name: str
+    report_type: str
+    export_format: str
+    schedule_frequency: str
+    is_active: bool
+    last_run_at: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class ExportJobRunResponse(BaseModel):
+    id: int
+    export_job_id: int
+    status: str
+    output_filename: Optional[str] = None
+    row_count: int
+    error_message: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
 
 
 class ImportedCostUploadResponse(BaseModel):
@@ -589,11 +637,58 @@ def _materialize_rollup_items(nodes: Dict[int, Dict[str, Any]]) -> List[Provider
     ]
 
 
+def _apply_rollup_budget_metrics(
+    items: List[ProviderAccountRollupItem],
+    monthly_budget_usd: float,
+    warning_threshold_percent: float,
+    critical_threshold_percent: float,
+) -> List[ProviderAccountRollupItem]:
+    total_budget = float(monthly_budget_usd or 0.0)
+    if total_budget <= 0:
+        return items
+
+    baseline_cost = float(
+        sum(item.rolled_up_cost_usd for item in items if item.depth == 0) or 0.0
+    )
+    if baseline_cost <= 0:
+        return items
+
+    for item in items:
+        direct_budget = round(total_budget * (float(item.direct_cost_usd or 0.0) / baseline_cost), 2)
+        rolled_budget = round(total_budget * (float(item.rolled_up_cost_usd or 0.0) / baseline_cost), 2)
+        item.budget_monthly_usd = direct_budget
+        item.rolled_up_budget_monthly_usd = rolled_budget
+
+        if direct_budget > 0:
+            item.budget_utilization_percent = round((float(item.direct_cost_usd or 0.0) / direct_budget) * 100, 2)
+        else:
+            item.budget_utilization_percent = None
+
+        rolled_util = None
+        if rolled_budget > 0:
+            rolled_util = round((float(item.rolled_up_cost_usd or 0.0) / rolled_budget) * 100, 2)
+        item.rolled_up_budget_utilization_percent = rolled_util
+
+        if rolled_util is None:
+            item.budget_status = None
+        elif rolled_util >= float(critical_threshold_percent or 100.0):
+            item.budget_status = "critical"
+        elif rolled_util >= float(warning_threshold_percent or 80.0):
+            item.budget_status = "warning"
+        else:
+            item.budget_status = "ok"
+
+    return items
+
+
 def _build_rollups_from_imported_rows(
     rows: List[ImportedCostRecord],
     organization_id: int,
     customer_id: str,
     provider: Optional[str] = None,
+    monthly_budget_usd: float = 0.0,
+    warning_threshold_percent: float = 80.0,
+    critical_threshold_percent: float = 100.0,
 ) -> ProviderAccountRollupResponse:
     next_synthetic_id = -1
 
@@ -734,6 +829,12 @@ def _build_rollups_from_imported_rows(
 
     items = _materialize_rollup_items(nodes)
     filtered_items = [item for item in items if provider is None or item.provider == provider]
+    filtered_items = _apply_rollup_budget_metrics(
+        filtered_items,
+        monthly_budget_usd=monthly_budget_usd,
+        warning_threshold_percent=warning_threshold_percent,
+        critical_threshold_percent=critical_threshold_percent,
+    )
     direct_total = round(sum(item.direct_cost_usd for item in filtered_items if item.depth > 0 or item.child_count == 0), 2)
     root_total = round(sum(item.rolled_up_cost_usd for item in filtered_items if item.depth == 0), 2)
     return ProviderAccountRollupResponse(
@@ -1578,7 +1679,21 @@ async def get_provider_account_rollups(
     organization_id = _organization_id_for_membership(membership)
 
     db = SessionLocal()
+    budget_monthly_usd = 0.0
+    warning_threshold_percent = 80.0
+    critical_threshold_percent = 100.0
     try:
+        permission = (
+            db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .order_by(ScanningPermissionRecord.created_at.desc())
+            .first()
+        )
+        if permission is not None:
+            budget_monthly_usd = float(permission.monthly_budget_usd or 0.0)
+            warning_threshold_percent = float(permission.warning_threshold_percent or 80.0)
+            critical_threshold_percent = float(permission.critical_threshold_percent or 100.0)
+
         imported_rows = _get_imported_cost_rows(
             db,
             organization_id=organization_id,
@@ -1619,6 +1734,9 @@ async def get_provider_account_rollups(
                 organization_id=organization_id,
                 customer_id=customer_id,
                 provider=provider,
+                monthly_budget_usd=budget_monthly_usd,
+                warning_threshold_percent=warning_threshold_percent,
+                critical_threshold_percent=critical_threshold_percent,
             )
 
         account_ids = [account.id for _, account in rows]
@@ -1747,6 +1865,12 @@ async def get_provider_account_rollups(
 
     items = _materialize_rollup_items(nodes)
     filtered_items = [item for item in items if provider is None or item.provider == provider]
+    filtered_items = _apply_rollup_budget_metrics(
+        filtered_items,
+        monthly_budget_usd=budget_monthly_usd,
+        warning_threshold_percent=warning_threshold_percent,
+        critical_threshold_percent=critical_threshold_percent,
+    )
     total_direct = round(sum(item.direct_cost_usd for item in filtered_items if item.depth > 0 or item.child_count == 0), 2)
     total_rolled = round(sum(item.rolled_up_cost_usd for item in filtered_items if item.depth == 0), 2)
 
@@ -2582,6 +2706,242 @@ async def _executive_summary_rows(
     return rows
 
 
+def _serialize_export_job(row: ExportJob) -> ExportJobResponse:
+    return ExportJobResponse(
+        id=row.id,
+        organization_id=row.organization_id,
+        customer_id=row.customer_id,
+        name=row.name,
+        report_type=row.report_type,
+        export_format=row.export_format,
+        schedule_frequency=row.schedule_frequency,
+        is_active=bool(row.is_active),
+        last_run_at=row.last_run_at.isoformat() if row.last_run_at else None,
+        created_at=row.created_at.isoformat() if row.created_at else "",
+        updated_at=row.updated_at.isoformat() if row.updated_at else "",
+    )
+
+
+def _serialize_export_job_run(row: ExportJobRun) -> ExportJobRunResponse:
+    return ExportJobRunResponse(
+        id=row.id,
+        export_job_id=row.export_job_id,
+        status=row.status,
+        output_filename=row.output_filename,
+        row_count=int(row.row_count or 0),
+        error_message=row.error_message,
+        created_at=row.created_at.isoformat() if row.created_at else "",
+        completed_at=row.completed_at.isoformat() if row.completed_at else None,
+    )
+
+
+async def _execute_export_job(
+    *,
+    db: Session,
+    job: ExportJob,
+    current_user: User,
+    membership: UserOrganization,
+    actor_user_id: Optional[int],
+) -> ExportJobRun:
+    now = _utcnow()
+    run = ExportJobRun(
+        export_job_id=job.id,
+        organization_id=job.organization_id,
+        customer_id=job.customer_id,
+        status="running",
+        created_at=now,
+    )
+    db.add(run)
+    db.flush()
+
+    try:
+        rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
+        row_count = max(0, len(rows) - 1)
+        extension = "csv" if job.export_format == "csv" else "xls"
+        run.output_filename = f"{job.report_type}-{job.id}-{int(now.timestamp())}.{extension}"
+        run.row_count = row_count
+        run.status = "completed"
+        run.completed_at = _utcnow()
+        job.last_run_at = run.completed_at
+        job.updated_at = run.completed_at
+        db.add(job)
+        db.add(
+            AuditLog(
+                organization_id=job.organization_id,
+                actor_user_id=actor_user_id,
+                action="exports.job.run",
+                entity_type="export_job",
+                entity_id=str(job.id),
+                metadata_json=json.dumps(
+                    {
+                        "report_type": job.report_type,
+                        "export_format": job.export_format,
+                        "schedule_frequency": job.schedule_frequency,
+                        "row_count": row_count,
+                    }
+                ),
+            )
+        )
+    except Exception as exc:
+        run.status = "failed"
+        run.error_message = str(exc)
+        run.completed_at = _utcnow()
+
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+@router.get("/exports/jobs", response_model=List[ExportJobResponse])
+async def list_export_jobs(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> List[ExportJobResponse]:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(ExportJob)
+            .filter(
+                ExportJob.organization_id == organization_id,
+                ExportJob.customer_id == customer_id,
+            )
+            .order_by(ExportJob.created_at.desc())
+            .all()
+        )
+        return [_serialize_export_job(row) for row in rows]
+    finally:
+        db.close()
+
+
+@router.post("/exports/jobs", response_model=ExportJobResponse)
+async def create_export_job(
+    payload: ExportJobRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ExportJobResponse:
+    _require_management_role(membership, "export job management")
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    db = SessionLocal()
+    try:
+        now = _utcnow()
+        row = ExportJob(
+            organization_id=organization_id,
+            customer_id=customer_id,
+            name=payload.name.strip() or "Scheduled Export",
+            report_type=payload.report_type,
+            export_format=payload.export_format,
+            schedule_frequency=payload.schedule_frequency,
+            is_active=payload.is_active,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+        db.flush()
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="exports.job.create",
+                entity_type="export_job",
+                entity_id=str(row.id),
+                metadata_json=json.dumps(
+                    {
+                        "name": row.name,
+                        "report_type": row.report_type,
+                        "export_format": row.export_format,
+                        "schedule_frequency": row.schedule_frequency,
+                        "is_active": bool(row.is_active),
+                    }
+                ),
+            )
+        )
+        db.commit()
+        db.refresh(row)
+        return _serialize_export_job(row)
+    finally:
+        db.close()
+
+
+@router.post("/exports/jobs/{job_id}/run", response_model=ExportJobRunResponse)
+async def run_export_job(
+    job_id: int,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ExportJobRunResponse:
+    _require_management_role(membership, "export job runs")
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    db = SessionLocal()
+    try:
+        job = (
+            db.query(ExportJob)
+            .filter(
+                ExportJob.id == job_id,
+                ExportJob.organization_id == organization_id,
+                ExportJob.customer_id == customer_id,
+            )
+            .first()
+        )
+        if job is None:
+            raise HTTPException(status_code=404, detail="Export job not found")
+
+        run = await _execute_export_job(
+            db=db,
+            job=job,
+            current_user=current_user,
+            membership=membership,
+            actor_user_id=current_user.id,
+        )
+        return _serialize_export_job_run(run)
+    finally:
+        db.close()
+
+
+@router.get("/exports/jobs/{job_id}/runs", response_model=List[ExportJobRunResponse])
+async def list_export_job_runs(
+    job_id: int,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> List[ExportJobRunResponse]:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    db = SessionLocal()
+    try:
+        job_exists = (
+            db.query(ExportJob.id)
+            .filter(
+                ExportJob.id == job_id,
+                ExportJob.organization_id == organization_id,
+                ExportJob.customer_id == customer_id,
+            )
+            .first()
+        )
+        if job_exists is None:
+            raise HTTPException(status_code=404, detail="Export job not found")
+
+        rows = (
+            db.query(ExportJobRun)
+            .filter(
+                ExportJobRun.export_job_id == job_id,
+                ExportJobRun.organization_id == organization_id,
+                ExportJobRun.customer_id == customer_id,
+            )
+            .order_by(ExportJobRun.created_at.desc())
+            .limit(max(1, min(limit, 100)))
+            .all()
+        )
+        return [_serialize_export_job_run(row) for row in rows]
+    finally:
+        db.close()
+
+
 @router.get("/reports/executive-summary.csv")
 async def download_executive_summary_csv(
     current_user: User = Depends(get_current_user),
@@ -3287,6 +3647,7 @@ async def get_scheduler_status(
     organization_id = _organization_id_for_membership(membership)
     customer_id = _customer_id_for_org(membership)
     now = _utcnow()
+    alert_id: Optional[int] = None
     db = SessionLocal()
     try:
         permission = (
@@ -3470,6 +3831,144 @@ async def ingest_external_aws_anomalies(
     return {"status": "ok", "ingested": len(payload.events), "alert_ids": alert_ids}
 
 
+def _decode_gcp_pubsub_payload(raw_message: Dict[str, Any]) -> Dict[str, Any]:
+    data = raw_message.get("data")
+    if isinstance(data, str) and data.strip():
+        try:
+            decoded = base64.b64decode(data.encode("utf-8"))
+            parsed = json.loads(decoded.decode("utf-8"))
+            if isinstance(parsed, dict):
+                return parsed
+        except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+    return raw_message if isinstance(raw_message, dict) else {}
+
+
+def _coerce_budget_float(source: Dict[str, Any], keys: List[str]) -> float:
+    for key in keys:
+        value = source.get(key)
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            for nested_key in ("amount", "value", "doubleValue"):
+                nested = value.get(nested_key)
+                if nested is not None:
+                    value = nested
+                    break
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+@router.post("/anomalies/external/gcp/pubsub")
+async def ingest_external_gcp_budget_pubsub(
+    payload: ExternalGCPPubSubIngestRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    ingest_token: Optional[str] = Header(default=None, alias="X-OptiOra-Ingest-Token"),
+) -> Dict[str, Any]:
+    _require_management_role(membership, "external anomaly ingestion")
+    config = Config()
+    expected_token = (config.gcp_pubsub_ingest_token or "").strip()
+    if expected_token and ingest_token != expected_token:
+        raise HTTPException(status_code=403, detail="Invalid ingest token")
+
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+
+    envelope_message = payload.message if isinstance(payload.message, dict) else {}
+    message_payload = _decode_gcp_pubsub_payload(envelope_message)
+    message_id = str(
+        envelope_message.get("messageId")
+        or envelope_message.get("message_id")
+        or message_payload.get("messageId")
+        or message_payload.get("message_id")
+        or ""
+    ).strip()
+
+    budget_name = str(
+        message_payload.get("budgetDisplayName")
+        or message_payload.get("budgetName")
+        or message_payload.get("budget_name")
+        or "GCP Budget"
+    )
+    cost_amount = _coerce_budget_float(
+        message_payload,
+        ["costAmount", "cost_amount", "actualAmount", "amount"],
+    )
+    budget_amount = _coerce_budget_float(
+        message_payload,
+        ["budgetAmount", "budget_amount", "thresholdAmount", "budget"],
+    )
+    usage_ratio = (cost_amount / budget_amount) if budget_amount > 0 else 0.0
+    severity = "critical" if usage_ratio >= 1.0 else "warning"
+
+    now = _utcnow()
+    db = SessionLocal()
+    try:
+        if message_id:
+            duplicate = (
+                db.query(AuditLog)
+                .filter(
+                    AuditLog.organization_id == organization_id,
+                    AuditLog.action == "alert.external.ingest",
+                    AuditLog.entity_type == "gcp_budget_event",
+                    AuditLog.entity_id == message_id,
+                )
+                .first()
+            )
+            if duplicate is not None:
+                return {"status": "ok", "ingested": 0, "duplicate": True, "message_id": message_id}
+
+        title = f"GCP budget alert ({budget_name})"
+        message = (
+            f"GCP budget usage is ${cost_amount:.2f} against budget ${budget_amount:.2f}. "
+            f"Utilization {usage_ratio * 100:.1f}%"
+        )
+        alert = AlertEvent(
+            organization_id=organization_id,
+            customer_id=customer_id,
+            scan_id=None,
+            alert_type="external.gcp.budget_pubsub",
+            severity=severity,
+            title=title[:255],
+            message=message,
+            delivered_channels_json=json.dumps(["gcp-budget-pubsub"]),
+            created_at=now,
+        )
+        db.add(alert)
+        db.flush()
+        alert_id = int(alert.id)
+
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="alert.external.ingest",
+                entity_type="gcp_budget_event",
+                entity_id=message_id or str(alert.id),
+                metadata_json=json.dumps(
+                    {
+                        "alert_id": alert.id,
+                        "budget_name": budget_name,
+                        "cost_amount": cost_amount,
+                        "budget_amount": budget_amount,
+                        "message_id": message_id or None,
+                        "subscription": payload.subscription,
+                    }
+                ),
+                created_at=now,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    return {"status": "ok", "ingested": 1, "alert_id": alert_id, "message_id": message_id or None}
+
+
 async def run_scheduled_scans_once(requested_organization_id: Optional[int] = None) -> Dict[str, Any]:
     """Trigger due scans for approved organizations based on configured cadence."""
     global _scheduler_running
@@ -3477,6 +3976,7 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
         return {"status": "busy", "started": 0, "organization_id": requested_organization_id}
     _scheduler_running = True
     started = 0
+    export_jobs_run = 0
     now = _utcnow()
     db = SessionLocal()
     try:
@@ -3539,7 +4039,37 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
                     )
                 )
                 db.commit()
+
+        jobs_query = db.query(ExportJob).filter(ExportJob.is_active == True)  # noqa: E712
+        if requested_organization_id is not None:
+            jobs_query = jobs_query.filter(ExportJob.organization_id == requested_organization_id)
+        jobs = jobs_query.all()
+        for job in jobs:
+            cadence_seconds = _scan_interval_seconds(job.schedule_frequency)
+            anchor = job.last_run_at or job.created_at or now
+            elapsed = (now - anchor).total_seconds()
+            if elapsed < cadence_seconds:
+                continue
+
+            membership_stub = SimpleNamespace(
+                organization_id=job.organization_id,
+                role=UserRole.OWNER,
+            )
+            user_stub = SimpleNamespace(id=None)
+            await _execute_export_job(
+                db=db,
+                job=job,
+                current_user=user_stub,
+                membership=membership_stub,
+                actor_user_id=None,
+            )
+            export_jobs_run += 1
     finally:
         db.close()
         _scheduler_running = False
-    return {"status": "ok", "started": started, "organization_id": requested_organization_id}
+    return {
+        "status": "ok",
+        "started": started,
+        "export_jobs_run": export_jobs_run,
+        "organization_id": requested_organization_id,
+    }

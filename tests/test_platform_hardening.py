@@ -5,6 +5,8 @@ analyst-role access control."""
 import os
 import tempfile
 import unittest
+import base64
+import json
 from datetime import datetime, timezone
 
 TEST_DB = os.path.join(tempfile.gettempdir(), "optiora_hardening_test.db")
@@ -288,6 +290,109 @@ class OrmColumnSchemaTest(unittest.TestCase):
         col_names = {c["name"] for c in inspector.get_columns("audit_logs")}
         for col in ("organization_id", "actor_user_id", "action", "entity_type"):
             self.assertIn(col, col_names, f"Column {col!r} missing from audit_logs")
+
+    def test_export_job_tables_exist_with_required_columns(self) -> None:
+        inspector = sa_inspect(engine)
+        self.assertTrue(inspector.has_table("export_jobs"))
+        self.assertTrue(inspector.has_table("export_job_runs"))
+
+        job_cols = {c["name"] for c in inspector.get_columns("export_jobs")}
+        for col in (
+            "organization_id",
+            "customer_id",
+            "name",
+            "report_type",
+            "export_format",
+            "schedule_frequency",
+            "last_run_at",
+        ):
+            self.assertIn(col, job_cols, f"Column {col!r} missing from export_jobs")
+
+        run_cols = {c["name"] for c in inspector.get_columns("export_job_runs")}
+        for col in (
+            "export_job_id",
+            "organization_id",
+            "customer_id",
+            "status",
+            "output_filename",
+            "row_count",
+            "error_message",
+        ):
+            self.assertIn(col, run_cols, f"Column {col!r} missing from export_job_runs")
+
+
+class ExportJobsAndGcpIngestionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        _setup_db()
+        cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        _teardown_db()
+
+    def _register_and_login(self, email: str) -> None:
+        self.client.post(
+            "/auth/register",
+            json={"email": email, "password": "StrongPass1!", "full_name": "Ops Owner"},
+        )
+        self.client.post("/auth/login", json={"email": email, "password": "StrongPass1!"})
+
+    def test_export_job_create_run_and_history(self) -> None:
+        self._register_and_login("export-owner@example.com")
+
+        created = self.client.post(
+            "/api/v1/exports/jobs",
+            json={
+                "name": "Weekly Executive CSV",
+                "report_type": "executive_summary",
+                "export_format": "csv",
+                "schedule_frequency": "weekly",
+                "is_active": True,
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        job_id = created.json()["id"]
+
+        listed = self.client.get("/api/v1/exports/jobs")
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(any(row["id"] == job_id for row in listed.json()))
+
+        run = self.client.post(f"/api/v1/exports/jobs/{job_id}/run")
+        self.assertEqual(run.status_code, 200)
+        self.assertIn(run.json()["status"], ("completed", "failed"))
+
+        history = self.client.get(f"/api/v1/exports/jobs/{job_id}/runs")
+        self.assertEqual(history.status_code, 200)
+        self.assertGreaterEqual(len(history.json()), 1)
+
+    def test_gcp_pubsub_ingestion_creates_alert_event(self) -> None:
+        self._register_and_login("gcp-owner@example.com")
+
+        raw_payload = {
+            "budgetDisplayName": "Core Infra Budget",
+            "costAmount": 1100.0,
+            "budgetAmount": 1000.0,
+        }
+        encoded = base64.b64encode(json.dumps(raw_payload).encode("utf-8")).decode("utf-8")
+
+        ingested = self.client.post(
+            "/api/v1/anomalies/external/gcp/pubsub",
+            json={
+                "message": {
+                    "messageId": "msg-123",
+                    "data": encoded,
+                },
+                "subscription": "projects/p/subscriptions/s",
+            },
+        )
+        self.assertEqual(ingested.status_code, 200)
+        self.assertEqual(ingested.json().get("ingested"), 1)
+
+        alerts = self.client.get("/api/v1/alerts")
+        self.assertEqual(alerts.status_code, 200)
+        rows = alerts.json()
+        self.assertTrue(any(item["alert_type"] == "external.gcp.budget_pubsub" for item in rows))
 
 
 class AnalystRoleAccessTest(unittest.TestCase):

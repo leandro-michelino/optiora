@@ -24,6 +24,8 @@ import {
   ProviderDiagnostic,
   NotificationDestinationsResponse,
   NotificationDestinationTestResponse,
+  ExportJob,
+  ExportJobRun,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -395,4 +397,46 @@ export async function downloadExecutiveSummaryCsv(): Promise<void> {
 export async function downloadExecutiveSummaryExcel(): Promise<void> {
   const blob = await requestBlob('/api/v1/reports/executive-summary.xls')
   saveBlob(blob, `optiora-executive-summary-${new Date().toISOString().slice(0, 10)}.xls`)
+}
+
+export async function listExportJobs(): Promise<ExportJob[]> {
+  return requestJson<ExportJob[]>('/api/v1/exports/jobs')
+}
+
+export async function createExportJob(payload: {
+  name: string
+  report_type?: 'executive_summary'
+  export_format?: 'csv' | 'xls'
+  schedule_frequency?: 'daily' | 'weekly' | 'monthly'
+  is_active?: boolean
+}): Promise<ExportJob> {
+  return requestJson<ExportJob>('/api/v1/exports/jobs', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function runExportJob(jobId: number): Promise<ExportJobRun> {
+  return requestJson<ExportJobRun>(
+    `/api/v1/exports/jobs/${encodeURIComponent(String(jobId))}/run`,
+    { method: 'POST' },
+  )
+}
+
+export async function listExportJobRuns(jobId: number, limit = 20): Promise<ExportJobRun[]> {
+  return requestJson<ExportJobRun[]>(
+    `/api/v1/exports/jobs/${encodeURIComponent(String(jobId))}/runs${toQueryString({ limit })}`,
+  )
+}
+
+export async function ingestGcpBudgetPubSub(message: Record<string, unknown>, subscription?: string): Promise<{
+  status: string
+  ingested: number
+  alert_id?: number
+  message_id?: string | null
+}> {
+  return requestJson('/api/v1/anomalies/external/gcp/pubsub', {
+    method: 'POST',
+    body: JSON.stringify({ message, subscription }),
+  })
 }

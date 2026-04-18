@@ -28,11 +28,11 @@ This backlog captures competitor-proven capabilities that can be integrated into
 ## P1 (Near-term)
 
 1. Export jobs (scheduled CSV/Excel digest with execution history)
-   - Status: **Planned** (not yet implemented in the active backend route set).
+   - Status: **Concluded (MVP)** via `/api/v1/exports/jobs` plus run history endpoints.
 2. GCP budget Pub/Sub ingestion
-   - Status: **Planned** (not yet implemented in the active backend route set).
+   - Status: **Concluded (MVP)** via `/api/v1/anomalies/external/gcp/pubsub` with dedupe and audit trail.
 3. Hierarchical budgets on provider-account rollups
-   - Status: **In progress** (hierarchy rollups exist; budget roll-up fields are pending).
+   - Status: **Concluded (MVP)** with rollup-level budget allocation, utilization, and status fields.
 4. Connector framework for external cost/usage tools (start with 1–2 connectors)
    - Status: **Planned** (not yet implemented in the active backend route set).
 
