@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import {
   acknowledgeAlert,
+  createExportJob,
   downloadAlertsCsv,
   downloadAuditLogsCsv,
   downloadExecutiveSummaryCsv,
@@ -34,6 +35,9 @@ import {
   fetchScanDiff,
   fetchScanHistory,
   fetchScanningPermission,
+  listExportJobRuns,
+  listExportJobs,
+  runExportJob,
   startScan,
 } from '@/lib/api'
 import {
@@ -49,6 +53,8 @@ import {
   ScanStartResponse,
   ProviderDiagnostic,
   NotificationDestinationStatus,
+  ExportJob,
+  ExportJobRun,
 } from '@/lib/types'
 import { buildLiveDataSourceStatus } from '@/lib/data-source'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
@@ -77,6 +83,8 @@ interface OperationsState {
   latestDiff: ScanDiffResponse | null
   alerts: AlertEvent[]
   auditLogs: AuditLogEntry[]
+  exportJobs: ExportJob[]
+  exportJobRunsByJobId: Record<number, ExportJobRun[]>
   error: string | null
 }
 
@@ -93,6 +101,8 @@ const initialState: OperationsState = {
   latestDiff: null,
   alerts: [],
   auditLogs: [],
+  exportJobs: [],
+  exportJobRunsByJobId: {},
   error: null,
 }
 
@@ -147,6 +157,11 @@ export default function OperationsPage() {
   const [state, setState] = useState<OperationsState>(initialState)
   const [loading, setLoading] = useState(true)
   const [scanLoading, setScanLoading] = useState(false)
+  const [creatingExportJob, setCreatingExportJob] = useState(false)
+  const [runningExportJobId, setRunningExportJobId] = useState<number | null>(null)
+  const [newExportName, setNewExportName] = useState('Weekly Executive Export')
+  const [newExportFrequency, setNewExportFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
+  const [newExportFormat, setNewExportFormat] = useState<'csv' | 'xls'>('csv')
 
   const connectedProviders = useMemo(
     () => state.credentials.filter((credential) => credential.is_valid),
@@ -170,7 +185,7 @@ export default function OperationsPage() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
 
-    const [health, info, credentials, diagnostics, destinations, permission, scheduler, history, alerts, auditLogs] = await Promise.allSettled([
+    const [health, info, credentials, diagnostics, destinations, permission, scheduler, history, alerts, auditLogs, exportJobs] = await Promise.allSettled([
       fetchApiHealth(),
       fetchApiInfo(),
       fetchCredentials(),
@@ -181,6 +196,7 @@ export default function OperationsPage() {
       fetchScanHistory(8),
       fetchAlerts(8),
       fetchAuditLogs(8),
+      listExportJobs(),
     ])
 
     const historyItems = history.status === 'fulfilled' ? history.value : []
@@ -193,6 +209,19 @@ export default function OperationsPage() {
         latestDiff = null
       }
     }
+
+    const exportJobRows = exportJobs.status === 'fulfilled' ? exportJobs.value : []
+    const exportJobRunEntries = await Promise.all(
+      exportJobRows.slice(0, 8).map(async (job) => {
+        try {
+          const runs = await listExportJobRuns(job.id, 3)
+          return [job.id, runs] as const
+        } catch {
+          return [job.id, []] as const
+        }
+      }),
+    )
+    const exportJobRunsByJobId = Object.fromEntries(exportJobRunEntries)
 
     setState((current) => ({
       ...current,
@@ -207,6 +236,8 @@ export default function OperationsPage() {
       latestDiff,
       alerts: alerts.status === 'fulfilled' ? alerts.value : [],
       auditLogs: auditLogs.status === 'fulfilled' ? auditLogs.value : [],
+      exportJobs: exportJobRows,
+      exportJobRunsByJobId,
       error:
         health.status === 'rejected'
           ? 'Backend health check failed. Verify API service and NEXT_PUBLIC_API_URL.'
@@ -241,6 +272,48 @@ export default function OperationsPage() {
         ...current,
         error: error instanceof Error ? error.message : 'Unable to acknowledge alert.',
       }))
+    }
+  }
+
+  async function handleCreateExportJob() {
+    if (!newExportName.trim()) {
+      setState((current) => ({ ...current, error: 'Export job name is required.' }))
+      return
+    }
+    setCreatingExportJob(true)
+    setState((current) => ({ ...current, error: null }))
+    try {
+      await createExportJob({
+        name: newExportName.trim(),
+        report_type: 'executive_summary',
+        export_format: newExportFormat,
+        schedule_frequency: newExportFrequency,
+        is_active: true,
+      })
+      await loadOperations()
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Unable to create export job.',
+      }))
+    } finally {
+      setCreatingExportJob(false)
+    }
+  }
+
+  async function handleRunExportJob(jobId: number) {
+    setRunningExportJobId(jobId)
+    setState((current) => ({ ...current, error: null }))
+    try {
+      await runExportJob(jobId)
+      await loadOperations()
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Unable to run export job.',
+      }))
+    } finally {
+      setRunningExportJobId(null)
     }
   }
 
@@ -664,6 +737,96 @@ export default function OperationsPage() {
             <p>
               Use CSV for downstream tooling and Excel when sharing directly with finance or procurement teams.
             </p>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-lg">
+          <CardHeader>
+            <CardTitle>Scheduled Export Jobs</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+              <input
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white md:col-span-2"
+                value={newExportName}
+                onChange={(event) => setNewExportName(event.target.value)}
+                placeholder="Job name"
+                aria-label="Export job name"
+              />
+              <select
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                value={newExportFrequency}
+                onChange={(event) => setNewExportFrequency(event.target.value as 'daily' | 'weekly' | 'monthly')}
+                aria-label="Export job frequency"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <div className="flex gap-2">
+                <select
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  value={newExportFormat}
+                  onChange={(event) => setNewExportFormat(event.target.value as 'csv' | 'xls')}
+                  aria-label="Export file format"
+                >
+                  <option value="csv">CSV</option>
+                  <option value="xls">Excel</option>
+                </select>
+                <Button
+                  className="rounded-lg"
+                  data-testid="create-export-job"
+                  onClick={() => void handleCreateExportJob()}
+                  disabled={creatingExportJob}
+                >
+                  {creatingExportJob ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
+                </Button>
+              </div>
+            </div>
+
+            {state.exportJobs.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                No scheduled export jobs yet. Create one to automate executive report generation.
+              </p>
+            ) : (
+              state.exportJobs.map((job) => {
+                const lastRun = state.exportJobRunsByJobId[job.id]?.[0]
+                return (
+                  <div key={job.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-slate-900 dark:text-white">{job.name}</div>
+                        <div className="text-sm text-slate-600 dark:text-slate-400">
+                          {job.schedule_frequency} · {job.export_format.toUpperCase()} · {job.report_type}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
+                          Last run: {job.last_run_at ? new Date(job.last_run_at).toLocaleString() : 'never'}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="rounded-lg"
+                        data-testid={`run-export-job-${job.id}`}
+                        onClick={() => void handleRunExportJob(job.id)}
+                        disabled={runningExportJobId === job.id}
+                      >
+                        {runningExportJobId === job.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="mr-2 h-4 w-4" />
+                        )}
+                        Run now
+                      </Button>
+                    </div>
+                    {lastRun && (
+                      <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                        Latest run: {lastRun.status} · {lastRun.row_count} rows · {lastRun.output_filename || 'no artifact name'}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
           </CardContent>
         </Card>
 
