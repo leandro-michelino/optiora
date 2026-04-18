@@ -5,9 +5,13 @@ import { Trash2, Loader, Upload, Download, Send } from 'lucide-react';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
 import {
+  createExportJob,
   downloadImportedCostTemplateCsv,
   fetchImportedCostSummary,
   fetchNotificationDestinations,
+  listExportJobRuns,
+  listExportJobs,
+  runExportJob,
   testNotificationDestination,
   toggleNotificationDestination,
   uploadImportedCostCsv,
@@ -15,7 +19,12 @@ import {
 import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 import { useAuth } from '@/lib/auth-context';
-import { ImportedCostSummaryResponse, NotificationDestinationStatus } from '@/lib/types';
+import {
+  ExportJob,
+  ExportJobRun,
+  ImportedCostSummaryResponse,
+  NotificationDestinationStatus,
+} from '@/lib/types';
 
 
 interface StoredCredential {
@@ -78,6 +87,16 @@ export default function SettingsPage() {
   const [testingChannel, setTestingChannel] = useState<string | null>(null)
   const [destinationMessage, setDestinationMessage] = useState<string | null>(null)
   const [destinationError, setDestinationError] = useState<string | null>(null)
+  const [exportJobs, setExportJobs] = useState<ExportJob[]>([])
+  const [exportJobRunsByJobId, setExportJobRunsByJobId] = useState<Record<number, ExportJobRun[]>>({})
+  const [loadingExportJobs, setLoadingExportJobs] = useState(true)
+  const [creatingExportJob, setCreatingExportJob] = useState(false)
+  const [runningExportJobId, setRunningExportJobId] = useState<number | null>(null)
+  const [exportJobName, setExportJobName] = useState('Weekly Executive Export')
+  const [exportJobFrequency, setExportJobFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
+  const [exportJobFormat, setExportJobFormat] = useState<'csv' | 'xls'>('csv')
+  const [exportJobMessage, setExportJobMessage] = useState<string | null>(null)
+  const [exportJobError, setExportJobError] = useState<string | null>(null)
   const canManageCloudSettings = !authEnabled || ['owner', 'admin'].includes(organization?.role || '')
 
   const loadCredentials = useCallback(async () => {
@@ -128,6 +147,32 @@ export default function SettingsPage() {
     }
   }, [authEnabled, user])
 
+  const loadExportJobs = useCallback(async () => {
+    if (authEnabled && !user) {
+      return
+    }
+
+    try {
+      const jobs = await listExportJobs()
+      setExportJobs(jobs)
+      const runEntries = await Promise.all(
+        jobs.slice(0, 8).map(async (job) => {
+          try {
+            const runs = await listExportJobRuns(job.id, 3)
+            return [job.id, runs] as const
+          } catch {
+            return [job.id, []] as const
+          }
+        }),
+      )
+      setExportJobRunsByJobId(Object.fromEntries(runEntries))
+    } catch (error) {
+      console.error('Failed to load export jobs:', error)
+    } finally {
+      setLoadingExportJobs(false)
+    }
+  }, [authEnabled, user])
+
   useEffect(() => {
     if (authEnabled && !user) {
       setStoredCredentials([])
@@ -160,6 +205,18 @@ export default function SettingsPage() {
     setLoadingDestinations(true)
     void loadNotificationDestinations()
   }, [authEnabled, user, loadNotificationDestinations])
+
+  useEffect(() => {
+    if (authEnabled && !user) {
+      setExportJobs([])
+      setExportJobRunsByJobId({})
+      setLoadingExportJobs(false)
+      return
+    }
+
+    setLoadingExportJobs(true)
+    void loadExportJobs()
+  }, [authEnabled, user, loadExportJobs])
 
   const handleCredentialSubmitted = async (provider: string, _credentials: Record<string, string>) => {
     if (!canManageCloudSettings) {
@@ -282,6 +339,52 @@ export default function SettingsPage() {
       setDestinationError(error instanceof Error ? formatApiErrorMessage(error.message) : 'Failed to send destination test.')
     } finally {
       setTestingChannel(null)
+    }
+  }
+
+  const handleCreateExportJob = async () => {
+    if (!canManageCloudSettings) return
+    if (!exportJobName.trim()) {
+      setExportJobError('Export job name is required.')
+      return
+    }
+    setCreatingExportJob(true)
+    setExportJobError(null)
+    setExportJobMessage(null)
+    try {
+      await createExportJob({
+        name: exportJobName.trim(),
+        report_type: 'executive_summary',
+        export_format: exportJobFormat,
+        schedule_frequency: exportJobFrequency,
+        is_active: true,
+      })
+      setExportJobMessage('Export job created successfully.')
+      await loadExportJobs()
+    } catch (error) {
+      setExportJobError(
+        error instanceof Error ? formatApiErrorMessage(error.message) : 'Failed to create export job.',
+      )
+    } finally {
+      setCreatingExportJob(false)
+    }
+  }
+
+  const handleRunExportJob = async (jobId: number) => {
+    if (!canManageCloudSettings) return
+    setRunningExportJobId(jobId)
+    setExportJobError(null)
+    setExportJobMessage(null)
+    try {
+      const run = await runExportJob(jobId)
+      setExportJobMessage(`Export job run completed with status: ${run.status}.`)
+      await loadExportJobs()
+    } catch (error) {
+      setExportJobError(
+        error instanceof Error ? formatApiErrorMessage(error.message) : 'Failed to run export job.',
+      )
+    } finally {
+      setRunningExportJobId(null)
     }
   }
 
@@ -645,6 +748,117 @@ export default function SettingsPage() {
             {destinationError && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
                 {destinationError}
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700 space-y-3">
+            <div>
+              <h3 className="font-semibold text-slate-900 dark:text-white">Scheduled Export Jobs</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Configure recurring executive report exports and run on demand.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
+              <input
+                value={exportJobName}
+                onChange={(event) => setExportJobName(event.target.value)}
+                placeholder="Job name"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 lg:col-span-2"
+              />
+              <select
+                value={exportJobFrequency}
+                onChange={(event) => setExportJobFrequency(event.target.value as 'daily' | 'weekly' | 'monthly')}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <div className="flex gap-2">
+                <select
+                  value={exportJobFormat}
+                  onChange={(event) => setExportJobFormat(event.target.value as 'csv' | 'xls')}
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  <option value="csv">CSV</option>
+                  <option value="xls">Excel</option>
+                </select>
+                <button
+                  type="button"
+                  data-testid="settings-create-export-job"
+                  onClick={() => void handleCreateExportJob()}
+                  disabled={!canManageCloudSettings || creatingExportJob}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                >
+                  {creatingExportJob ? <Loader className="h-4 w-4 animate-spin" /> : 'Create'}
+                </button>
+              </div>
+            </div>
+
+            {loadingExportJobs ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader className="w-5 h-5 animate-spin text-slate-400" />
+              </div>
+            ) : exportJobs.length === 0 ? (
+              <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-900/50 dark:text-slate-400">
+                No export jobs configured yet.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {exportJobs.map((job) => {
+                  const latestRun = exportJobRunsByJobId[job.id]?.[0]
+                  return (
+                    <div
+                      key={job.id}
+                      className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/40"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium text-slate-900 dark:text-white">{job.name}</div>
+                          <div className="text-xs text-slate-600 dark:text-slate-400">
+                            {job.schedule_frequency} · {job.export_format.toUpperCase()} · {job.report_type}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-500">
+                            Last run: {formatDateTime(job.last_run_at)}
+                          </div>
+                          {latestRun && (
+                            <div className="text-xs text-slate-500 dark:text-slate-500">
+                              Latest result: {latestRun.status} · {latestRun.row_count} rows · {latestRun.output_filename || 'no artifact'}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          data-testid={`settings-run-export-job-${job.id}`}
+                          onClick={() => void handleRunExportJob(job.id)}
+                          disabled={!canManageCloudSettings || runningExportJobId === job.id}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          {runningExportJobId === job.id ? (
+                            <Loader className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Send className="h-3.5 w-3.5" />
+                          )}
+                          Run now
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {exportJobMessage && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                {exportJobMessage}
+              </div>
+            )}
+
+            {exportJobError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+                {exportJobError}
               </div>
             )}
           </div>
