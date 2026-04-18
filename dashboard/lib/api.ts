@@ -1,6 +1,7 @@
 import {
   AccountRegionBreakdownResponse,
   AlertEvent,
+  AlertRoutingPolicy,
   AuditLogEntry,
   CostResponse,
   AnomalyResponse,
@@ -21,6 +22,8 @@ import {
   ImportedCostSummaryResponse,
   ImportedCostUploadResponse,
   ProviderDiagnostic,
+  NotificationDestinationsResponse,
+  NotificationDestinationTestResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -295,6 +298,49 @@ export async function acknowledgeAlert(alertId: number): Promise<{ status: strin
     `/api/v1/alerts/${encodeURIComponent(String(alertId))}/acknowledge`,
     { method: 'POST' },
   )
+}
+
+export async function fetchAlertRoutingPolicies(): Promise<AlertRoutingPolicy[]> {
+  return requestJson<AlertRoutingPolicy[]>('/api/v1/alerts/routing-policies')
+}
+
+export async function upsertAlertRoutingPolicy(
+  severity: 'warning' | 'critical',
+  channels: string[],
+  isActive = true,
+): Promise<AlertRoutingPolicy> {
+  return requestJson<AlertRoutingPolicy>('/api/v1/alerts/routing-policies', {
+    method: 'POST',
+    body: JSON.stringify({ severity, channels, is_active: isActive }),
+  })
+}
+
+export async function fetchNotificationDestinations(): Promise<NotificationDestinationsResponse> {
+  return requestJson<NotificationDestinationsResponse>('/api/v1/notifications/destinations')
+}
+
+export async function toggleNotificationDestination(
+  channel: 'email' | 'slack' | 'teams',
+  enabled: boolean,
+): Promise<NotificationDestinationsResponse> {
+  return requestJson<NotificationDestinationsResponse>(
+    `/api/v1/notifications/destinations/${encodeURIComponent(channel)}/toggle`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    },
+  )
+}
+
+export async function testNotificationDestination(
+  channel: 'email' | 'slack' | 'teams',
+  target?: string,
+  message?: string,
+): Promise<NotificationDestinationTestResponse> {
+  return requestJson<NotificationDestinationTestResponse>('/api/v1/notifications/test-destination', {
+    method: 'POST',
+    body: JSON.stringify({ channel, target, message }),
+  })
 }
 
 export async function fetchAuditLogs(limit = 20): Promise<AuditLogEntry[]> {

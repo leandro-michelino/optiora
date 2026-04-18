@@ -25,9 +25,15 @@ from .auth_routes import get_current_membership, get_current_user
 from .credentials import CredentialManager, CredentialStatus, CredentialValidator
 from .config import Config
 from .notifications import evaluate_budget_alert
+from .notifications import (
+    SUPPORTED_NOTIFICATION_CHANNELS,
+    destination_configured,
+    send_test_notification,
+)
 from .access_control import require_role
 from .orm_models import (
     AlertEvent,
+    AlertRoutingPolicy,
     AuditLog,
     CostAllocationSnapshot,
     CostSnapshot,
@@ -263,6 +269,49 @@ class AccountRegionBreakdownResponse(BaseModel):
     scan_id: Optional[str] = None
     total_cost_usd: float
     regions: List[AccountRegionBreakdownItem]
+
+
+class AlertRoutingPolicyRequest(BaseModel):
+    severity: Literal["warning", "critical"]
+    channels: List[str]
+    is_active: bool = True
+
+
+class AlertRoutingPolicyResponse(BaseModel):
+    id: int
+    severity: str
+    channels: List[str]
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+class NotificationDestinationStatus(BaseModel):
+    channel: str
+    configured: bool
+    enabled: bool
+    last_delivery_at: Optional[str] = None
+
+
+class NotificationDestinationsResponse(BaseModel):
+    organization_id: int
+    destinations: List[NotificationDestinationStatus]
+
+
+class NotificationDestinationToggleRequest(BaseModel):
+    enabled: bool
+
+
+class NotificationDestinationTestRequest(BaseModel):
+    channel: Literal["email", "slack", "teams"]
+    target: Optional[str] = None
+    message: Optional[str] = None
+
+
+class NotificationDestinationTestResponse(BaseModel):
+    channel: str
+    success: bool
+    detail: str
 
 
 class SchedulerCounters(BaseModel):
@@ -2027,6 +2076,289 @@ async def upload_cost_csv(
         total_cost_usd=round(total_cost, 2),
         providers=sorted(providers),
         imported_at=imported_at,
+    )
+
+
+def _normalize_channels(channels: List[str]) -> List[str]:
+    normalized: list[str] = []
+    for value in channels:
+        channel = str(value or "").strip().lower()
+        if channel in SUPPORTED_NOTIFICATION_CHANNELS and channel not in normalized:
+            normalized.append(channel)
+    return normalized
+
+
+def _latest_delivery_timestamp_for_channel(
+    db: Session,
+    organization_id: int,
+    customer_id: str,
+    channel: str,
+) -> Optional[str]:
+    rows = (
+        db.query(AlertEvent)
+        .filter(
+            AlertEvent.organization_id == organization_id,
+            AlertEvent.customer_id == customer_id,
+        )
+        .order_by(AlertEvent.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    for row in rows:
+        delivered = _safe_json_load(row.delivered_channels_json, [])
+        if channel in delivered:
+            return row.created_at.isoformat() if row.created_at else None
+    return None
+
+
+@router.get("/alerts/routing-policies", response_model=List[AlertRoutingPolicyResponse])
+async def list_alert_routing_policies(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> List[AlertRoutingPolicyResponse]:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(AlertRoutingPolicy)
+            .filter(AlertRoutingPolicy.organization_id == organization_id)
+            .order_by(AlertRoutingPolicy.severity.asc())
+            .all()
+        )
+        return [
+            AlertRoutingPolicyResponse(
+                id=row.id,
+                severity=row.severity,
+                channels=_safe_json_load(row.channels_json, []),
+                is_active=bool(row.is_active),
+                created_at=row.created_at.isoformat() if row.created_at else "",
+                updated_at=row.updated_at.isoformat() if row.updated_at else "",
+            )
+            for row in rows
+        ]
+    finally:
+        db.close()
+
+
+@router.post("/alerts/routing-policies", response_model=AlertRoutingPolicyResponse)
+async def upsert_alert_routing_policy(
+    payload: AlertRoutingPolicyRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AlertRoutingPolicyResponse:
+    _require_management_role(membership, "alert routing policy updates")
+    organization_id = _organization_id_for_membership(membership)
+    channels = _normalize_channels(payload.channels)
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(AlertRoutingPolicy)
+            .filter(
+                AlertRoutingPolicy.organization_id == organization_id,
+                AlertRoutingPolicy.severity == payload.severity,
+            )
+            .first()
+        )
+        now = _utcnow()
+        if row is None:
+            row = AlertRoutingPolicy(
+                organization_id=organization_id,
+                severity=payload.severity,
+                channels_json=json.dumps(channels),
+                is_active=payload.is_active,
+                created_at=now,
+                updated_at=now,
+            )
+        else:
+            row.channels_json = json.dumps(channels)
+            row.is_active = payload.is_active
+            row.updated_at = now
+
+        db.add(row)
+        db.flush()
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="alerts.routing_policy.upsert",
+                entity_type="alert_routing_policy",
+                entity_id=str(row.id),
+                metadata_json=json.dumps(
+                    {
+                        "severity": payload.severity,
+                        "channels": channels,
+                        "is_active": payload.is_active,
+                    }
+                ),
+            )
+        )
+        db.commit()
+        db.refresh(row)
+        return AlertRoutingPolicyResponse(
+            id=row.id,
+            severity=row.severity,
+            channels=_safe_json_load(row.channels_json, []),
+            is_active=bool(row.is_active),
+            created_at=row.created_at.isoformat() if row.created_at else "",
+            updated_at=row.updated_at.isoformat() if row.updated_at else "",
+        )
+    finally:
+        db.close()
+
+
+@router.get("/notifications/destinations", response_model=NotificationDestinationsResponse)
+async def list_notification_destinations(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> NotificationDestinationsResponse:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    config = Config()
+    db = SessionLocal()
+    try:
+        policies = (
+            db.query(AlertRoutingPolicy)
+            .filter(
+                AlertRoutingPolicy.organization_id == organization_id,
+                AlertRoutingPolicy.is_active == True,  # noqa: E712
+            )
+            .all()
+        )
+        enabled_channels: set[str] = set()
+        for row in policies:
+            enabled_channels.update(_safe_json_load(row.channels_json, []))
+
+        destinations = []
+        for channel in SUPPORTED_NOTIFICATION_CHANNELS:
+            destinations.append(
+                NotificationDestinationStatus(
+                    channel=channel,
+                    configured=destination_configured(config, channel),
+                    enabled=(channel in enabled_channels) if policies else True,
+                    last_delivery_at=_latest_delivery_timestamp_for_channel(
+                        db=db,
+                        organization_id=organization_id,
+                        customer_id=customer_id,
+                        channel=channel,
+                    ),
+                )
+            )
+        return NotificationDestinationsResponse(
+            organization_id=organization_id,
+            destinations=destinations,
+        )
+    finally:
+        db.close()
+
+
+@router.post("/notifications/destinations/{channel}/toggle", response_model=NotificationDestinationsResponse)
+async def toggle_notification_destination(
+    channel: str,
+    payload: NotificationDestinationToggleRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> NotificationDestinationsResponse:
+    _require_management_role(membership, "notification destination toggles")
+    channel_key = str(channel or "").strip().lower()
+    if channel_key not in SUPPORTED_NOTIFICATION_CHANNELS:
+        raise HTTPException(status_code=400, detail=f"Unsupported channel: {channel_key}")
+
+    organization_id = _organization_id_for_membership(membership)
+    db = SessionLocal()
+    try:
+        for severity in ("warning", "critical"):
+            row = (
+                db.query(AlertRoutingPolicy)
+                .filter(
+                    AlertRoutingPolicy.organization_id == organization_id,
+                    AlertRoutingPolicy.severity == severity,
+                )
+                .first()
+            )
+            if row is None:
+                channels = list(SUPPORTED_NOTIFICATION_CHANNELS)
+                if not payload.enabled:
+                    channels = [c for c in channels if c != channel_key]
+                row = AlertRoutingPolicy(
+                    organization_id=organization_id,
+                    severity=severity,
+                    channels_json=json.dumps(channels),
+                    is_active=True,
+                    created_at=_utcnow(),
+                    updated_at=_utcnow(),
+                )
+                db.add(row)
+                continue
+
+            channels = set(_safe_json_load(row.channels_json, []))
+            if payload.enabled:
+                channels.add(channel_key)
+            else:
+                channels.discard(channel_key)
+            row.channels_json = json.dumps(sorted(channels))
+            row.updated_at = _utcnow()
+
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="notifications.destination.toggle",
+                entity_type="notification_destination",
+                entity_id=channel_key,
+                metadata_json=json.dumps({"enabled": payload.enabled}),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    return await list_notification_destinations(current_user=current_user, membership=membership)
+
+
+@router.post("/notifications/test-destination", response_model=NotificationDestinationTestResponse)
+async def test_notification_destination(
+    payload: NotificationDestinationTestRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> NotificationDestinationTestResponse:
+    _require_management_role(membership, "notification destination tests")
+    organization_id = _organization_id_for_membership(membership)
+    config = Config()
+    success, detail = send_test_notification(
+        config=config,
+        channel=payload.channel,
+        target=payload.target,
+        message=payload.message,
+    )
+
+    db = SessionLocal()
+    try:
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="notifications.destination.test",
+                entity_type="notification_destination",
+                entity_id=payload.channel,
+                metadata_json=json.dumps(
+                    {
+                        "success": success,
+                        "target_supplied": bool(payload.target),
+                        "detail": detail,
+                    }
+                ),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    return NotificationDestinationTestResponse(
+        channel=payload.channel,
+        success=success,
+        detail=detail,
     )
 
 

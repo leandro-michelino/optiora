@@ -28,6 +28,7 @@ import {
   fetchApiInfo,
   fetchAuditLogs,
   fetchCredentials,
+  fetchNotificationDestinations,
   fetchProviderDiagnostics,
   fetchSchedulerStatus,
   fetchScanDiff,
@@ -47,6 +48,7 @@ import {
   StoredCredential,
   ScanStartResponse,
   ProviderDiagnostic,
+  NotificationDestinationStatus,
 } from '@/lib/types'
 import { buildLiveDataSourceStatus } from '@/lib/data-source'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
@@ -67,6 +69,7 @@ interface OperationsState {
   info: ApiInfo | null
   credentials: StoredCredential[]
   providerDiagnostics: ProviderDiagnostic[]
+  notificationDestinations: NotificationDestinationStatus[]
   permission: ScanningPermission | null
   scan: ScanStartResponse | null
   scheduler: SchedulerStatusResponse | null
@@ -82,6 +85,7 @@ const initialState: OperationsState = {
   info: null,
   credentials: [],
   providerDiagnostics: [],
+  notificationDestinations: [],
   permission: null,
   scan: null,
   scheduler: null,
@@ -166,11 +170,12 @@ export default function OperationsPage() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
 
-    const [health, info, credentials, diagnostics, permission, scheduler, history, alerts, auditLogs] = await Promise.allSettled([
+    const [health, info, credentials, diagnostics, destinations, permission, scheduler, history, alerts, auditLogs] = await Promise.allSettled([
       fetchApiHealth(),
       fetchApiInfo(),
       fetchCredentials(),
       fetchProviderDiagnostics(),
+      fetchNotificationDestinations(),
       fetchScanningPermission(),
       fetchSchedulerStatus(),
       fetchScanHistory(8),
@@ -195,6 +200,7 @@ export default function OperationsPage() {
       info: info.status === 'fulfilled' ? info.value : null,
       credentials: credentials.status === 'fulfilled' ? credentials.value.credentials || [] : [],
       providerDiagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
+      notificationDestinations: destinations.status === 'fulfilled' ? destinations.value.destinations || [] : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
       scheduler: scheduler.status === 'fulfilled' ? scheduler.value : null,
       history: historyItems,
@@ -253,6 +259,33 @@ export default function OperationsPage() {
             Run checks, confirm provider readiness, and start approved cost scans.
           </p>
         </div>
+              <Card className="rounded-lg">
+                <CardHeader>
+                  <CardTitle className="text-base text-slate-900 dark:text-white">Notification Destination Status</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {state.notificationDestinations.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No destination status available.</p>
+                  ) : (
+                    state.notificationDestinations.map((destination) => (
+                      <div
+                        key={destination.channel}
+                        className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+                      >
+                        <div>
+                          <div className="font-medium text-slate-900 dark:text-white">{destination.channel.toUpperCase()}</div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            Last delivery: {destination.last_delivery_at ? new Date(destination.last_delivery_at).toLocaleString() : 'none yet'}
+                          </div>
+                        </div>
+                        <Badge className={destination.configured && destination.enabled ? statusTone(true) : statusTone(false)}>
+                          {destination.configured ? (destination.enabled ? 'enabled' : 'disabled') : 'not configured'}
+                        </Badge>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
         <Button onClick={() => void loadOperations()} disabled={loading} className="rounded-lg">
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Refresh

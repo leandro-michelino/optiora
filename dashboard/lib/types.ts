@@ -277,6 +277,33 @@ export interface AlertEvent {
   created_at: string
 }
 
+export interface AlertRoutingPolicy {
+  id: number
+  severity: 'warning' | 'critical' | string
+  channels: string[]
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface NotificationDestinationStatus {
+  channel: 'email' | 'slack' | 'teams' | string
+  configured: boolean
+  enabled: boolean
+  last_delivery_at?: string | null
+}
+
+export interface NotificationDestinationsResponse {
+  organization_id: number
+  destinations: NotificationDestinationStatus[]
+}
+
+export interface NotificationDestinationTestResponse {
+  channel: string
+  success: boolean
+  detail: string
+}
+
 export interface AccountRegionRow {
   region: string
   cost_usd: number
@@ -300,6 +327,11 @@ export interface ProviderAccountRollupItem {
   direct_service_count: number
   rolled_up_service_count: number
   child_count: number
+  budget_monthly_usd?: number
+  rolled_up_budget_monthly_usd?: number
+  budget_utilization_percent?: number | null
+  rolled_up_budget_utilization_percent?: number | null
+  budget_status?: string | null
   scan_id?: string | null
   captured_at?: string | null
   top_regions?: AccountRegionRow[]

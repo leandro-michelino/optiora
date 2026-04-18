@@ -12,9 +12,11 @@ import httpx
 from sqlalchemy.orm import Session
 
 from .config import Config
-from .orm_models import AlertEvent, ScanningPermissionRecord
+from .orm_models import AlertEvent, AlertRoutingPolicy, ScanningPermissionRecord
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_NOTIFICATION_CHANNELS = ("email", "slack", "teams")
 
 
 def _send_slack_message(webhook_url: str, title: str, message: str) -> bool:
@@ -112,9 +114,20 @@ def evaluate_budget_alert(
         f"({spend_ratio:.1f}% used)."
     )
 
+    policy = (
+        db.query(AlertRoutingPolicy)
+        .filter(
+            AlertRoutingPolicy.organization_id == organization_id,
+            AlertRoutingPolicy.severity == severity,
+            AlertRoutingPolicy.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+    channels = set(json.loads(policy.channels_json or "[]")) if policy else {"email", "slack", "teams"}
+
     config = Config()
     delivered_channels: list[str] = []
-    if permission.notification_email and _send_email(
+    if "email" in channels and permission.notification_email and _send_email(
         config,
         permission.notification_email,
         f"[OptiOra] {title}",
@@ -122,9 +135,9 @@ def evaluate_budget_alert(
     ):
         delivered_channels.append("email")
 
-    if config.slack_webhook and _send_slack_message(config.slack_webhook, title, message):
+    if "slack" in channels and config.slack_webhook and _send_slack_message(config.slack_webhook, title, message):
         delivered_channels.append("slack")
-    if config.teams_webhook and _send_teams_message(config.teams_webhook, title, message):
+    if "teams" in channels and config.teams_webhook and _send_teams_message(config.teams_webhook, title, message):
         delivered_channels.append("teams")
 
     event = AlertEvent(
@@ -139,3 +152,52 @@ def evaluate_budget_alert(
     )
     db.add(event)
     return event
+
+
+def destination_configured(config: Config, channel: str) -> bool:
+    channel_key = str(channel or "").strip().lower()
+    if channel_key == "email":
+        return bool(config.smtp_host and config.smtp_from_email)
+    if channel_key == "slack":
+        return bool(config.slack_webhook)
+    if channel_key == "teams":
+        return bool(config.teams_webhook)
+    return False
+
+
+def send_test_notification(
+    config: Config,
+    channel: str,
+    target: Optional[str] = None,
+    message: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Send a lightweight test notification to validate destination wiring."""
+
+    channel_key = str(channel or "").strip().lower()
+    title = "[OptiOra] Notification destination test"
+    body = message or "OptiOra test notification delivered successfully."
+
+    if channel_key == "email":
+        recipient = (target or "").strip()
+        if not recipient:
+            return False, "Email test requires a target recipient address."
+        if not destination_configured(config, "email"):
+            return False, "SMTP configuration is incomplete."
+        ok = _send_email(config, recipient, title, body)
+        return ok, "Email test delivered." if ok else "Email test failed."
+
+    if channel_key == "slack":
+        webhook = (target or config.slack_webhook or "").strip()
+        if not webhook:
+            return False, "Slack webhook is not configured."
+        ok = _send_slack_message(webhook, title, body)
+        return ok, "Slack test delivered." if ok else "Slack test failed."
+
+    if channel_key == "teams":
+        webhook = (target or config.teams_webhook or "").strip()
+        if not webhook:
+            return False, "Teams webhook is not configured."
+        ok = _send_teams_message(webhook, title, body)
+        return ok, "Teams test delivered." if ok else "Teams test failed."
+
+    return False, f"Unsupported channel: {channel_key or 'unknown'}"

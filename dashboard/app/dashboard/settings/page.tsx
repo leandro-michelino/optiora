@@ -1,14 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Loader, Upload, Download } from 'lucide-react';
+import { Trash2, Loader, Upload, Download, Send } from 'lucide-react';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
-import { downloadImportedCostTemplateCsv, fetchImportedCostSummary, uploadImportedCostCsv } from '@/lib/api';
+import {
+  downloadImportedCostTemplateCsv,
+  fetchImportedCostSummary,
+  fetchNotificationDestinations,
+  testNotificationDestination,
+  toggleNotificationDestination,
+  uploadImportedCostCsv,
+} from '@/lib/api';
 import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 import { useAuth } from '@/lib/auth-context';
-import { ImportedCostSummaryResponse } from '@/lib/types';
+import { ImportedCostSummaryResponse, NotificationDestinationStatus } from '@/lib/types';
 
 
 interface StoredCredential {
@@ -65,6 +72,12 @@ export default function SettingsPage() {
   const [uploadingCsv, setUploadingCsv] = useState(false)
   const [csvUploadMessage, setCsvUploadMessage] = useState<string | null>(null)
   const [csvUploadError, setCsvUploadError] = useState<string | null>(null)
+  const [notificationDestinations, setNotificationDestinations] = useState<NotificationDestinationStatus[]>([])
+  const [loadingDestinations, setLoadingDestinations] = useState(true)
+  const [destinationTarget, setDestinationTarget] = useState('')
+  const [testingChannel, setTestingChannel] = useState<string | null>(null)
+  const [destinationMessage, setDestinationMessage] = useState<string | null>(null)
+  const [destinationError, setDestinationError] = useState<string | null>(null)
   const canManageCloudSettings = !authEnabled || ['owner', 'admin'].includes(organization?.role || '')
 
   const loadCredentials = useCallback(async () => {
@@ -100,6 +113,21 @@ export default function SettingsPage() {
     }
   }, [authEnabled, user])
 
+  const loadNotificationDestinations = useCallback(async () => {
+    if (authEnabled && !user) {
+      return
+    }
+
+    try {
+      const data = await fetchNotificationDestinations()
+      setNotificationDestinations(data.destinations || [])
+    } catch (error) {
+      console.error('Failed to load notification destinations:', error)
+    } finally {
+      setLoadingDestinations(false)
+    }
+  }, [authEnabled, user])
+
   useEffect(() => {
     if (authEnabled && !user) {
       setStoredCredentials([])
@@ -121,6 +149,17 @@ export default function SettingsPage() {
     setLoadingImportedCosts(true)
     void loadImportedCosts()
   }, [authEnabled, user, loadImportedCosts])
+
+  useEffect(() => {
+    if (authEnabled && !user) {
+      setNotificationDestinations([])
+      setLoadingDestinations(false)
+      return
+    }
+
+    setLoadingDestinations(true)
+    void loadNotificationDestinations()
+  }, [authEnabled, user, loadNotificationDestinations])
 
   const handleCredentialSubmitted = async (provider: string, _credentials: Record<string, string>) => {
     if (!canManageCloudSettings) {
@@ -209,6 +248,40 @@ export default function SettingsPage() {
       setCsvUploadError(formatApiErrorMessage(message))
     } finally {
       setUploadingCsv(false)
+    }
+  }
+
+  const handleToggleDestination = async (channel: 'email' | 'slack' | 'teams', enabled: boolean) => {
+    if (!canManageCloudSettings) return
+    setDestinationError(null)
+    setDestinationMessage(null)
+    try {
+      const data = await toggleNotificationDestination(channel, enabled)
+      setNotificationDestinations(data.destinations || [])
+      setDestinationMessage(`${channel.toUpperCase()} ${enabled ? 'enabled' : 'disabled'} for alerts.`)
+    } catch (error) {
+      setDestinationError(error instanceof Error ? formatApiErrorMessage(error.message) : 'Failed to update destination toggle.')
+    }
+  }
+
+  const handleTestDestination = async (channel: 'email' | 'slack' | 'teams') => {
+    if (!canManageCloudSettings) return
+    setDestinationError(null)
+    setDestinationMessage(null)
+    setTestingChannel(channel)
+    try {
+      const target = destinationTarget.trim() || undefined
+      const result = await testNotificationDestination(channel, target)
+      if (result.success) {
+        setDestinationMessage(result.detail)
+        await loadNotificationDestinations()
+      } else {
+        setDestinationError(result.detail)
+      }
+    } catch (error) {
+      setDestinationError(error instanceof Error ? formatApiErrorMessage(error.message) : 'Failed to send destination test.')
+    } finally {
+      setTestingChannel(null)
     }
   }
 
@@ -490,40 +563,90 @@ export default function SettingsPage() {
               </span>
             </div>
 
-          <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700 space-y-3">
             <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">
-                Email Notifications
-              </h3>
+              <h3 className="font-semibold text-slate-900 dark:text-white">Notification Destinations</h3>
               <p className="text-sm text-slate-600 dark:text-slate-400">
-                Receive alerts for cost anomalies
+                Configure delivery channel toggles and send a test notification before enabling production alerts.
               </p>
             </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
 
-          <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
-            <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">
-                Weekly Summary Report
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Get weekly cost analysis via email
-              </p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                Test target (required for email, optional webhook override for Slack/Teams)
+              </label>
+              <input
+                value={destinationTarget}
+                onChange={(event) => setDestinationTarget(event.target.value)}
+                placeholder="name@example.com or webhook URL"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
             </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
-          </div>
 
-          <div className="flex items-center justify-between p-4">
-            <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">
-                High-likelihood Recommendations Only
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
-                Show only recommendations with 70%+ success rate
-              </p>
-            </div>
-            <input type="checkbox" defaultChecked className="w-5 h-5" />
+            {loadingDestinations ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader className="w-5 h-5 animate-spin text-slate-400" />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {notificationDestinations.map((destination) => (
+                  <div
+                    key={destination.channel}
+                    className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/40"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-slate-900 dark:text-white">
+                          {destination.channel.toUpperCase()}
+                        </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">
+                          Configured: {destination.configured ? 'yes' : 'no'} · Last delivery: {formatDateTime(destination.last_delivery_at)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={destination.enabled}
+                          disabled={!canManageCloudSettings}
+                          onChange={(event) => {
+                            void handleToggleDestination(
+                              destination.channel as 'email' | 'slack' | 'teams',
+                              event.target.checked,
+                            )
+                          }}
+                          className="w-5 h-5"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleTestDestination(destination.channel as 'email' | 'slack' | 'teams')}
+                          disabled={!canManageCloudSettings || testingChannel === destination.channel}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          {testingChannel === destination.channel ? (
+                            <Loader className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Send className="h-3.5 w-3.5" />
+                          )}
+                          Test
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {destinationMessage && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                {destinationMessage}
+              </div>
+            )}
+
+            {destinationError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+                {destinationError}
+              </div>
+            )}
           </div>
         </div>
       </div>
