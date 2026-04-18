@@ -581,6 +581,29 @@ class AlertEvent(Base):
         )
 
 
+class AlertRoutingPolicy(Base):
+    """Severity to channel routing matrix for outbound alerts."""
+
+    __tablename__ = "alert_routing_policies"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "severity", name="uq_alert_routing_org_severity"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    severity = Column(String(30), nullable=False, index=True)
+    channels_json = Column(Text, nullable=False, default="[]")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self):
+        return (
+            f"<AlertRoutingPolicy(org_id={self.organization_id}, severity={self.severity}, "
+            f"active={self.is_active})>"
+        )
+
+
 # Dependency
 def get_db():
     """FastAPI dependency for database session."""

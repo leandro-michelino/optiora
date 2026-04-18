@@ -8,10 +8,7 @@ This backlog captures competitor-proven capabilities that can be integrated into
 
 1. Budget alerts to collaboration tools (Slack + Teams) and email
    - Why: common baseline in FinOps tools and already aligned with existing `alert_events`.
-   - Status: **Started** (budget alert pipeline now emits channel delivery metadata for email/Slack/Teams).
-   - Next technical slice:
-     - expose notification destination test endpoint
-     - add UI toggles and destination status in Operations/Settings
+   - Status: **Concluded (MVP)** (budget alert pipeline emits channel delivery metadata and includes destination status/toggle/test controls).
 
 2. Scheduler operations dashboard quality-of-life
    - Why: competitors expose clear scheduled-run visibility and history.
@@ -31,15 +28,22 @@ This backlog captures competitor-proven capabilities that can be integrated into
 ## P1 (Near-term)
 
 1. Export jobs (scheduled CSV/Excel digest with execution history)
+   - Status: **Planned** (not yet implemented in the active backend route set).
 2. GCP budget Pub/Sub ingestion
+   - Status: **Planned** (not yet implemented in the active backend route set).
 3. Hierarchical budgets on provider-account rollups
+   - Status: **In progress** (hierarchy rollups exist; budget roll-up fields are pending).
 4. Connector framework for external cost/usage tools (start with 1–2 connectors)
+   - Status: **Planned** (not yet implemented in the active backend route set).
 
 ## P2 (Expansion)
 
 1. OpenCost/Kubernetes layer integration
+   - Status: **Planned** (depends on connector framework implementation).
 2. Multi-destination alert routing policies (severity/channel matrix)
+   - Status: **Concluded (MVP)** via `/api/v1/alerts/routing-policies` and policy-aware delivery filtering.
 3. Finance-ready report packs with business mapping dimensions
+   - Status: **Planned** (current reporting provides executive summary CSV/XLS exports).
 
 ## Implementation Notes
 

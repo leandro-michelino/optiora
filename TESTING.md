@@ -122,7 +122,8 @@ terraform -chdir=terraform validate
 
 - Backend tests require the Python dependencies from `pyproject.toml`.
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
-- Python `3.13` test runs currently show `datetime.utcnow()` deprecation warnings from runtime/framework code paths; functional behavior still passes.
+- Alembic migrations require a single linear head before running the auth flow roundtrip migration test.
+- Dashboard linting requires ESLint flat config (`eslint.config.mjs`) when using ESLint 9.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
 - `./deploy/deploy-oci.sh verify` wraps `tests/smoke_test_0_9.sh` against the currently deployed OCI instance.

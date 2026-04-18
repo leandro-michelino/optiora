@@ -113,9 +113,16 @@ The dashboard is the main workspace for:
 - `GET /api/v1/provider-accounts/{id}/region-breakdown` (per-region cost rows)
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/{alert_id}/acknowledge`
+- `GET /api/v1/alerts/routing-policies`
+- `POST /api/v1/alerts/routing-policies`
+- `GET /api/v1/notifications/destinations`
+- `POST /api/v1/notifications/destinations/{channel}/toggle`
+- `POST /api/v1/notifications/test-destination`
 - `GET /api/v1/alerts.csv`
 - `GET /api/v1/audit-logs`
 - `GET /api/v1/audit-logs.csv`
+- `GET /api/v1/reports/executive-summary.csv`
+- `GET /api/v1/reports/executive-summary.xls`
 - `GET /api/v1/provider-diagnostics`
 - `GET /api/v1/info`
 

@@ -125,6 +125,36 @@ multi-account hierarchy (Epic 2), and deep FinOps analytics with OCI GenAI backe
       │         (called internally; exposed via anomaly endpoints)   │
       │                                                             │
       └─────────────────────────────────────────────────────────────┘
+
+---
+
+## Notification Destination Flow
+
+```text
+Settings / Operations UI
+      │
+      ├─► GET  /api/v1/notifications/destinations
+      │       returns:
+      │         - channel configured status (email/slack/teams)
+      │         - channel enabled state from routing policies
+      │         - last delivery timestamp from alert history
+      │
+      ├─► POST /api/v1/notifications/destinations/{channel}/toggle
+      │       updates warning/critical alert routing channels
+      │
+      └─► POST /api/v1/notifications/test-destination
+              sends live channel test and writes audit log
+
+Alert emission path
+      │
+      ├─► evaluate_budget_alert()
+      │       reads active AlertRoutingPolicy rows
+      │       filters channels by severity matrix
+      │
+      ├─► sends email / slack / teams
+      │
+      └─► persists AlertEvent.delivered_channels_json
+```
 ```
 
 ---
