@@ -18,6 +18,16 @@ output "egress_cidr" {
   description = "Outbound traffic destination CIDR for the public subnet."
 }
 
+output "cost_archive_bucket_name" {
+  value       = oci_objectstorage_bucket.cost_archive.name
+  description = "OCI Object Storage bucket used for cost data archival (warm tier, 1-year lifecycle)."
+}
+
+output "cost_archive_bucket_namespace" {
+  value       = var.oci_object_storage_namespace
+  description = "OCI Object Storage namespace for the archive bucket."
+}
+
 output "next_step_banner" {
   value = <<-EOT
 

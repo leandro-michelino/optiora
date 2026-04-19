@@ -15,10 +15,12 @@ from . import __version__
 from .api import router as api_router, run_scheduled_scans_once
 from .auth_routes import router as auth_router
 from .orm_models import ensure_public_workspace, init_db
+from .retention import run_retention
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 _scheduler_task: asyncio.Task | None = None
+_retention_task: asyncio.Task | None = None
 
 
 def _resolve_allowed_origins() -> list[str]:
@@ -83,6 +85,28 @@ async def startup_event():
             global _scheduler_task
             _scheduler_task = asyncio.create_task(_scheduler_loop())
             logger.info("Scheduled scan runner enabled (interval=%ss)", interval_seconds)
+
+        cfg = Config()
+        if cfg.retention_enabled:
+            retention_interval = max(3600, cfg.retention_run_interval_hours * 3600)
+
+            async def _retention_loop():
+                while True:
+                    try:
+                        summary = await asyncio.to_thread(run_retention, cfg)
+                        logger.info("Retention run complete: %s", summary)
+                    except Exception:
+                        logger.exception("Retention loop failed")
+                    await asyncio.sleep(retention_interval)
+
+            global _retention_task
+            _retention_task = asyncio.create_task(_retention_loop())
+            logger.info(
+                "Retention runner enabled (hot_months=%d, interval=%sh, bucket=%s)",
+                cfg.retention_hot_months,
+                cfg.retention_run_interval_hours,
+                cfg.oci_archive_bucket,
+            )
         logger.info("Database initialized successfully (version=%s)", __version__)
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)
@@ -92,14 +116,16 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Stop background scheduler task cleanly."""
-    global _scheduler_task
-    if _scheduler_task is not None:
-        _scheduler_task.cancel()
-        try:
-            await _scheduler_task
-        except asyncio.CancelledError:
-            pass
-        _scheduler_task = None
+    global _scheduler_task, _retention_task
+    for task in (_scheduler_task, _retention_task):
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    _scheduler_task = None
+    _retention_task = None
 
 
 # Health check endpoint

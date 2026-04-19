@@ -9,11 +9,9 @@ import {
   Legend,
 } from 'recharts'
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
+import { type ChartCostTrendPoint } from '@/lib/cost-trend'
 
-export interface CostTrendPoint {
-  month: string
-  [provider: string]: string | number
-}
+export type CostTrendPoint = ChartCostTrendPoint
 
 const defaultData: CostTrendPoint[] = [
   { month: 'Jan', aws: 4200, azure: 2400, gcp: 1800, oci: 1200 },

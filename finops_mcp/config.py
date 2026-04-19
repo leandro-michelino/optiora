@@ -89,6 +89,15 @@ class Config:
     enable_scan_scheduler: bool = os.getenv("ENABLE_SCAN_SCHEDULER", "false").strip().lower() in {"1", "true", "yes"}
     scan_scheduler_interval_minutes: int = int(os.getenv("SCAN_SCHEDULER_INTERVAL_MINUTES", "60"))
 
+    # Data retention / archival
+    # Rows older than retention_hot_months are archived to OCI Object Storage then deleted from DB.
+    # The bucket lifecycle rule (Terraform) handles deletion after 1 year in object storage.
+    retention_enabled: bool = os.getenv("RETENTION_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    retention_hot_months: int = int(os.getenv("RETENTION_HOT_MONTHS", "3"))
+    retention_run_interval_hours: int = int(os.getenv("RETENTION_RUN_INTERVAL_HOURS", "24"))
+    oci_archive_bucket: str = os.getenv("OCI_ARCHIVE_BUCKET", "")
+    oci_archive_namespace: str = os.getenv("OCI_ARCHIVE_NAMESPACE", "")
+
     # Data source policy
     require_live_provider_data: bool = os.getenv("REQUIRE_LIVE_PROVIDER_DATA", "true").strip().lower() in {"1", "true", "yes"}
 

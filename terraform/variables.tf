@@ -55,3 +55,8 @@ variable "egress_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+variable "oci_object_storage_namespace" {
+  description = "OCI Object Storage namespace (tenancy namespace, not the tenancy OCID). Find it with: oci os ns get"
+  type        = string
+}

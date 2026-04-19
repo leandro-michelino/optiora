@@ -18,6 +18,7 @@ import {
   fetchAllocationCoverage,
   fetchApiHealth,
   fetchChargeback,
+  fetchCostTrend,
   fetchCostsStrict,
   fetchImportedCostSummary,
   fetchProviderAccountRollups,
@@ -26,7 +27,9 @@ import {
   fetchScanHistory,
 } from '@/lib/api'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
+import { transformApiTrend, type ChartCostTrendPoint } from '@/lib/cost-trend'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
+import { MonthlyComparisonCard } from '@/components/MonthlyComparisonCard'
 import {
   AllocationCoverageResponse,
   ApiHealth,
@@ -38,6 +41,7 @@ import {
   RecommendationResponse,
   ScanHistoryItem,
   AlertEvent,
+  CostTrendResponse,
 } from '@/lib/types'
 
 interface WorkspaceView {
@@ -52,6 +56,7 @@ interface WorkspaceView {
 
 interface MyDashboardsState {
   costs: CostResponse | null
+  trend: CostTrendResponse | null
   rollups: ProviderAccountRollupResponse | null
   recommendations: RecommendationResponse[]
   history: ScanHistoryItem[]
@@ -67,6 +72,7 @@ interface MyDashboardsState {
 
 const initialState: MyDashboardsState = {
   costs: null,
+  trend: null,
   rollups: null,
   recommendations: [],
   history: [],
@@ -95,6 +101,7 @@ export default function MyDashboardsPage() {
     async function loadWorkspaceViews() {
       const [
         costs,
+        trend,
         rollups,
         recommendations,
         history,
@@ -106,6 +113,7 @@ export default function MyDashboardsPage() {
         chargebackResult,
       ] = await Promise.allSettled([
         fetchCostsStrict(),
+        fetchCostTrend('monthly', 12),
         fetchProviderAccountRollups(),
         fetchRecommendationsStrict({ limit: 6, offset: 0 }),
         fetchScanHistory(6),
@@ -119,6 +127,7 @@ export default function MyDashboardsPage() {
 
       setState({
         costs: costs.status === 'fulfilled' ? costs.value : null,
+        trend: trend.status === 'fulfilled' ? trend.value : null,
         rollups: rollups.status === 'fulfilled' ? rollups.value : null,
         recommendations:
           recommendations.status === 'fulfilled' ? recommendations.value.items : [],
@@ -217,6 +226,11 @@ export default function MyDashboardsPage() {
     ]
   }, [state.alerts, state.costs, state.coverage, state.history, state.recommendations, state.rollups])
 
+  const trendData = useMemo<ChartCostTrendPoint[]>(
+    () => (state.trend ? transformApiTrend(state.trend) : []),
+    [state.trend],
+  )
+
   if (state.loading) {
     return <div className="flex items-center justify-center h-64">Loading workspace dashboards...</div>
   }
@@ -264,6 +278,23 @@ export default function MyDashboardsPage() {
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Open Alerts</p>
           <p className="text-3xl font-bold text-slate-900 dark:text-white">
             {state.alerts.filter((item) => !item.acknowledged_at).length}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <MonthlyComparisonCard
+          data={trendData}
+          title="Month-over-Month Cost"
+          className="xl:col-span-2"
+        />
+        <div className="card">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Comparison Use</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Select any two months, such as April and May, to see the exact cost delta and which providers drove the change.
+          </p>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            This view uses the same monthly series as the main dashboard, including archived periods when the selected range goes beyond the 90-day hot tier.
           </p>
         </div>
       </div>

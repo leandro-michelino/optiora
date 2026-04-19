@@ -21,8 +21,9 @@ import {
   Tag,
   Target,
 } from 'lucide-react'
-import { CostChart, CostTrendPoint } from '@/components/CostChart'
+import { CostChart } from '@/components/CostChart'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
+import { MonthlyComparisonCard } from '@/components/MonthlyComparisonCard'
 import { ServiceBreakdown, ServiceBreakdownPoint } from '@/components/ServiceBreakdown'
 import { MetricCard } from '@/components/MetricCard'
 import {
@@ -42,9 +43,14 @@ import {
   fetchProviderDiagnostics,
   fetchRecommendations,
   fetchScanningPermission,
+  fetchCostTrend,
 } from '@/lib/api'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
 import { useCloudVisibility } from '@/lib/cloud-visibility'
+import {
+  makeFallbackTrendData,
+  transformApiTrend,
+} from '@/lib/cost-trend'
 import {
   AllocationCoverageResponse,
   AnomalyResponse,
@@ -62,6 +68,7 @@ import {
   RecommendationResponse,
   ScanningPermission,
   StoredCredential,
+  CostTrendResponse,
 } from '@/lib/types'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -149,26 +156,6 @@ function statusClass(ok: boolean): string {
     : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300'
 }
 
-function makeTrendData(costs: CostResponse | null): CostTrendPoint[] {
-  const breakdown = costs?.breakdown || {}
-  const providers = ['aws', 'azure', 'gcp', 'oci']
-  const ALL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  const now = new Date()
-  // Show the trailing 6 months ending with the current month
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const idx = (now.getMonth() - 5 + i + 12) % 12
-    return ALL_MONTHS[idx]
-  })
-  return months.map((month, index) => {
-    const growth = 0.84 + index * 0.032
-    const point: CostTrendPoint = { month }
-    providers.forEach((provider) => {
-      point[provider] = Math.round((breakdown[provider]?.cost || 0) * growth)
-    })
-    return point
-  })
-}
-
 function makeBreakdownData(costs: CostResponse | null): ServiceBreakdownPoint[] {
   const breakdown = costs?.breakdown || {}
   return Object.entries(breakdown)
@@ -223,6 +210,9 @@ export default function DashboardPage() {
   const [state, setState] = useState<DashboardState>(initialState)
   const [loading, setLoading] = useState(true)
   const { hiddenProviders, toggleProvider, isVisible } = useCloudVisibility()
+  const [trendLookback, setTrendLookback] = useState<3 | 6 | 12>(6)
+  const [trendApiData, setTrendApiData] = useState<CostTrendResponse | null>(null)
+  const [trendFromArchive, setTrendFromArchive] = useState(false)
 
   const connectedProviders = useMemo(
     () => state.credentials.filter((credential) => credential.is_valid),
@@ -235,14 +225,16 @@ export default function DashboardPage() {
     [state.costs, isVisible],
   )
   const trendData = useMemo(() => {
-    const raw = makeTrendData(state.costs)
+    const raw = trendApiData ? transformApiTrend(trendApiData) : makeFallbackTrendData(state.costs)
     if (hiddenProviders.length === 0) return raw
     return raw.map((point) => {
       const filtered = { ...point }
-      hiddenProviders.forEach((p) => { filtered[p] = 0 })
+      hiddenProviders.forEach((provider) => {
+        filtered[provider] = 0
+      })
       return filtered
     })
-  }, [state.costs, hiddenProviders])
+  }, [hiddenProviders, state.costs, trendApiData])
   const visibleAnomalies = useMemo(
     () => state.anomalies.filter((a) => isVisible(a.cloud)),
     [state.anomalies, isVisible],
@@ -345,6 +337,26 @@ export default function DashboardPage() {
       mounted = false
     }
   }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const run = async () => {
+      try {
+        const resp = await fetchCostTrend('monthly', trendLookback)
+        if (!mounted) return
+        setTrendApiData(resp)
+        // data_source === 'computed' can include archive rows; backend sets it the same way
+        // We detect archive by checking if any point predates the 90-day hot window
+        const hotCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+        const hasArchive = resp.points.some((p) => new Date(p.period_start) < hotCutoff)
+        setTrendFromArchive(hasArchive)
+      } catch {
+        // Ignore; chart falls back to synthetic data
+      }
+    }
+    void run()
+    return () => { mounted = false }
+  }, [trendLookback])
 
   if (loading) {
     return (
@@ -592,17 +604,47 @@ export default function DashboardPage() {
       <div className="grid gap-6 xl:grid-cols-3">
         <Card className="rounded-lg xl:col-span-2">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Activity className="h-5 w-5" />
-              Cost Trend By Provider
-            </CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <Activity className="h-5 w-5" />
+                Cost Trend By Provider
+                {trendFromArchive && (
+                  <Badge
+                    variant="outline"
+                    className="rounded-md border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950/30 dark:text-violet-300"
+                  >
+                    Includes archived data
+                  </Badge>
+                )}
+              </CardTitle>
+              <div className="flex gap-1">
+                {([3, 6, 12] as const).map((months) => (
+                  <Button
+                    key={months}
+                    variant={trendLookback === months ? 'default' : 'outline'}
+                    className="h-7 rounded px-2 text-xs"
+                    onClick={() => setTrendLookback(months)}
+                  >
+                    {months}M
+                  </Button>
+                ))}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="pt-6">
             <CostChart data={trendData} />
           </CardContent>
         </Card>
 
-        <Card className="rounded-lg">
+        <MonthlyComparisonCard
+          data={trendData}
+          title="Month-over-Month Cost"
+          className="rounded-lg"
+        />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Card className="rounded-lg xl:col-span-1">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="flex items-center gap-2 text-xl">
               <Cloud className="h-5 w-5" />

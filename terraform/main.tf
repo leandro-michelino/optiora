@@ -2,6 +2,44 @@ locals {
   name_prefix = "${var.project_code}-${var.environment}-${var.region_code}-${var.name_suffix}"
 }
 
+# ---------------------------------------------------------------------------
+# OCI Object Storage — cost archive bucket
+# Warm tier: rows older than 3 months are written here by the retention job.
+# Lifecycle rule deletes objects automatically after 365 days (1 year).
+# ---------------------------------------------------------------------------
+resource "oci_objectstorage_bucket" "cost_archive" {
+  compartment_id = var.compartment_id
+  namespace      = var.oci_object_storage_namespace
+  name           = "optiora-cost-archive-${var.environment}"
+  access_type    = "NoPublicAccess"
+  storage_tier   = "Standard"
+
+  versioning = "Disabled"
+
+  freeform_tags = {
+    project     = var.project_code
+    environment = var.environment
+    purpose     = "cost-data-archive"
+  }
+}
+
+resource "oci_objectstorage_object_lifecycle_policy" "cost_archive" {
+  namespace = var.oci_object_storage_namespace
+  bucket    = oci_objectstorage_bucket.cost_archive.name
+
+  rules {
+    name        = "delete-after-1-year"
+    action      = "DELETE"
+    is_enabled  = true
+    time_amount = 365
+    time_unit   = "DAYS"
+
+    object_name_filter {
+      inclusion_prefixes = ["archive/"]
+    }
+  }
+}
+
 resource "oci_core_vcn" "main" {
   compartment_id = var.compartment_id
   cidr_blocks    = [var.vcn_cidr]

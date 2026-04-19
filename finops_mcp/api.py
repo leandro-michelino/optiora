@@ -8,6 +8,7 @@ Handles:
 """
 
 import csv
+import asyncio
 import io
 import json
 import logging
@@ -69,6 +70,7 @@ from .orm_models import (
 from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, finops_analytics, recommendations
 from .tools import azure_costs, gcp_costs, oci_costs, genai_advisor
+from .retention import fetch_archived_period_summaries
 from . import __version__
 
 logger = logging.getLogger(__name__)
@@ -582,7 +584,8 @@ def _parse_required_float_value(
 
 
 def _csv_escape(value: Any) -> str:
-    return f"\"{str(value if value is not None else '').replace('\"', '\"\"')}\""
+    text = str(value if value is not None else "").replace('"', '""')
+    return f'"{text}"'
 
 
 def _csv_response(filename: str, header: List[str], rows: List[List[Any]]) -> Response:
@@ -2705,8 +2708,8 @@ async def download_alerts_csv(
     for row in rows:
         lines.append(
             f"{row['id']},{row['alert_type']},{row['severity']},"
-            f"\"{str(row['title']).replace('\"', '\"\"')}\","
-            f"\"{str(row['message']).replace('\"', '\"\"')}\","
+            f"{_csv_escape(row['title'])},"
+            f"{_csv_escape(row['message'])},"
             f"{row['acknowledged_at'] or ''},{row['created_at']}"
         )
     return Response("\n".join(lines), media_type="text/csv")
@@ -5081,7 +5084,7 @@ async def get_cost_trend(
     """
     if period_type not in ("monthly", "weekly"):
         raise HTTPException(status_code=400, detail="period_type must be 'monthly' or 'weekly'.")
-    lookback = max(1, min(lookback, 52))
+    lookback = max(1, min(lookback, 18))
     org_id = _organization_id_for_membership(membership)
 
     # Try pre-computed summaries first
@@ -5093,9 +5096,36 @@ async def get_cost_trend(
         q = q.filter(CostPeriodSummary.provider == provider.lower())
     summaries = q.order_by(CostPeriodSummary.period_start.desc()).all()
 
-    data_source = "computed" if summaries else "raw_records"
+    # --- Archive merge -----------------------------------------------------------
+    # When the requested lookback spans beyond the hot-tier window (default 3 months),
+    # transparently pull archived CostPeriodSummary rows from OCI Object Storage and
+    # merge them with DB rows so the chart has continuous history.
+    cfg = Config()
+    hot_months = cfg.retention_hot_months  # default 3
+    archive_rows: list[dict] = []
+    if lookback > hot_months and cfg.retention_enabled and cfg.oci_archive_bucket:
+        now = _utcnow()
+        archive_end = now - timedelta(days=hot_months * 30)
+        archive_start = now - timedelta(days=lookback * 30)
+        try:
+            raw_archive = await asyncio.to_thread(
+                fetch_archived_period_summaries, cfg, org_id, archive_start, archive_end
+            )
+            if provider:
+                raw_archive = [r for r in raw_archive if r.get("provider", "").lower() == provider.lower()]
+            if period_type:
+                raw_archive = [r for r in raw_archive if r.get("period_type", "") == period_type]
+            archive_rows = raw_archive
+        except Exception:
+            logger.exception("Failed to fetch archived period summaries; continuing with DB only")
+    # -----------------------------------------------------------------------------
 
-    if not summaries:
+    if summaries or archive_rows:
+        data_source = "computed"
+    else:
+        data_source = "raw_records"
+
+    if not summaries and not archive_rows:
         # Fallback: aggregate ImportedCostRecord on the fly
         records = (
             db.query(ImportedCostRecord)
@@ -5161,6 +5191,29 @@ async def get_cost_trend(
             if s.service_breakdown_json:
                 try:
                     for svc, c in json.loads(s.service_breakdown_json).items():
+                        b["svcs"][svc] = b["svcs"].get(svc, 0.0) + c
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        # Merge archived rows (dicts from NDJSON) into the same aggregation.
+        for ar in archive_rows:
+            try:
+                ps = datetime.fromisoformat(str(ar["period_start"]).replace("Z", ""))
+                pe = datetime.fromisoformat(str(ar["period_end"]).replace("Z", ""))
+            except (KeyError, ValueError):
+                continue
+            key = (ps, pe, ar.get("provider", "unknown"))
+            if key not in by_period:
+                by_period[key] = {"total": 0.0, "mapped": 0.0, "unmapped": 0.0, "count": 0, "svcs": {}}
+            b = by_period[key]
+            b["total"] += float(ar.get("total_cost_usd") or 0)
+            b["mapped"] += float(ar.get("mapped_cost_usd") or 0)
+            b["unmapped"] += float(ar.get("unmapped_cost_usd") or 0)
+            b["count"] += int(ar.get("record_count") or 0)
+            svc_json = ar.get("service_breakdown_json")
+            if svc_json:
+                try:
+                    for svc, c in json.loads(svc_json).items():
                         b["svcs"][svc] = b["svcs"].get(svc, 0.0) + c
                 except (json.JSONDecodeError, ValueError):
                     pass
