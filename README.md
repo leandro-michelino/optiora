@@ -57,7 +57,7 @@ The dashboard is the main workspace for:
 │  /api/v1/analytics/*  /api/v1/advisor/*      │
 │  /api/v1/virtual-tags/*                      │
 │  /api/v1/recommendations/rightsizing         │
-│  /api/v1/inventory    /api/v1/kubernetes/*   │
+│  /api/v1/inventory/resources    /api/v1/analytics/kubernetes/*   │
 │  /api/v1/business-mapping/*                  │
 └───────────────┬──────────────────┬───────────┘
                 │                  │
@@ -126,8 +126,8 @@ The dashboard is the main workspace for:
 - `GET /api/v1/analytics/efficiency-score` (weighted 0-100 efficiency score with grade and weakest dimensions)
 - `GET /api/v1/analytics/commitment-gap` (per-provider commitment coverage gaps with 1-year/3-year scenarios)
 - `GET /api/v1/analytics/scorecards` (per-team/environment FinOps maturity scorecards with trends)
-- `GET /api/v1/inventory` (searchable resource inventory across all connected providers)
-- `GET /api/v1/kubernetes/cost-allocation` (namespace-level Kubernetes cost attribution)
+- `GET /api/v1/inventory/resources` (searchable resource inventory across all connected providers)
+- `GET /api/v1/analytics/kubernetes/summary` / `POST /api/v1/analytics/kubernetes/cluster-cost` (namespace-level Kubernetes cost attribution)
 - `GET /api/v1/virtual-tags/rules` (list virtual tag rules)
 - `POST /api/v1/virtual-tags/rules` (create virtual tag rule)
 - `PUT /api/v1/virtual-tags/rules/{rule_id}` (update virtual tag rule)

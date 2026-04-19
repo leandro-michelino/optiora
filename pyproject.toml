@@ -22,6 +22,7 @@ packages = [{ include = "finops_mcp" }]
 python = ">=3.10"
 boto3 = "^1.34.0"
 azure-identity = "^1.15.0"
+azure-mgmt-advisor = "^9.0.0"
 azure-mgmt-costmanagement = "^4.0.0"
 google-cloud-billing = "^1.13.0"
 google-cloud-bigquery = "^3.25.0"
