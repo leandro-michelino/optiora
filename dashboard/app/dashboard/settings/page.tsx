@@ -12,6 +12,7 @@ import {
   fetchNotificationDestinations,
   listExportJobRuns,
   listExportJobs,
+  previewImportedCostCsv,
   runExportJob,
   testNotificationDestination,
   toggleNotificationDestination,
@@ -24,6 +25,7 @@ import {
   ExportJob,
   ExportJobRun,
   ImportedCostSummaryResponse,
+  ImportPreviewResponse,
   NotificationDestinationStatus,
 } from '@/lib/types';
 
@@ -82,6 +84,8 @@ export default function SettingsPage() {
   const [uploadingCsv, setUploadingCsv] = useState(false)
   const [csvUploadMessage, setCsvUploadMessage] = useState<string | null>(null)
   const [csvUploadError, setCsvUploadError] = useState<string | null>(null)
+  const [csvPreview, setCsvPreview] = useState<ImportPreviewResponse | null>(null)
+  const [loadingCsvPreview, setLoadingCsvPreview] = useState(false)
   const [notificationDestinations, setNotificationDestinations] = useState<NotificationDestinationStatus[]>([])
   const [loadingDestinations, setLoadingDestinations] = useState(true)
   const [destinationTarget, setDestinationTarget] = useState('')
@@ -470,10 +474,34 @@ export default function SettingsPage() {
                   onChange={(event) => {
                     setCsvUploadError(null)
                     setCsvUploadMessage(null)
+                    setCsvPreview(null)
                     setSelectedCsvFile(event.target.files?.[0] || null)
                   }}
                   className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:file:bg-slate-800 dark:file:text-slate-200"
                 />
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!selectedCsvFile) return
+                    setLoadingCsvPreview(true)
+                    setCsvPreview(null)
+                    try {
+                      const preview = await previewImportedCostCsv(selectedCsvFile)
+                      setCsvPreview(preview)
+                    } catch {
+                      // preview errors are non-blocking
+                    } finally {
+                      setLoadingCsvPreview(false)
+                    }
+                  }}
+                  data-testid="csv-preview-btn"
+                  disabled={!selectedCsvFile || loadingCsvPreview}
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  {loadingCsvPreview ? <Loader className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                  {loadingCsvPreview ? 'Previewing...' : 'Preview'}
+                </button>
 
                 <button
                   type="button"
@@ -503,6 +531,43 @@ export default function SettingsPage() {
               {csvUploadError && (
                 <div className="whitespace-pre-wrap rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
                   {csvUploadError}
+                </div>
+              )}
+
+              {csvPreview && (
+                <div data-testid="csv-preview-panel" className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                  <div className="flex gap-4 text-sm">
+                    <span className="text-emerald-700 dark:text-emerald-300">{csvPreview.accepted_rows} accepted rows</span>
+                    <span className="text-slate-500">{csvPreview.total_rows} total</span>
+                    {csvPreview.rejected_rows > 0 && <span className="text-amber-600">{csvPreview.rejected_rows} skipped</span>}
+                  </div>
+                  {Object.keys(csvPreview.mapping_feedback).length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-slate-700 dark:text-slate-300">Mapping feedback</div>
+                      <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-slate-600 dark:text-slate-400">
+                        {Object.entries(csvPreview.mapping_feedback).map(([k, v], i) => <li key={i}>{k}: {String(v)}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {csvPreview.reconciliation_guidance.length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-slate-700 dark:text-slate-300">Reconciliation guidance</div>
+                      <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-slate-600 dark:text-slate-400">
+                        {csvPreview.reconciliation_guidance.map((n: string, i: number) => <li key={i}>{n}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {csvPreview.issues.length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-amber-700 dark:text-amber-300">Issues</div>
+                      <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-amber-600 dark:text-amber-400">
+                        {csvPreview.issues.slice(0, 5).map((w, i) => (
+                          <li key={i}>Line {w.line_number}: {w.message}</li>
+                        ))}
+                        {csvPreview.issues.length > 5 && <li>…and {csvPreview.issues.length - 5} more</li>}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

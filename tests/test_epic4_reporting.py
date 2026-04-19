@@ -276,6 +276,42 @@ class CostTrendEndpointTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 400, resp.text)
 
+    def test_trend_view_by_region(self):
+        resp = self.client.get(
+            "/api/v1/reports/cost-trend?period_type=monthly&lookback=6&view_by=region",
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertEqual(data.get("view_by"), "region")
+        self.assertIn("dimension_totals", data)
+
+
+class ImportPreviewTest(unittest.TestCase):
+    """Test CSV import validation preview with mapping feedback."""
+
+    @classmethod
+    def setUpClass(cls):
+        _setup_db()
+        cls.client = TestClient(app, raise_server_exceptions=False)
+        cls.token = _register_admin(cls.client)
+
+    @classmethod
+    def tearDownClass(cls):
+        _teardown_db()
+
+    def test_preview_returns_mapping_feedback(self):
+        resp = self.client.post(
+            "/api/v1/imports/costs/preview",
+            files={"file": ("costs.csv", IMPORT_CSV.encode(), "text/csv")},
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("mapping_feedback", data)
+        self.assertIn("reconciliation_guidance", data)
+        self.assertIn("issues", data)
+
 
 class ChargebackCsvExportTest(unittest.TestCase):
     """Test GET /api/v1/reports/chargeback.csv."""
@@ -390,6 +426,8 @@ class ExecutiveSummaryXlsxTest(unittest.TestCase):
         )
         wb = openpyxl.load_workbook(io.BytesIO(resp.content))
         self.assertIn("Executive Summary", wb.sheetnames)
+        self.assertIn("Trend by Provider", wb.sheetnames)
+        self.assertIn("Trend by Region", wb.sheetnames)
 
     def test_xlsx_has_header_row(self):
         resp = self.client.get(
@@ -400,6 +438,41 @@ class ExecutiveSummaryXlsxTest(unittest.TestCase):
         ws = wb["Executive Summary"]
         first_row = [ws.cell(1, c).value for c in range(1, 4)]
         self.assertEqual(first_row, ["Section", "Field", "Value"])
+
+
+class PdfDigestAndSharingTest(unittest.TestCase):
+    """Test weekly/monthly PDF digest and tokenized read-only report sharing."""
+
+    @classmethod
+    def setUpClass(cls):
+        _setup_db()
+        cls.client = TestClient(app, raise_server_exceptions=False)
+        cls.token = _register_admin(cls.client)
+        _upload_csv(cls.client, cls.token)
+
+    @classmethod
+    def tearDownClass(cls):
+        _teardown_db()
+
+    def test_pdf_digest_download(self):
+        resp = self.client.get(
+            "/api/v1/reports/executive-digest.pdf?frequency=weekly",
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        self.assertEqual(resp.status_code, 200, resp.text[:200])
+        self.assertIn("application/pdf", resp.headers.get("content-type", ""))
+
+    def test_tokenized_read_only_share(self):
+        create = self.client.post(
+            "/api/v1/reports/share-token",
+            json={"report_type": "executive_summary", "report_format": "json", "expires_in_hours": 2},
+            headers={"Authorization": f"Bearer {self.token}"},
+        )
+        self.assertEqual(create.status_code, 200, create.text)
+        token = create.json()["token"]
+        shared = self.client.get(f"/api/v1/reports/shared/{token}")
+        self.assertEqual(shared.status_code, 200, shared.text)
+        self.assertIn("application/json", shared.headers.get("content-type", ""))
 
 
 class EnhancedExecutiveSummaryCsvTest(unittest.TestCase):

@@ -29,6 +29,8 @@ import {
   HybridAdvisorResponse,
   ImportedCostSummaryResponse,
   ImportedCostUploadResponse,
+  ImportPreviewResponse,
+  ReportShareTokenResponse,
   ProviderDiagnostic,
   NotificationDestinationsResponse,
   NotificationDestinationTestResponse,
@@ -335,6 +337,21 @@ export async function uploadImportedCostCsv(file: File): Promise<ImportedCostUpl
   return await response.json() as ImportedCostUploadResponse
 }
 
+export async function previewImportedCostCsv(file: File): Promise<ImportPreviewResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await authorizedFetch(backendUrl('/api/v1/imports/costs/preview'), {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(detail || `Preview failed with ${response.status}`)
+  }
+  return await response.json() as ImportPreviewResponse
+}
+
 export async function downloadImportedCostTemplateCsv(): Promise<void> {
   const blob = await requestBlob('/api/v1/imports/costs/template.csv')
   saveBlob(blob, 'optiora-cost-import-template.csv')
@@ -447,8 +464,29 @@ export async function downloadExecutiveSummaryCsv(): Promise<void> {
 }
 
 export async function downloadExecutiveSummaryExcel(): Promise<void> {
-  const blob = await requestBlob('/api/v1/reports/executive-summary.xls')
-  saveBlob(blob, `optiora-executive-summary-${new Date().toISOString().slice(0, 10)}.xls`)
+  const blob = await requestBlob('/api/v1/reports/executive-summary.xlsx')
+  saveBlob(blob, `optiora-finance-workbook-${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
+export async function downloadFinanceWorkbook(): Promise<void> {
+  const blob = await requestBlob('/api/v1/reports/finance-workbook.xlsx')
+  saveBlob(blob, `optiora-finance-workbook-${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
+export async function downloadExecutiveDigestPdf(frequency: 'weekly' | 'monthly' = 'weekly'): Promise<void> {
+  const blob = await requestBlob(`/api/v1/reports/executive-digest.pdf${toQueryString({ frequency })}`)
+  saveBlob(blob, `optiora-${frequency}-digest-${new Date().toISOString().slice(0, 10)}.pdf`)
+}
+
+export async function createReadOnlyReportShareToken(payload: {
+  report_type?: 'executive_summary' | 'finance_workbook' | 'executive_digest'
+  report_format?: 'json' | 'csv' | 'xlsx' | 'pdf'
+  expires_in_hours?: number
+}): Promise<ReportShareTokenResponse> {
+  return requestJson<ReportShareTokenResponse>('/api/v1/reports/share-token', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }
 
 export async function listExportJobs(): Promise<ExportJob[]> {
@@ -457,8 +495,8 @@ export async function listExportJobs(): Promise<ExportJob[]> {
 
 export async function createExportJob(payload: {
   name: string
-  report_type?: 'executive_summary'
-  export_format?: 'csv' | 'xls'
+  report_type?: 'executive_summary' | 'executive_digest' | 'finance_workbook'
+  export_format?: 'csv' | 'xls' | 'xlsx' | 'pdf'
   schedule_frequency?: 'daily' | 'weekly' | 'monthly'
   is_active?: boolean
 }): Promise<ExportJob> {
@@ -554,9 +592,10 @@ export async function fetchCostTrend(
   periodType: 'monthly' | 'weekly' = 'monthly',
   lookback = 6,
   provider?: string,
+  viewBy: 'provider' | 'region' | 'service' | 'account' = 'provider',
 ): Promise<CostTrendResponse> {
   return requestJson<CostTrendResponse>(
-    `/api/v1/reports/cost-trend${toQueryString({ period_type: periodType, lookback, provider })}`,
+    `/api/v1/reports/cost-trend${toQueryString({ period_type: periodType, lookback, provider, view_by: viewBy })}`,
   )
 }
 

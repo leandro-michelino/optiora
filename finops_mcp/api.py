@@ -15,6 +15,8 @@ import logging
 import os
 import base64
 import binascii
+import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -82,6 +84,54 @@ def _utcnow() -> datetime:
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
 SUPPORTED_COST_IMPORT_PROVIDERS = {"aws", "azure", "gcp", "oci"}
+_SUPPORTED_TREND_VIEWS = {"provider", "region", "service", "account"}
+
+
+def _share_hmac_secret() -> bytes:
+    raw = os.getenv("SECRET_KEY", "optiora-dev-share-secret")
+    return str(raw).encode("utf-8")
+
+
+def _build_report_share_token(payload: Dict[str, Any]) -> str:
+    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8")).decode("utf-8").rstrip("=")
+    signature = hmac.new(_share_hmac_secret(), body.encode("utf-8"), hashlib.sha256).digest()
+    sig = base64.urlsafe_b64encode(signature).decode("utf-8").rstrip("=")
+    return f"{body}.{sig}"
+
+
+def _parse_report_share_token(token: str) -> Dict[str, Any]:
+    if "." not in token:
+        raise HTTPException(status_code=401, detail="Invalid share token")
+    body, sig = token.split(".", 1)
+    expected_sig = base64.urlsafe_b64encode(
+        hmac.new(_share_hmac_secret(), body.encode("utf-8"), hashlib.sha256).digest()
+    ).decode("utf-8").rstrip("=")
+    if not hmac.compare_digest(sig, expected_sig):
+        raise HTTPException(status_code=401, detail="Invalid share token")
+    padded = body + "=" * ((4 - len(body) % 4) % 4)
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Malformed share token") from exc
+    exp = int(payload.get("exp", 0) or 0)
+    if exp <= int(datetime.now(timezone.utc).timestamp()):
+        raise HTTPException(status_code=401, detail="Share token expired")
+    return payload
+
+
+def _trend_dimension_value(rec: ImportedCostRecord, view_by: str) -> str:
+    if view_by == "region":
+        return (rec.region or "unknown").strip() or "unknown"
+    if view_by == "service":
+        return (rec.service_name or "unknown").strip() or "unknown"
+    if view_by == "account":
+        return (
+            rec.account_identifier
+            or rec.account_name
+            or rec.parent_account_identifier
+            or "unknown"
+        ).strip() or "unknown"
+    return (rec.provider or "imported").strip().lower() or "imported"
 
 
 class AWSCredentialInput(BaseModel):
@@ -374,6 +424,7 @@ class CostTrendPoint(BaseModel):
     period_start: str
     period_end: str
     provider: str
+    dimension_value: str = ""
     total_cost_usd: float
     mapped_cost_usd: float
     unmapped_cost_usd: float
@@ -387,9 +438,11 @@ class CostTrendResponse(BaseModel):
     organization_id: int
     period_type: str             # "monthly" | "weekly"
     lookback_periods: int
+    view_by: str                 # "provider" | "region" | "service" | "account"
     data_source: str             # "computed" | "raw_records" | "empty"
     points: List[CostTrendPoint]
     provider_totals: Dict[str, float]
+    dimension_totals: Dict[str, float]
     grand_total_usd: float
 
 
@@ -490,8 +543,8 @@ class ExternalGCPPubSubIngestRequest(BaseModel):
 
 class ExportJobRequest(BaseModel):
     name: str
-    report_type: Literal["executive_summary"] = "executive_summary"
-    export_format: Literal["csv", "xls"] = "csv"
+    report_type: Literal["executive_summary", "executive_digest", "finance_workbook"] = "executive_summary"
+    export_format: Literal["csv", "xls", "xlsx", "pdf"] = "csv"
     schedule_frequency: Literal["daily", "weekly", "monthly"] = "weekly"
     is_active: bool = True
 
@@ -542,6 +595,40 @@ class ImportedCostSummaryResponse(BaseModel):
     total_cost_usd: float = 0.0
     providers: List[str] = Field(default_factory=list)
     last_imported_at: Optional[datetime] = None
+
+
+class ImportPreviewIssue(BaseModel):
+    line_number: int
+    severity: Literal["error", "warning"]
+    message: str
+
+
+class ImportPreviewResponse(BaseModel):
+    organization_id: int
+    customer_id: str
+    filename: str
+    total_rows: int
+    accepted_rows: int
+    rejected_rows: int
+    total_cost_usd: float
+    detected_providers: List[str] = Field(default_factory=list)
+    header_columns: List[str] = Field(default_factory=list)
+    mapping_feedback: Dict[str, Any] = Field(default_factory=dict)
+    reconciliation_guidance: List[str] = Field(default_factory=list)
+    issues: List[ImportPreviewIssue] = Field(default_factory=list)
+
+
+class ReportShareTokenRequest(BaseModel):
+    report_type: Literal["executive_summary", "finance_workbook", "executive_digest"] = "executive_summary"
+    report_format: Literal["json", "csv", "xlsx", "pdf"] = "json"
+    expires_in_hours: int = 168
+
+
+class ReportShareTokenResponse(BaseModel):
+    token: str
+    expires_at: str
+    report_type: str
+    report_format: str
 
 
 def get_credential_manager(db: Session = Depends(get_db)) -> CredentialManager:
@@ -2183,6 +2270,174 @@ async def download_cost_import_template(
     )
 
 
+@router.post("/imports/costs/preview", response_model=ImportPreviewResponse)
+async def preview_cost_csv_import(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ImportPreviewResponse:
+    _require_management_role(membership, "CSV import preview")
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+
+    filename = str(file.filename or "").strip() or "cost-import.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV uploads are supported right now.")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded CSV file is empty.")
+
+    _MAX_CSV_BYTES = 10 * 1024 * 1024
+    if len(raw) > _MAX_CSV_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV file too large ({len(raw):,} bytes). Maximum allowed size is 10 MB.",
+        )
+
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="CSV upload must be UTF-8 encoded.") from exc
+
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV header row is missing. Expected columns include provider and cost_usd.",
+        )
+
+    headers = [str(name or "").strip().lower() for name in reader.fieldnames]
+    reader.fieldnames = headers
+
+    issues: List[ImportPreviewIssue] = []
+    if "provider" not in headers:
+        issues.append(ImportPreviewIssue(line_number=1, severity="error", message="Missing required column: provider"))
+    if "cost_usd" not in headers:
+        issues.append(ImportPreviewIssue(line_number=1, severity="error", message="Missing required column: cost_usd"))
+
+    total_rows = 0
+    accepted_rows = 0
+    rejected_rows = 0
+    total_cost_usd = 0.0
+    providers: set[str] = set()
+    rows_with_account = 0
+    rows_with_region = 0
+    rows_with_service = 0
+    rows_with_tags = 0
+
+    for line_number, row in enumerate(reader, start=2):
+        total_rows += 1
+        normalized_row = {
+            str(key or "").strip().lower(): str(value or "").strip()
+            for key, value in row.items()
+        }
+
+        provider = normalized_row.get("provider", "").lower()
+        if provider not in SUPPORTED_COST_IMPORT_PROVIDERS:
+            rejected_rows += 1
+            issues.append(
+                ImportPreviewIssue(
+                    line_number=line_number,
+                    severity="error",
+                    message=(
+                        f"Unsupported provider '{provider or 'empty'}'. "
+                        f"Use one of: {', '.join(sorted(SUPPORTED_COST_IMPORT_PROVIDERS))}."
+                    ),
+                )
+            )
+            continue
+
+        currency = normalized_row.get("currency", "USD").upper() or "USD"
+        if currency != "USD":
+            rejected_rows += 1
+            issues.append(
+                ImportPreviewIssue(
+                    line_number=line_number,
+                    severity="error",
+                    message=f"Only USD is supported right now (got {currency}).",
+                )
+            )
+            continue
+
+        cost_usd, cost_error = _parse_required_float_value(normalized_row.get("cost_usd"), "cost_usd", line_number)
+        period_start, period_start_error = _parse_optional_datetime_value(
+            normalized_row.get("period_start"), "period_start", line_number
+        )
+        period_end, period_end_error = _parse_optional_datetime_value(
+            normalized_row.get("period_end"), "period_end", line_number
+        )
+
+        if cost_error:
+            issues.append(ImportPreviewIssue(line_number=line_number, severity="error", message=cost_error))
+        if period_start_error:
+            issues.append(ImportPreviewIssue(line_number=line_number, severity="error", message=period_start_error))
+        if period_end_error:
+            issues.append(ImportPreviewIssue(line_number=line_number, severity="error", message=period_end_error))
+
+        if cost_usd is None or cost_error or period_start_error or period_end_error:
+            rejected_rows += 1
+            continue
+
+        accepted_rows += 1
+        total_cost_usd += float(cost_usd)
+        providers.add(provider)
+
+        if normalized_row.get("account_identifier") or normalized_row.get("account_name"):
+            rows_with_account += 1
+        if normalized_row.get("region"):
+            rows_with_region += 1
+        if normalized_row.get("service_name") or normalized_row.get("service"):
+            rows_with_service += 1
+        if normalized_row.get("tags"):
+            rows_with_tags += 1
+
+    if total_rows > 0 and rows_with_tags == 0:
+        issues.append(
+            ImportPreviewIssue(
+                line_number=1,
+                severity="warning",
+                message="No tags column data detected; business mapping coverage may be limited.",
+            )
+        )
+
+    mapping_feedback = {
+        "account_coverage_percent": round((rows_with_account / max(1, accepted_rows)) * 100, 1),
+        "region_coverage_percent": round((rows_with_region / max(1, accepted_rows)) * 100, 1),
+        "service_coverage_percent": round((rows_with_service / max(1, accepted_rows)) * 100, 1),
+        "tags_coverage_percent": round((rows_with_tags / max(1, accepted_rows)) * 100, 1),
+    }
+
+    reconciliation_guidance: List[str] = []
+    if accepted_rows == 0:
+        reconciliation_guidance.append("No rows passed validation; fix CSV issues before import.")
+    else:
+        reconciliation_guidance.append(
+            f"Validated {accepted_rows} row(s) with ${round(total_cost_usd, 2):,.2f} total spend ready for import."
+        )
+        if mapping_feedback["account_coverage_percent"] < 80:
+            reconciliation_guidance.append("Add account_identifier/account_name to improve account rollup reconciliation.")
+        if mapping_feedback["tags_coverage_percent"] < 50:
+            reconciliation_guidance.append("Include tags JSON to improve team/environment/cost-center mapping quality.")
+        if mapping_feedback["region_coverage_percent"] < 80:
+            reconciliation_guidance.append("Populate region values to improve regional variance analysis.")
+
+    return ImportPreviewResponse(
+        organization_id=organization_id,
+        customer_id=customer_id,
+        filename=filename,
+        total_rows=total_rows,
+        accepted_rows=accepted_rows,
+        rejected_rows=rejected_rows,
+        total_cost_usd=round(total_cost_usd, 2),
+        detected_providers=sorted(providers),
+        header_columns=headers,
+        mapping_feedback=mapping_feedback,
+        reconciliation_guidance=reconciliation_guidance,
+        issues=issues[:200],
+    )
+
+
 @router.post("/imports/costs/csv", response_model=ImportedCostUploadResponse)
 async def upload_cost_csv(
     file: UploadFile = File(...),
@@ -2921,7 +3176,20 @@ async def _execute_export_job(
     try:
         rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
         row_count = max(0, len(rows) - 1)
-        extension = "csv" if job.export_format == "csv" else "xls"
+
+        if job.report_type == "finance_workbook" or job.export_format == "xlsx":
+            extension = "xlsx"
+        elif job.export_format == "pdf":
+            extension = "pdf"
+        elif job.export_format == "csv":
+            extension = "csv"
+        else:
+            extension = "xls"
+
+        if job.report_type == "executive_digest" and extension != "pdf":
+            extension = "pdf"
+
+        # Persist only metadata now; file materialization can be plugged into object storage later.
         run.output_filename = f"{job.report_type}-{job.id}-{int(now.timestamp())}.{extension}"
         run.row_count = row_count
         run.status = "completed"
@@ -2942,6 +3210,7 @@ async def _execute_export_job(
                         "export_format": job.export_format,
                         "schedule_frequency": job.schedule_frequency,
                         "row_count": row_count,
+                        "output_filename": run.output_filename,
                     }
                 ),
             )
@@ -5073,114 +5342,63 @@ async def get_cost_trend(
     period_type: str = "monthly",
     lookback: int = 6,
     provider: Optional[str] = None,
+    view_by: str = "provider",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> CostTrendResponse:
     """Return time-series cost data for trend charts.
 
-    Uses pre-computed CostPeriodSummary rows when available; falls back to
-    aggregating ImportedCostRecord rows on the fly.
+    Supports trend views by provider, region, service, and account.
     """
+    _ = current_user
     if period_type not in ("monthly", "weekly"):
         raise HTTPException(status_code=400, detail="period_type must be 'monthly' or 'weekly'.")
+    if view_by not in _SUPPORTED_TREND_VIEWS:
+        raise HTTPException(status_code=400, detail="view_by must be one of: provider, region, service, account.")
+
     lookback = max(1, min(lookback, 18))
     org_id = _organization_id_for_membership(membership)
 
-    # Try pre-computed summaries first
-    q = db.query(CostPeriodSummary).filter(
-        CostPeriodSummary.organization_id == org_id,
-        CostPeriodSummary.period_type == period_type,
-    )
-    if provider:
-        q = q.filter(CostPeriodSummary.provider == provider.lower())
-    summaries = q.order_by(CostPeriodSummary.period_start.desc()).all()
+    summaries: List[CostPeriodSummary] = []
+    archive_rows: List[Dict[str, Any]] = []
+    data_source = "raw_records"
 
-    # --- Archive merge -----------------------------------------------------------
-    # When the requested lookback spans beyond the hot-tier window (default 3 months),
-    # transparently pull archived CostPeriodSummary rows from OCI Object Storage and
-    # merge them with DB rows so the chart has continuous history.
-    cfg = Config()
-    hot_months = cfg.retention_hot_months  # default 3
-    archive_rows: list[dict] = []
-    if lookback > hot_months and cfg.retention_enabled and cfg.oci_archive_bucket:
-        now = _utcnow()
-        archive_end = now - timedelta(days=hot_months * 30)
-        archive_start = now - timedelta(days=lookback * 30)
-        try:
-            raw_archive = await asyncio.to_thread(
-                fetch_archived_period_summaries, cfg, org_id, archive_start, archive_end
-            )
-            if provider:
-                raw_archive = [r for r in raw_archive if r.get("provider", "").lower() == provider.lower()]
-            if period_type:
-                raw_archive = [r for r in raw_archive if r.get("period_type", "") == period_type]
-            archive_rows = raw_archive
-        except Exception:
-            logger.exception("Failed to fetch archived period summaries; continuing with DB only")
-    # -----------------------------------------------------------------------------
-
-    if summaries or archive_rows:
-        data_source = "computed"
-    else:
-        data_source = "raw_records"
-
-    if not summaries and not archive_rows:
-        # Fallback: aggregate ImportedCostRecord on the fly
-        records = (
-            db.query(ImportedCostRecord)
-            .filter(ImportedCostRecord.organization_id == org_id)
-            .all()
+    if view_by == "provider":
+        q = db.query(CostPeriodSummary).filter(
+            CostPeriodSummary.organization_id == org_id,
+            CostPeriodSummary.period_type == period_type,
         )
-        if not records:
-            return CostTrendResponse(
-                organization_id=org_id,
-                period_type=period_type,
-                lookback_periods=lookback,
-                data_source="empty",
-                points=[],
-                provider_totals={},
-                grand_total_usd=0.0,
-            )
+        if provider:
+            q = q.filter(CostPeriodSummary.provider == provider.lower())
+        summaries = q.order_by(CostPeriodSummary.period_start.desc()).all()
 
-        # Group on the fly
-        now = _utcnow()
-        buckets: Dict[tuple, Dict[str, Any]] = {}
-        for rec in records:
-            if provider and (rec.provider or "").lower() != provider.lower():
-                continue
-            anchor = rec.period_start or rec.created_at or now
-            pstart, pend = _compute_period_bucket(anchor, period_type)
-            key = (pstart, pend, rec.provider or "imported")
-            cost = float(rec.cost_usd or 0)
-            if key not in buckets:
-                buckets[key] = {"pend": pend, "total": 0.0, "mapped": 0.0, "unmapped": 0.0, "count": 0, "svcs": {}}
-            b = buckets[key]
-            b["total"] += cost
-            b["unmapped"] += cost
-            b["count"] += 1
-            svc = rec.service_name or "unknown"
-            b["svcs"][svc] = b["svcs"].get(svc, 0.0) + cost
+        cfg = Config()
+        hot_months = cfg.retention_hot_months
+        if lookback > hot_months and cfg.retention_enabled and cfg.oci_archive_bucket:
+            now = _utcnow()
+            archive_end = now - timedelta(days=hot_months * 30)
+            archive_start = now - timedelta(days=lookback * 30)
+            try:
+                raw_archive = await asyncio.to_thread(
+                    fetch_archived_period_summaries, cfg, org_id, archive_start, archive_end
+                )
+                if provider:
+                    raw_archive = [r for r in raw_archive if r.get("provider", "").lower() == provider.lower()]
+                raw_archive = [r for r in raw_archive if r.get("period_type", "") == period_type]
+                archive_rows = raw_archive
+            except Exception:
+                logger.exception("Failed to fetch archived period summaries; continuing with DB only")
 
-        sorted_keys = sorted(buckets.keys(), key=lambda k: k[0], reverse=True)[:lookback]
-        points = [
-            CostTrendPoint(
-                period_start=k[0].isoformat(),
-                period_end=buckets[k]["pend"].isoformat(),
-                provider=k[2],
-                total_cost_usd=round(buckets[k]["total"], 2),
-                mapped_cost_usd=round(buckets[k]["mapped"], 2),
-                unmapped_cost_usd=round(buckets[k]["unmapped"], 2),
-                record_count=buckets[k]["count"],
-                service_breakdown={s: round(c, 2) for s, c in list(buckets[k]["svcs"].items())[:10]},
-            )
-            for k in sorted(sorted_keys, key=lambda k: k[0])
-        ]
-    else:
-        # Use pre-computed summaries — group by period + provider
+        if summaries or archive_rows:
+            data_source = "computed"
+
+    points: List[CostTrendPoint] = []
+
+    if data_source == "computed":
         by_period: Dict[tuple, Dict[str, Any]] = {}
         for s in summaries:
-            key = (s.period_start, s.period_end, s.provider)
+            key = (s.period_start, s.period_end, s.provider or "imported")
             if key not in by_period:
                 by_period[key] = {"total": 0.0, "mapped": 0.0, "unmapped": 0.0, "count": 0, "svcs": {}}
             b = by_period[key]
@@ -5195,7 +5413,6 @@ async def get_cost_trend(
                 except (json.JSONDecodeError, ValueError):
                     pass
 
-        # Merge archived rows (dicts from NDJSON) into the same aggregation.
         for ar in archive_rows:
             try:
                 ps = datetime.fromisoformat(str(ar["period_start"]).replace("Z", ""))
@@ -5224,6 +5441,7 @@ async def get_cost_trend(
                 period_start=k[0].isoformat(),
                 period_end=k[1].isoformat(),
                 provider=k[2],
+                dimension_value=k[2],
                 total_cost_usd=round(by_period[k]["total"], 2),
                 mapped_cost_usd=round(by_period[k]["mapped"], 2),
                 unmapped_cost_usd=round(by_period[k]["unmapped"], 2),
@@ -5232,19 +5450,91 @@ async def get_cost_trend(
             )
             for k in sorted(sorted_keys, key=lambda k: k[0])
         ]
+    else:
+        records = (
+            db.query(ImportedCostRecord)
+            .filter(ImportedCostRecord.organization_id == org_id)
+            .all()
+        )
+        if not records:
+            return CostTrendResponse(
+                organization_id=org_id,
+                period_type=period_type,
+                lookback_periods=lookback,
+                view_by=view_by,
+                data_source="empty",
+                points=[],
+                provider_totals={},
+                dimension_totals={},
+                grand_total_usd=0.0,
+            )
+
+        now = _utcnow()
+        buckets: Dict[tuple, Dict[str, Any]] = {}
+        for rec in records:
+            rec_provider = (rec.provider or "imported").lower()
+            if provider and rec_provider != provider.lower():
+                continue
+            anchor = rec.period_start or rec.created_at or now
+            pstart, pend = _compute_period_bucket(anchor, period_type)
+            dim_value = _trend_dimension_value(rec, view_by)
+            key = (pstart, pend, dim_value)
+            cost = float(rec.cost_usd or 0)
+            if key not in buckets:
+                buckets[key] = {
+                    "pend": pend,
+                    "total": 0.0,
+                    "mapped": 0.0,
+                    "unmapped": 0.0,
+                    "count": 0,
+                    "svcs": {},
+                    "providers": {},
+                }
+            b = buckets[key]
+            b["total"] += cost
+            b["unmapped"] += cost
+            b["count"] += 1
+            b["providers"][rec_provider] = b["providers"].get(rec_provider, 0.0) + cost
+            svc = rec.service_name or "unknown"
+            b["svcs"][svc] = b["svcs"].get(svc, 0.0) + cost
+
+        sorted_keys = sorted(buckets.keys(), key=lambda k: k[0], reverse=True)[:lookback]
+        for k in sorted(sorted_keys, key=lambda v: v[0]):
+            b = buckets[k]
+            providers = sorted((b.get("providers") or {}).items(), key=lambda item: item[1], reverse=True)
+            dominant_provider = providers[0][0] if providers else "imported"
+            provider_value = dominant_provider if len(providers) == 1 else "multi-cloud"
+            points.append(
+                CostTrendPoint(
+                    period_start=k[0].isoformat(),
+                    period_end=b["pend"].isoformat(),
+                    provider=provider_value,
+                    dimension_value=k[2],
+                    total_cost_usd=round(b["total"], 2),
+                    mapped_cost_usd=round(b["mapped"], 2),
+                    unmapped_cost_usd=round(b["unmapped"], 2),
+                    record_count=b["count"],
+                    service_breakdown={s: round(c, 2) for s, c in list(b["svcs"].items())[:10]},
+                )
+            )
 
     provider_totals: Dict[str, float] = {}
+    dimension_totals: Dict[str, float] = {}
     for p in points:
         provider_totals[p.provider] = round(provider_totals.get(p.provider, 0.0) + p.total_cost_usd, 2)
+        dim_key = p.dimension_value or p.provider
+        dimension_totals[dim_key] = round(dimension_totals.get(dim_key, 0.0) + p.total_cost_usd, 2)
 
     return CostTrendResponse(
         organization_id=org_id,
         period_type=period_type,
         lookback_periods=lookback,
+        view_by=view_by,
         data_source=data_source,
         points=points,
         provider_totals=provider_totals,
-        grand_total_usd=round(sum(provider_totals.values()), 2),
+        dimension_totals=dimension_totals,
+        grand_total_usd=round(sum(p.total_cost_usd for p in points), 2),
     )
 
 
@@ -5310,24 +5600,227 @@ async def download_chargeback_xlsx(
     )
 
 
+def _build_simple_pdf(title: str, lines: List[str]) -> bytes:
+    """Build a lightweight PDF document without external dependencies."""
+    safe_lines = [line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") for line in lines]
+    y_start = 780
+    line_height = 16
+    text_ops = ["BT", "/F1 12 Tf", f"72 {y_start} Td", f"({title}) Tj"]
+    for idx, line in enumerate(safe_lines[:42], start=1):
+        text_ops.append(f"0 -{line_height} Td")
+        text_ops.append(f"({line}) Tj")
+    text_ops.append("ET")
+    stream_text = "\n".join(text_ops)
+
+    objects: List[str] = []
+    objects.append("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj")
+    objects.append("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj")
+    objects.append("3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj")
+    objects.append("4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj")
+    objects.append(f"5 0 obj << /Length {len(stream_text.encode('utf-8'))} >> stream\n{stream_text}\nendstream endobj")
+
+    header = "%PDF-1.4\n"
+    body = ""
+    offsets = [0]
+    current = len(header.encode("utf-8"))
+    for obj in objects:
+        offsets.append(current)
+        encoded = (obj + "\n").encode("utf-8")
+        body += obj + "\n"
+        current += len(encoded)
+
+    xref_start = current
+    xref = [f"xref\n0 {len(offsets)}\n", "0000000000 65535 f \n"]
+    for off in offsets[1:]:
+        xref.append(f"{off:010d} 00000 n \n")
+    trailer = (
+        f"trailer << /Size {len(offsets)} /Root 1 0 R >>\n"
+        f"startxref\n{xref_start}\n%%EOF\n"
+    )
+    pdf = header + body + "".join(xref) + trailer
+    return pdf.encode("utf-8")
+
+
+def _digest_lines(exec_rows: List[List[Any]], frequency: str) -> List[str]:
+    kv = {f"{r[0]}::{r[1]}": r[2] for r in exec_rows[1:] if len(r) >= 3}
+    return [
+        f"Frequency: {frequency}",
+        f"Generated At: {kv.get('Summary::Generated At', _utcnow().isoformat())}",
+        f"Total Monthly Cost USD: {kv.get('Summary::Total Monthly Cost USD', 0)}",
+        f"Potential Monthly Savings USD: {kv.get('Summary::Potential Monthly Savings USD', 0)}",
+        f"Risk Score: {kv.get('Summary::Risk Score', 0)}",
+        f"Maturity Score: {kv.get('Summary::Maturity Score', 0)}",
+        f"Spend At Risk USD: {kv.get('Summary::Spend At Risk USD', 0)}",
+        f"Optimization Capacity USD: {kv.get('Summary::Optimization Capacity USD', 0)}",
+        f"Open Alerts: {kv.get('Summary::Open Alerts', 0)}",
+    ]
+
+
 @router.get("/reports/executive-summary.xlsx")
+@router.get("/reports/finance-workbook.xlsx")
 async def download_executive_summary_xlsx(
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Download the executive summary as a proper XLSX workbook."""
+    """Download a finance-friendly multi-sheet workbook."""
     if not _OPENPYXL_AVAILABLE:
         raise HTTPException(status_code=501, detail="openpyxl is not installed on this server.")
+
+    org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
     exec_rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
-    xlsx_bytes = _build_xlsx_workbook([("Executive Summary", exec_rows)])
+
+    trend_provider = await get_cost_trend(
+        period_type="monthly",
+        lookback=6,
+        provider=None,
+        view_by="provider",
+        current_user=current_user,
+        membership=membership,
+        db=db,
+    )
+    trend_region = await get_cost_trend(
+        period_type="monthly",
+        lookback=6,
+        provider=None,
+        view_by="region",
+        current_user=current_user,
+        membership=membership,
+        db=db,
+    )
+
+    trend_header = ["period_start", "period_end", "dimension", "provider", "total_cost_usd", "record_count"]
+    provider_rows = [trend_header] + [
+        [p.period_start[:10], p.period_end[:10], p.dimension_value or p.provider, p.provider, p.total_cost_usd, p.record_count]
+        for p in trend_provider.points
+    ]
+    region_rows = [trend_header] + [
+        [p.period_start[:10], p.period_end[:10], p.dimension_value or p.provider, p.provider, p.total_cost_usd, p.record_count]
+        for p in trend_region.points
+    ]
+
+    chargeback_header, chargeback_data = _chargeback_csv_rows(org_id, customer_id, db)
+    chargeback_rows = [chargeback_header] + chargeback_data
+
+    xlsx_bytes = _build_xlsx_workbook([
+        ("Executive Summary", exec_rows),
+        ("Trend by Provider", provider_rows),
+        ("Trend by Region", region_rows),
+        ("Chargeback Detail", chargeback_rows),
+    ])
     return Response(
         content=xlsx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": f'attachment; filename="optiora-executive-summary-{_utcnow().strftime("%Y%m%d")}.xlsx"'
+            "Content-Disposition": f'attachment; filename="optiora-finance-workbook-{_utcnow().strftime("%Y%m%d")}.xlsx"'
         },
     )
+
+
+@router.get("/reports/executive-digest.pdf")
+async def download_executive_digest_pdf(
+    frequency: Literal["weekly", "monthly"] = "weekly",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    exec_rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
+    digest_lines = _digest_lines(exec_rows, frequency)
+    pdf_bytes = _build_simple_pdf(f"OptiOra {frequency.title()} Executive Digest", digest_lines)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="optiora-{frequency}-digest-{_utcnow().strftime("%Y%m%d")}.pdf"'
+        },
+    )
+
+
+@router.post("/reports/share-token", response_model=ReportShareTokenResponse)
+async def create_report_share_token(
+    payload: ReportShareTokenRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ReportShareTokenResponse:
+    _require_management_role(membership, "report sharing")
+    org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    expires_hours = max(1, min(payload.expires_in_hours, 24 * 90))
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+    token = _build_report_share_token(
+        {
+            "org_id": org_id,
+            "customer_id": customer_id,
+            "report_type": payload.report_type,
+            "report_format": payload.report_format,
+            "exp": int(expires_at.timestamp()),
+            "sub": current_user.id,
+        }
+    )
+    return ReportShareTokenResponse(
+        token=token,
+        expires_at=expires_at.isoformat(),
+        report_type=payload.report_type,
+        report_format=payload.report_format,
+    )
+
+
+@router.get("/reports/shared/{token}")
+async def read_shared_report(
+    token: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    payload = _parse_report_share_token(token)
+    org_id = int(payload.get("org_id"))
+    customer_id = str(payload.get("customer_id"))
+    report_type = str(payload.get("report_type"))
+    report_format = str(payload.get("report_format"))
+
+    membership_stub = SimpleNamespace(organization_id=org_id, role=UserRole.READONLY)
+    user_stub = SimpleNamespace(id=None)
+
+    if report_type == "executive_digest" and report_format == "pdf":
+        exec_rows = await _executive_summary_rows(current_user=user_stub, membership=membership_stub, db=db)
+        pdf_bytes = _build_simple_pdf("OptiOra Executive Digest", _digest_lines(exec_rows, "shared"))
+        return Response(content=pdf_bytes, media_type="application/pdf")
+
+    if report_type == "finance_workbook" and report_format == "xlsx":
+        exec_rows = await _executive_summary_rows(current_user=user_stub, membership=membership_stub, db=db)
+        trend_provider = await get_cost_trend(
+            period_type="monthly",
+            lookback=6,
+            provider=None,
+            view_by="provider",
+            current_user=user_stub,
+            membership=membership_stub,
+            db=db,
+        )
+        trend_rows = [["period_start", "period_end", "dimension", "provider", "total_cost_usd", "record_count"]] + [
+            [p.period_start[:10], p.period_end[:10], p.dimension_value or p.provider, p.provider, p.total_cost_usd, p.record_count]
+            for p in trend_provider.points
+        ]
+        header, data = _chargeback_csv_rows(org_id, customer_id, db)
+        xlsx_bytes = _build_xlsx_workbook([
+            ("Executive Summary", exec_rows),
+            ("Trend by Provider", trend_rows),
+            ("Chargeback Detail", [header] + data),
+        ])
+        return Response(
+            content=xlsx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    if report_type == "executive_summary" and report_format in {"json", "csv"}:
+        rows = await _executive_summary_rows(current_user=user_stub, membership=membership_stub, db=db)
+        if report_format == "csv":
+            return _csv_response("shared-executive-summary.csv", rows[0], rows[1:])
+        return Response(
+            content=json.dumps({"rows": rows}, default=str),
+            media_type="application/json",
+        )
+
+    raise HTTPException(status_code=400, detail="Unsupported shared report token payload")
 
 
 # ── End Epic 4 endpoints ──────────────────────────────────────────────────────

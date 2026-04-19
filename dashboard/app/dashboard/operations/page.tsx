@@ -18,10 +18,14 @@ import {
 import {
   acknowledgeAlert,
   createExportJob,
+  createReadOnlyReportShareToken,
   downloadAlertsCsv,
   downloadAuditLogsCsv,
+  downloadChargebackXlsx,
+  downloadExecutiveDigestPdf,
   downloadExecutiveSummaryCsv,
   downloadExecutiveSummaryExcel,
+  downloadExecutiveSummaryXlsx,
   downloadScanDiffCsv,
   downloadScanHistoryCsv,
   fetchAlerts,
@@ -161,7 +165,10 @@ export default function OperationsPage() {
   const [runningExportJobId, setRunningExportJobId] = useState<number | null>(null)
   const [newExportName, setNewExportName] = useState('Weekly Executive Export')
   const [newExportFrequency, setNewExportFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
-  const [newExportFormat, setNewExportFormat] = useState<'csv' | 'xls'>('csv')
+  const [newExportFormat, setNewExportFormat] = useState<'csv' | 'xls' | 'xlsx' | 'pdf'>('csv')
+  const [shareToken, setShareToken] = useState<string | null>(null)
+  const [creatingShareToken, setCreatingShareToken] = useState(false)
+  const [digestFrequency, setDigestFrequency] = useState<'weekly' | 'monthly'>('weekly')
 
   const connectedProviders = useMemo(
     () => state.credentials.filter((credential) => credential.is_valid),
@@ -711,7 +718,7 @@ export default function OperationsPage() {
         <Card className="rounded-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Finance Reports</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 className="rounded-lg"
@@ -728,15 +735,80 @@ export default function OperationsPage() {
               >
                 Executive Excel
               </Button>
+              <Button
+                variant="outline"
+                className="rounded-lg"
+                data-testid="executive-xlsx-export"
+                onClick={() => void downloadExecutiveSummaryXlsx()}
+              >
+                Finance Workbook
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-lg"
+                data-testid="chargeback-xlsx-export"
+                onClick={() => void downloadChargebackXlsx()}
+              >
+                Chargeback XLSX
+              </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+          <CardContent className="space-y-4 text-sm text-slate-600 dark:text-slate-400">
             <p>
               Export a finance-friendly executive summary with current spend, savings, hierarchy rollups, and recent alerts.
             </p>
             <p>
-              Use CSV for downstream tooling and Excel when sharing directly with finance or procurement teams.
+              Use CSV for downstream tooling, Excel/Finance Workbook for multi-sheet finance review, and Chargeback XLSX for cost allocation reporting.
             </p>
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <div className="mb-2 font-medium text-slate-900 dark:text-white">PDF Digest</div>
+              <div className="flex items-center gap-2">
+                <select
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  value={digestFrequency}
+                  onChange={(event) => setDigestFrequency(event.target.value as 'weekly' | 'monthly')}
+                  aria-label="Digest frequency"
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <Button
+                  variant="outline"
+                  className="rounded-lg"
+                  data-testid="pdf-digest-download"
+                  onClick={() => void downloadExecutiveDigestPdf(digestFrequency)}
+                >
+                  Download PDF
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <div className="mb-2 font-medium text-slate-900 dark:text-white">Share Report</div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="rounded-lg"
+                  data-testid="share-token-create"
+                  disabled={creatingShareToken}
+                  onClick={async () => {
+                    setCreatingShareToken(true)
+                    try {
+                      const resp = await createReadOnlyReportShareToken({ report_type: 'executive_summary', report_format: 'json', expires_in_hours: 72 })
+                      setShareToken(resp.token)
+                    } finally {
+                      setCreatingShareToken(false)
+                    }
+                  }}
+                >
+                  {creatingShareToken ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate Share Link'}
+                </Button>
+              </div>
+              {shareToken && (
+                <div className="mt-2 break-all rounded bg-slate-100 p-2 text-xs font-mono text-slate-700 dark:bg-slate-800 dark:text-slate-300" data-testid="share-token-url">
+                  {shareToken}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -767,11 +839,13 @@ export default function OperationsPage() {
                 <select
                   className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                   value={newExportFormat}
-                  onChange={(event) => setNewExportFormat(event.target.value as 'csv' | 'xls')}
+                  onChange={(event) => setNewExportFormat(event.target.value as 'csv' | 'xls' | 'xlsx' | 'pdf')}
                   aria-label="Export file format"
                 >
                   <option value="csv">CSV</option>
-                  <option value="xls">Excel</option>
+                  <option value="xls">Excel (XLS)</option>
+                  <option value="xlsx">Finance Workbook (XLSX)</option>
+                  <option value="pdf">PDF Digest</option>
                 </select>
                 <Button
                   className="rounded-lg"

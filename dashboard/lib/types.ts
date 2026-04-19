@@ -409,8 +409,8 @@ export interface ExportJob {
   organization_id: number
   customer_id: string
   name: string
-  report_type: 'executive_summary' | string
-  export_format: 'csv' | 'xls' | string
+  report_type: 'executive_summary' | 'executive_digest' | 'finance_workbook' | string
+  export_format: 'csv' | 'xls' | 'xlsx' | 'pdf' | string
   schedule_frequency: 'daily' | 'weekly' | 'monthly' | string
   is_active: boolean
   last_run_at?: string | null
@@ -494,6 +494,34 @@ export interface ImportedCostSummaryResponse {
   total_cost_usd: number
   providers: string[]
   last_imported_at?: string | null
+}
+
+export interface ImportPreviewIssue {
+  line_number: number
+  severity: 'error' | 'warning'
+  message: string
+}
+
+export interface ImportPreviewResponse {
+  organization_id: number
+  customer_id: string
+  filename: string
+  total_rows: number
+  accepted_rows: number
+  rejected_rows: number
+  total_cost_usd: number
+  detected_providers: string[]
+  header_columns: string[]
+  mapping_feedback: Record<string, unknown>
+  reconciliation_guidance: string[]
+  issues: ImportPreviewIssue[]
+}
+
+export interface ReportShareTokenResponse {
+  token: string
+  expires_at: string
+  report_type: string
+  report_format: string
 }
 
 export interface ProviderAccountInventoryItem {
@@ -623,6 +651,7 @@ export interface CostTrendPoint {
   period_start: string
   period_end: string
   provider: string
+  dimension_value?: string
   total_cost_usd: number
   mapped_cost_usd: number
   unmapped_cost_usd: number
@@ -636,9 +665,11 @@ export interface CostTrendResponse {
   organization_id: number
   period_type: string
   lookback_periods: number
+  view_by?: 'provider' | 'region' | 'service' | 'account' | string
   data_source: 'computed' | 'raw_records' | 'empty' | string
   points: CostTrendPoint[]
   provider_totals: Record<string, number>
+  dimension_totals?: Record<string, number>
   grand_total_usd: number
 }
 
