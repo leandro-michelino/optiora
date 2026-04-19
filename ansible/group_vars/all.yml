@@ -27,6 +27,18 @@ optiora_enable_tls: false
 optiora_health_retries: 12
 optiora_health_delay: 5
 
+# ── VM hardening defaults ──────────────────────────────────────────────────
+optiora_vm_hardening: true
+optiora_auto_security_updates: true
+optiora_enable_fail2ban: true
+optiora_configure_firewall: true
+optiora_ssh_port: 22
+# Keep direct dashboard/API ports reachable by default when nginx is disabled.
+optiora_firewall_expose_direct_services: true
+optiora_sysctl_vm_swappiness: 10
+optiora_limits_nofile_soft: 65535
+optiora_limits_nofile_hard: 131072
+
 # ── Extra block volume (optional) ──────────────────────────────────────────
 # Set optiora_data_device to the OS path of an attached block device to have
 # the playbook format it (ext4, idempotent), mount it, and use it as the

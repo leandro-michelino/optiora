@@ -63,3 +63,26 @@ The Ansible path deploys the public dashboard mode by default:
 - RBAC/auth left available only as optional hardening later
 
 Migrations are applied before the health checks so schema-changing releases come up cleanly.
+
+## VM Best-Practice Hardening
+
+The playbook now applies host-level hardening defaults suitable for production VMs:
+
+- automatic security updates (`unattended-upgrades` on Debian/Ubuntu, `dnf-automatic` on Oracle Linux/RHEL)
+- baseline firewall policy (SSH + web ports, or API/UI direct ports when nginx is disabled)
+- fail2ban on Debian/Ubuntu
+- kernel safety defaults (`tcp_syncookies`, reverse path filtering, swappiness)
+- elevated file descriptor limits for high-concurrency API/UI workloads
+- stricter systemd service confinement for API and dashboard
+
+These are controlled via `ansible/group_vars/all.yml`:
+
+- `optiora_vm_hardening`
+- `optiora_auto_security_updates`
+- `optiora_enable_fail2ban`
+- `optiora_configure_firewall`
+- `optiora_ssh_port`
+- `optiora_firewall_expose_direct_services`
+- `optiora_sysctl_vm_swappiness`
+- `optiora_limits_nofile_soft`
+- `optiora_limits_nofile_hard`

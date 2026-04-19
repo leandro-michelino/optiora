@@ -11,6 +11,16 @@ EnvironmentFile={{ optiora_app_dir }}/.env
 ExecStart=/usr/bin/npm run start -- --hostname 0.0.0.0 --port {{ optiora_dashboard_port }}
 Restart=always
 RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths={{ optiora_app_dir }} /var/log
+LimitNOFILE={{ optiora_limits_nofile_hard }}
 StandardOutput=append:/var/log/optiora-dashboard.log
 StandardError=append:/var/log/optiora-dashboard.log
 

@@ -3,6 +3,7 @@
     name:
       - build-essential
       - curl
+      - fail2ban
       - libffi-dev
       - libssl-dev
       - openssl
@@ -12,6 +13,8 @@
       - python3-pip
       - python3-venv
       - rsync
+      - ufw
+      - unattended-upgrades
       - wget
     update_cache: true
     state: present
@@ -37,6 +40,8 @@
   ansible.builtin.dnf:
     name:
       - curl
+      - dnf-automatic
+      - firewalld
       - gcc
       - gcc-c++
       - libffi-devel
@@ -69,6 +74,166 @@
     state: present
   when: ansible_os_family == "RedHat"
 
+- name: Enable unattended security upgrades on Debian/Ubuntu
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+  when:
+    - ansible_os_family == "Debian"
+    - optiora_vm_hardening | bool
+    - optiora_auto_security_updates | bool
+
+- name: Enable unattended-upgrades service on Debian/Ubuntu
+  ansible.builtin.systemd:
+    name: unattended-upgrades
+    enabled: true
+    state: started
+  when:
+    - ansible_os_family == "Debian"
+    - optiora_vm_hardening | bool
+    - optiora_auto_security_updates | bool
+
+- name: Configure dnf-automatic updates on Oracle Linux / RHEL
+  ansible.builtin.ini_file:
+    path: /etc/dnf/automatic.conf
+    section: commands
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    mode: "0644"
+  loop:
+    - { option: apply_updates, value: "yes" }
+    - { option: download_updates, value: "yes" }
+    - { option: upgrade_type, value: "security" }
+  when:
+    - ansible_os_family == "RedHat"
+    - optiora_vm_hardening | bool
+    - optiora_auto_security_updates | bool
+
+- name: Enable dnf-automatic timer on Oracle Linux / RHEL
+  ansible.builtin.systemd:
+    name: dnf-automatic.timer
+    enabled: true
+    state: started
+  when:
+    - ansible_os_family == "RedHat"
+    - optiora_vm_hardening | bool
+    - optiora_auto_security_updates | bool
+
+- name: Enable fail2ban service on Debian/Ubuntu
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: true
+    state: started
+  when:
+    - ansible_os_family == "Debian"
+    - optiora_vm_hardening | bool
+    - optiora_enable_fail2ban | bool
+
+- name: Configure kernel hardening and memory behavior
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: true
+  loop:
+    - { name: "net.ipv4.tcp_syncookies", value: "1" }
+    - { name: "net.ipv4.conf.all.rp_filter", value: "1" }
+    - { name: "net.ipv4.conf.default.rp_filter", value: "1" }
+    - { name: "vm.swappiness", value: "{{ optiora_sysctl_vm_swappiness }}" }
+  when: optiora_vm_hardening | bool
+
+- name: Set open file limits for host and app user
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/90-optiora.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      * soft nofile {{ optiora_limits_nofile_soft }}
+      * hard nofile {{ optiora_limits_nofile_hard }}
+      {{ optiora_app_user }} soft nofile {{ optiora_limits_nofile_soft }}
+      {{ optiora_app_user }} hard nofile {{ optiora_limits_nofile_hard }}
+  when: optiora_vm_hardening | bool
+
+- name: Configure UFW baseline policy on Debian/Ubuntu
+  ansible.builtin.shell: |
+    set -euo pipefail
+    ufw --force default deny incoming
+    ufw --force default allow outgoing
+    ufw --force allow {{ optiora_ssh_port }}/tcp
+    if [[ "{{ optiora_install_nginx | bool }}" == "True" ]]; then
+      ufw --force allow 80/tcp
+      ufw --force allow 443/tcp
+    elif [[ "{{ optiora_firewall_expose_direct_services | bool }}" == "True" ]]; then
+      ufw --force allow {{ optiora_api_port }}/tcp
+      ufw --force allow {{ optiora_dashboard_port }}/tcp
+    fi
+    ufw --force enable
+  args:
+    executable: /bin/bash
+  changed_when: false
+  when:
+    - ansible_os_family == "Debian"
+    - optiora_vm_hardening | bool
+    - optiora_configure_firewall | bool
+
+- name: Ensure firewalld is enabled on Oracle Linux / RHEL
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+  when:
+    - ansible_os_family == "RedHat"
+    - optiora_vm_hardening | bool
+    - optiora_configure_firewall | bool
+
+- name: Open SSH service in firewalld
+  ansible.posix.firewalld:
+    service: ssh
+    permanent: true
+    immediate: true
+    state: enabled
+  when:
+    - ansible_os_family == "RedHat"
+    - optiora_vm_hardening | bool
+    - optiora_configure_firewall | bool
+
+- name: Open HTTP/HTTPS in firewalld when nginx is enabled
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - http
+    - https
+  when:
+    - ansible_os_family == "RedHat"
+    - optiora_vm_hardening | bool
+    - optiora_configure_firewall | bool
+    - optiora_install_nginx | bool
+
+- name: Open direct API/dashboard ports in firewalld when nginx is disabled
+  ansible.posix.firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - "{{ optiora_api_port }}"
+    - "{{ optiora_dashboard_port }}"
+  when:
+    - ansible_os_family == "RedHat"
+    - optiora_vm_hardening | bool
+    - optiora_configure_firewall | bool
+    - not (optiora_install_nginx | bool)
+    - optiora_firewall_expose_direct_services | bool
+
 # ── Swap file \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 - name: Create swap file
   ansible.builtin.command:
@@ -84,14 +249,20 @@
     mode: "0600"
   when: optiora_swap_size | length > 0
 
+- name: Check existing swapfile signature
+  ansible.builtin.command:
+    cmd: blkid -o value -s TYPE /swapfile
+  register: optiora_swapfile_type
+  changed_when: false
+  failed_when: false
+  when: optiora_swap_size | length > 0
+
 - name: Format swap file
   ansible.builtin.command:
     cmd: mkswap /swapfile
-  args:
-    creates: /proc/swaps  # not ideal but prevents duplicate mkswap
-  register: mkswap_result
-  changed_when: "'Setting up swapspace' in mkswap_result.stdout"
-  when: optiora_swap_size | length > 0
+  when:
+    - optiora_swap_size | length > 0
+    - optiora_swapfile_type.stdout != "swap"
 
 - name: Enable swap file
   ansible.builtin.command:
