@@ -173,7 +173,8 @@ class VirtualTagRulesTest(unittest.TestCase):
     # ── Auth guard ────────────────────────────────────────────────────────────
 
     def test_12_unauthenticated_returns_401(self) -> None:
-        resp = self.client.get("/api/v1/virtual-tags/rules")
+        fresh = TestClient(app)
+        resp = fresh.get("/api/v1/virtual-tags/rules")
         self.assertEqual(resp.status_code, 401)
 
 

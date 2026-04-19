@@ -18,6 +18,22 @@ Release 1.0 FinOps features are fully implemented:
 
 Dashboard now has 17 pages across 3 nav sections — all routes verified in production build.
 
+## Validation Snapshot (19 Apr 2026)
+
+Local validation has been re-run end to end:
+
+- `python3 -m py_compile $(find ./finops_mcp -maxdepth 1 -name '*.py')` ✅
+- `.venv/bin/python -m unittest discover -s tests -v` ✅ (154 passed)
+- `cd dashboard && npm run type-check && npm run lint && npm run build` ✅
+- `DATABASE_URL=sqlite:////tmp/optiora_fresh_alembic.db .venv/bin/alembic upgrade head` ✅ (0001 → 0011)
+- `terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate` ✅
+- `bash -n deploy/deploy-oci.sh` ✅
+
+Notes:
+
+- Virtual Tag CRUD roundtrip is covered in automated API tests (`tests/test_virtual_tag_rules.py`) and currently passing.
+- A real-data path was validated through the UTF-8 billing CSV import flow used by tests (import → summary/cost APIs).
+
 ## Go-Live Exit Gate
 
 Before declaring an environment ready, all of the following should be done.

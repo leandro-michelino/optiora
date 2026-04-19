@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BarChart3, DollarSign, Download, Loader, RefreshCw, TrendingDown, Zap } from 'lucide-react'
 import { fetchUnitEconomicsCockpit, recordUnitEconomicsMetric, downloadFocusCsv } from '@/lib/api'
 import { UnitEconomicsCockpitResponse, UnitEconomicsMetricResult } from '@/lib/types'
@@ -28,7 +28,7 @@ export default function UnitEconomicsPage() {
   const [metricLoading, setMetricLoading] = useState(false)
   const [focusDownloading, setFocusDownloading] = useState(false)
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetchUnitEconomicsCockpit(provider)
@@ -38,9 +38,9 @@ export default function UnitEconomicsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [provider])
 
-  useEffect(() => { void load() }, [provider])
+  useEffect(() => { void load() }, [load])
 
   async function handleMetricSubmit(e: React.FormEvent) {
     e.preventDefault()

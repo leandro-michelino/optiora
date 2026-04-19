@@ -181,7 +181,8 @@ class RightsizingTest(unittest.TestCase):
     # ── Auth enforcement ──────────────────────────────────────────────────────
 
     def test_13_unauthenticated_rejected(self) -> None:
-        resp = self.client.get("/api/v1/recommendations/rightsizing")
+        fresh = TestClient(app)
+        resp = fresh.get("/api/v1/recommendations/rightsizing")
         self.assertIn(resp.status_code, (401, 403))
 
 

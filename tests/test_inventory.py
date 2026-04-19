@@ -149,7 +149,8 @@ class ResourceInventoryTest(unittest.TestCase):
     # ── Auth enforcement ──────────────────────────────────────────────────────
 
     def test_10_unauthenticated_rejected(self) -> None:
-        resp = self.client.get("/api/v1/inventory/resources")
+        fresh = TestClient(app)
+        resp = fresh.get("/api/v1/inventory/resources")
         self.assertIn(resp.status_code, (401, 403))
 
 

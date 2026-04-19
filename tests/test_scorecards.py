@@ -117,7 +117,8 @@ class ScorecardsTest(unittest.TestCase):
     # ── Auth enforcement ──────────────────────────────────────────────────────
 
     def test_06_unauthenticated_rejected(self) -> None:
-        resp = self.client.get("/api/v1/analytics/scorecards")
+        fresh = TestClient(app)
+        resp = fresh.get("/api/v1/analytics/scorecards")
         self.assertIn(resp.status_code, (401, 403))
 
 

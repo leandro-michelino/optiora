@@ -28,7 +28,7 @@ try:
 except ImportError:
     _OPENPYXL_AVAILABLE = False
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -6973,6 +6973,12 @@ async def get_rightsizing_recommendations(
         ]
         if provider != "all":
             recommendations_out = [r for r in recommendations_out if r.provider == provider]
+
+    # ── Apply min_savings filter (synthetic tier skips it internally) ─────────
+    if min_savings > 0:
+        recommendations_out = [
+            r for r in recommendations_out if r.monthly_savings_usd >= min_savings
+        ]
 
     # ── Sort by monthly savings desc, apply limit ────────────────────────────
     recommendations_out.sort(key=lambda r: r.monthly_savings_usd, reverse=True)

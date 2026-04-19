@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, MessageCircle, Loader, Download, Share2 } from 'lucide-react';
 import { fetchHybridAdvisor } from '@/lib/api';
 import { HybridAdvisorResponse } from '@/lib/types';
@@ -56,11 +56,7 @@ export default function CostAdvisorPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  useEffect(() => {
-    void loadHybrid('optimization_roadmap');
-  }, []);
-
-  const loadHybrid = async (type: NarrativeType) => {
+  const loadHybrid = useCallback(async (type: NarrativeType) => {
     setHybridLoading(true);
     setHybridError(null);
     setNarrativeType(type);
@@ -73,7 +69,11 @@ export default function CostAdvisorPage() {
     } finally {
       setHybridLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadHybrid('optimization_roadmap');
+  }, [loadHybrid]);
 
   const handleSendMessage = async () => {
     if (!input.trim()) return;

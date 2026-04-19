@@ -71,9 +71,8 @@ Current as of April 2026 — Release 1.0 feature-complete.
             │  business_mapping_rules│
             │  chargeback_entries   │
             │  virtual_tag_rules    │  ← migration 0011
-            │  credential_records   │  ← multi-provider cred store
+            │  credential_records   │  ← multi-provider cred store (0001)
             │  scanning_permissions │
-            │  scan_runs            │
             └──────────────────────┘
 ```
 
@@ -244,8 +243,8 @@ Secret management:
 Transport:
   CORS         — explicit methods/headers (no wildcard)
   CSV import   — 10 MB limit enforced, UTF-8 validated
-  Rate limits  — login / password-reset: 8 attempts / 900 s (process-local; use
-                 Redis for multi-replica deployments)
+  Rate limits  — login / password-reset: 8 attempts / 900 s (process-local;
+                 NOT safe for multi-replica — post-1.0: replace with Redis)
 
 Database:
   DATABASE_URL      → explicit override

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Filter, Loader, RefreshCw, Server } from 'lucide-react'
 import { fetchResourceInventory } from '@/lib/api'
 import { ResourceInventoryResponse, ResourceInventoryItem } from '@/lib/types'
@@ -59,7 +59,7 @@ export default function InventoryPage() {
   const [wasteOnly, setWasteOnly] = useState(false)
   const [regionFilter, setRegionFilter] = useState('')
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetchResourceInventory({
@@ -72,9 +72,9 @@ export default function InventoryPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [provider, regionFilter, wasteOnly])
 
-  useEffect(() => { void load() }, [provider, wasteOnly, regionFilter])
+  useEffect(() => { void load() }, [load])
 
   return (
     <div className="space-y-8">

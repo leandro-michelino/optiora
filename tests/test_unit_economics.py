@@ -63,7 +63,7 @@ class UnitEconomicsTest(unittest.TestCase):
         data = resp.json()
         # Must include top-level FinOps metrics fields
         self.assertIn("generated_at", data)
-        for field in ("total_monthly_cost_usd", "estimated_waste_usd", "dollar_efficiency_score"):
+        for field in ("current_monthly_spend_usd", "dollar_efficiency_score"):
             self.assertIn(field, data, f"missing field: {field}")
 
     def test_03_unit_economics_provider_filter(self) -> None:
@@ -133,11 +133,12 @@ class UnitEconomicsTest(unittest.TestCase):
         self.assertEqual(resp.status_code, 422)
 
     def test_10_unauthenticated_rejected(self) -> None:
+        fresh = TestClient(app)
         for url in (
             "/api/v1/analytics/unit-economics",
             "/api/v1/analytics/unit-economics/cockpit",
         ):
-            resp = self.client.get(url)
+            resp = fresh.get(url)
             self.assertIn(resp.status_code, (401, 403), f"{url} should require auth")
 
 

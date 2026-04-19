@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, CheckCircle, DollarSign, Loader, RefreshCw, Zap } from 'lucide-react'
 import { fetchRightsizingRecommendations } from '@/lib/api'
 import { RightsizingResponse, RightsizingRecommendation } from '@/lib/types'
@@ -118,16 +118,16 @@ export default function RightsizingPage() {
   const [actionFilter, setActionFilter] = useState('all')
   const [minSavings, setMinSavings] = useState(10)
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       setData(await fetchRightsizingRecommendations({ provider, min_savings: minSavings, limit: 100 }))
     } finally {
       setLoading(false)
     }
-  }
+  }, [provider, minSavings])
 
-  useEffect(() => { void load() }, [provider, minSavings])
+  useEffect(() => { void load() }, [load])
 
   const filtered = data?.recommendations.filter(r => actionFilter === 'all' || r.action === actionFilter) ?? []
 
