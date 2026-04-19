@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Loader, Upload, Download, Send } from 'lucide-react';
+import { Trash2, Loader, Upload, Download, Send, Eye, EyeOff } from 'lucide-react';
+import { useCloudVisibility } from '@/lib/cloud-visibility';
 import CredentialForm from '@/app/components/CredentialForm';
 import ScanningApproval from '@/app/components/ScanningApproval';
 import {
@@ -98,6 +99,7 @@ export default function SettingsPage() {
   const [exportJobMessage, setExportJobMessage] = useState<string | null>(null)
   const [exportJobError, setExportJobError] = useState<string | null>(null)
   const canManageCloudSettings = !authEnabled || ['owner', 'admin'].includes(organization?.role || '')
+  const { hiddenProviders, toggleProvider, isVisible } = useCloudVisibility()
 
   const loadCredentials = useCallback(async () => {
     if (authEnabled && !user) {
@@ -523,6 +525,18 @@ export default function SettingsPage() {
           <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-white">Connected Providers</h2>
           
           <div className="card space-y-3">
+            {hiddenProviders.length > 0 && (
+              <div className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                <span>{hiddenProviders.length} provider(s) hidden from dashboard</span>
+                <button
+                  type="button"
+                  onClick={() => hiddenProviders.forEach(p => toggleProvider(p))}
+                  className="ml-2 underline hover:no-underline"
+                >
+                  Show all
+                </button>
+              </div>
+            )}
             {loadingCredentials ? (
               <div className="flex items-center justify-center p-8">
                 <Loader className="w-5 h-5 animate-spin text-slate-400" />
@@ -535,24 +549,56 @@ export default function SettingsPage() {
               storedCredentials.map(cred => (
                 <div
                   key={cred.provider}
-                  className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-between hover:shadow-sm transition"
+                  className={`p-3 bg-white dark:bg-slate-800 rounded-lg border transition hover:shadow-sm ${
+                    isVisible(cred.provider)
+                      ? 'border-slate-200 dark:border-slate-700'
+                      : 'border-slate-200 dark:border-slate-700 opacity-60'
+                  }`}
                 >
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className={`w-2 h-2 rounded-full ${cred.is_valid ? 'bg-green-500' : 'bg-red-500'}`} />
-                    <div>
-                      <div className="font-medium text-sm text-slate-900 dark:text-white">{cred.provider.toUpperCase()}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {cred.is_valid ? '✓ Valid' : '✗ Invalid'}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${cred.is_valid ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm text-slate-900 dark:text-white">
+                          {cred.provider.toUpperCase()}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {cred.is_valid ? '✓ Valid' : '✗ Invalid'}
+                          {!isVisible(cred.provider) && (
+                            <span className="ml-2 text-amber-600 dark:text-amber-400">· hidden from dashboard</span>
+                          )}
+                        </div>
                       </div>
                     </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Visibility toggle */}
+                      <button
+                        type="button"
+                        onClick={() => toggleProvider(cred.provider)}
+                        title={isVisible(cred.provider) ? 'Hide from dashboard' : 'Show in dashboard'}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition"
+                      >
+                        {isVisible(cred.provider) ? (
+                          <><Eye className="w-3.5 h-3.5" /><span>Visible</span></>
+                        ) : (
+                          <><EyeOff className="w-3.5 h-3.5" /><span>Hidden</span></>
+                        )}
+                      </button>
+
+                      {/* Disconnect button */}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCredential(cred.provider)}
+                        disabled={!canManageCloudSettings}
+                        title="Disconnect cloud provider"
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Disconnect</span>
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => handleDeleteCredential(cred.provider)}
-                    disabled={!canManageCloudSettings}
-                    className="p-1 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
               ))
             )}

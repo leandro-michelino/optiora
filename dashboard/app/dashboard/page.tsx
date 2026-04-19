@@ -10,6 +10,8 @@ import {
   Cloud,
   DollarSign,
   Download,
+  Eye,
+  EyeOff,
   KeyRound,
   Layers3,
   Network,
@@ -42,6 +44,7 @@ import {
   fetchScanningPermission,
 } from '@/lib/api'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
+import { useCloudVisibility } from '@/lib/cloud-visibility'
 import {
   AllocationCoverageResponse,
   AnomalyResponse,
@@ -219,6 +222,7 @@ function exportCsv(state: DashboardState) {
 export default function DashboardPage() {
   const [state, setState] = useState<DashboardState>(initialState)
   const [loading, setLoading] = useState(true)
+  const { hiddenProviders, toggleProvider, isVisible } = useCloudVisibility()
 
   const connectedProviders = useMemo(
     () => state.credentials.filter((credential) => credential.is_valid),
@@ -226,10 +230,29 @@ export default function DashboardPage() {
   )
   const supportedProviders = state.info?.supported_providers || ['aws', 'azure', 'gcp', 'oci']
   const scanApproved = state.permission?.state === 'approved' || state.permission?.state === 'running'
-  const breakdownData = useMemo(() => makeBreakdownData(state.costs), [state.costs])
-  const trendData = useMemo(() => makeTrendData(state.costs), [state.costs])
-  const topRecommendation = state.recommendations[0]
-  const highestAnomaly = state.anomalies[0]
+  const breakdownData = useMemo(
+    () => makeBreakdownData(state.costs).filter((d) => isVisible(d.name)),
+    [state.costs, isVisible],
+  )
+  const trendData = useMemo(() => {
+    const raw = makeTrendData(state.costs)
+    if (hiddenProviders.length === 0) return raw
+    return raw.map((point) => {
+      const filtered = { ...point }
+      hiddenProviders.forEach((p) => { filtered[p] = 0 })
+      return filtered
+    })
+  }, [state.costs, hiddenProviders])
+  const visibleAnomalies = useMemo(
+    () => state.anomalies.filter((a) => isVisible(a.cloud)),
+    [state.anomalies, isVisible],
+  )
+  const visibleRecommendations = useMemo(
+    () => state.recommendations.filter((r) => isVisible(r.cloud)),
+    [state.recommendations, isVisible],
+  )
+  const topRecommendation = visibleRecommendations[0]
+  const highestAnomaly = visibleAnomalies[0]
   const efficiencyValue = state.efficiencyScore?.overall_score || 0
   const efficiencyColor = efficiencyValue >= 80 ? '#10b981' : efficiencyValue >= 65 ? '#f59e0b' : '#ef4444'
   const efficiencyRingStyle = {
@@ -347,6 +370,14 @@ export default function DashboardPage() {
             <Badge variant="outline" className="rounded-md">
               {connectedProviders.length}/{supportedProviders.length} providers connected
             </Badge>
+            {hiddenProviders.length > 0 && (
+              <Badge
+                variant="outline"
+                className="rounded-md border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200"
+              >
+                {hiddenProviders.map((p) => p.toUpperCase()).join(', ')} hidden
+              </Badge>
+            )}
           </div>
           <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">
             OptiOra Command Center
@@ -394,7 +425,7 @@ export default function DashboardPage() {
         <MetricCard
           icon={AlertCircle}
           label="Active Anomalies"
-          value={String(state.anomalies.length || costs?.anomalies || 0)}
+          value={String(visibleAnomalies.length || costs?.anomalies || 0)}
           color="bg-gradient-to-br from-rose-500 to-rose-600"
         />
         <MetricCard
@@ -603,6 +634,7 @@ export default function DashboardPage() {
                   <TableHead>Cost</TableHead>
                   <TableHead>Share</TableHead>
                   <TableHead>Credential</TableHead>
+                  <TableHead>Visibility</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -611,8 +643,9 @@ export default function DashboardPage() {
                   const percentage = costs?.breakdown?.[provider]?.percentage || 0
                   const credential = state.credentials.find((item) => item.provider === provider)
                   const connected = Boolean(credential?.is_valid)
+                  const visible = isVisible(provider)
                   return (
-                    <TableRow key={provider}>
+                    <TableRow key={provider} className={!visible ? 'opacity-50' : undefined}>
                       <TableCell className="font-semibold uppercase">{providerLabels[provider] || provider}</TableCell>
                       <TableCell>{formatCurrency(cost)}</TableCell>
                       <TableCell>
@@ -629,6 +662,20 @@ export default function DashboardPage() {
                         <Badge className={`rounded-md border ${statusClass(connected)}`}>
                           {connected ? 'Connected' : 'Missing'}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          type="button"
+                          onClick={() => toggleProvider(provider)}
+                          title={visible ? 'Hide from dashboard' : 'Show in dashboard'}
+                          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition"
+                        >
+                          {visible ? (
+                            <><Eye className="w-3.5 h-3.5" /><span>Visible</span></>
+                          ) : (
+                            <><EyeOff className="w-3.5 h-3.5" /><span>Hidden</span></>
+                          )}
+                        </button>
                       </TableCell>
                     </TableRow>
                   )
