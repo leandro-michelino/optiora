@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut, Activity, Building2 } from 'lucide-react'
+import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut, Activity, Building2, Award, Server, Box } from 'lucide-react'
 
 function DashboardLayoutContent({
   children,
@@ -26,6 +26,13 @@ function DashboardLayoutContent({
     { href: '/dashboard/ai-insights', label: 'AI Insights', icon: Brain },
     { href: '/dashboard/cost-advisor', label: 'Cost Advisor', icon: MessageCircle },
     { href: '/dashboard/forecasting', label: 'Forecasting', icon: TrendingUp },
+  ]
+
+  const finopsNavItems = [
+    { href: '/dashboard/unit-economics', label: 'Unit Economics', icon: TrendingUp },
+    { href: '/dashboard/scorecards', label: 'Scorecards', icon: Award },
+    { href: '/dashboard/inventory', label: 'Resource Inventory', icon: Server },
+    { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box },
   ]
 
   const otherNavItems = [
@@ -112,6 +119,36 @@ function DashboardLayoutContent({
                     <span className="text-sm">{item.label}</span>
                     {active && (
                       <div className="ml-auto w-1.5 h-1.5 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* FinOps Analytics Section */}
+          <div>
+            <p className="px-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+              FinOps Analytics
+            </p>
+            <div className="space-y-1">
+              {finopsNavItems.map((item) => {
+                const Icon = item.icon
+                const active = isActive(item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                      active
+                        ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 font-medium'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 flex-shrink-0 ${active ? 'text-emerald-600 dark:text-emerald-400' : ''}`} />
+                    <span className="text-sm">{item.label}</span>
+                    {active && (
+                      <div className="ml-auto w-1.5 h-1.5 bg-emerald-600 dark:bg-emerald-400 rounded-full"></div>
                     )}
                   </Link>
                 )

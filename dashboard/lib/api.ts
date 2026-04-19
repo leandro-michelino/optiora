@@ -36,6 +36,13 @@ import {
   ExportJobRun,
   CostTrendResponse,
   PeriodSummaryComputeResponse,
+  FocusExportResponse,
+  UnitEconomicsCockpitResponse,
+  UnitEconomicsMetricResult,
+  ScorecardsResponse,
+  ResourceInventoryResponse,
+  KubernetesClusterCostResponse,
+  KubernetesSummaryResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -570,4 +577,81 @@ export async function downloadChargebackXlsx(): Promise<void> {
 export async function downloadExecutiveSummaryXlsx(): Promise<void> {
   const blob = await requestBlob('/api/v1/reports/executive-summary.xlsx')
   saveBlob(blob, `optiora-executive-summary-${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
+// ── FOCUS Export ─────────────────────────────────────────────────────────────
+
+export async function downloadFocusCsv(cloudProvider = 'all'): Promise<void> {
+  const blob = await requestBlob(`/api/v1/exports/focus.csv${toQueryString({ cloud_provider: cloudProvider })}`)
+  saveBlob(blob, `optiora-focus-${new Date().toISOString().slice(0, 10)}.csv`)
+}
+
+export async function fetchFocusJson(cloudProvider = 'all'): Promise<FocusExportResponse> {
+  return requestJson<FocusExportResponse>(`/api/v1/exports/focus.json${toQueryString({ cloud_provider: cloudProvider })}`)
+}
+
+// ── Unit Economics Cockpit ────────────────────────────────────────────────────
+
+export async function fetchUnitEconomicsCockpit(cloudProvider = 'all'): Promise<UnitEconomicsCockpitResponse> {
+  return requestJson<UnitEconomicsCockpitResponse>(
+    `/api/v1/analytics/unit-economics/cockpit${toQueryString({ cloud_provider: cloudProvider })}`,
+  )
+}
+
+export async function recordUnitEconomicsMetric(payload: {
+  metric_name: string
+  metric_value: number
+  metric_unit?: string
+}): Promise<UnitEconomicsMetricResult> {
+  return requestJson<UnitEconomicsMetricResult>('/api/v1/analytics/unit-economics/metrics', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ── Scorecards ────────────────────────────────────────────────────────────────
+
+export async function fetchScorecards(): Promise<ScorecardsResponse> {
+  return requestJson<ScorecardsResponse>('/api/v1/analytics/scorecards')
+}
+
+// ── Resource Inventory ────────────────────────────────────────────────────────
+
+export async function fetchResourceInventory(params: {
+  provider?: string
+  region?: string
+  waste_only?: boolean
+  limit?: number
+  offset?: number
+} = {}): Promise<ResourceInventoryResponse> {
+  return requestJson<ResourceInventoryResponse>(
+    `/api/v1/inventory/resources${toQueryString({
+      provider: params.provider,
+      region: params.region,
+      waste_only: params.waste_only ? 'true' : undefined,
+      limit: params.limit,
+      offset: params.offset,
+    })}`,
+  )
+}
+
+// ── Kubernetes Cost Allocation ────────────────────────────────────────────────
+
+export async function fetchKubernetesSummary(): Promise<KubernetesSummaryResponse> {
+  return requestJson<KubernetesSummaryResponse>('/api/v1/analytics/kubernetes/summary')
+}
+
+export async function calculateKubernetesClusterCost(payload: {
+  cluster_name: string
+  provider: string
+  region: string
+  node_count: number
+  node_type: string
+  monthly_node_cost_usd: number
+  namespaces?: string[]
+}): Promise<KubernetesClusterCostResponse> {
+  return requestJson<KubernetesClusterCostResponse>('/api/v1/analytics/kubernetes/cluster-cost', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }

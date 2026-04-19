@@ -650,3 +650,143 @@ export interface PeriodSummaryComputeResponse {
   computed_at: string
 }
 
+// ---------------------------------------------------------------------------
+// FOCUS Export
+// ---------------------------------------------------------------------------
+
+export interface FocusExportResponse {
+  focus_version: string
+  generated_at: string
+  record_count: number
+  records: Record<string, unknown>[]
+}
+
+// ---------------------------------------------------------------------------
+// Unit Economics Cockpit
+// ---------------------------------------------------------------------------
+
+export interface UnitEconomicsProviderMetric {
+  provider: string
+  cost_usd: number
+  share_percent: number
+  estimated_waste_usd: number
+  efficiency_index: number
+}
+
+export interface UnitEconomicsCockpitResponse {
+  generated_at: string
+  cloud_provider: string
+  summary: {
+    total_monthly_cost_usd: number
+    estimated_waste_usd: number
+    identified_savings_usd: number
+    waste_to_spend_percent: number
+    dollar_efficiency_score: number
+  }
+  provider_metrics: UnitEconomicsProviderMetric[]
+  historical_monthly_spend: Array<{ month: string; cost_usd: number }>
+  business_metrics_hint: string
+}
+
+export interface UnitEconomicsMetricResult {
+  generated_at: string
+  metric_name: string
+  metric_unit: string
+  metric_value: number
+  total_monthly_cost_usd: number
+  cost_per_unit_usd: number | null
+  cost_per_unit_label: string
+  benchmark_note: string
+}
+
+// ---------------------------------------------------------------------------
+// Scorecards
+// ---------------------------------------------------------------------------
+
+export interface ScorecardDimension {
+  name: string
+  score: number
+  max_score: number
+  description: string
+}
+
+export interface ScorecardEntry {
+  team: string
+  total_score: number
+  grade: string
+  cost_usd: number
+  share_percent: number
+  dimensions: ScorecardDimension[]
+  trend: string
+}
+
+export interface ScorecardsResponse {
+  generated_at: string
+  organization_grade: string
+  organization_score: number
+  teams: ScorecardEntry[]
+}
+
+// ---------------------------------------------------------------------------
+// Resource Inventory
+// ---------------------------------------------------------------------------
+
+export interface ResourceInventoryItem {
+  resource_id: string
+  resource_name: string
+  resource_type: string
+  provider: string
+  region: string
+  account_id: string
+  cost_usd: number
+  waste_flag: boolean
+  waste_reason: string | null
+  tags: Record<string, string>
+}
+
+export interface ResourceInventoryResponse {
+  generated_at: string
+  total_resources: number
+  total_cost_usd: number
+  flagged_waste_count: number
+  items: ResourceInventoryItem[]
+}
+
+// ---------------------------------------------------------------------------
+// Kubernetes Cost Allocation
+// ---------------------------------------------------------------------------
+
+export interface KubernetesNamespaceCost {
+  namespace: string
+  estimated_cost_usd: number
+  share_percent: number
+  cpu_share_percent: number
+  memory_share_percent: number
+}
+
+export interface KubernetesClusterCostResponse {
+  generated_at: string
+  cluster_name: string
+  provider: string
+  region: string
+  node_count: number
+  node_type: string
+  total_cluster_cost_usd: number
+  cost_per_node_usd: number
+  namespace_breakdown: KubernetesNamespaceCost[]
+  efficiency_note: string
+  opencost_integration: string
+}
+
+export interface KubernetesSummaryResponse {
+  generated_at: string
+  kubernetes_enabled: boolean
+  clusters_configured: number
+  estimated_k8s_share_percent: number
+  estimated_k8s_cost_usd: number
+  total_cloud_cost_usd: number
+  setup_hint: string
+  opencost_docs: string
+}
+
+
