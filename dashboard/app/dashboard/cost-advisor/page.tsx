@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, MessageCircle, Loader, Download, Share2 } from 'lucide-react';
+import { fetchHybridAdvisor } from '@/lib/api';
+import { HybridAdvisorResponse } from '@/lib/types';
 
 interface Message {
   id: string;
@@ -13,6 +15,16 @@ interface Message {
 interface Suggestion {
   text: string;
   emoji: string;
+}
+
+type NarrativeType = 'waste_insights' | 'optimization_roadmap' | 'executive_narrative';
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  });
 }
 
 export default function CostAdvisorPage() {
@@ -27,6 +39,10 @@ export default function CostAdvisorPage() {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [hybrid, setHybrid] = useState<HybridAdvisorResponse | null>(null);
+  const [hybridLoading, setHybridLoading] = useState(false);
+  const [hybridError, setHybridError] = useState<string | null>(null);
+  const [narrativeType, setNarrativeType] = useState<NarrativeType>('optimization_roadmap');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const suggestions: Suggestion[] = [
@@ -39,6 +55,25 @@ export default function CostAdvisorPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    void loadHybrid('optimization_roadmap');
+  }, []);
+
+  const loadHybrid = async (type: NarrativeType) => {
+    setHybridLoading(true);
+    setHybridError(null);
+    setNarrativeType(type);
+    try {
+      const response = await fetchHybridAdvisor(type);
+      setHybrid(response);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Unable to load hybrid advisor data.';
+      setHybridError(detail);
+    } finally {
+      setHybridLoading(false);
+    }
+  };
 
   const handleSendMessage = async () => {
     if (!input.trim()) return;
@@ -110,8 +145,99 @@ export default function CostAdvisorPage() {
           Cloud Cost Advisor
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
-          Ask anything about your cloud costs. Powered by OCI GenAI in London South.
+          Hybrid mode is active: deterministic Cloud Advisor findings with GenAI narrative overlays.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Hybrid Advisor Brief</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Deterministic metrics are authoritative. GenAI is used for explanation and action sequencing.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void loadHybrid('waste_insights')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition ${narrativeType === 'waste_insights' ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'}`}
+            >
+              Waste Insights
+            </button>
+            <button
+              onClick={() => void loadHybrid('optimization_roadmap')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition ${narrativeType === 'optimization_roadmap' ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'}`}
+            >
+              30/60/90 Roadmap
+            </button>
+            <button
+              onClick={() => void loadHybrid('executive_narrative')}
+              className={`rounded-md px-3 py-2 text-sm font-medium transition ${narrativeType === 'executive_narrative' ? 'bg-blue-600 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'}`}
+            >
+              Executive Summary
+            </button>
+          </div>
+        </div>
+
+        {hybridLoading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+            <Loader className="h-4 w-4 animate-spin" />
+            Building hybrid advisor brief...
+          </div>
+        ) : hybridError ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+            {hybridError}
+          </div>
+        ) : hybrid ? (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
+                <p className="text-xs uppercase text-slate-500 dark:text-slate-400">Monthly Spend</p>
+                <p className="text-xl font-semibold text-slate-900 dark:text-white">
+                  {formatCurrency(hybrid.deterministic.analytics.current_monthly_spend_usd || 0)}
+                </p>
+              </div>
+              <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
+                <p className="text-xs uppercase text-slate-500 dark:text-slate-400">Waste Estimate</p>
+                <p className="text-xl font-semibold text-slate-900 dark:text-white">
+                  {formatCurrency(hybrid.deterministic.waste.total_estimated_waste_usd || 0)}
+                </p>
+              </div>
+              <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
+                <p className="text-xs uppercase text-slate-500 dark:text-slate-400">Efficiency Score</p>
+                <p className="text-xl font-semibold text-slate-900 dark:text-white">
+                  {hybrid.deterministic.efficiency.overall_score || 0} / 100
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                GenAI Narrative
+              </p>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">
+                {hybrid.advisory.narrative || hybrid.advisory.prompt}
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Top Deterministic Actions
+              </p>
+              <div className="space-y-2">
+                {hybrid.deterministic.recommendations.slice(0, 3).map((item, idx) => (
+                  <div key={`${item.id}-${idx}`} className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
+                    <p className="font-medium text-slate-900 dark:text-white">{item.title}</p>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{item.description}</p>
+                    <p className="mt-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                      Potential savings: {formatCurrency(item.savings_monthly_usd || 0)} / month
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Chat Container */}

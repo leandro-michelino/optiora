@@ -150,6 +150,34 @@ export interface CommitmentGapResponse {
   priority_provider: string | null
 }
 
+export interface HybridAdvisorResponse {
+  generated_at: string
+  cloud_provider: string
+  source_of_truth: 'deterministic'
+  deterministic: {
+    analytics: FinOpsAnalyticsResponse
+    waste: CloudWasteResponse
+    efficiency: EfficiencyScoreResponse
+    commitment_gap: CommitmentGapResponse
+    recommendations: Array<{
+      id: string
+      service: string
+      title: string
+      description: string
+      savings_monthly_usd: number
+      roi_percent: number
+      payback_months: number
+    }>
+  }
+  advisory: {
+    narrative_type: 'waste_insights' | 'optimization_roadmap' | 'executive_narrative'
+    narrative: string | null
+    prompt: string
+    genai_configured: boolean
+    fallback_mode: boolean
+  }
+}
+
 export interface StoredCredential {
   provider: string
   is_valid: boolean

@@ -3440,6 +3440,182 @@ class GenAIAnalyzeRequest(BaseModel):
     anomaly: Optional[Dict[str, Any]] = None
 
 
+class HybridAdvisorResponse(BaseModel):
+    generated_at: str
+    cloud_provider: str
+    deterministic: Dict[str, Any]
+    advisory: Dict[str, Any]
+    source_of_truth: Literal["deterministic"] = "deterministic"
+
+
+async def _deterministic_recommendations(
+    cloud_provider: str,
+    current_monthly_spend: float,
+    cost_breakdown: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Return deterministic recommendation rows mapped for advisor workflows."""
+    rec_result = _safe_json_load(
+        await recommendations.get_recommendations(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": current_monthly_spend,
+                "cost_breakdown": cost_breakdown,
+            }
+        ),
+        {},
+    )
+    rows = rec_result.get("recommendations", [])
+    mapped: List[Dict[str, Any]] = []
+    for row in rows:
+        mapped.append(
+            {
+                "id": row.get("id"),
+                "service": row.get("service", "unknown"),
+                "title": row.get("description", "Optimization recommendation"),
+                "description": row.get("description", ""),
+                "savings_monthly_usd": float(row.get("savings_annual_usd", 0) or 0) / 12,
+                "roi_percent": float(row.get("roi_percent", 0) or 0),
+                "payback_months": float(row.get("payback_months", 0) or 0),
+            }
+        )
+    return mapped
+
+
+@router.get("/advisor/hybrid", response_model=HybridAdvisorResponse)
+async def advisor_hybrid(
+    cloud_provider: str = "all",
+    narrative_type: Literal["waste_insights", "optimization_roadmap", "executive_narrative"] = "optimization_roadmap",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Hybrid advisor payload: deterministic findings + GenAI narrative.
+
+    Deterministic analytics and recommendation values remain authoritative.
+    GenAI output is advisory context layered on top.
+    """
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+
+    analytics_result = _safe_json_load(
+        await finops_analytics.get_analytics(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "anomalies": 0,
+                "monthly_savings": 0,
+            }
+        ),
+        {},
+    )
+
+    waste_result = _safe_json_load(
+        await finops_analytics.get_cloud_waste_analysis(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+
+    efficiency_result = _safe_json_load(
+        await finops_analytics.get_cost_efficiency_score(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "waste_rate_percent": analytics_result.get("unit_metrics", {}).get("estimated_waste_rate_percent", 18.0),
+                "anomaly_density_per_10k": analytics_result.get("unit_metrics", {}).get("anomaly_density_per_10k", 8.0),
+                "budget_utilization_percent": analytics_result.get("unit_metrics", {}).get("budget_utilization_percent", 85.0),
+            }
+        ),
+        {},
+    )
+
+    commitment_gap_result = _safe_json_load(
+        await finops_analytics.get_commitment_gap_analysis(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+
+    maturity_result = _safe_json_load(
+        await finops_analytics.get_maturity_assessment(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "anomalies": 0,
+                "history_coverage_months": 0,
+                "scheduler_enabled": False,
+                "auto_remediate": False,
+            }
+        ),
+        {},
+    )
+
+    recommendation_rows = await _deterministic_recommendations(
+        cloud_provider=cloud_provider,
+        current_monthly_spend=context["total_cost"],
+        cost_breakdown=context["breakdown"],
+    )
+    top_actions = sorted(
+        recommendation_rows,
+        key=lambda r: (r.get("savings_monthly_usd", 0), r.get("roi_percent", 0)),
+        reverse=True,
+    )[:5]
+
+    genai_context: Dict[str, Any] = {
+        "current_monthly_spend_usd": analytics_result.get("current_monthly_spend_usd", context["total_cost"]),
+        "mom_change_percent": analytics_result.get("mom_change_percent"),
+        "risk_score": analytics_result.get("risk_score", 0),
+        "maturity_level": maturity_result.get("maturity_level", "walk"),
+        "overall_score": efficiency_result.get("overall_score", 0),
+        "grade": efficiency_result.get("grade", "C"),
+        "improvement_focus": efficiency_result.get("improvement_focus", []),
+        "total_estimated_waste_usd": waste_result.get("total_estimated_waste_usd", 0),
+        "total_waste_rate_percent": waste_result.get("total_waste_rate_percent", 0),
+        "categories": waste_result.get("categories", []),
+        "quick_wins": waste_result.get("quick_wins", []),
+        "total_annual_opportunity_usd": commitment_gap_result.get("total_annual_opportunity_usd", 0),
+        "priority_provider": commitment_gap_result.get("priority_provider"),
+        "top_opportunities": top_actions,
+    }
+
+    narrative: Optional[str]
+    prompt: str
+    if narrative_type == "waste_insights":
+        narrative, prompt = genai_advisor.generate_waste_insights(genai_context)
+    elif narrative_type == "executive_narrative":
+        narrative, prompt = genai_advisor.generate_executive_narrative(genai_context)
+    else:
+        narrative, prompt = genai_advisor.generate_optimization_roadmap(genai_context)
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "cloud_provider": cloud_provider,
+        "deterministic": {
+            "analytics": analytics_result,
+            "waste": waste_result,
+            "efficiency": efficiency_result,
+            "commitment_gap": commitment_gap_result,
+            "recommendations": top_actions,
+        },
+        "advisory": {
+            "narrative_type": narrative_type,
+            "narrative": narrative,
+            "prompt": prompt,
+            "genai_configured": genai_advisor._is_configured(),
+            "fallback_mode": narrative is None,
+        },
+        "source_of_truth": "deterministic",
+    }
+
+
 @router.post("/genai/analyze")
 async def genai_analyze(
     request: GenAIAnalyzeRequest,
@@ -3606,6 +3782,7 @@ async def api_info() -> Dict[str, Any]:
             "efficiency_score": True,
             "commitment_gap_analysis": True,
             "genai_advisor": True,
+            "hybrid_advisor": True,
             "genai_waste_insights": True,
             "genai_optimization_roadmap": True,
             "genai_executive_narrative": True,

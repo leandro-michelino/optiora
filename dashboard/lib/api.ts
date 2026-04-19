@@ -26,6 +26,7 @@ import {
   CloudWasteResponse,
   EfficiencyScoreResponse,
   CommitmentGapResponse,
+  HybridAdvisorResponse,
   ImportedCostSummaryResponse,
   ImportedCostUploadResponse,
   ProviderDiagnostic,
@@ -241,6 +242,15 @@ export async function fetchEfficiencyScore(): Promise<EfficiencyScoreResponse> {
 export async function fetchCommitmentGap(): Promise<CommitmentGapResponse> {
   return requestJson<CommitmentGapResponse>(
     '/api/v1/analytics/commitment-gap',
+    {},
+  )
+}
+
+export async function fetchHybridAdvisor(
+  narrativeType: 'waste_insights' | 'optimization_roadmap' | 'executive_narrative' = 'optimization_roadmap',
+): Promise<HybridAdvisorResponse> {
+  return requestJson<HybridAdvisorResponse>(
+    `/api/v1/advisor/hybrid${toQueryString({ narrative_type: narrativeType })}`,
     {},
   )
 }
