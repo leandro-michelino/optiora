@@ -5584,23 +5584,23 @@ async def get_scorecards(
                 "trend": "stable",
             })
     else:
-        # Synthetic scorecard when no chargeback data exists yet
-        for synthetic_team in ["engineering", "data", "product", "infra"]:
-            score = {"engineering": 72.0, "data": 61.0, "product": 85.0, "infra": 54.0}[synthetic_team]
-            teams.append({
-                "team": synthetic_team,
-                "total_score": score,
-                "grade": _grade(score),
-                "cost_usd": 0.0,
-                "share_percent": 25.0,
-                "dimensions": [
-                    {"name": "Allocation Coverage", "score": score * 0.4, "max_score": 40, "description": "Configure business mapping rules to get real data"},
-                    {"name": "Waste Reduction", "score": score * 0.3, "max_score": 30, "description": "Run a scan to populate waste signals"},
-                    {"name": "Tagging Hygiene", "score": score * 0.2, "max_score": 20, "description": "Tag resources to improve hygiene score"},
-                    {"name": "Commitment Coverage", "score": score * 0.1, "max_score": 10, "description": "Add RIs/savings plans to improve"},
-                ],
-                "trend": "stable",
-            })
+        # No chargeback dimension data yet — return a single placeholder row so
+        # the frontend can distinguish "no data" from "score = 0".
+        teams.append({
+            "team": "(no data)",
+            "total_score": 0.0,
+            "grade": "N/A",
+            "cost_usd": 0.0,
+            "share_percent": 100.0,
+            "no_data": True,
+            "dimensions": [
+                {"name": "Allocation Coverage", "score": 0.0, "max_score": 40, "description": "Configure business mapping rules to start scoring"},
+                {"name": "Waste Reduction", "score": 0.0, "max_score": 30, "description": "Run a provider scan to populate waste signals"},
+                {"name": "Tagging Hygiene", "score": 0.0, "max_score": 20, "description": "Upload cost data or run a scan to score tagging hygiene"},
+                {"name": "Commitment Coverage", "score": 0.0, "max_score": 10, "description": "Add Reserved Instances or Savings Plans to improve coverage"},
+            ],
+            "trend": "unknown",
+        })
 
     org_score = round(sum(t["total_score"] for t in teams) / max(len(teams), 1), 1)
     return {
@@ -5660,7 +5660,8 @@ async def get_resource_inventory(
     if provider != "all":
         snapshots_q = snapshots_q.filter(ProviderAccount.provider == provider)
 
-    snapshots = snapshots_q.order_by(ProviderAccountSnapshot.snapshot_at.desc()).limit(500).all()
+    org_id = membership.organization_id
+    snapshots = snapshots_q.order_by(ProviderAccountSnapshot.captured_at.desc()).limit(500).all()
 
     items: List[Dict[str, Any]] = []
     seen: set = set()
@@ -5674,12 +5675,11 @@ async def get_resource_inventory(
             continue
         seen.add(key)
 
-        cost_data = _safe_json_load(snap.cost_breakdown_json or "{}", {})
-        total_snap = float(snap.total_cost_usd or 0.0)
-        waste_flag = total_snap > 0 and (snap.anomalies_count or 0) > 0
+        direct_cost = float(snap.direct_cost_usd or 0.0)
+        waste_flag = direct_cost > 0 and (snap.anomalies_count or 0) > 0
 
-        # region filter
-        snap_region = (cost_data.get("region") or acct.region or "global")
+        # region filter — ProviderAccount stores region in native_region
+        snap_region = acct.native_region or "global"
         if region and snap_region != region:
             continue
 
@@ -5690,7 +5690,7 @@ async def get_resource_inventory(
             "provider": acct.provider,
             "region": snap_region,
             "account_id": acct.account_identifier or "",
-            "cost_usd": round(total_snap, 2),
+            "cost_usd": round(direct_cost, 2),
             "waste_flag": waste_flag,
             "waste_reason": "Active anomalies detected" if waste_flag else None,
             "tags": {},
@@ -5699,7 +5699,7 @@ async def get_resource_inventory(
 
     # Supplement from imported cost records when no scan snapshots exist
     if not items:
-        imported_rows = _get_imported_cost_rows(db, customer_id)
+        imported_rows = _get_imported_cost_rows(db, org_id, customer_id)
         for row in imported_rows:
             prov = row.provider or "unknown"
             if provider != "all" and prov != provider:
@@ -6117,22 +6117,23 @@ async def preview_virtual_tags(
     items: List[Dict] = []
     snapshots = (
         db.query(ProviderAccountSnapshot)
-        .join(ProviderAccount, ProviderAccount.id == ProviderAccountSnapshot.account_id)
+        .join(ProviderAccount, ProviderAccount.id == ProviderAccountSnapshot.provider_account_id)
         .filter(ProviderAccount.organization_id == org_id)
         .order_by(ProviderAccountSnapshot.captured_at.desc())
         .limit(limit)
         .all()
     )
     for snap in snapshots:
+        acct = snap.provider_account
         items.append({
-            "resource_id": f"account:{snap.account_id}",
-            "resource_name": snap.account.account_name if snap.account else str(snap.account_id),
+            "resource_id": f"account:{snap.provider_account_id}",
+            "resource_name": acct.account_name if acct else str(snap.provider_account_id),
             "resource_type": "Cloud Account",
-            "provider": snap.account.provider if snap.account else "unknown",
-            "region": "",
+            "provider": acct.provider if acct else "unknown",
+            "region": acct.native_region if acct else "",
             "service": "",
-            "account_id": snap.account.account_identifier if snap.account else "",
-            "cost_usd": float(snap.total_cost_usd or 0),
+            "account_id": acct.account_identifier if acct else "",
+            "cost_usd": float(snap.direct_cost_usd or 0),
             "team": "",
             "environment": "",
         })
@@ -6147,12 +6148,12 @@ async def preview_virtual_tags(
         for rec in records:
             items.append({
                 "resource_id": f"imported:{rec.id}",
-                "resource_name": rec.resource_id or rec.service or "unknown",
-                "resource_type": rec.service or "Imported Service",
+                "resource_name": rec.account_name or rec.service_name or "unknown",
+                "resource_type": rec.service_name or "Imported Service",
                 "provider": rec.provider or "unknown",
                 "region": rec.region or "",
-                "service": rec.service or "",
-                "account_id": rec.account_id or "",
+                "service": rec.service_name or "",
+                "account_id": rec.account_identifier or "",
                 "cost_usd": float(rec.cost_usd or 0),
                 "team": "",
                 "environment": "",
@@ -6665,7 +6666,7 @@ def _rightsizing_from_imported_costs(
                 "region": rec.region or "global",
                 "total_cost": 0.0,
                 "services": [],
-                "resource_id": rec.resource_id or "",
+                "resource_id": rec.account_identifier or "",
             }
         groups[key]["total_cost"] += float(rec.cost_usd or 0)
         if rec.service_name:
