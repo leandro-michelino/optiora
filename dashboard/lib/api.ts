@@ -43,6 +43,11 @@ import {
   ResourceInventoryResponse,
   KubernetesClusterCostResponse,
   KubernetesSummaryResponse,
+  VirtualTagRulesResponse,
+  VirtualTagRuleOut,
+  VirtualTagRuleCreate,
+  VirtualTagPreviewResponse,
+  RightsizingResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -654,4 +659,48 @@ export async function calculateKubernetesClusterCost(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+// --- Virtual Tagging ---
+
+export function fetchVirtualTagRules(): Promise<VirtualTagRulesResponse> {
+  return requestJson<VirtualTagRulesResponse>('/api/v1/virtual-tags/rules')
+}
+
+export function createVirtualTagRule(payload: VirtualTagRuleCreate): Promise<VirtualTagRuleOut> {
+  return requestJson<VirtualTagRuleOut>('/api/v1/virtual-tags/rules', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateVirtualTagRule(id: number, payload: VirtualTagRuleCreate): Promise<VirtualTagRuleOut> {
+  return requestJson<VirtualTagRuleOut>(`/api/v1/virtual-tags/rules/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteVirtualTagRule(id: number): Promise<void> {
+  const url = backendUrl(`/api/v1/virtual-tags/rules/${id}`)
+  await authorizedFetch(url, { method: 'DELETE' })
+}
+
+export function previewVirtualTags(limit = 50): Promise<VirtualTagPreviewResponse> {
+  return requestJson<VirtualTagPreviewResponse>(`/api/v1/virtual-tags/preview?limit=${limit}`)
+}
+
+// --- Rightsizing ---
+
+export function fetchRightsizingRecommendations(params?: {
+  provider?: string
+  min_savings?: number
+  limit?: number
+}): Promise<RightsizingResponse> {
+  const q = new URLSearchParams()
+  if (params?.provider && params.provider !== 'all') q.set('provider', params.provider)
+  if (params?.min_savings !== undefined) q.set('min_savings', String(params.min_savings))
+  if (params?.limit !== undefined) q.set('limit', String(params.limit))
+  const qs = q.toString()
+  return requestJson<RightsizingResponse>(`/api/v1/recommendations/rightsizing${qs ? `?${qs}` : ''}`)
 }

@@ -770,6 +770,45 @@ class CostPeriodSummary(Base):
         )
 
 
+class VirtualTagRule(Base):
+    """Virtual tag rule — assigns a tag key/value to matching resources without touching the cloud.
+
+    Match conditions are all optional and AND-combined.  An empty rule matches every resource.
+    """
+
+    __tablename__ = "virtual_tag_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+
+    # The virtual tag being applied
+    tag_key = Column(String(255), nullable=False, index=True)
+    tag_value = Column(String(255), nullable=False)
+
+    # Match conditions (all optional, AND-combined)
+    match_provider = Column(String(50), nullable=True)                 # "aws" | "azure" | …
+    match_service = Column(String(255), nullable=True)                 # e.g. "AmazonEC2"
+    match_region = Column(String(100), nullable=True)                  # e.g. "us-east-1"
+    match_account_id = Column(String(255), nullable=True)              # cloud account identifier
+    match_resource_type = Column(String(255), nullable=True)           # e.g. "EC2 Instance"
+    match_resource_name_contains = Column(String(255), nullable=True)  # substring match on name
+    match_team = Column(String(255), nullable=True)                    # existing team dimension
+    match_environment = Column(String(255), nullable=True)             # existing env dimension
+
+    priority = Column(Integer, nullable=False, default=100)  # higher = applied first
+    is_active = Column(Boolean, default=True, nullable=False)
+    description = Column(String(512), nullable=True)
+
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self):
+        return (
+            f"<VirtualTagRule(org={self.organization_id}, "
+            f"{self.tag_key}={self.tag_value!r}, priority={self.priority})>"
+        )
+
 
 # Dependency
 def get_db():

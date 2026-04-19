@@ -789,4 +789,105 @@ export interface KubernetesSummaryResponse {
   opencost_docs: string
 }
 
+// ---------------------------------------------------------------------------
+// Virtual Tagging
+// ---------------------------------------------------------------------------
+
+export interface VirtualTagRuleOut {
+  id: number
+  tag_key: string
+  tag_value: string
+  match_provider: string | null
+  match_service: string | null
+  match_region: string | null
+  match_account_id: string | null
+  match_resource_type: string | null
+  match_resource_name_contains: string | null
+  match_team: string | null
+  match_environment: string | null
+  priority: number
+  is_active: boolean
+  description: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface VirtualTagRuleCreate {
+  tag_key: string
+  tag_value: string
+  match_provider?: string
+  match_service?: string
+  match_region?: string
+  match_account_id?: string
+  match_resource_type?: string
+  match_resource_name_contains?: string
+  match_team?: string
+  match_environment?: string
+  priority?: number
+  is_active?: boolean
+  description?: string
+}
+
+export interface VirtualTagRulesResponse {
+  organization_id: number
+  total: number
+  rules: VirtualTagRuleOut[]
+}
+
+export interface VirtualTagPreviewItem {
+  resource_id: string
+  resource_name: string
+  resource_type: string
+  provider: string
+  region: string
+  cost_usd: number
+  applied_tags: Record<string, string>
+  match_rule_ids: number[]
+}
+
+export interface VirtualTagPreviewResponse {
+  organization_id: number
+  generated_at: string
+  total_resources: number
+  tagged_resources: number
+  coverage_percent: number
+  preview: VirtualTagPreviewItem[]
+}
+
+// ---------------------------------------------------------------------------
+// Rightsizing
+// ---------------------------------------------------------------------------
+
+export interface RightsizingRecommendation {
+  resource_id: string
+  resource_name: string
+  resource_type: string
+  provider: string
+  region: string
+  account_id: string
+  current_size: string
+  recommended_size: string
+  current_monthly_cost_usd: number
+  projected_monthly_cost_usd: number
+  monthly_savings_usd: number
+  annual_savings_usd: number
+  cpu_utilization_avg_percent: number | null
+  memory_utilization_avg_percent: number | null
+  reason: string
+  confidence: 'high' | 'medium' | 'low'
+  effort: 'low' | 'medium' | 'high'
+  action: 'downsize' | 'terminate' | 'reserve' | 'modernize'
+}
+
+export interface RightsizingResponse {
+  generated_at: string
+  organization_id: number
+  data_source: string
+  total_resources_analyzed: number
+  rightsizable_count: number
+  total_monthly_savings_usd: number
+  total_annual_savings_usd: number
+  recommendations: RightsizingRecommendation[]
+}
+
 
