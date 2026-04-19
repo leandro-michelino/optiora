@@ -2196,6 +2196,13 @@ async def upload_cost_csv(
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Uploaded CSV file is empty.")
+    # Guard against excessively large uploads (10 MB)
+    _MAX_CSV_BYTES = 10 * 1024 * 1024
+    if len(raw) > _MAX_CSV_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV file too large ({len(raw):,} bytes). Maximum allowed size is 10 MB.",
+        )
 
     try:
         content = raw.decode("utf-8-sig")
@@ -3428,7 +3435,7 @@ async def analytics_unit_economics(
 
 
 class GenAIAnalyzeRequest(BaseModel):
-    analysis_type: Literal["spend", "anomaly", "optimization", "maturity", "budget_risk"] = "spend"
+    analysis_type: Literal["spend", "anomaly", "optimization", "maturity", "budget_risk", "waste_insights", "optimization_roadmap", "executive_narrative"] = "spend"
     context: Dict[str, Any] = Field(default_factory=dict)
     anomaly: Optional[Dict[str, Any]] = None
 
@@ -3466,6 +3473,12 @@ async def genai_analyze(
     elif request.analysis_type == "budget_risk":
         guardrails = ctx.get("budget_guardrails") or ctx
         narrative, prompt = genai_advisor.generate_budget_risk_alert(guardrails, ctx)
+    elif request.analysis_type == "waste_insights":
+        narrative, prompt = genai_advisor.generate_waste_insights(ctx)
+    elif request.analysis_type == "optimization_roadmap":
+        narrative, prompt = genai_advisor.generate_optimization_roadmap(ctx)
+    elif request.analysis_type == "executive_narrative":
+        narrative, prompt = genai_advisor.generate_executive_narrative(ctx)
 
     return {
         "analysis_type": request.analysis_type,
@@ -3474,6 +3487,84 @@ async def genai_analyze(
         "genai_configured": genai_advisor._is_configured(),
         "fallback_mode": narrative is None,
     }
+
+
+
+
+@router.get("/analytics/cloud-waste")
+async def analytics_cloud_waste(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Categorised cloud waste breakdown with remediation guidance."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_cloud_waste_analysis({
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+        }),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/efficiency-score")
+async def analytics_efficiency_score(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Composite FinOps efficiency score (0-100) across 6 weighted dimensions."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    analytics_result = _safe_json_load(
+        await finops_analytics.get_analytics({
+            "cloud_provider": cloud_provider,
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+            "anomalies": 0,
+            "monthly_savings": 0,
+        }),
+        {},
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_cost_efficiency_score({
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+            "waste_rate_percent": analytics_result.get("unit_metrics", {}).get("estimated_waste_rate_percent", 18.0),
+            "anomaly_density_per_10k": analytics_result.get("unit_metrics", {}).get("anomaly_density_per_10k", 8.0),
+            "budget_utilization_percent": analytics_result.get("unit_metrics", {}).get("budget_utilization_percent", 85.0),
+        }),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/commitment-gap")
+async def analytics_commitment_gap(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Per-provider commitment coverage gap with savings scenarios and breakeven."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_commitment_gap_analysis({
+            "current_monthly_spend": context["total_cost"],
+            "cost_breakdown": context["breakdown"],
+        }),
+        {},
+    )
+    result["cost_context"] = context
+    return result
 
 
 @router.get("/provider-diagnostics", response_model=List[ProviderDiagnostic])
@@ -3511,7 +3602,13 @@ async def api_info() -> Dict[str, Any]:
             "maturity_assessment": True,
             "unit_economics": True,
             "anomaly_scoring": True,
+            "cloud_waste_analysis": True,
+            "efficiency_score": True,
+            "commitment_gap_analysis": True,
             "genai_advisor": True,
+            "genai_waste_insights": True,
+            "genai_optimization_roadmap": True,
+            "genai_executive_narrative": True,
             "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,
             "audit_logging": True,

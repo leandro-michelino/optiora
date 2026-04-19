@@ -1080,6 +1080,330 @@ def build_unit_economics(params: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Public: Cloud Waste Analysis (idle, oversized, unattached, zombie)
+# ---------------------------------------------------------------------------
+
+# Waste category profiles: (waste_rate_floor, waste_rate_ceiling, effort)
+_WASTE_CATEGORIES: dict[str, dict[str, Any]] = {
+    "idle_resources": {
+        "description": "Resources running with <5% utilisation over the past 30 days",
+        "default_rate": 0.08,
+        "remediation": "Schedule shutdowns, implement auto-stop policies",
+        "effort": "low",
+        "typical_savings_range": (0.06, 0.12),
+    },
+    "oversized_instances": {
+        "description": "Instances where CPU/memory usage is consistently below 40%",
+        "default_rate": 0.06,
+        "remediation": "Rightsize to next smaller SKU; adopt Graviton/Ampere compute",
+        "effort": "medium",
+        "typical_savings_range": (0.04, 0.10),
+    },
+    "unattached_storage": {
+        "description": "Volumes, snapshots, and buckets with no recent access",
+        "default_rate": 0.04,
+        "remediation": "Delete unattached volumes; apply lifecycle rules to object storage",
+        "effort": "low",
+        "typical_savings_range": (0.02, 0.06),
+    },
+    "zombie_resources": {
+        "description": "Orphaned load balancers, elastic IPs, NAT gateways without traffic",
+        "default_rate": 0.03,
+        "remediation": "Audit and remove unused networking primitives via IaC drift detection",
+        "effort": "medium",
+        "typical_savings_range": (0.02, 0.05),
+    },
+    "dev_test_overrun": {
+        "description": "Non-production workloads running 24×7 when only needed during business hours",
+        "default_rate": 0.05,
+        "remediation": "Implement schedule-based shutdown for dev/test environments",
+        "effort": "low",
+        "typical_savings_range": (0.04, 0.08),
+    },
+    "data_transfer_tax": {
+        "description": "Cross-region and egress charges from suboptimal data placement",
+        "default_rate": 0.02,
+        "remediation": "Co-locate data producers and consumers; use CDN for cacheable payloads",
+        "effort": "high",
+        "typical_savings_range": (0.01, 0.04),
+    },
+}
+
+_PROVIDER_WASTE_MODIFIERS: dict[str, dict[str, float]] = {
+    "aws":   {"idle_resources": 1.10, "oversized_instances": 1.05, "data_transfer_tax": 1.20},
+    "azure": {"idle_resources": 0.95, "oversized_instances": 1.00, "dev_test_overrun": 1.10},
+    "gcp":   {"zombie_resources": 0.90, "data_transfer_tax": 0.95},
+    "oci":   {"idle_resources": 0.85, "unattached_storage": 0.90},
+}
+
+
+def build_cloud_waste_analysis(params: dict[str, Any]) -> dict[str, Any]:
+    """Categorise cloud waste into actionable buckets with savings estimates."""
+    cost_breakdown = params.get("cost_breakdown") or {}
+    providers = _provider_inputs(cost_breakdown)
+    current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values()))
+    if current_monthly <= 0:
+        current_monthly = sum(providers.values()) or 1.0
+
+    # Blend per-provider waste modifiers weighted by spend share
+    combined_modifiers: dict[str, float] = {cat: 1.0 for cat in _WASTE_CATEGORIES}
+    for provider, cost in providers.items():
+        weight = cost / max(current_monthly, 1)
+        for cat, modifier in _PROVIDER_WASTE_MODIFIERS.get(provider, {}).items():
+            combined_modifiers[cat] = combined_modifiers.get(cat, 1.0) + (modifier - 1.0) * weight
+
+    categories = []
+    total_waste_usd = 0.0
+    total_savings_potential_usd = 0.0
+
+    for cat_name, cat in _WASTE_CATEGORIES.items():
+        effective_rate = cat["default_rate"] * combined_modifiers.get(cat_name, 1.0)
+        waste_usd = round(current_monthly * effective_rate, 2)
+        low_savings = round(current_monthly * cat["typical_savings_range"][0], 2)
+        high_savings = round(current_monthly * cat["typical_savings_range"][1], 2)
+        total_waste_usd += waste_usd
+        total_savings_potential_usd += low_savings
+        effort_cost = {"low": 1, "medium": 2, "high": 4}[cat["effort"]]
+        priority_score = round(low_savings / max(effort_cost, 1), 2)
+
+        categories.append({
+            "category": cat_name,
+            "description": cat["description"],
+            "estimated_waste_usd": waste_usd,
+            "estimated_waste_rate_percent": round(effective_rate * 100, 1),
+            "savings_range_usd": {"low": low_savings, "high": high_savings},
+            "remediation": cat["remediation"],
+            "effort": cat["effort"],
+            "priority_score": priority_score,
+        })
+
+    categories.sort(key=lambda c: -c["priority_score"])
+    quick_wins = [c for c in categories if c["effort"] == "low"][:3]
+    total_waste_rate = round(total_waste_usd / max(current_monthly, 1) * 100, 1)
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "current_monthly_spend_usd": round(current_monthly, 2),
+        "total_estimated_waste_usd": round(total_waste_usd, 2),
+        "total_waste_rate_percent": total_waste_rate,
+        "total_savings_potential_usd": round(total_savings_potential_usd, 2),
+        "waste_grade": (
+            "A" if total_waste_rate < 8 else
+            "B" if total_waste_rate < 15 else
+            "C" if total_waste_rate < 22 else "D"
+        ),
+        "categories": categories,
+        "quick_wins": quick_wins,
+        "genai_context": {
+            "prompt": (
+                "Explain the cloud waste analysis to a finance stakeholder. Lead with total waste "
+                "cost and grade, describe the top 2 categories, and give next steps for quick wins. "
+                "Keep it under 150 words."
+            ),
+            "total_waste_usd": round(total_waste_usd, 2),
+            "top_categories": [c["category"] for c in categories[:3]],
+            "quick_wins": [c["category"] for c in quick_wins],
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public: Cost Efficiency Score (composite KPI)
+# ---------------------------------------------------------------------------
+
+def build_cost_efficiency_score(params: dict[str, Any]) -> dict[str, Any]:
+    """Composite FinOps efficiency score (0–100) across 6 weighted dimensions."""
+    cost_breakdown = params.get("cost_breakdown") or {}
+    providers = _provider_inputs(cost_breakdown)
+    current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values()))
+
+    # Commitment dimension
+    if providers and current_monthly > 0:
+        weighted_commitment = sum(
+            PROVIDER_PROFILES.get(p, PROVIDER_PROFILES["aws"])["commitment"] * (c / current_monthly)
+            for p, c in providers.items()
+        )
+    else:
+        weighted_commitment = 0.35
+    commitment_score = min(100.0, round(weighted_commitment / 0.70 * 100, 1))
+
+    # Waste dimension (default 18% if not supplied)
+    waste_rate = _safe_float(params.get("waste_rate_percent"), 18.0) / 100.0
+    waste_score = max(0.0, round((1.0 - waste_rate / 0.30) * 100, 1))
+
+    # Tagging dimension (default 55% coverage if not supplied)
+    tagging_pct = _safe_float(params.get("tagging_coverage_percent"), 55.0)
+    tagging_score = round(min(tagging_pct / 90.0, 1.0) * 100, 1)
+
+    # Anomaly control (default 8 anomalies per $10k)
+    anomaly_density = _safe_float(params.get("anomaly_density_per_10k"), 8.0)
+    anomaly_score = max(0.0, round((1.0 - anomaly_density / 20.0) * 100, 1))
+
+    # Budget adherence (85–100% = perfect score)
+    budget_utilization = _safe_float(params.get("budget_utilization_percent"), 85.0)
+    if 85.0 <= budget_utilization <= 100.0:
+        budget_score = 100.0
+    elif budget_utilization > 100.0:
+        budget_score = max(0.0, round(100.0 - (budget_utilization - 100.0) * 3.0, 1))
+    else:
+        budget_score = round(budget_utilization / 85.0 * 100.0, 1)
+
+    # Forecast accuracy (default 15% MAPE)
+    mape = _safe_float(params.get("forecast_mape_percent"), 15.0)
+    forecast_score = max(0.0, round((1.0 - mape / 40.0) * 100, 1))
+
+    dimension_scores: dict[str, dict[str, Any]] = {
+        "commitment_coverage": {"score": commitment_score, "weight": 0.25, "benchmark": 70.0, "current": round(weighted_commitment * 100, 1), "unit": "%"},
+        "waste_efficiency":    {"score": waste_score,      "weight": 0.25, "benchmark": 8.0,  "current": round(waste_rate * 100, 1), "unit": "% waste", "lower_is_better": True},
+        "tagging_coverage":    {"score": tagging_score,    "weight": 0.15, "benchmark": 90.0, "current": tagging_pct, "unit": "%"},
+        "anomaly_control":     {"score": anomaly_score,    "weight": 0.15, "benchmark": 2.0,  "current": anomaly_density, "unit": "/10k USD", "lower_is_better": True},
+        "budget_adherence":    {"score": budget_score,     "weight": 0.10, "benchmark": 95.0, "current": budget_utilization, "unit": "%"},
+        "forecast_accuracy":   {"score": forecast_score,   "weight": 0.10, "benchmark": 10.0, "current": mape, "unit": "% MAPE", "lower_is_better": True},
+    }
+
+    overall_score = round(
+        sum(d["score"] * d["weight"] for d in dimension_scores.values()), 1
+    )
+    grade = (
+        "A+" if overall_score >= 90 else
+        "A"  if overall_score >= 80 else
+        "B"  if overall_score >= 70 else
+        "C"  if overall_score >= 55 else "D"
+    )
+    sorted_dims = sorted(dimension_scores.items(), key=lambda x: x[1]["score"])
+    improvement_focus = [name for name, _ in sorted_dims[:3]]
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "overall_score": overall_score,
+        "grade": grade,
+        "dimensions": {
+            name: {k: v for k, v in d.items() if k != "weight"}
+            for name, d in dimension_scores.items()
+        },
+        "improvement_focus": improvement_focus,
+        "interpretation": (
+            f"Cloud cost efficiency graded {grade} ({overall_score}/100). "
+            + (
+                "Excellent — top-tier FinOps performance."
+                if overall_score >= 85 else
+                "Good progress — address the flagged dimensions to reach top tier."
+                if overall_score >= 70 else
+                "Room for improvement — prioritise waste reduction and commitment coverage."
+                if overall_score >= 55 else
+                "Significant optimisation opportunity — start with commitment coverage and waste."
+            )
+        ),
+        "genai_context": {
+            "prompt": (
+                "Explain the FinOps efficiency score to a CTO. Cover the grade, identify the two "
+                "biggest gaps, and recommend what to prioritise first for the most impact. Under 120 words."
+            ),
+            "overall_score": overall_score,
+            "grade": grade,
+            "weakest_dimensions": improvement_focus[:2],
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public: Commitment Gap Analysis
+# ---------------------------------------------------------------------------
+
+_COMMITMENT_TARGETS: dict[str, dict[str, Any]] = {
+    "aws":   {"target": 0.70, "instrument": "Savings Plans + Reserved Instances"},
+    "azure": {"target": 0.65, "instrument": "Reserved VM Instances + Savings Plans"},
+    "gcp":   {"target": 0.60, "instrument": "Committed Use Discounts"},
+    "oci":   {"target": 0.55, "instrument": "Universal Credits"},
+}
+
+
+def build_commitment_gap_analysis(params: dict[str, Any]) -> dict[str, Any]:
+    """Per-provider commitment coverage gap with savings scenarios and breakeven."""
+    cost_breakdown = params.get("cost_breakdown") or {}
+    providers = _provider_inputs(cost_breakdown)
+    current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values()))
+
+    provider_gaps = []
+    total_gap_savings_monthly = 0.0
+
+    for provider, cost in providers.items():
+        profile = PROVIDER_PROFILES.get(provider, PROVIDER_PROFILES["aws"])
+        rates = COMMITMENT_DISCOUNT_RATES.get(provider, {"1yr": 0.20, "3yr": 0.35})
+        target_meta = _COMMITMENT_TARGETS.get(provider, {"target": 0.60, "instrument": "Committed Use"})
+
+        current_coverage = profile["commitment"]
+        target_coverage = target_meta["target"]
+        gap = max(0.0, target_coverage - current_coverage)
+        committable_spend = cost * gap
+
+        rate_1yr = rates.get("1yr_partial", rates.get("1yr", 0.22))
+        savings_1yr_monthly = committable_spend * rate_1yr
+        upfront_1yr = committable_spend * 12 * rate_1yr * 0.30
+        breakeven_1yr = (
+            round(upfront_1yr / max(savings_1yr_monthly, 0.01), 1)
+            if savings_1yr_monthly > 0 else None
+        )
+
+        rate_3yr = rates.get("3yr_partial", rates.get("3yr", 0.38))
+        savings_3yr_monthly = committable_spend * rate_3yr
+        total_gap_savings_monthly += savings_1yr_monthly
+
+        provider_gaps.append({
+            "provider": provider,
+            "monthly_cost_usd": round(cost, 2),
+            "current_commitment_percent": round(current_coverage * 100, 1),
+            "target_commitment_percent": round(target_coverage * 100, 1),
+            "gap_percent": round(gap * 100, 1),
+            "committable_spend_usd": round(committable_spend, 2),
+            "commitment_instrument": target_meta["instrument"],
+            "scenarios": {
+                "1_year": {
+                    "discount_rate_percent": round(rate_1yr * 100, 1),
+                    "monthly_savings_usd": round(savings_1yr_monthly, 2),
+                    "annual_savings_usd": round(savings_1yr_monthly * 12, 2),
+                    "breakeven_months": breakeven_1yr,
+                },
+                "3_year": {
+                    "discount_rate_percent": round(rate_3yr * 100, 1),
+                    "monthly_savings_usd": round(savings_3yr_monthly, 2),
+                    "annual_savings_usd": round(savings_3yr_monthly * 12, 2),
+                },
+            },
+            "recommendation": (
+                f"Move {round(gap * 100):.0f}% of {provider.upper()} spend to 1-year commitments "
+                f"to save ~${savings_1yr_monthly:,.0f}/month."
+                if gap > 0.05 else
+                f"{provider.upper()} coverage is near target — maintain and review at renewal."
+            ),
+        })
+
+    provider_gaps.sort(key=lambda x: -x["scenarios"]["1_year"]["monthly_savings_usd"])
+    overall_coverage = round(
+        sum(p["current_commitment_percent"] for p in provider_gaps) / max(len(provider_gaps), 1), 1
+    )
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "total_monthly_spend_usd": round(current_monthly, 2),
+        "overall_current_commitment_percent": overall_coverage,
+        "total_gap_savings_monthly_usd": round(total_gap_savings_monthly, 2),
+        "total_annual_opportunity_usd": round(total_gap_savings_monthly * 12, 2),
+        "provider_gaps": provider_gaps,
+        "priority_provider": provider_gaps[0]["provider"] if provider_gaps else None,
+        "genai_context": {
+            "prompt": (
+                "Explain the commitment gap analysis to a VP of Engineering. Lead with annual savings "
+                "opportunity, name the top 1-2 providers, and describe the 1-year breakeven timeline. "
+                "Under 120 words."
+            ),
+            "annual_opportunity_usd": round(total_gap_savings_monthly * 12, 2),
+            "top_providers": [p["provider"] for p in provider_gaps[:2]],
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Async wrappers (called by api.py endpoints)
 # ---------------------------------------------------------------------------
 
@@ -1109,3 +1433,15 @@ async def get_anomaly_scores(params: dict[str, Any]) -> str:
 
 async def get_unit_economics(params: dict[str, Any]) -> str:
     return json.dumps(build_unit_economics(params))
+
+
+async def get_cloud_waste_analysis(params: dict[str, Any]) -> str:
+    return json.dumps(build_cloud_waste_analysis(params))
+
+
+async def get_cost_efficiency_score(params: dict[str, Any]) -> str:
+    return json.dumps(build_cost_efficiency_score(params))
+
+
+async def get_commitment_gap_analysis(params: dict[str, Any]) -> str:
+    return json.dumps(build_commitment_gap_analysis(params))

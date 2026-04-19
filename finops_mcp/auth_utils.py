@@ -11,7 +11,16 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 # Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+_SECRET_KEY_DEFAULT = "your-secret-key-change-in-production"
+SECRET_KEY = os.getenv("SECRET_KEY", _SECRET_KEY_DEFAULT)
+if SECRET_KEY == _SECRET_KEY_DEFAULT:
+    import warnings
+    warnings.warn(
+        "SECRET_KEY is set to the insecure default value. "
+        "Set the SECRET_KEY environment variable before deploying to production.",
+        UserWarning,
+        stacklevel=1,
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes
 REFRESH_TOKEN_EXPIRE_DAYS = 7  # 7 days

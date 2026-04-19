@@ -11,6 +11,7 @@ The dashboard is the main workspace for:
 - multi-cloud cost overview across AWS, Azure, GCP, and OCI
 - provider connection, CSV billing upload, and scan readiness checks
 - anomaly detection and optimization recommendations
+- deeper FinOps analytics surfaces (cloud waste categories, efficiency score, commitment gap opportunity) with animated KPI cards
 - deterministic forecasting with baseline/conservative/balanced/aggressive scenarios, p10/p50/p90 fan percentiles, budget guardrails, trend+smoothing blends, provider concentration (HHI), and breach-probability executive metrics
 - OCI GenAI-assisted cost advisor conversations, AI insights, and advisory workflows with London South (`uk-london-1`) as the primary OCI GenAI region
 
@@ -67,6 +68,7 @@ The dashboard is the main workspace for:
 - When auth is disabled, backend auth dependencies resolve to the seeded public workspace identity so dashboard APIs still work without login.
 - Raw cloud secrets are validated server-side but not persisted; only sanitized metadata is stored.
 - Workspace owners/admins can upload UTF-8 CSV billing data as an optional manual cost source. Native Excel import is intentionally not supported yet.
+- CSV import upload size is capped at 10 MB to protect backend memory and improve operational safety.
 - OptiOra prefers live provider APIs/runtime credentials when they are configured. Imported CSV data is used as a manual fallback when live runtime access is not available.
 - Provider diagnostics report missing cloud configuration without exposing secret values.
 - Dashboard overview pages mark partial or fallback data explicitly if backend data is unavailable.
@@ -107,7 +109,11 @@ The dashboard is the main workspace for:
 - `GET /api/v1/analytics/commitment-optimization` (RI/Savings Plan ROI at 50/65/80% tiers)
 - `GET /api/v1/analytics/maturity` (CRAWL/WALK/RUN/OPTIMIZE assessment, GenAI narrative)
 - `GET /api/v1/analytics/unit-economics` (cost-per-resource, waste-to-spend, dollar efficiency)
+- `GET /api/v1/analytics/cloud-waste` (waste category decomposition, remediation effort, quick wins)
+- `GET /api/v1/analytics/efficiency-score` (weighted 0-100 efficiency score with grade and weakest dimensions)
+- `GET /api/v1/analytics/commitment-gap` (per-provider commitment coverage gaps with 1-year/3-year scenarios)
 - `POST /api/v1/genai/analyze` (backend OCI GenAI narration: spend / anomaly / optimization / maturity / budget-risk)
+- `POST /api/v1/genai/analyze` also supports: `waste_insights`, `optimization_roadmap`, and `executive_narrative`
 - `GET /api/v1/provider-accounts/rollups` (hierarchy tree with rolled-up costs + top_regions)
 - `GET /api/v1/provider-accounts` (flat account inventory, filterable by provider)
 - `GET /api/v1/provider-accounts/{id}/region-breakdown` (per-region cost rows)

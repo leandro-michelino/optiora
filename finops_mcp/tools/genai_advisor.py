@@ -266,6 +266,130 @@ def generate_spend_narrative(context: dict[str, Any]) -> tuple[Optional[str], st
     return _sign_and_call(prompt), prompt
 
 
+def generate_waste_insights(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate actionable waste reduction insights from a cloud waste analysis.
+
+    ``context`` should include output from ``build_cloud_waste_analysis()`` or equivalent keys.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    monthly = context.get("current_monthly_spend_usd", 0)
+    total_waste = context.get("total_estimated_waste_usd", 0)
+    waste_rate = context.get("total_waste_rate_percent", 0)
+    grade = context.get("waste_grade", "C")
+    categories = context.get("categories", [])
+    quick_wins = context.get("quick_wins", [])
+
+    top_cats = "\n".join(
+        f"- {c['category'].replace('_', ' ').title()}: ${c['estimated_waste_usd']:,.0f}/month "
+        f"({c['estimated_waste_rate_percent']:.1f}% of spend, {c['effort']} effort to fix)"
+        for c in categories[:4]
+    )
+    wins_str = ", ".join(c["category"].replace("_", " ") for c in quick_wins) or "rightsize instances"
+
+    prompt = (
+        f"You are a FinOps advisor. Summarize the cloud waste analysis for a finance and engineering "
+        f"audience in 3-4 sentences. Be specific and give prioritised actions.\n\n"
+        f"Total monthly spend: ${monthly:,.0f}. "
+        f"Estimated waste: ${total_waste:,.0f}/month ({waste_rate:.1f}% of spend). "
+        f"Waste grade: {grade}.\n\n"
+        f"Top waste categories:\n{top_cats}\n\n"
+        f"Quick wins (low effort): {wins_str}.\n\n"
+        f"Explain the most critical waste drivers and what to fix first for maximum ROI. "
+        f"End with one specific, time-bound action the team should take this week."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_optimization_roadmap(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a 30/60/90-day cost optimisation roadmap using available analytics context.
+
+    ``context`` may contain keys from analytics, waste analysis, efficiency score, and commitment gap.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    monthly = context.get("current_monthly_spend_usd", 0)
+    maturity = context.get("maturity_level", "walk")
+    efficiency_score = context.get("overall_score", 0)
+    efficiency_grade = context.get("grade", "C")
+    total_waste = context.get("total_estimated_waste_usd", 0)
+    annual_commitment_gap = context.get("total_annual_opportunity_usd", 0)
+    improvement_focus = context.get("improvement_focus", [])
+    top_providers = context.get("priority_provider", "")
+
+    focus_str = ", ".join(improvement_focus[:3]) if improvement_focus else "commitment coverage, waste reduction"
+
+    prompt = (
+        f"You are a FinOps advisor creating a 30/60/90-day cloud cost optimisation roadmap. "
+        f"Structure your response as three phases (30-day, 60-day, 90-day) each with 2-3 specific "
+        f"actions and estimated savings impact. Be concrete, avoid generic advice.\n\n"
+        f"Current state:\n"
+        f"- Monthly cloud spend: ${monthly:,.0f}\n"
+        f"- FinOps maturity: {maturity.upper()}\n"
+        f"- Efficiency score: {efficiency_score}/100 (grade {efficiency_grade})\n"
+        f"- Estimated monthly waste: ${total_waste:,.0f}\n"
+        f"- Annual commitment gap opportunity: ${annual_commitment_gap:,.0f}\n"
+        f"- Priority dimensions to improve: {focus_str}\n"
+        f"- Top provider to focus on: {top_providers or 'AWS'}\n\n"
+        f"Build the roadmap so that quick wins land in the first 30 days and structural changes "
+        f"like commitment purchases land in 60-90 days."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_executive_narrative(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a board/CFO-level executive summary of cloud cost health.
+
+    Combines spend trend, efficiency score, waste analysis, and forecast into a
+    polished 4-paragraph executive narrative.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    monthly = context.get("current_monthly_spend_usd", 0)
+    annual_run_rate = monthly * 12
+    mom_change = context.get("mom_change_percent")
+    maturity = context.get("maturity_level", "walk")
+    efficiency_score = context.get("overall_score", 0)
+    efficiency_grade = context.get("grade", "C")
+    waste_usd = context.get("total_estimated_waste_usd", 0)
+    waste_rate = context.get("total_waste_rate_percent", 0)
+    annual_savings_opportunity = context.get("total_annual_opportunity_usd", waste_usd * 12)
+    risk_score = context.get("risk_score", 0)
+    p90_monthly = context.get("p90_monthly_usd", monthly * 1.15)
+    budget_usd = context.get("budget_monthly_usd", 0)
+
+    trend_str = f"{mom_change:+.1f}% month-over-month" if mom_change is not None else "stable"
+    budget_str = (
+        f"Current budget is ${budget_usd:,.0f}/month "
+        f"(utilisation: {monthly/budget_usd*100:.0f}%)."
+        if budget_usd > 0 else "No formal budget has been configured."
+    )
+
+    prompt = (
+        f"You are a senior FinOps advisor writing a board-level executive summary on cloud cost health. "
+        f"Write exactly 4 paragraphs: (1) overall cloud spend position, (2) efficiency and waste, "
+        f"(3) key risks and forecast outlook, (4) recommended executive actions. "
+        f"Use precise financial language. Do not alter numbers. Keep total length under 250 words.\n\n"
+        f"Data:\n"
+        f"- Monthly spend: ${monthly:,.0f} (annualised run rate: ${annual_run_rate:,.0f})\n"
+        f"- Spend trend: {trend_str}\n"
+        f"- FinOps maturity: {maturity.upper()}\n"
+        f"- Efficiency score: {efficiency_score}/100 (grade {efficiency_grade})\n"
+        f"- Estimated monthly waste: ${waste_usd:,.0f} ({waste_rate:.1f}% of spend)\n"
+        f"- Total annual savings opportunity: ${annual_savings_opportunity:,.0f}\n"
+        f"- Risk score: {risk_score}/100\n"
+        f"- P90 forecast scenario: ${p90_monthly:,.0f}/month\n"
+        f"- {budget_str}"
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
 def generate_anomaly_explanation(anomaly: dict[str, Any], context: dict[str, Any]) -> tuple[Optional[str], str]:
     """Generate a plain-language explanation for a specific cost anomaly."""
     service = anomaly.get("service", "unknown service")

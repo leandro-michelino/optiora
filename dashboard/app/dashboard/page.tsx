@@ -29,8 +29,11 @@ import {
   fetchApiHealth,
   fetchApiInfo,
   fetchChargeback,
+  fetchCloudWasteAnalytics,
+  fetchCommitmentGap,
   fetchCostsStrict,
   fetchCredentials,
+  fetchEfficiencyScore,
   fetchFinOpsAnalytics,
   fetchImportedCostSummary,
   fetchProviderAccountRollups,
@@ -45,7 +48,10 @@ import {
   ApiHealth,
   ApiInfo,
   ChargebackResponse,
+  CloudWasteResponse,
+  CommitmentGapResponse,
   CostResponse,
+  EfficiencyScoreResponse,
   FinOpsAnalyticsResponse,
   ImportedCostSummaryResponse,
   ProviderDiagnostic,
@@ -80,6 +86,9 @@ interface DashboardState {
   anomalies: AnomalyResponse[]
   recommendations: RecommendationResponse[]
   analytics: FinOpsAnalyticsResponse | null
+  cloudWaste: CloudWasteResponse | null
+  efficiencyScore: EfficiencyScoreResponse | null
+  commitmentGap: CommitmentGapResponse | null
   coverage: AllocationCoverageResponse | null
   chargeback: ChargebackResponse | null
   source: 'live' | 'partial' | 'fallback'
@@ -98,6 +107,9 @@ const initialState: DashboardState = {
   anomalies: [],
   recommendations: [],
   analytics: null,
+  cloudWaste: null,
+  efficiencyScore: null,
+  commitmentGap: null,
   coverage: null,
   chargeback: null,
   source: 'live',
@@ -137,7 +149,13 @@ function statusClass(ok: boolean): string {
 function makeTrendData(costs: CostResponse | null): CostTrendPoint[] {
   const breakdown = costs?.breakdown || {}
   const providers = ['aws', 'azure', 'gcp', 'oci']
-  const months = ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const ALL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const now = new Date()
+  // Show the trailing 6 months ending with the current month
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const idx = (now.getMonth() - 5 + i + 12) % 12
+    return ALL_MONTHS[idx]
+  })
   return months.map((month, index) => {
     const growth = 0.84 + index * 0.032
     const point: CostTrendPoint = { month }
@@ -212,6 +230,13 @@ export default function DashboardPage() {
   const trendData = useMemo(() => makeTrendData(state.costs), [state.costs])
   const topRecommendation = state.recommendations[0]
   const highestAnomaly = state.anomalies[0]
+  const efficiencyValue = state.efficiencyScore?.overall_score || 0
+  const efficiencyColor = efficiencyValue >= 80 ? '#10b981' : efficiencyValue >= 65 ? '#f59e0b' : '#ef4444'
+  const efficiencyRingStyle = {
+    background: `conic-gradient(${efficiencyColor} ${Math.max(0, Math.min(efficiencyValue, 100))}%, #e2e8f0 0)`,
+  }
+  const topWasteCategories = (state.cloudWaste?.categories || []).slice(0, 4)
+  const topCommitmentGap = state.commitmentGap?.provider_gaps?.[0]
   const accountRollupItems = state.accountRollup?.items.slice(0, 6) || []
   const accountRollupSourceLabel = state.accountRollup
     ? state.accountRollup.scan_id
@@ -230,7 +255,7 @@ export default function DashboardPage() {
 
   async function loadDashboard() {
     setLoading(true)
-    const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations, analytics, coverage, chargeback] =
+    const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations, analytics, cloudWaste, efficiencyScore, commitmentGap, coverage, chargeback] =
       await Promise.allSettled([
         fetchCostsStrict(),
         fetchApiHealth(),
@@ -243,6 +268,9 @@ export default function DashboardPage() {
         fetchAnomalies(),
         fetchRecommendations(),
         fetchFinOpsAnalytics(),
+        fetchCloudWasteAnalytics(),
+        fetchEfficiencyScore(),
+        fetchCommitmentGap(),
         fetchAllocationCoverage(),
         fetchChargeback('team'),
       ])
@@ -259,6 +287,9 @@ export default function DashboardPage() {
       anomalies: anomalies.status === 'fulfilled' ? anomalies.value.items : [],
       recommendations: recommendations.status === 'fulfilled' ? recommendations.value.items : [],
       analytics: analytics.status === 'fulfilled' ? analytics.value : null,
+      cloudWaste: cloudWaste.status === 'fulfilled' ? cloudWaste.value : null,
+      efficiencyScore: efficiencyScore.status === 'fulfilled' ? efficiencyScore.value : null,
+      commitmentGap: commitmentGap.status === 'fulfilled' ? commitmentGap.value : null,
       coverage: coverage.status === 'fulfilled' ? coverage.value : null,
       chargeback: chargeback.status === 'fulfilled' ? chargeback.value : null,
       source: health.status === 'fulfilled' && credentials.status === 'fulfilled' ? 'live' : 'partial',
@@ -393,6 +424,119 @@ export default function DashboardPage() {
           value={`${(state.analytics?.unit_metrics?.budget_utilization_percent || 0).toFixed(1)}%`}
           color="bg-gradient-to-br from-violet-500 to-violet-600"
         />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <Card className="rounded-lg border-slate-200 dark:border-slate-700">
+          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+            <CardTitle className="text-xl">Efficiency Score</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <div className="mx-auto flex w-full max-w-[220px] flex-col items-center gap-4">
+              <div
+                className="relative h-36 w-36 rounded-full p-2 transition-all duration-700"
+                style={efficiencyRingStyle}
+              >
+                <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-center dark:bg-slate-900">
+                  <div>
+                    <p className="text-3xl font-bold text-slate-900 dark:text-white">{efficiencyValue.toFixed(1)}</p>
+                    <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Grade {state.efficiencyScore?.grade || '—'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p className="text-center text-sm text-slate-600 dark:text-slate-400">
+                {state.efficiencyScore?.interpretation || 'Efficiency analytics unavailable.'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-lg xl:col-span-2 border-slate-200 dark:border-slate-700">
+          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+            <CardTitle className="text-xl">Cloud Waste Categories</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="rounded-md">
+                Waste grade: {state.cloudWaste?.waste_grade || '—'}
+              </Badge>
+              <Badge variant="outline" className="rounded-md">
+                {formatCurrency(state.cloudWaste?.total_estimated_waste_usd || 0)} / month
+              </Badge>
+              <Badge variant="outline" className="rounded-md">
+                {(state.cloudWaste?.total_waste_rate_percent || 0).toFixed(1)}% of spend
+              </Badge>
+            </div>
+            {topWasteCategories.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No waste category data available.</p>
+            ) : (
+              topWasteCategories.map((category) => {
+                const width = Math.min(category.estimated_waste_rate_percent * 3, 100)
+                return (
+                  <div key={category.category} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-900 dark:text-white">
+                        {category.category.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-400">
+                        {formatCurrency(category.estimated_waste_usd)}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                      <div
+                        className="h-2 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 transition-all duration-700"
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="rounded-lg border-slate-200 dark:border-slate-700">
+          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+            <CardTitle className="text-xl">Commitment Gap Opportunity</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-6">
+            <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+              {formatCurrency(state.commitmentGap?.total_annual_opportunity_usd || 0)}
+              <span className="ml-2 text-sm font-medium text-slate-500 dark:text-slate-400">annual opportunity</span>
+            </p>
+            {topCommitmentGap ? (
+              <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
+                <p className="text-sm text-slate-600 dark:text-slate-400">Top provider target</p>
+                <p className="text-base font-semibold text-slate-900 dark:text-white">
+                  {(providerLabels[topCommitmentGap.provider] || topCommitmentGap.provider).toUpperCase()} gap {topCommitmentGap.gap_percent.toFixed(1)}%
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  ~{formatCurrency(topCommitmentGap.scenarios['1_year'].monthly_savings_usd)} monthly savings
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No commitment gap data available.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-lg border-cyan-200 bg-gradient-to-br from-cyan-50 to-blue-50 dark:border-cyan-900 dark:from-cyan-950/30 dark:to-blue-950/20">
+          <CardHeader className="border-b border-cyan-200 dark:border-cyan-900">
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <Activity className="h-5 w-5 animate-pulse text-cyan-600" />
+              AI Insight Prompt
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">
+              {state.analytics?.genai_advice_prompt || 'Generate an executive summary from cloud waste and efficiency signals to prioritize the next 30-day optimization plan.'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Allocation Coverage Row */}

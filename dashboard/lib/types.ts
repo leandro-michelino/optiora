@@ -78,6 +78,78 @@ export interface ProviderDiagnostic {
 
 export type DataSourceState = 'live' | 'imported' | 'partial' | 'fallback'
 
+// ---------------------------------------------------------------------------
+// New analytics types (Epic 5)
+// ---------------------------------------------------------------------------
+
+export interface WasteCategory {
+  category: string
+  description: string
+  estimated_waste_usd: number
+  estimated_waste_rate_percent: number
+  savings_range_usd: { low: number; high: number }
+  remediation: string
+  effort: 'low' | 'medium' | 'high'
+  priority_score: number
+}
+
+export interface CloudWasteResponse {
+  generated_at: string
+  current_monthly_spend_usd: number
+  total_estimated_waste_usd: number
+  total_waste_rate_percent: number
+  total_savings_potential_usd: number
+  waste_grade: 'A' | 'B' | 'C' | 'D'
+  categories: WasteCategory[]
+  quick_wins: WasteCategory[]
+}
+
+export interface EfficiencyDimension {
+  score: number
+  benchmark: number
+  current: number
+  unit: string
+  lower_is_better?: boolean
+}
+
+export interface EfficiencyScoreResponse {
+  generated_at: string
+  overall_score: number
+  grade: 'A+' | 'A' | 'B' | 'C' | 'D'
+  dimensions: Record<string, EfficiencyDimension>
+  improvement_focus: string[]
+  interpretation: string
+}
+
+export interface CommitmentScenario {
+  discount_rate_percent: number
+  monthly_savings_usd: number
+  annual_savings_usd: number
+  breakeven_months?: number | null
+}
+
+export interface ProviderGap {
+  provider: string
+  monthly_cost_usd: number
+  current_commitment_percent: number
+  target_commitment_percent: number
+  gap_percent: number
+  committable_spend_usd: number
+  commitment_instrument: string
+  scenarios: { '1_year': CommitmentScenario; '3_year': CommitmentScenario }
+  recommendation: string
+}
+
+export interface CommitmentGapResponse {
+  generated_at: string
+  total_monthly_spend_usd: number
+  overall_current_commitment_percent: number
+  total_gap_savings_monthly_usd: number
+  total_annual_opportunity_usd: number
+  provider_gaps: ProviderGap[]
+  priority_provider: string | null
+}
+
 export interface StoredCredential {
   provider: string
   is_valid: boolean

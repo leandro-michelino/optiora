@@ -23,6 +23,9 @@ import {
   ScanStartResponse,
   ForecastResponse,
   FinOpsAnalyticsResponse,
+  CloudWasteResponse,
+  EfficiencyScoreResponse,
+  CommitmentGapResponse,
   ImportedCostSummaryResponse,
   ImportedCostUploadResponse,
   ProviderDiagnostic,
@@ -217,6 +220,27 @@ export async function fetchForecast(months = 12): Promise<ForecastResponse> {
 export async function fetchFinOpsAnalytics(): Promise<FinOpsAnalyticsResponse> {
   return requestJson<FinOpsAnalyticsResponse>(
     '/api/v1/analytics',
+    {},
+  )
+}
+
+export async function fetchCloudWasteAnalytics(): Promise<CloudWasteResponse> {
+  return requestJson<CloudWasteResponse>(
+    '/api/v1/analytics/cloud-waste',
+    {},
+  )
+}
+
+export async function fetchEfficiencyScore(): Promise<EfficiencyScoreResponse> {
+  return requestJson<EfficiencyScoreResponse>(
+    '/api/v1/analytics/efficiency-score',
+    {},
+  )
+}
+
+export async function fetchCommitmentGap(): Promise<CommitmentGapResponse> {
+  return requestJson<CommitmentGapResponse>(
+    '/api/v1/analytics/commitment-gap',
     {},
   )
 }
