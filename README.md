@@ -112,8 +112,7 @@ The dashboard is the main workspace for:
 - `GET /api/v1/analytics/cloud-waste` (waste category decomposition, remediation effort, quick wins)
 - `GET /api/v1/analytics/efficiency-score` (weighted 0-100 efficiency score with grade and weakest dimensions)
 - `GET /api/v1/analytics/commitment-gap` (per-provider commitment coverage gaps with 1-year/3-year scenarios)
-- `POST /api/v1/genai/analyze` (backend OCI GenAI narration: spend / anomaly / optimization / maturity / budget-risk)
-- `POST /api/v1/genai/analyze` also supports: `waste_insights`, `optimization_roadmap`, and `executive_narrative`
+- `POST /api/v1/genai/analyze` (backend OCI GenAI narration: `spend`, `anomaly`, `optimization`, `maturity`, `budget_risk`, `waste_insights`, `optimization_roadmap`, `executive_narrative`)
 - `GET /api/v1/provider-accounts/rollups` (hierarchy tree with rolled-up costs + top_regions)
 - `GET /api/v1/provider-accounts` (flat account inventory, filterable by provider)
 - `GET /api/v1/provider-accounts/{id}/region-breakdown` (per-region cost rows)
