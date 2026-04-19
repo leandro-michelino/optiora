@@ -6,3 +6,11 @@ all:
           ansible_host: 203.0.113.10
           ansible_user: opc
           ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+          # --- Optional: block volume for app + DB data ---
+          # Attach a block volume in OCI console first, then set this to the
+          # device path. The playbook will format (ext4), mount at optiora_app_dir,
+          # and persist the entry in /etc/fstab.
+          # optiora_data_device: /dev/oracleoci/oraclevdb
+          #
+          # --- Optional: swap file (recommended for < 4 GiB RAM instances) ---
+          # optiora_swap_size: "2G"

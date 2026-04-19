@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   Activity,
@@ -268,7 +268,7 @@ export default function DashboardPage() {
     pageName: 'Overview',
   })
 
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async () => {
     setLoading(true)
     const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations, analytics, cloudWaste, efficiencyScore, commitmentGap, coverage, chargeback] =
       await Promise.allSettled([
@@ -324,7 +324,7 @@ export default function DashboardPage() {
 
     setState(nextState)
     setLoading(false)
-  }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -336,7 +336,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [loadDashboard])
 
   useEffect(() => {
     let mounted = true
@@ -360,8 +360,22 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[420px] items-center justify-center text-slate-600 dark:text-slate-300">
-        Loading OptiOra workspace...
+      <div className="space-y-8 animate-pulse">
+        <div className="h-10 w-72 rounded-lg bg-slate-200 dark:bg-slate-700" />
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-28 rounded-xl bg-slate-200 dark:bg-slate-700" />
+          ))}
+        </div>
+        <div className="grid gap-6 md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-28 rounded-xl bg-slate-200 dark:bg-slate-700" />
+          ))}
+        </div>
+        <div className="grid gap-6 xl:grid-cols-3">
+          <div className="h-64 rounded-xl bg-slate-200 dark:bg-slate-700 xl:col-span-2" />
+          <div className="h-64 rounded-xl bg-slate-200 dark:bg-slate-700" />
+        </div>
       </div>
     )
   }
@@ -582,7 +596,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Allocation Coverage Row */}
+      {/* Allocation Coverage Row — always 4 cards */}
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={Tag}
@@ -590,15 +604,18 @@ export default function DashboardPage() {
           value={state.coverage ? `${state.coverage.coverage_percent.toFixed(1)}%` : '—'}
           color="bg-gradient-to-br from-violet-500 to-purple-600"
         />
-        {state.coverage && Object.entries(state.coverage.dimension_coverage).slice(0, 3).map(([dim, pct]) => (
-          <MetricCard
-            key={dim}
-            icon={Tag}
-            label={`${dim.charAt(0).toUpperCase() + dim.slice(1).replace('_', ' ')} Coverage`}
-            value={`${pct.toFixed(1)}%`}
-            color="bg-gradient-to-br from-slate-500 to-slate-600"
-          />
-        ))}
+        {(['team', 'env', 'project'] as const).map((dim) => {
+          const pct = state.coverage?.dimension_coverage[dim]
+          return (
+            <MetricCard
+              key={dim}
+              icon={Tag}
+              label={`${dim.charAt(0).toUpperCase() + dim.slice(1)} Coverage`}
+              value={pct !== undefined ? `${pct.toFixed(1)}%` : '—'}
+              color="bg-gradient-to-br from-slate-500 to-slate-600"
+            />
+          )
+        })}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -641,20 +658,6 @@ export default function DashboardPage() {
           title="Month-over-Month Cost"
           className="rounded-lg"
         />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-3">
-        <Card className="rounded-lg xl:col-span-1">
-          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Cloud className="h-5 w-5" />
-              Provider Mix
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <ServiceBreakdown data={breakdownData} />
-          </CardContent>
-        </Card>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -727,21 +730,34 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-lg">
-          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Server className="h-5 w-5" />
-              Deployment Posture
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-6">
-            {[
-              {
-                label: 'Terraform network baseline',
-                detail: 'VCN, subnet, routes, gateway, security list',
-                ok: true,
-                icon: Network,
-              },
+        <div className="flex flex-col gap-6">
+          <Card className="rounded-lg">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <Cloud className="h-5 w-5" />
+                Provider Mix
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <ServiceBreakdown data={breakdownData} />
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-lg">
+            <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <Server className="h-5 w-5" />
+                Deployment Posture
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-6">
+              {[
+                {
+                  label: 'Terraform network baseline',
+                  detail: 'VCN, subnet, routes, gateway, security list',
+                  ok: true,
+                  icon: Network,
+                },
               {
                 label: 'Ansible runtime provisioning',
                 detail: 'Packages, environment, systemd, health checks',
@@ -754,26 +770,27 @@ export default function DashboardPage() {
                 ok: connectedProviders.length > 0,
                 icon: KeyRound,
               },
-              {
-                label: 'Scan approval',
-                detail: state.permission?.state || 'Approval required',
-                ok: scanApproved,
-                icon: ShieldCheck,
-              },
-            ].map((item) => {
-              const Icon = item.icon
-              return (
-                <div key={item.label} className="flex gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                  <Icon className={item.ok ? 'mt-0.5 h-5 w-5 text-emerald-600' : 'mt-0.5 h-5 w-5 text-amber-600'} />
-                  <div>
-                    <p className="font-medium text-slate-900 dark:text-white">{item.label}</p>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">{item.detail}</p>
+                {
+                  label: 'Scan approval',
+                  detail: state.permission?.state || 'Approval required',
+                  ok: scanApproved,
+                  icon: ShieldCheck,
+                },
+              ].map((item) => {
+                const Icon = item.icon
+                return (
+                  <div key={item.label} className="flex gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                    <Icon className={item.ok ? 'mt-0.5 h-5 w-5 text-emerald-600' : 'mt-0.5 h-5 w-5 text-amber-600'} />
+                    <div>
+                      <p className="font-medium text-slate-900 dark:text-white">{item.label}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">{item.detail}</p>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
+                )
+              })}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Card className="rounded-lg">

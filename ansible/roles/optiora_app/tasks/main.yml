@@ -69,6 +69,100 @@
     state: present
   when: ansible_os_family == "RedHat"
 
+# ── Swap file \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+- name: Create swap file
+  ansible.builtin.command:
+    cmd: fallocate -l {{ optiora_swap_size }} /swapfile
+    creates: /swapfile
+  when: optiora_swap_size | length > 0
+
+- name: Set swap file permissions
+  ansible.builtin.file:
+    path: /swapfile
+    owner: root
+    group: root
+    mode: "0600"
+  when: optiora_swap_size | length > 0
+
+- name: Format swap file
+  ansible.builtin.command:
+    cmd: mkswap /swapfile
+  args:
+    creates: /proc/swaps  # not ideal but prevents duplicate mkswap
+  register: mkswap_result
+  changed_when: "'Setting up swapspace' in mkswap_result.stdout"
+  when: optiora_swap_size | length > 0
+
+- name: Enable swap file
+  ansible.builtin.command:
+    cmd: swapon /swapfile
+  register: swapon_result
+  failed_when: swapon_result.rc != 0 and 'already' not in (swapon_result.stderr | lower)
+  changed_when: swapon_result.rc == 0
+  when: optiora_swap_size | length > 0
+
+- name: Persist swap in /etc/fstab
+  ansible.builtin.mount:
+    path: none
+    src: /swapfile
+    fstype: swap
+    opts: sw
+    state: present
+  when: optiora_swap_size | length > 0
+
+# ── Extra block volume (attach, format, mount) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+- name: Wait for data block device to be present
+  ansible.builtin.wait_for:
+    path: "{{ optiora_data_device }}"
+    timeout: 60
+    msg: "Block device {{ optiora_data_device }} did not appear within 60 s. Ensure the volume is attached in OCI/cloud console first."
+  when: optiora_data_device | length > 0
+
+- name: Create ext4 filesystem on data device (idempotent)
+  community.general.filesystem:
+    fstype: "{{ optiora_data_fstype }}"
+    dev: "{{ optiora_data_device }}"
+    opts: "-L optiora-data -m 1"
+  when: optiora_data_device | length > 0
+
+- name: Create application mount point
+  ansible.builtin.file:
+    path: "{{ optiora_app_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: optiora_data_device | length > 0
+
+- name: Mount data volume at application directory
+  ansible.posix.mount:
+    path: "{{ optiora_app_dir }}"
+    src: "LABEL=optiora-data"
+    fstype: "{{ optiora_data_fstype }}"
+    opts: "defaults,noatime,nofail"
+    state: mounted
+  when: optiora_data_device | length > 0
+
+- name: Verify mounted data volume has adequate space (>= 20 GiB)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    avail=$(df -BG --output=avail "{{ optiora_app_dir }}" | tail -1 | tr -d 'G ')
+    if [ "$avail" -lt 20 ]; then
+      echo "WARNING: only ${avail} GiB available on {{ optiora_app_dir }}; at least 20 GiB recommended"
+    fi
+  args:
+    executable: /bin/bash
+  register: disk_space_check
+  changed_when: false
+  when: optiora_data_device | length > 0
+
+- name: Show disk space check result
+  ansible.builtin.debug:
+    msg: "{{ disk_space_check.stdout }}"
+  when:
+    - optiora_data_device | length > 0
+    - disk_space_check.stdout | length > 0
+
 - name: Create application user
   ansible.builtin.user:
     name: "{{ optiora_app_user }}"

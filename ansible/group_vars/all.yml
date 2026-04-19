@@ -26,3 +26,20 @@ optiora_enable_tls: false
 
 optiora_health_retries: 12
 optiora_health_delay: 5
+
+# ── Extra block volume (optional) ──────────────────────────────────────────
+# Set optiora_data_device to the OS path of an attached block device to have
+# the playbook format it (ext4, idempotent), mount it, and use it as the
+# backing store for the application directory and database.
+# Leave blank to skip all disk-provisioning tasks.
+# Examples:
+#   OCI block volume:  /dev/oracleoci/oraclevdb
+#   Generic Linux:     /dev/sdb
+optiora_data_device: ""
+optiora_data_fstype: ext4
+
+# ── Swap file ───────────────────────────────────────────────────────────────
+# Set to a fallocate-compatible size string to create a swap file.
+# Recommended for instances with < 4 GiB RAM (build steps are memory-heavy).
+# Set to "" to skip.
+optiora_swap_size: "2G"
