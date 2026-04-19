@@ -231,6 +231,28 @@ def _weighted_provider_metrics(
     return wg, wv, wc, hhi
 
 
+def _seasonality_strength(history: list[float]) -> float:
+    if len(history) < 6:
+        return 0.0
+    avg = sum(history) / len(history)
+    if avg <= 0:
+        return 0.0
+    seasonal_delta = [abs((v / avg) - 1.0) for v in history]
+    return round(min(sum(seasonal_delta) / len(seasonal_delta), 1.0), 4)
+
+
+def _trend_regime(velocity_pct: float | None, acceleration_usd: float | None) -> str:
+    if velocity_pct is None:
+        return "unknown"
+    if velocity_pct > 6 and (acceleration_usd or 0.0) > 0:
+        return "accelerating-up"
+    if velocity_pct > 2:
+        return "up"
+    if velocity_pct < -4:
+        return "down"
+    return "flat"
+
+
 # ---------------------------------------------------------------------------
 # Public: Forecast
 # ---------------------------------------------------------------------------
@@ -284,6 +306,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     forecast = []
     baseline_total = conservative_total = balanced_total = aggressive_total = 0.0
     budget_breach_probability_sum = 0.0
+    cvar95_accumulator = 0.0
     simulations_per_month = 400
     seed_material = f"{current_monthly}-{weighted_growth}-{weighted_volatility}-{months}"
     samples = _deterministic_random_sequence(seed_material, simulations_per_month * months)
@@ -310,6 +333,8 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         p50 = _percentile(simulated_values, 0.50)
         p90 = _percentile(simulated_values, 0.90)
         p95 = _percentile(simulated_values, 0.95)
+        tail_values = [value for value in simulated_values if value >= p95]
+        cvar95 = sum(tail_values) / max(len(tail_values), 1)
 
         breach_probability = 0.0
         budget_flag = None
@@ -329,6 +354,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         balanced_total += balanced
         aggressive_total += aggressive
         budget_breach_probability_sum += breach_probability
+        cvar95_accumulator += cvar95
 
         forecast.append({
             "month": MONTHS[(_utcnow().month + month_index - 1) % 12],
@@ -342,6 +368,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
             "p50": round(p50, 2),
             "p90": round(p90, 2),
             "p95": round(p95, 2),
+            "cvar95": round(cvar95, 2),
             "budget_flag": budget_flag,
             "budget_breach_probability": round(breach_probability, 4),
         })
@@ -410,6 +437,24 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         for row in forecast
     ]
 
+    seasonality_strength = _seasonality_strength(history)
+    trend_regime = _trend_regime(velocity_pct, trend_acceleration)
+    downside_cvar95_monthly = round(cvar95_accumulator / max(months, 1), 2)
+    confidence_score = max(
+        20.0,
+        min(
+            98.0,
+            round(
+                85.0
+                - (weighted_volatility * 120)
+                - (provider_concentration * 18)
+                - (seasonality_strength * 20)
+                + (8.0 if backtesting and backtesting.get("wmape_percent") and backtesting.get("wmape_percent") <= 12 else 0.0),
+                1,
+            ),
+        ),
+    )
+
     return {
         "generated_at": _utcnow().isoformat(),
         "forecast_months": months,
@@ -424,6 +469,8 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
             "weighted_volatility": round(weighted_volatility, 4),
             "commitment_score": round(weighted_commitment, 4),
             "provider_concentration_hhi": round(provider_concentration, 4),
+            "seasonality_strength": seasonality_strength,
+            "trend_regime": trend_regime,
             "confidence_method": "residual_stddev_plus_provider_volatility",
         },
         "history": [
@@ -433,6 +480,19 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         "forecast": forecast,
         "fan_percentiles": fan,
         "budget_guardrails": budget_guardrails,
+        "downside_risk": {
+            "average_cvar95_monthly_usd": downside_cvar95_monthly,
+            "cvar95_excess_vs_baseline_usd": round(
+                max(downside_cvar95_monthly - ((baseline_total / max(months, 1)) if months > 0 else 0.0), 0.0),
+                2,
+            ),
+        },
+        "forecast_quality": {
+            "confidence_score": confidence_score,
+            "trend_regime": trend_regime,
+            "seasonality_strength": seasonality_strength,
+            "volatility_regime": "high" if weighted_volatility >= 0.14 else "medium" if weighted_volatility >= 0.10 else "low",
+        },
         "backtesting": backtesting,
         "forecast_summary": {
             "annualized_run_rate_usd": round((forecast[0]["baseline"] if forecast else 0.0) * 12, 2),
@@ -454,6 +514,114 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
             "trend_acceleration": trend_acceleration,
         },
         "scenarios": scenarios,
+    }
+
+
+def build_forecast_what_if(params: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic what-if simulation on top of the baseline forecast.
+
+    actions example:
+      [
+        {"name": "rightsizing", "start_month": 2, "savings_percent": 8.0, "one_time_cost_usd": 3000},
+        {"name": "commitments", "start_month": 3, "savings_percent": 6.0, "growth_delta_percent": -1.0},
+      ]
+    """
+    months = max(1, min(int(params.get("months", 12) or 12), 24))
+    baseline = build_forecast({
+        "months": months,
+        "cloud_provider": params.get("cloud_provider", "all"),
+        "current_monthly_spend": params.get("current_monthly_spend", 0.0),
+        "cost_breakdown": params.get("cost_breakdown", {}),
+        "historical_monthly_spend": params.get("historical_monthly_spend", []),
+        "budget_monthly": params.get("budget_monthly", 0.0),
+    })
+
+    baseline_rows = baseline.get("forecast", [])
+    actions = params.get("actions") or []
+    if not isinstance(actions, list):
+        actions = []
+
+    discount_rate_monthly = _safe_float(params.get("discount_rate_monthly"), 0.01)
+    simulation = []
+    baseline_total = 0.0
+    optimized_total = 0.0
+    cumulative_savings = 0.0
+    cumulative_implementation_cost = 0.0
+
+    for idx, row in enumerate(baseline_rows, start=1):
+        baseline_cost = _safe_float(row.get("baseline"), 0.0)
+        baseline_total += baseline_cost
+        scenario_cost = baseline_cost
+        action_impact = 0.0
+
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            start_month = max(1, int(_safe_float(action.get("start_month"), 1)))
+            if idx < start_month:
+                continue
+            savings_pct = max(0.0, min(_safe_float(action.get("savings_percent"), 0.0), 80.0)) / 100.0
+            growth_delta_pct = _safe_float(action.get("growth_delta_percent"), 0.0) / 100.0
+            months_active = idx - start_month + 1
+            compounded_effect = max((1.0 - savings_pct) * ((1.0 + growth_delta_pct) ** months_active), 0.2)
+            post_action = baseline_cost * compounded_effect
+            action_impact += max(scenario_cost - post_action, 0.0)
+            scenario_cost = min(scenario_cost, post_action)
+            if idx == start_month:
+                cumulative_implementation_cost += max(_safe_float(action.get("one_time_cost_usd"), 0.0), 0.0)
+
+        optimized_total += scenario_cost
+        month_savings = max(baseline_cost - scenario_cost, 0.0)
+        cumulative_savings += month_savings
+
+        pv_factor = (1.0 + discount_rate_monthly) ** idx
+        simulation.append({
+            "month": row.get("month", f"M{idx}"),
+            "baseline_usd": round(baseline_cost, 2),
+            "scenario_usd": round(scenario_cost, 2),
+            "monthly_savings_usd": round(month_savings, 2),
+            "discounted_savings_usd": round(month_savings / pv_factor, 2),
+            "action_impact_usd": round(action_impact, 2),
+        })
+
+    annualized_savings = (baseline_total - optimized_total)
+    net_savings = max(annualized_savings - cumulative_implementation_cost, 0.0)
+    roi = (
+        (net_savings / cumulative_implementation_cost) * 100
+        if cumulative_implementation_cost > 0 else None
+    )
+
+    payback_month = None
+    running = -cumulative_implementation_cost
+    for idx, row in enumerate(simulation, start=1):
+        running += _safe_float(row.get("monthly_savings_usd"), 0.0)
+        if running >= 0:
+            payback_month = idx
+            break
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "months": months,
+        "actions": actions,
+        "baseline_total_usd": round(baseline_total, 2),
+        "scenario_total_usd": round(optimized_total, 2),
+        "gross_savings_usd": round(annualized_savings, 2),
+        "implementation_cost_usd": round(cumulative_implementation_cost, 2),
+        "net_savings_usd": round(net_savings, 2),
+        "roi_percent": round(roi, 2) if roi is not None else None,
+        "payback_month": payback_month,
+        "timeline": simulation,
+        "baseline_forecast_quality": baseline.get("forecast_quality"),
+        "genai_context": {
+            "prompt": (
+                "Explain this what-if scenario to finance and engineering stakeholders. "
+                "Cover baseline vs scenario spend, total net savings, payback month, "
+                "and execution risk in plain language."
+            ),
+            "gross_savings_usd": round(annualized_savings, 2),
+            "net_savings_usd": round(net_savings, 2),
+            "payback_month": payback_month,
+        },
     }
 
 
@@ -1445,3 +1613,7 @@ async def get_cost_efficiency_score(params: dict[str, Any]) -> str:
 
 async def get_commitment_gap_analysis(params: dict[str, Any]) -> str:
     return json.dumps(build_commitment_gap_analysis(params))
+
+
+async def get_forecast_what_if(params: dict[str, Any]) -> str:
+    return json.dumps(build_forecast_what_if(params))

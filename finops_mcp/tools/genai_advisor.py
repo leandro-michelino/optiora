@@ -501,3 +501,44 @@ def generate_budget_risk_alert(guardrails: dict[str, Any], forecast_context: dic
     if not _is_configured():
         return None, prompt
     return _sign_and_call(prompt), prompt
+
+
+def generate_commitment_strategy(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a commitment purchasing strategy brief for finance/engineering planning."""
+    annual_opportunity = context.get("total_annual_opportunity_usd", 0)
+    monthly_spend = context.get("current_monthly_spend_usd", 0)
+    priority_provider = context.get("priority_provider", "aws")
+    provider_gaps = context.get("provider_gaps", [])
+
+    top_gaps = []
+    for row in provider_gaps[:3]:
+        provider = row.get("provider", "unknown")
+        current_cov = row.get("current_commitment_percent", 0)
+        target_cov = row.get("target_commitment_percent", 0)
+        monthly_savings = (
+            row.get("scenarios", {})
+            .get("1_year", {})
+            .get("monthly_savings_usd", 0)
+        )
+        top_gaps.append(
+            f"- {provider.upper()}: {current_cov:.1f}% -> {target_cov:.1f}% coverage, "
+            f"~${monthly_savings:,.0f}/month savings"
+        )
+
+    top_gap_text = "\n".join(top_gaps) if top_gaps else "- No provider gap data available"
+
+    prompt = (
+        "You are a FinOps advisor preparing a commitment strategy memo for a CFO and "
+        "platform engineering lead. Write 4-6 concise bullet points with a clear phased "
+        "purchase strategy and risk controls. Do not alter numeric values.\n\n"
+        f"Current monthly cloud spend: ${monthly_spend:,.0f}.\n"
+        f"Total annual commitment opportunity: ${annual_opportunity:,.0f}.\n"
+        f"Priority provider: {priority_provider.upper()}.\n"
+        f"Top provider gaps:\n{top_gap_text}\n\n"
+        "Include: (1) which provider to act on first, (2) recommended 1-year vs 3-year "
+        "mix, (3) guardrails for utilization and expiration risk, (4) one governance KPI."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt

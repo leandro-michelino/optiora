@@ -33,12 +33,14 @@ Current as of April 2026 — Release 1.0 feature-complete.
 │  Scanning + scheduler     /api/v1/scanning/*                                 │
 │  Core dashboard data      /api/v1/costs | anomalies | recommendations       │
 │  Forecasting              /api/v1/forecast                                   │
+│  Forecast simulations      /api/v1/forecast/what-if                           │
 │  Analytics family         /api/v1/analytics/*                                │
 │    base · attribution · commitment-optimization · maturity                   │
 │    unit-economics · cloud-waste · efficiency-score · commitment-gap          │
 │  FinOps Intelligence                                                         │
 │    Hybrid advisor         /api/v1/advisor/hybrid                             │
 │    GenAI narratives       /api/v1/genai/analyze                              │
+│    GenAI copilot pack     /api/v1/genai/copilot-pack                         │
 │    Resource inventory     /api/v1/inventory/resources                        │
 │    Kubernetes costs       /api/v1/analytics/kubernetes/cluster-cost          │
 │    Scorecards             /api/v1/analytics/scorecards                       │
@@ -93,8 +95,9 @@ Current as of April 2026 — Release 1.0 feature-complete.
   build_forecast()          build_analytics()         build_cloud_waste_analysis()
   - deterministic fan       - risk/maturity           build_cost_efficiency_score()
   - p10/p50/p90/p95         - spend-at-risk           build_commitment_gap_analysis()
-  - budget guardrails       - optimization cap        build_unit_economics()
-  - backtesting (MAPE)      - provider findings       build_scorecards()
+  - CVaR downside risk      - optimization cap        build_unit_economics()
+  - budget guardrails       - provider findings       build_forecast_what_if()
+  - backtesting (MAPE)      - action plan signals     build_scorecards()
          │                         │                          │
          └─────────────────────────┴──────────────────────────┘
                                    │ JSON
@@ -126,7 +129,14 @@ Path B: Backend narratives (server-side, async-capable)
       generate_waste_insights()
       generate_optimization_roadmap()
       generate_executive_narrative()
+      generate_commitment_strategy()
           consumed by GET /api/v1/genai/analyze
+
+Path C: Backend copilot bundle (single-call narrative package)
+  POST /api/v1/genai/copilot-pack
+      -> deterministic context assembly (analytics + forecast + commitment gap)
+      -> selected narrative generators in genai_advisor
+      -> narratives[] with fallback prompts when OCI GenAI is unavailable
 ```
 
 ## 4) Hybrid Advisor Orchestration

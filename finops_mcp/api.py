@@ -3545,6 +3545,61 @@ async def dashboard_forecast(
     return result
 
 
+class ForecastWhatIfAction(BaseModel):
+    name: str
+    start_month: int = Field(default=1, ge=1, le=24)
+    savings_percent: float = Field(default=0.0, ge=0.0, le=80.0)
+    growth_delta_percent: float = Field(default=0.0, ge=-30.0, le=30.0)
+    one_time_cost_usd: float = Field(default=0.0, ge=0.0)
+
+
+class ForecastWhatIfRequest(BaseModel):
+    months: int = Field(default=12, ge=1, le=24)
+    cloud_provider: str = "all"
+    actions: List[ForecastWhatIfAction] = Field(default_factory=list)
+    discount_rate_monthly: float = Field(default=0.01, ge=0.0, le=0.2)
+
+
+@router.post("/forecast/what-if")
+async def dashboard_forecast_what_if(
+    request: ForecastWhatIfRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Deterministic what-if simulation for planned optimization initiatives."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", request.cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=request.cloud_provider,
+        months=18,
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_forecast_what_if(
+            {
+                "months": request.months,
+                "cloud_provider": request.cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                "discount_rate_monthly": request.discount_rate_monthly,
+                "actions": [
+                    action.model_dump() if hasattr(action, "model_dump") else action.dict()
+                    for action in request.actions
+                ],
+            }
+        ),
+        {},
+    )
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/analytics")
 async def dashboard_analytics(
     cloud_provider: str = "all",
@@ -3709,9 +3764,23 @@ async def analytics_unit_economics(
 
 
 class GenAIAnalyzeRequest(BaseModel):
-    analysis_type: Literal["spend", "anomaly", "optimization", "maturity", "budget_risk", "waste_insights", "optimization_roadmap", "executive_narrative"] = "spend"
+    analysis_type: Literal["spend", "anomaly", "optimization", "maturity", "budget_risk", "waste_insights", "optimization_roadmap", "executive_narrative", "commitment_strategy"] = "spend"
     context: Dict[str, Any] = Field(default_factory=dict)
     anomaly: Optional[Dict[str, Any]] = None
+
+
+class GenAICopilotPackRequest(BaseModel):
+    cloud_provider: str = "all"
+    include: List[
+        Literal[
+            "spend",
+            "budget_risk",
+            "waste_insights",
+            "optimization_roadmap",
+            "executive_narrative",
+            "commitment_strategy",
+        ]
+    ] = Field(default_factory=lambda: ["spend", "optimization_roadmap", "executive_narrative"])
 
 
 class HybridAdvisorResponse(BaseModel):
@@ -3929,6 +3998,8 @@ async def genai_analyze(
         narrative, prompt = genai_advisor.generate_optimization_roadmap(ctx)
     elif request.analysis_type == "executive_narrative":
         narrative, prompt = genai_advisor.generate_executive_narrative(ctx)
+    elif request.analysis_type == "commitment_strategy":
+        narrative, prompt = genai_advisor.generate_commitment_strategy(ctx)
 
     return {
         "analysis_type": request.analysis_type,
@@ -3936,6 +4007,110 @@ async def genai_analyze(
         "prompt": prompt,
         "genai_configured": genai_advisor._is_configured(),
         "fallback_mode": narrative is None,
+    }
+
+
+@router.post("/genai/copilot-pack")
+async def genai_copilot_pack(
+    request: GenAICopilotPackRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return deterministic context plus multiple GenAI narratives in one call."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", request.cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+
+    analytics_result = _safe_json_load(
+        await finops_analytics.get_analytics(
+            {
+                "cloud_provider": request.cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "anomalies": 0,
+                "monthly_savings": 0,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            }
+        ),
+        {},
+    )
+
+    forecast_result = _safe_json_load(
+        await finops_analytics.get_forecast(
+            {
+                "months": 12,
+                "cloud_provider": request.cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            }
+        ),
+        {},
+    )
+
+    commitment_gap_result = _safe_json_load(
+        await finops_analytics.get_commitment_gap_analysis(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+
+    base_context = dict(analytics_result)
+    base_context.update(
+        {
+            "budget_monthly_usd": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            "budget_guardrails": forecast_result.get("budget_guardrails") or {},
+            "forecast_quality": forecast_result.get("forecast_quality") or {},
+            "p90_monthly_usd": (forecast_result.get("forecast") or [{}])[0].get("p90", context["total_cost"]),
+            "total_annual_opportunity_usd": commitment_gap_result.get("total_annual_opportunity_usd", 0),
+            "priority_provider": commitment_gap_result.get("priority_provider"),
+            "provider_gaps": commitment_gap_result.get("provider_gaps", []),
+        }
+    )
+
+    narratives: Dict[str, Dict[str, Any]] = {}
+    requested = request.include or []
+    for item in requested:
+        if item == "spend":
+            narrative, prompt = genai_advisor.generate_spend_narrative(base_context)
+        elif item == "budget_risk":
+            narrative, prompt = genai_advisor.generate_budget_risk_alert(
+                base_context.get("budget_guardrails", {}), base_context
+            )
+        elif item == "waste_insights":
+            narrative, prompt = genai_advisor.generate_waste_insights(base_context)
+        elif item == "optimization_roadmap":
+            narrative, prompt = genai_advisor.generate_optimization_roadmap(base_context)
+        elif item == "executive_narrative":
+            narrative, prompt = genai_advisor.generate_executive_narrative(base_context)
+        else:
+            narrative, prompt = genai_advisor.generate_commitment_strategy(base_context)
+
+        narratives[item] = {
+            "narrative": narrative,
+            "prompt": prompt,
+            "fallback_mode": narrative is None,
+        }
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "cloud_provider": request.cloud_provider,
+        "deterministic_context": {
+            "analytics": analytics_result,
+            "forecast": {
+                "forecast_quality": forecast_result.get("forecast_quality"),
+                "budget_guardrails": forecast_result.get("budget_guardrails"),
+                "downside_risk": forecast_result.get("downside_risk"),
+            },
+            "commitment_gap": commitment_gap_result,
+        },
+        "narratives": narratives,
+        "genai_configured": genai_advisor._is_configured(),
     }
 
 
@@ -4047,6 +4222,7 @@ async def api_info() -> Dict[str, Any]:
             "dashboard_endpoints": True,
             "finops_analytics": True,
             "forecasting": True,
+            "forecast_what_if": True,
             "cost_attribution": True,
             "commitment_optimization": True,
             "maturity_assessment": True,
@@ -4060,6 +4236,8 @@ async def api_info() -> Dict[str, Any]:
             "genai_waste_insights": True,
             "genai_optimization_roadmap": True,
             "genai_executive_narrative": True,
+            "genai_commitment_strategy": True,
+            "genai_copilot_pack": True,
             "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,
             "audit_logging": True,

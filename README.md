@@ -19,8 +19,10 @@ The dashboard is the main workspace for:
   - **Virtual Tags** — rule-based virtual tagging engine with dry-run coverage preview
   - **Resource-Level Rightsizing** — per-instance/volume savings with utilization signals
 - deeper FinOps analytics (cloud waste categories, efficiency score, commitment gap) with animated KPI cards
-- deterministic forecasting with baseline/conservative/balanced/aggressive scenarios, p10/p50/p90 fan percentiles, budget guardrails, trend+smoothing blends, provider concentration (HHI), and breach-probability executive metrics
+- deterministic forecasting with baseline/conservative/balanced/aggressive scenarios, p10/p50/p90 fan percentiles, CVaR downside risk, forecast quality scoring, budget guardrails, trend+smoothing blends, provider concentration (HHI), and breach-probability executive metrics
+- deterministic what-if forecasting (`POST /api/v1/forecast/what-if`) with phased optimization actions, ROI, and payback month
 - OCI GenAI-assisted cost advisor conversations, AI insights, and advisory workflows with London South (`uk-london-1`) as the primary OCI GenAI region
+- GenAI copilot packs (`POST /api/v1/genai/copilot-pack`) that produce multi-audience narratives from deterministic analytics context
 
 ## Repository Layout
 
@@ -116,7 +118,8 @@ The dashboard is the main workspace for:
 - `GET /api/v1/anomalies`
 - `POST /api/v1/anomalies/external/aws`
 - `GET /api/v1/recommendations`
-- `GET /api/v1/forecast` (budget guardrails, fan percentiles, cost velocity, backtesting)
+- `GET /api/v1/forecast` (budget guardrails, fan percentiles, cost velocity, CVaR downside risk, forecast quality score, backtesting)
+- `POST /api/v1/forecast/what-if` (deterministic scenario simulation with phased actions, NPV-friendly discounted timeline, ROI, payback)
 - `GET /api/v1/analytics` (risk/maturity scores, waste, commitment, MoM velocity, GenAI narrative)
 - `GET /api/v1/analytics/attribution` (Pareto cost driver analysis, HHI concentration)
 - `GET /api/v1/analytics/commitment-optimization` (RI/Savings Plan ROI at 50/65/80% tiers)
@@ -135,7 +138,8 @@ The dashboard is the main workspace for:
 - `GET /api/v1/virtual-tags/preview` (dry-run preview of tag coverage across active cost data)
 - `GET /api/v1/recommendations/rightsizing` (per-resource rightsizing with downsize/terminate/reserve/modernize actions)
 - `GET /api/v1/advisor/hybrid` (hybrid advisor payload combining deterministic analytics and GenAI narrative overlays)
-- `POST /api/v1/genai/analyze` (backend OCI GenAI narration: `spend`, `anomaly`, `optimization`, `maturity`, `budget_risk`, `waste_insights`, `optimization_roadmap`, `executive_narrative`)
+- `POST /api/v1/genai/analyze` (backend OCI GenAI narration: `spend`, `anomaly`, `optimization`, `maturity`, `budget_risk`, `waste_insights`, `optimization_roadmap`, `executive_narrative`, `commitment_strategy`)
+- `POST /api/v1/genai/copilot-pack` (single-call, multi-narrative package with deterministic context + advisory overlays)
 - `GET /api/v1/provider-accounts/rollups` (hierarchy tree with rolled-up costs + top_regions)
 - `GET /api/v1/provider-accounts` (flat account inventory, filterable by provider)
 - `GET /api/v1/provider-accounts/{id}/region-breakdown` (per-region cost rows)
