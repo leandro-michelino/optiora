@@ -89,7 +89,7 @@ function ProviderHelp({ provider }: { provider: Provider }) {
 }
 
 const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
-  const [selectedProvider, setSelectedProvider] = useState<string>('aws');
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid' | 'saved'>('idle');
@@ -132,6 +132,11 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
 
   const handleValidate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedProvider) {
+      setValidationStatus('invalid');
+      setValidationMessage('Select a provider and click Connect first.');
+      return;
+    }
     setValidating(true);
     setValidationStatus('validating');
     setValidationMessage('Connecting to provider API…');
@@ -162,6 +167,11 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   };
 
   const handleSave = async () => {
+    if (!selectedProvider) {
+      setValidationStatus('invalid');
+      setValidationMessage('Select a provider and click Connect first.');
+      return;
+    }
     setSaving(true);
     try {
       const res = await authorizedFetch(backendUrl('/api/v1/credentials/add'), {
@@ -201,23 +211,44 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           {/* Provider Selection */}
           <div>
             <label className="block text-sm font-medium mb-3">Cloud Provider</label>
-            <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
               {(['aws', 'azure', 'gcp', 'oci'] as const).map(provider => (
-                <button
+                <div
                   key={provider}
-                  type="button"
-                  onClick={() => { setSelectedProvider(provider); resetValidation(); }}
                   className={`p-3 rounded-lg border-2 transition-all ${
                     selectedProvider === provider
                       ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-gray-200'
                   }`}
                 >
-                  <div className="font-semibold uppercase text-sm">{provider}</div>
-                </button>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold uppercase text-sm">{provider}</div>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedProvider(provider); resetValidation(); }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                        selectedProvider === provider
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {selectedProvider === provider ? 'Connected Form' : 'Connect'}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Click Connect to enter {provider.toUpperCase()} credentials.
+                  </p>
+                </div>
               ))}
             </div>
           </div>
+
+          {!selectedProvider && (
+            <div className="p-3 rounded-lg flex items-start gap-2 text-sm bg-blue-50 text-blue-700">
+              <Info className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>Select a provider and click Connect to request credentials.</span>
+            </div>
+          )}
 
           {/* AWS Form */}
           {selectedProvider === 'aws' && (

@@ -84,6 +84,9 @@ class Config:
     enable_scan_scheduler: bool = os.getenv("ENABLE_SCAN_SCHEDULER", "false").strip().lower() in {"1", "true", "yes"}
     scan_scheduler_interval_minutes: int = int(os.getenv("SCAN_SCHEDULER_INTERVAL_MINUTES", "60"))
 
+    # Data source policy
+    require_live_provider_data: bool = os.getenv("REQUIRE_LIVE_PROVIDER_DATA", "true").strip().lower() in {"1", "true", "yes"}
+
     def validate(self):
         """Validate required configuration."""
         has_aws = bool(
