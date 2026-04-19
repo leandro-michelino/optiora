@@ -18,13 +18,16 @@ That flow manages Terraform variables and optional apply, then hands off to Ansi
   - `rt-public-<project>-<env>-<region>-<suffix>`
   - `sl-public-<project>-<env>-<region>-<suffix>`
   - `subnet-public-<project>-<env>-<region>-<suffix>`
-- ingress is restricted to `laptop_cidr`
+- ingress is restricted to `laptop_cidr` plus optional `allowed_public_ingress_cidrs`
 - outbound traffic is controlled by `egress_cidr`
 - compute bootstrap, packages, `.env`, builds, and systemd are handled by `../ansible`, including Oracle Linux / RHEL hosts
 
 ## Defaults
 
 - `laptop_cidr`: required, used for SSH/UI/API ingress
+- `allowed_public_ingress_cidrs`: optional additional ingress CIDRs
+- `allow_direct_app_ingress`: controls exposure of ports `3000`/`8000`
+- `allow_web_ingress`: controls exposure of ports `80`/`443`
 - `egress_cidr`: defaults to `0.0.0.0/0`
 
 That default keeps the subnet usable for:
@@ -45,6 +48,12 @@ terraform plan \
   -var="region=uk-london-1" \
   -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32"
+
+# Add office/VPN CIDRs if needed:
+# -var='allowed_public_ingress_cidrs=["203.0.113.0/24","198.51.100.8/32"]'
+
+# Prefer web-only exposure when using nginx/TLS:
+# -var='allow_direct_app_ingress=false' -var='allow_web_ingress=true'
 ```
 
 Example with restricted egress:
@@ -64,6 +73,6 @@ terraform plan \
 ```text
 VCN
 └── Public Subnet
-    ├── Ingress: 22, 3000, 8000 <- laptop_cidr
+    ├── Ingress: 22 (+ optional 3000/8000 and 80/443) <- laptop_cidr + allowed_public_ingress_cidrs
     └── Egress: all -> egress_cidr
 ```

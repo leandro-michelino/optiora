@@ -39,6 +39,8 @@ REMOTE_USER=${OCI_INSTANCE_USER:-opc}
 APP_DIR=${OCI_APP_DIR:-/opt/optiora}
 CLI_PROFILE=${OCI_PROFILE:-${OCI_CLI_PROFILE:-DEFAULT}}
 IMAGE_COMPARTMENT_ID=${OCI_IMAGE_COMPARTMENT_ID:-}
+IMAGE_OS=${OCI_IMAGE_OS:-"Oracle Linux"}
+IMAGE_OS_VERSION=${OCI_IMAGE_OS_VERSION:-"9"}
 
 RESOLVED_SUBNET_ID=""
 RESOLVED_SSH_PUBLIC_KEY=""
@@ -105,6 +107,8 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_MEMORY_GB              Memory GB (default: 8)
     OCI_PROFILE                OCI CLI profile for image lookup (default: DEFAULT)
     OCI_IMAGE_COMPARTMENT_ID   Optional image compartment override (defaults to profile tenancy)
+    OCI_IMAGE_OS               OS image family (default: Oracle Linux)
+    OCI_IMAGE_OS_VERSION       OS major version (default: 9)
     OCI_SUBNET_ID              Subnet OCID (recommended)
     OCI_VCN_ID                 Optional if auto-selecting subnet
     OCI_ASSIGN_PUBLIC_IP       true/false (default: true)
@@ -718,18 +722,24 @@ deploy_compute() {
         local response
         local launch_status
 
-        log_info "Finding latest Oracle Linux 9 image..."
+        if [ "$IMAGE_OS" != "Oracle Linux" ]; then
+            log_error "Only Oracle Linux images are supported for this deployment flow."
+            log_info "Set OCI_IMAGE_OS=Oracle Linux"
+            exit 1
+        fi
+
+        log_info "Finding latest ${IMAGE_OS} ${IMAGE_OS_VERSION} image..."
         image_id=$(oci compute image list \
             --compartment-id "$RESOLVED_IMAGE_COMPARTMENT_ID" \
             --region "$REGION" \
-            --operating-system "Oracle Linux" \
-            --operating-system-version "9" \
+            --operating-system "$IMAGE_OS" \
+            --operating-system-version "$IMAGE_OS_VERSION" \
             --shape "$SHAPE" \
             --query "reverse(sort_by(data, &\"time-created\"))[0].id" \
             --raw-output 2>/dev/null)
 
         if [ -z "$image_id" ] || [ "$image_id" = "null" ]; then
-            log_error "Could not find Oracle Linux 9 image from image compartment $RESOLVED_IMAGE_COMPARTMENT_ID"
+            log_error "Could not find ${IMAGE_OS} ${IMAGE_OS_VERSION} image from image compartment $RESOLVED_IMAGE_COMPARTMENT_ID"
             exit 1
         fi
         log_success "Image: $image_id"

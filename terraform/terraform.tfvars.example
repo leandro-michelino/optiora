@@ -4,6 +4,12 @@ oci_object_storage_namespace = "your_object_storage_namespace"
 
 # Restrict ingress to your laptop public IP only.
 laptop_cidr = "<your_laptop_public_ip>/32"
+# Optional extra public CIDRs (office/VPN egress) allowed by security list.
+allowed_public_ingress_cidrs = []
+# Expose direct app ports only when needed.
+allow_direct_app_ingress = true
+# Expose web ports for nginx/TLS front door.
+allow_web_ingress = false
 # Keep outbound access open by default so the VM can install packages and reach cloud APIs.
 egress_cidr = "0.0.0.0/0"
 

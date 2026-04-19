@@ -13,6 +13,21 @@ output "allowed_ingress_cidr" {
   description = "Ingress is restricted to this laptop CIDR."
 }
 
+output "allowed_public_ingress_cidrs" {
+  value       = var.allowed_public_ingress_cidrs
+  description = "Optional additional public CIDRs allowed for ingress."
+}
+
+output "allow_direct_app_ingress" {
+  value       = var.allow_direct_app_ingress
+  description = "Whether direct app ports 3000/8000 are exposed in the security list."
+}
+
+output "allow_web_ingress" {
+  value       = var.allow_web_ingress
+  description = "Whether web ports 80/443 are exposed in the security list."
+}
+
 output "egress_cidr" {
   value       = var.egress_cidr
   description = "Outbound traffic destination CIDR for the public subnet."
@@ -38,7 +53,9 @@ output "next_step_banner" {
     VCN:               ${oci_core_vcn.main.id}
     Public subnet:     ${oci_core_subnet.public.id}
     Primary region:    ${var.region}
-    Allowed ingress:   ${var.laptop_cidr}
+    Allowed ingress:   ${join(", ", distinct(concat([var.laptop_cidr], var.allowed_public_ingress_cidrs)))}
+    Direct app ports:  ${var.allow_direct_app_ingress}
+    Web ports 80/443:  ${var.allow_web_ingress}
     Egress:            ${var.egress_cidr}
 
     Next:

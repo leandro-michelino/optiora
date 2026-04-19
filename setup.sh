@@ -132,6 +132,41 @@ upsert_tfvar() {
   mv "$tmp_file" "$file"
 }
 
+upsert_tfvar_raw() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+  local tmp_file
+
+  tmp_file="$(mktemp)"
+
+  if [[ ! -f "$file" ]]; then
+    touch "$file"
+  fi
+
+  if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$file"; then
+    awk -v k="$key" -v v="$value" '
+      BEGIN { updated = 0 }
+      $0 ~ "^[[:space:]]*" k "[[:space:]]*=" {
+        print k " = " v
+        updated = 1
+        next
+      }
+      { print }
+      END {
+        if (updated == 0) {
+          print k " = " v
+        }
+      }
+    ' "$file" > "$tmp_file"
+  else
+    cat "$file" > "$tmp_file"
+    echo "${key} = ${value}" >> "$tmp_file"
+  fi
+
+  mv "$tmp_file" "$file"
+}
+
 python_supported() {
   local cmd="$1"
   "$cmd" -c 'import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] < (3, 14) else 1)' \
@@ -343,6 +378,10 @@ run_interactive_tf_ansible() {
   local compartment_id
   local laptop_cidr
   local obj_namespace
+  local allowed_public_cidrs
+  local allow_direct_app_ingress
+  local allow_web_ingress
+  local vm_firewall_enabled
   local host_ip
   local ssh_user
   local ssh_key
@@ -359,6 +398,25 @@ run_interactive_tf_ansible() {
   compartment_id="$(prompt_value "OCI compartment OCID (compartment_id)" "$(read_tfvar compartment_id "$tfvars_path")")"
   laptop_cidr="$(prompt_value "Laptop ingress CIDR (laptop_cidr)" "$(read_tfvar laptop_cidr "$tfvars_path")")"
   obj_namespace="$(prompt_value "OCI Object Storage namespace (oci_object_storage_namespace)" "$(read_tfvar oci_object_storage_namespace "$tfvars_path")")"
+  allowed_public_cidrs="$(prompt_value "Additional allowed public ingress CIDRs (comma-separated, optional)" "")"
+
+  if prompt_yes_no "Expose direct app ports 3000/8000 in security list?" true; then
+    allow_direct_app_ingress="true"
+  else
+    allow_direct_app_ingress="false"
+  fi
+
+  if prompt_yes_no "Expose web ports 80/443 in security list (for nginx/TLS)?" false; then
+    allow_web_ingress="true"
+  else
+    allow_web_ingress="false"
+  fi
+
+  if prompt_yes_no "Enable VM host firewall (UFW/firewalld) in Ansible?" true; then
+    vm_firewall_enabled="true"
+  else
+    vm_firewall_enabled="false"
+  fi
 
   if [[ -z "$compartment_id" || -z "$laptop_cidr" || -z "$obj_namespace" ]]; then
     log_err "compartment_id, laptop_cidr, and oci_object_storage_namespace are required."
@@ -368,6 +426,27 @@ run_interactive_tf_ansible() {
   upsert_tfvar "compartment_id" "$compartment_id" "$tfvars_path"
   upsert_tfvar "laptop_cidr" "$laptop_cidr" "$tfvars_path"
   upsert_tfvar "oci_object_storage_namespace" "$obj_namespace" "$tfvars_path"
+  upsert_tfvar "allow_direct_app_ingress" "$allow_direct_app_ingress" "$tfvars_path"
+  upsert_tfvar "allow_web_ingress" "$allow_web_ingress" "$tfvars_path"
+
+  if [[ -n "$allowed_public_cidrs" ]]; then
+    local cidr_array="[]"
+    local item
+    IFS=',' read -ra _cidrs <<< "$allowed_public_cidrs"
+    for item in "${_cidrs[@]}"; do
+      item="${item#${item%%[![:space:]]*}}"
+      item="${item%${item##*[![:space:]]}}"
+      [[ -z "$item" ]] && continue
+      if [[ "$cidr_array" == "[]" ]]; then
+        cidr_array="[\"$item\"]"
+      else
+        cidr_array="${cidr_array%]} , \"$item\"]"
+      fi
+    done
+    upsert_tfvar_raw "allowed_public_ingress_cidrs" "$cidr_array" "$tfvars_path"
+  else
+    upsert_tfvar_raw "allowed_public_ingress_cidrs" "[]" "$tfvars_path"
+  fi
   log_ok "Updated terraform/terraform.tfvars"
 
   print_section "Terraform"
@@ -406,6 +485,8 @@ all:
           ansible_host: ${host_ip}
           ansible_user: ${ssh_user}
           ansible_ssh_private_key_file: ${ssh_key}
+          optiora_configure_firewall: ${vm_firewall_enabled}
+          optiora_firewall_expose_direct_services: ${allow_direct_app_ingress}
 EOF
   log_ok "Wrote ansible/inventory.yml"
 

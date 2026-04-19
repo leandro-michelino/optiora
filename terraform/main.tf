@@ -1,5 +1,6 @@
 locals {
-  name_prefix = "${var.project_code}-${var.environment}-${var.region_code}-${var.name_suffix}"
+  name_prefix              = "${var.project_code}-${var.environment}-${var.region_code}-${var.name_suffix}"
+  allowed_ingress_sources  = distinct(concat([var.laptop_cidr], var.allowed_public_ingress_cidrs))
 }
 
 # ---------------------------------------------------------------------------
@@ -75,30 +76,63 @@ resource "oci_core_security_list" "public" {
     destination = var.egress_cidr
   }
 
-  ingress_security_rules {
-    protocol = "6"
-    source   = var.laptop_cidr
-    tcp_options {
-      min = 22
-      max = 22
+  dynamic "ingress_security_rules" {
+    for_each = toset(local.allowed_ingress_sources)
+    content {
+      protocol = "6"
+      source   = ingress_security_rules.value
+      tcp_options {
+        min = 22
+        max = 22
+      }
     }
   }
 
-  ingress_security_rules {
-    protocol = "6"
-    source   = var.laptop_cidr
-    tcp_options {
-      min = 3000
-      max = 3000
+  dynamic "ingress_security_rules" {
+    for_each = var.allow_direct_app_ingress ? toset(local.allowed_ingress_sources) : []
+    content {
+      protocol = "6"
+      source   = ingress_security_rules.value
+      tcp_options {
+        min = 3000
+        max = 3000
+      }
     }
   }
 
-  ingress_security_rules {
-    protocol = "6"
-    source   = var.laptop_cidr
-    tcp_options {
-      min = 8000
-      max = 8000
+  dynamic "ingress_security_rules" {
+    for_each = var.allow_direct_app_ingress ? toset(local.allowed_ingress_sources) : []
+    content {
+      protocol = "6"
+      source   = ingress_security_rules.value
+      tcp_options {
+        min = 8000
+        max = 8000
+      }
+    }
+  }
+
+  dynamic "ingress_security_rules" {
+    for_each = var.allow_web_ingress ? toset(local.allowed_ingress_sources) : []
+    content {
+      protocol = "6"
+      source   = ingress_security_rules.value
+      tcp_options {
+        min = 80
+        max = 80
+      }
+    }
+  }
+
+  dynamic "ingress_security_rules" {
+    for_each = var.allow_web_ingress ? toset(local.allowed_ingress_sources) : []
+    content {
+      protocol = "6"
+      source   = ingress_security_rules.value
+      tcp_options {
+        min = 443
+        max = 443
+      }
     }
   }
 }

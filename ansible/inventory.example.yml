@@ -14,3 +14,12 @@ all:
           #
           # --- Optional: swap file (recommended for < 4 GiB RAM instances) ---
           # optiora_swap_size: "2G"
+
+          # --- Optional: VM host firewall behavior ---
+          # true  = configure UFW/firewalld from Ansible hardening defaults
+          # false = do not configure host firewall (rely on OCI security lists only)
+          # optiora_configure_firewall: true
+
+          # true  = host firewall opens 3000/8000 when nginx is disabled
+          # false = keep only SSH + (optionally) 80/443 depending on nginx settings
+          # optiora_firewall_expose_direct_services: true
