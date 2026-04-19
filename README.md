@@ -183,6 +183,12 @@ export NEXT_PUBLIC_API_URL=http://localhost:8000
 export NEXT_PUBLIC_ENABLE_AUTH=false
 ```
 
+Frontend backend URL behavior:
+
+- if `NEXT_PUBLIC_API_URL` is set, dashboard uses it explicitly
+- otherwise the dashboard defaults to same-origin (`window.location.origin`) in browser contexts
+- server-side fallback remains `http://localhost:8000` for local development
+
 Database config:
 
 - default local DB: SQLite via `sqlite:///./optiora.db`

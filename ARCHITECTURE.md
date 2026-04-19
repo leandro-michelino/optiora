@@ -39,6 +39,7 @@ Current as of April 2026 (Release 1.0 + Epic 5 analytics enhancements).
 │    - cloud waste          /api/v1/analytics/cloud-waste                      │
 │    - efficiency score     /api/v1/analytics/efficiency-score                 │
 │    - commitment gap       /api/v1/analytics/commitment-gap                   │
+│  Hybrid advisor          /api/v1/advisor/hybrid                              │
 │  GenAI narratives         /api/v1/genai/analyze                              │
 │  Account hierarchy        /api/v1/provider-accounts/*                        │
 │  Alerts/Audit/Exports     /api/v1/alerts* | /api/v1/audit-logs* | reports   │
@@ -104,7 +105,31 @@ Path B: Backend narratives
       -> consumed by /api/v1/genai/analyze
 ```
 
-## 4) Account Hierarchy and Rollups
+## 4) Hybrid Advisor Orchestration
+
+```text
+Client (Cost Advisor page)
+      │
+      └─► GET /api/v1/advisor/hybrid?narrative_type=optimization_roadmap
+              │
+              ├─ Deterministic block (source_of_truth)
+              │    ├─ base analytics (risk, maturity, spend-at-risk)
+              │    ├─ waste analysis (categories + quick wins)
+              │    ├─ efficiency score (weighted grade)
+              │    ├─ commitment gap (per-provider scenarios)
+              │    └─ prioritized deterministic recommendations
+              │
+              └─ Advisory block (GenAI overlay)
+                   ├─ waste_insights
+                   ├─ optimization_roadmap
+                   └─ executive_narrative
+
+Contract:
+- deterministic values remain authoritative for savings/ROI math
+- GenAI text explains, prioritizes, and sequences actions
+```
+
+## 5) Account Hierarchy and Rollups
 
 ```text
 Live scan or CSV import
@@ -120,16 +145,16 @@ Rollup result provides:
 - top regions per account tree branch
 ```
 
-## 5) Security and Configuration Highlights
+## 6) Security and Configuration Highlights
 
 - Auth disabled by default for public dashboard mode.
 - When ENABLE_AUTH=true, RBAC uses OWNER/ADMIN/ANALYST/READONLY roles.
 - CORS now uses explicit methods/headers instead of wildcard values.
 - CSV import now enforces max upload size of 10 MB.
-- `SECRET_KEY` warns at startup if insecure default is being used.
+- `SECRET_KEY` now fails startup in production when insecure default is detected (warning only in non-production).
 - Alembic runtime should use `DATABASE_URL`; local fallback is dev-only.
 
-## 6) Deployment Model
+## 7) Deployment Model
 
 - Terraform provisions OCI network baseline only.
 - Ansible provisions app runtime, services, health checks.

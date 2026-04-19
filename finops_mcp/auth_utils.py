@@ -13,7 +13,13 @@ from pydantic import BaseModel
 # Configuration
 _SECRET_KEY_DEFAULT = "your-secret-key-change-in-production"
 SECRET_KEY = os.getenv("SECRET_KEY", _SECRET_KEY_DEFAULT)
-if SECRET_KEY == _SECRET_KEY_DEFAULT:
+_ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+if SECRET_KEY == _SECRET_KEY_DEFAULT and _ENVIRONMENT == "production":
+    raise RuntimeError(
+        "Refusing to start in production with insecure default SECRET_KEY. "
+        "Set SECRET_KEY to a strong, unique value."
+    )
+if SECRET_KEY == _SECRET_KEY_DEFAULT and _ENVIRONMENT != "production":
     import warnings
     warnings.warn(
         "SECRET_KEY is set to the insecure default value. "
