@@ -1,31 +1,51 @@
-# Cost Estimate (High-Level)
+# Cost Estimate (Monthly, Full Capability)
 
-## Baseline OCI Deployment
+Current as of April 2026. Estimates are for OCI deployment with full OptiOra capabilities, including GenAI features.
 
-Assumes single compute instance hosting both services:
+## Assumptions
 
-- FastAPI backend (`optiora-api.service`)
-- Next.js dashboard (`optiora-dashboard.service`)
+- Region: `uk-london-1`
+- Runtime: one VM running both backend and dashboard
+- Availability: 24x7 (~730 hours/month)
+- Features enabled: analytics, rightsizing, virtual tags, exports, hybrid advisor, GenAI narratives/chat
+- Database: managed PostgreSQL recommended for production; SQLite only for local/dev
 
-## Monthly Cost Buckets
+## Cost Components
 
 ```text
-Compute VM (E4 Flex)     : variable by OCPU/RAM selection
-Storage / boot volume    : low-to-moderate
-Network egress           : workload-dependent
-Optional DB service      : optional (SQLite local by default, PostgreSQL optional)
-Observability/logging    : depends on retention and tooling
+Compute VM (E4 Flex)      : OCPU + RAM-driven
+Boot / block storage      : baseline persistent disk
+Network egress            : workload-dependent
+Managed PostgreSQL        : recommended for production reliability
+Logging / monitoring      : low-to-moderate, retention dependent
+GenAI inference usage     : highly variable by prompt volume and model choice
 ```
 
-## Practical Sizing Guidance
+## Deployment Sizes (USD / month)
 
-- Small/test: `1 OCPU / 4 GB`
-- Default: `2 OCPU / 8 GB`
-- Higher throughput: `4 OCPU / 16 GB`
+| Size | Infra shape guidance | Core infra* | Managed DB | GenAI usage | Estimated total |
+|---|---|---:|---:|---:|---:|
+| Small | `1 OCPU / 4 GB` | 60-100 | 60-120 | 15-80 (light) | **135-300** |
+| Default | `2 OCPU / 8 GB` | 90-140 | 90-180 | 80-250 (medium) | **260-570** |
+| High Throughput | `4 OCPU / 16 GB` | 180-320 | 180-350 | 300-1200+ (heavy) | **660-1870+** |
+
+\* Core infra includes VM, storage, baseline logging, and normal operational overhead.
+
+## Practical Planning Number
+
+For most production deployments with active usage and GenAI enabled, plan for:
+
+- **$350-$550 / month** (default size + medium GenAI usage)
+
+## Notes
+
+- GenAI is the largest cost variable; token/request volume drives the biggest monthly swings.
+- If using SQLite on-VM instead of managed DB, reduce total by the managed DB line item.
+- Egress-heavy use cases (large exports, frequent downloads) can materially increase totals.
 
 ## Cost Control Recommendations
 
-1. Start with default size and measure API p95 latency + dashboard response times.
-2. Enable budget alerts in OCI for compartment and instance-level spend.
-3. Schedule non-production environments to stop during off-hours.
-4. Move to managed DB only when multi-user/concurrency needs justify it.
+1. Start with `2 OCPU / 8 GB` and tune after observing p95 API latency and dashboard performance.
+2. Track GenAI request volume and set OCI budget alerts specifically for GenAI spend.
+3. Keep non-production environments scheduled off-hours.
+4. Right-size the managed DB tier quarterly as concurrency/load stabilizes.
