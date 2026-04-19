@@ -219,7 +219,7 @@ class AuthFlowTest(unittest.TestCase):
         try:
             api_module._run_validation = lambda _credential: _MockStatus()
 
-            async def _noop_run_cost_analysis(scan_id: str, customer_id: str, providers: list[str]) -> None:
+            async def _noop_run_cost_analysis(scan_id: str, customer_id: str, providers: list[str], target_accounts=None) -> None:
                 _ = (scan_id, customer_id, providers)
                 return None
 
@@ -731,7 +731,7 @@ class AuthFlowTest(unittest.TestCase):
         try:
             api_module._run_validation = lambda _credential: _MockStatus()
 
-            async def _noop(scan_id: str, customer_id: str, providers: list[str]) -> None:
+            async def _noop(scan_id: str, customer_id: str, providers: list[str], target_accounts=None) -> None:
                 _ = (scan_id, customer_id, providers)
 
             api_module._run_cost_analysis = _noop

@@ -463,3 +463,56 @@ export interface FinOpsAnalyticsResponse {
   actions: string[]
   genai_advice_prompt?: string
 }
+
+// ── Business Mapping & Chargeback ─────────────────────────────────────────
+
+export type BusinessDimension = 'team' | 'environment' | 'application' | 'cost_center'
+
+export interface BusinessMappingRule {
+  id: number
+  organization_id: number
+  customer_id: string
+  tag_key: string
+  tag_value: string
+  dimension: BusinessDimension | string
+  mapped_value: string
+  priority: number
+  is_active: boolean
+  created_at: string
+  updated_at?: string | null
+}
+
+export interface BusinessMappingRuleListResponse {
+  organization_id: number
+  rules: BusinessMappingRule[]
+  total: number
+}
+
+export interface ChargebackDimensionGroup {
+  dimension: string
+  value: string
+  total_cost_usd: number
+  provider_breakdown: Record<string, number>
+  record_count: number
+}
+
+export interface ChargebackResponse {
+  organization_id: number
+  dimension_type: string
+  groups: ChargebackDimensionGroup[]
+  total_mapped_cost_usd: number
+  total_unmapped_cost_usd: number
+  total_cost_usd: number
+  coverage_percent: number
+}
+
+export interface AllocationCoverageResponse {
+  organization_id: number
+  total_cost_usd: number
+  mapped_cost_usd: number
+  unmapped_cost_usd: number
+  coverage_percent: number
+  dimension_coverage: Record<string, number>
+  provider_coverage: Record<string, number>
+  unmapped_top_services: Array<{ service: string; cost_usd: number }>
+}

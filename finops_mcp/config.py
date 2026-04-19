@@ -45,6 +45,10 @@ class Config:
     oci_config_file: str = os.getenv("OCI_CONFIG_FILE", "")
     oci_profile: str = os.getenv("OCI_PROFILE", "DEFAULT")
     oci_region: str = os.getenv("OCI_REGION", "uk-london-1")
+    # Comma-separated list of OCI compartment OCIDs for multi-compartment scans.
+    oci_compartment_ids: str = os.getenv("OCI_COMPARTMENT_IDS", "")
+    # Comma-separated list of OCI compartment OCIDs for multi-compartment scans.
+    oci_compartment_ids: str = os.getenv("OCI_COMPARTMENT_IDS", "")
 
     # OCI Generative AI (backend-side inference for analytics narration)
     oci_genai_endpoint: str = os.getenv("OCI_GENAI_ENDPOINT", "")

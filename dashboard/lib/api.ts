@@ -2,7 +2,11 @@ import {
   AccountRegionBreakdownResponse,
   AlertEvent,
   AlertRoutingPolicy,
+  AllocationCoverageResponse,
   AuditLogEntry,
+  BusinessMappingRule,
+  BusinessMappingRuleListResponse,
+  ChargebackResponse,
   CostResponse,
   AnomalyResponse,
   PaginatedResponse,
@@ -194,10 +198,10 @@ export async function fetchScanningPermission(): Promise<ScanningPermission | nu
   }
 }
 
-export async function startScan(providers?: string[]): Promise<ScanStartResponse> {
+export async function startScan(providers?: string[], targetAccounts?: string[]): Promise<ScanStartResponse> {
   return requestJson<ScanStartResponse>('/api/v1/scanning/start', {
     method: 'POST',
-    body: JSON.stringify({ providers }),
+    body: JSON.stringify({ providers, target_accounts: targetAccounts }),
   })
 }
 
@@ -439,4 +443,59 @@ export async function ingestGcpBudgetPubSub(message: Record<string, unknown>, su
     method: 'POST',
     body: JSON.stringify({ message, subscription }),
   })
+}
+
+// ── Business Mapping & Chargeback ─────────────────────────────────────────
+
+export async function fetchMappingRules(
+  dimension?: string,
+  activeOnly = true,
+): Promise<BusinessMappingRuleListResponse> {
+  return requestJson<BusinessMappingRuleListResponse>(
+    `/api/v1/business-mapping/rules${toQueryString({ dimension, active_only: activeOnly ? '1' : undefined })}`,
+  )
+}
+
+export async function createMappingRule(
+  payload: Omit<BusinessMappingRule, 'id' | 'organization_id' | 'customer_id' | 'created_at' | 'updated_at'>,
+): Promise<BusinessMappingRule> {
+  return requestJson<BusinessMappingRule>('/api/v1/business-mapping/rules', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateMappingRule(
+  id: number,
+  payload: Omit<BusinessMappingRule, 'id' | 'organization_id' | 'customer_id' | 'created_at' | 'updated_at'>,
+): Promise<BusinessMappingRule> {
+  return requestJson<BusinessMappingRule>(`/api/v1/business-mapping/rules/${encodeURIComponent(String(id))}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteMappingRule(id: number): Promise<void> {
+  await requestJson(`/api/v1/business-mapping/rules/${encodeURIComponent(String(id))}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function applyMappingRules(): Promise<{
+  status: string
+  rules_applied: number
+  records_processed: number
+  dimension_rows_written: number
+}> {
+  return requestJson('/api/v1/business-mapping/apply', { method: 'POST' })
+}
+
+export async function fetchChargeback(dimensionType: string = 'team'): Promise<ChargebackResponse> {
+  return requestJson<ChargebackResponse>(
+    `/api/v1/chargeback${toQueryString({ dimension_type: dimensionType })}`,
+  )
+}
+
+export async function fetchAllocationCoverage(): Promise<AllocationCoverageResponse> {
+  return requestJson<AllocationCoverageResponse>('/api/v1/chargeback/coverage')
 }

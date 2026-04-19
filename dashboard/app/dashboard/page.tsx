@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Server,
   ShieldCheck,
+  Tag,
   Target,
 } from 'lucide-react'
 import { CostChart, CostTrendPoint } from '@/components/CostChart'
@@ -23,9 +24,11 @@ import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { ServiceBreakdown, ServiceBreakdownPoint } from '@/components/ServiceBreakdown'
 import { MetricCard } from '@/components/MetricCard'
 import {
+  fetchAllocationCoverage,
   fetchAnomalies,
   fetchApiHealth,
   fetchApiInfo,
+  fetchChargeback,
   fetchCostsStrict,
   fetchCredentials,
   fetchFinOpsAnalytics,
@@ -37,9 +40,11 @@ import {
 } from '@/lib/api'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
 import {
+  AllocationCoverageResponse,
   AnomalyResponse,
   ApiHealth,
   ApiInfo,
+  ChargebackResponse,
   CostResponse,
   FinOpsAnalyticsResponse,
   ImportedCostSummaryResponse,
@@ -75,6 +80,8 @@ interface DashboardState {
   anomalies: AnomalyResponse[]
   recommendations: RecommendationResponse[]
   analytics: FinOpsAnalyticsResponse | null
+  coverage: AllocationCoverageResponse | null
+  chargeback: ChargebackResponse | null
   source: 'live' | 'partial' | 'fallback'
   error: string | null
 }
@@ -91,6 +98,8 @@ const initialState: DashboardState = {
   anomalies: [],
   recommendations: [],
   analytics: null,
+  coverage: null,
+  chargeback: null,
   source: 'live',
   error: null,
 }
@@ -221,7 +230,7 @@ export default function DashboardPage() {
 
   async function loadDashboard() {
     setLoading(true)
-    const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations, analytics] =
+    const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations, analytics, coverage, chargeback] =
       await Promise.allSettled([
         fetchCostsStrict(),
         fetchApiHealth(),
@@ -234,6 +243,8 @@ export default function DashboardPage() {
         fetchAnomalies(),
         fetchRecommendations(),
         fetchFinOpsAnalytics(),
+        fetchAllocationCoverage(),
+        fetchChargeback('team'),
       ])
 
     const nextState: DashboardState = {
@@ -248,6 +259,8 @@ export default function DashboardPage() {
       anomalies: anomalies.status === 'fulfilled' ? anomalies.value.items : [],
       recommendations: recommendations.status === 'fulfilled' ? recommendations.value.items : [],
       analytics: analytics.status === 'fulfilled' ? analytics.value : null,
+      coverage: coverage.status === 'fulfilled' ? coverage.value : null,
+      chargeback: chargeback.status === 'fulfilled' ? chargeback.value : null,
       source: health.status === 'fulfilled' && credentials.status === 'fulfilled' ? 'live' : 'partial',
       error:
         costs.status === 'rejected'
@@ -380,6 +393,25 @@ export default function DashboardPage() {
           value={`${(state.analytics?.unit_metrics?.budget_utilization_percent || 0).toFixed(1)}%`}
           color="bg-gradient-to-br from-violet-500 to-violet-600"
         />
+      </div>
+
+      {/* Allocation Coverage Row */}
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={Tag}
+          label="Allocation Coverage"
+          value={state.coverage ? `${state.coverage.coverage_percent.toFixed(1)}%` : '—'}
+          color="bg-gradient-to-br from-violet-500 to-purple-600"
+        />
+        {state.coverage && Object.entries(state.coverage.dimension_coverage).slice(0, 3).map(([dim, pct]) => (
+          <MetricCard
+            key={dim}
+            icon={Tag}
+            label={`${dim.charAt(0).toUpperCase() + dim.slice(1).replace('_', ' ')} Coverage`}
+            value={`${pct.toFixed(1)}%`}
+            color="bg-gradient-to-br from-slate-500 to-slate-600"
+          />
+        ))}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -670,6 +702,74 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Chargeback Summary */}
+      <Card className="rounded-lg">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <Tag className="h-5 w-5 text-violet-500" />
+              Business Mapping &amp; Chargeback
+            </CardTitle>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Cost attribution by business dimension. Define mapping rules to drive allocation coverage.
+            </p>
+          </div>
+          <Link href="/dashboard/costs" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
+            Full chargeback view <ArrowRight className="h-4 w-4" />
+          </Link>
+        </CardHeader>
+        <CardContent className="pt-4">
+          {state.coverage && (
+            <div className="mb-4 grid gap-3 sm:grid-cols-4">
+              <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Overall Coverage</p>
+                <p className="text-sm font-semibold text-violet-600">{state.coverage.coverage_percent.toFixed(1)}%</p>
+              </div>
+              {Object.entries(state.coverage.dimension_coverage).map(([dim, pct]) => (
+                <div key={dim} className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
+                  <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {dim.replace('_', ' ')}
+                  </p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{pct.toFixed(1)}%</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {state.chargeback && state.chargeback.groups.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Team</TableHead>
+                  <TableHead>Total Cost</TableHead>
+                  <TableHead>Providers</TableHead>
+                  <TableHead>Records</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {state.chargeback.groups.slice(0, 6).map((g) => (
+                  <TableRow key={g.value}>
+                    <TableCell className="font-medium">{g.value}</TableCell>
+                    <TableCell>{formatCurrencyPrecise(g.total_cost_usd)}</TableCell>
+                    <TableCell className="text-sm text-slate-600 dark:text-slate-400">
+                      {Object.entries(g.provider_breakdown)
+                        .sort(([, a], [, b]) => b - a)
+                        .slice(0, 3)
+                        .map(([p]) => p.toUpperCase())
+                        .join(', ')}
+                    </TableCell>
+                    <TableCell>{g.record_count}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
+              No chargeback data yet. Create tag-based mapping rules and upload tagged cost data to see team-level attribution here.
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

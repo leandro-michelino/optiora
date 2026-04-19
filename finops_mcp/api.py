@@ -38,11 +38,13 @@ from .orm_models import (
     AlertEvent,
     AlertRoutingPolicy,
     AuditLog,
+    BusinessMappingRule,
     CostAllocationSnapshot,
     CostSnapshot,
     ExportJob,
     ExportJobRun,
     ImportedCostRecord,
+    NormalizedCostDimension,
     ProviderAccount,
     ProviderAccountLink,
     ProviderAccountSnapshot,
@@ -144,6 +146,7 @@ class ScanningPermissionResponse(BaseModel):
 class StartScanRequest(BaseModel):
     customer_id: Optional[str] = None
     providers: Optional[List[str]] = None
+    target_accounts: Optional[List[str]] = None
 
 
 class ScanProgressResponse(BaseModel):
@@ -279,6 +282,81 @@ class AccountRegionBreakdownResponse(BaseModel):
     scan_id: Optional[str] = None
     total_cost_usd: float
     regions: List[AccountRegionBreakdownItem]
+
+
+# ── Business mapping / chargeback models ────────────────────────────────────
+
+VALID_DIMENSIONS = {"team", "environment", "application", "cost_center"}
+
+
+class BusinessMappingRuleRequest(BaseModel):
+    tag_key: str
+    tag_value: str = "*"
+    dimension: str
+    mapped_value: str
+    priority: int = 100
+    is_active: bool = True
+
+
+class BusinessMappingRuleUpdateRequest(BaseModel):
+    tag_key: str | None = None
+    tag_value: str | None = None
+    dimension: str | None = None
+    mapped_value: str | None = None
+    priority: int | None = None
+    is_active: bool | None = None
+
+
+class BusinessMappingRuleResponse(BaseModel):
+    id: int
+    organization_id: int
+    customer_id: str
+    tag_key: str
+    tag_value: str
+    dimension: str
+    mapped_value: str
+    priority: int
+    is_active: bool
+    created_at: str
+    updated_at: Optional[str] = None
+
+
+class BusinessMappingRuleListResponse(BaseModel):
+    organization_id: int
+    rules: List[BusinessMappingRuleResponse]
+    total: int
+
+
+class ChargebackDimensionGroup(BaseModel):
+    dimension: str          # "team" | "environment" | "application" | "cost_center"
+    value: str              # e.g. "platform-team"
+    total_cost_usd: float
+    provider_breakdown: Dict[str, float]
+    record_count: int
+
+
+class ChargebackResponse(BaseModel):
+    organization_id: int
+    dimension_type: str
+    groups: List[ChargebackDimensionGroup]
+    total_mapped_cost_usd: float
+    total_unmapped_cost_usd: float
+    total_cost_usd: float
+    coverage_percent: float
+
+
+class AllocationCoverageResponse(BaseModel):
+    organization_id: int
+    total_cost_usd: float
+    mapped_cost_usd: float
+    unmapped_cost_usd: float
+    coverage_percent: float
+    dimension_coverage: Dict[str, float]   # {"team": 82.4, "environment": 91.0, …}
+    provider_coverage: Dict[str, float]    # {"aws": 78.0, "gcp": 95.0, …}
+    unmapped_top_services: List[Dict[str, Any]]
+
+
+# ── End business mapping models ──────────────────────────────────────────────
 
 
 class AlertRoutingPolicyRequest(BaseModel):
@@ -1435,6 +1513,7 @@ async def start_scan(
             scan_id=scan_id,
             customer_id=customer_id,
             providers=providers_to_scan,
+            target_accounts=scan_request.target_accounts or None,
         )
 
         return ScanProgressResponse(
@@ -2154,6 +2233,7 @@ async def upload_cost_csv(
                 cost_usd=cost_usd,
                 currency=currency,
                 line_number=line_number,
+                tags_json=normalized_row.get("tags") or None,
                 created_at=imported_at,
             )
         )
@@ -3375,10 +3455,20 @@ async def api_info() -> Dict[str, Any]:
     }
 
 
-async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str]) -> None:
+async def _run_cost_analysis(
+    scan_id: str,
+    customer_id: str,
+    providers: List[str],
+    target_accounts: Optional[List[str]] = None,
+) -> None:
     """
     Background scan: fetch live cost data per provider, persist CostSnapshot
     rows for historical trend analysis, then mark the scan run complete.
+
+    When ``target_accounts`` is provided, only account_breakdown rows whose
+    account_id matches one of the supplied identifiers are persisted as
+    ProviderAccountSnapshot / CostAllocationSnapshot records.  The overall
+    cost aggregation still uses all returned data.
     """
     db = SessionLocal()
     scanning_manager = ScanningManager(db)
@@ -3447,6 +3537,26 @@ async def _run_cost_analysis(scan_id: str, customer_id: str, providers: List[str
                             "total_cost_usd": total_cost,
                         }
                     ]
+
+                # When target_accounts is set, restrict which hierarchy nodes are
+                # persisted.  Error rows and the catch-all provider node are always
+                # kept so the scan record remains coherent.
+                if target_accounts:
+                    target_set = {str(a).strip() for a in target_accounts if a}
+                    account_rows = [
+                        row for row in account_rows
+                        if (
+                            "error" in row
+                            or str(row.get("scope_type") or "") == "provider"
+                            or str(
+                                row.get("account_id")
+                                or row.get("scope_id")
+                                or row.get("role_arn")
+                                or ""
+                            ).strip() in target_set
+                        )
+                    ]
+
                 for account_row in account_rows:
                     account_identifier = str(
                         account_row.get("account_id")
@@ -3967,6 +4077,449 @@ async def ingest_external_gcp_budget_pubsub(
         db.close()
 
     return {"status": "ok", "ingested": 1, "alert_id": alert_id, "message_id": message_id or None}
+
+
+# ── Business Mapping & Chargeback endpoints ──────────────────────────────────
+
+@router.get("/business-mapping/rules", response_model=BusinessMappingRuleListResponse)
+async def list_mapping_rules(
+    dimension: Optional[str] = None,
+    active_only: bool = True,
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> BusinessMappingRuleListResponse:
+    """List business mapping rules for the current organization."""
+    query = db.query(BusinessMappingRule).filter(
+        BusinessMappingRule.organization_id == membership.organization_id
+    )
+    if active_only:
+        query = query.filter(BusinessMappingRule.is_active == True)  # noqa: E712
+    if dimension:
+        if dimension not in VALID_DIMENSIONS:
+            raise HTTPException(status_code=400, detail=f"dimension must be one of {sorted(VALID_DIMENSIONS)}")
+        query = query.filter(BusinessMappingRule.dimension == dimension)
+    rules = query.order_by(BusinessMappingRule.priority, BusinessMappingRule.id).all()
+    return BusinessMappingRuleListResponse(
+        organization_id=membership.organization_id,
+        rules=[
+            BusinessMappingRuleResponse(
+                id=r.id,
+                organization_id=r.organization_id,
+                customer_id=r.customer_id,
+                tag_key=r.tag_key,
+                tag_value=r.tag_value,
+                dimension=r.dimension,
+                mapped_value=r.mapped_value,
+                priority=r.priority,
+                is_active=r.is_active,
+                created_at=r.created_at.isoformat(),
+                updated_at=r.updated_at.isoformat() if r.updated_at else None,
+            )
+            for r in rules
+        ],
+        total=len(rules),
+    )
+
+
+@router.post("/business-mapping/rules", response_model=BusinessMappingRuleResponse, status_code=201)
+async def create_mapping_rule(
+    rule_req: BusinessMappingRuleRequest,
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> BusinessMappingRuleResponse:
+    """Create a new business mapping rule."""
+    require_role(membership, [UserRole.ADMIN], "manage business mapping")
+    if rule_req.dimension not in VALID_DIMENSIONS:
+        raise HTTPException(status_code=400, detail=f"dimension must be one of {sorted(VALID_DIMENSIONS)}")
+    existing = (
+        db.query(BusinessMappingRule)
+        .filter(
+            BusinessMappingRule.organization_id == membership.organization_id,
+            BusinessMappingRule.tag_key == rule_req.tag_key,
+            BusinessMappingRule.tag_value == rule_req.tag_value,
+            BusinessMappingRule.dimension == rule_req.dimension,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="A mapping rule with the same tag_key/tag_value/dimension already exists.")
+    now = _utcnow()
+    customer_id = f"org-{membership.organization_id}"
+    rule = BusinessMappingRule(
+        organization_id=membership.organization_id,
+        customer_id=customer_id,
+        tag_key=rule_req.tag_key,
+        tag_value=rule_req.tag_value,
+        dimension=rule_req.dimension,
+        mapped_value=rule_req.mapped_value,
+        priority=rule_req.priority,
+        is_active=rule_req.is_active,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return BusinessMappingRuleResponse(
+        id=rule.id,
+        organization_id=rule.organization_id,
+        customer_id=rule.customer_id,
+        tag_key=rule.tag_key,
+        tag_value=rule.tag_value,
+        dimension=rule.dimension,
+        mapped_value=rule.mapped_value,
+        priority=rule.priority,
+        is_active=rule.is_active,
+        created_at=rule.created_at.isoformat(),
+        updated_at=rule.updated_at.isoformat() if rule.updated_at else None,
+    )
+
+
+@router.put("/business-mapping/rules/{rule_id}", response_model=BusinessMappingRuleResponse)
+async def update_mapping_rule(
+    rule_id: int,
+    rule_req: BusinessMappingRuleUpdateRequest,
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> BusinessMappingRuleResponse:
+    """Update an existing business mapping rule."""
+    require_role(membership, [UserRole.ADMIN], "manage business mapping")
+    rule = (
+        db.query(BusinessMappingRule)
+        .filter(
+            BusinessMappingRule.id == rule_id,
+            BusinessMappingRule.organization_id == membership.organization_id,
+        )
+        .first()
+    )
+    if not rule:
+        raise HTTPException(status_code=404, detail="Mapping rule not found.")
+    if rule_req.dimension is not None and rule_req.dimension not in VALID_DIMENSIONS:
+        raise HTTPException(status_code=400, detail=f"dimension must be one of {sorted(VALID_DIMENSIONS)}")
+    if rule_req.tag_key is not None:
+        rule.tag_key = rule_req.tag_key
+    if rule_req.tag_value is not None:
+        rule.tag_value = rule_req.tag_value
+    if rule_req.dimension is not None:
+        rule.dimension = rule_req.dimension
+    if rule_req.mapped_value is not None:
+        rule.mapped_value = rule_req.mapped_value
+    if rule_req.priority is not None:
+        rule.priority = rule_req.priority
+    if rule_req.is_active is not None:
+        rule.is_active = rule_req.is_active
+    rule.updated_at = _utcnow()
+    db.commit()
+    db.refresh(rule)
+    return BusinessMappingRuleResponse(
+        id=rule.id,
+        organization_id=rule.organization_id,
+        customer_id=rule.customer_id,
+        tag_key=rule.tag_key,
+        tag_value=rule.tag_value,
+        dimension=rule.dimension,
+        mapped_value=rule.mapped_value,
+        priority=rule.priority,
+        is_active=rule.is_active,
+        created_at=rule.created_at.isoformat(),
+        updated_at=rule.updated_at.isoformat() if rule.updated_at else None,
+    )
+
+
+@router.delete("/business-mapping/rules/{rule_id}", status_code=204)
+async def delete_mapping_rule(
+    rule_id: int,
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete a business mapping rule."""
+    require_role(membership, [UserRole.ADMIN], "manage business mapping")
+    rule = (
+        db.query(BusinessMappingRule)
+        .filter(
+            BusinessMappingRule.id == rule_id,
+            BusinessMappingRule.organization_id == membership.organization_id,
+        )
+        .first()
+    )
+    if not rule:
+        raise HTTPException(status_code=404, detail="Mapping rule not found.")
+    db.delete(rule)
+    db.commit()
+
+
+def _apply_mapping_rules(
+    org_id: int,
+    customer_id: str,
+    records: list,
+    rules: list,
+    db: Session,
+) -> int:
+    """Apply active mapping rules to imported cost records, writing NormalizedCostDimension rows.
+
+    Matching: a rule matches a record when the record's ``tags_json`` contains ``tag_key``,
+    and either ``tag_value == "*"`` or ``tag_value`` matches the stored tag value exactly.
+    Returns the count of dimension rows written.
+    """
+    now = _utcnow()
+    written = 0
+    for record in records:
+        tags: dict = {}
+        if record.tags_json:
+            try:
+                tags = json.loads(record.tags_json)
+            except (ValueError, TypeError):
+                tags = {}
+
+        # Build dimension assignments from matching rules (highest priority = lowest number)
+        dim_map: Dict[str, tuple] = {}  # dimension -> (mapped_value, rule_id)
+        matched_rule_ids: List[int] = []
+        for rule in sorted(rules, key=lambda r: (r.priority, r.id)):
+            tag_val = tags.get(rule.tag_key)
+            if tag_val is None:
+                continue
+            if rule.tag_value != "*" and rule.tag_value != str(tag_val):
+                continue
+            if rule.dimension not in dim_map:
+                dim_map[rule.dimension] = (rule.mapped_value, rule.id)
+                matched_rule_ids.append(rule.id)
+
+        is_mapped = bool(dim_map)
+        existing = (
+            db.query(NormalizedCostDimension)
+            .filter(
+                NormalizedCostDimension.imported_cost_record_id == record.id,
+                NormalizedCostDimension.organization_id == org_id,
+            )
+            .first()
+        )
+        if existing:
+            existing.team = dim_map.get("team", (None, None))[0]
+            existing.environment = dim_map.get("environment", (None, None))[0]
+            existing.application = dim_map.get("application", (None, None))[0]
+            existing.cost_center = dim_map.get("cost_center", (None, None))[0]
+            existing.is_mapped = is_mapped
+            existing.mapping_rule_ids_json = json.dumps(matched_rule_ids)
+            existing.captured_at = now
+        else:
+            row = NormalizedCostDimension(
+                organization_id=org_id,
+                customer_id=customer_id,
+                imported_cost_record_id=record.id,
+                provider=record.provider,
+                service_name=record.service_name,
+                region=record.region,
+                cost_usd=float(record.cost_usd or 0.0),
+                team=dim_map.get("team", (None, None))[0],
+                environment=dim_map.get("environment", (None, None))[0],
+                application=dim_map.get("application", (None, None))[0],
+                cost_center=dim_map.get("cost_center", (None, None))[0],
+                is_mapped=is_mapped,
+                mapping_rule_ids_json=json.dumps(matched_rule_ids),
+                captured_at=now,
+            )
+            db.add(row)
+            written += 1
+    db.commit()
+    return written
+
+
+@router.post("/business-mapping/apply", status_code=200)
+async def apply_mapping_rules(
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Re-apply all active mapping rules to imported cost records for this organization."""
+    require_role(membership, [UserRole.ADMIN], "manage business mapping")
+    org_id = membership.organization_id
+    customer_id = f"org-{org_id}"
+    rules = (
+        db.query(BusinessMappingRule)
+        .filter(
+            BusinessMappingRule.organization_id == org_id,
+            BusinessMappingRule.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+    records = (
+        db.query(ImportedCostRecord)
+        .filter(ImportedCostRecord.customer_id == customer_id)
+        .all()
+    )
+    written = _apply_mapping_rules(org_id, customer_id, records, rules, db)
+    return {
+        "status": "ok",
+        "rules_applied": len(rules),
+        "records_processed": len(records),
+        "dimension_rows_written": written,
+    }
+
+
+@router.get("/chargeback", response_model=ChargebackResponse)
+async def get_chargeback(
+    dimension_type: str = "team",
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> ChargebackResponse:
+    """Return chargeback/showback aggregation for a business dimension."""
+    if dimension_type not in VALID_DIMENSIONS:
+        raise HTTPException(status_code=400, detail=f"dimension_type must be one of {sorted(VALID_DIMENSIONS)}")
+    org_id = membership.organization_id
+    customer_id = f"org-{org_id}"
+
+    # Ensure dimension rows exist; auto-apply if none found
+    count = (
+        db.query(NormalizedCostDimension)
+        .filter(NormalizedCostDimension.organization_id == org_id)
+        .count()
+    )
+    if count == 0:
+        rules = (
+            db.query(BusinessMappingRule)
+            .filter(
+                BusinessMappingRule.organization_id == org_id,
+                BusinessMappingRule.is_active == True,  # noqa: E712
+            )
+            .all()
+        )
+        if rules:
+            records = (
+                db.query(ImportedCostRecord)
+                .filter(ImportedCostRecord.customer_id == customer_id)
+                .all()
+            )
+            _apply_mapping_rules(org_id, customer_id, records, rules, db)
+
+    rows = (
+        db.query(NormalizedCostDimension)
+        .filter(NormalizedCostDimension.organization_id == org_id)
+        .all()
+    )
+
+    dim_attr = dimension_type  # "team" | "environment" | "application" | "cost_center"
+    groups: Dict[str, ChargebackDimensionGroup] = {}
+    total_mapped = 0.0
+    total_unmapped = 0.0
+
+    for row in rows:
+        val = getattr(row, dim_attr, None)
+        cost = float(row.cost_usd or 0.0)
+        if val is None:
+            total_unmapped += cost
+            continue
+        total_mapped += cost
+        if val not in groups:
+            groups[val] = ChargebackDimensionGroup(
+                dimension=dim_attr,
+                value=val,
+                total_cost_usd=0.0,
+                provider_breakdown={},
+                record_count=0,
+            )
+        g = groups[val]
+        g.total_cost_usd = round(g.total_cost_usd + cost, 4)
+        g.provider_breakdown[row.provider] = round(g.provider_breakdown.get(row.provider, 0.0) + cost, 4)
+        g.record_count += 1
+
+    total = total_mapped + total_unmapped
+    coverage = round((total_mapped / total * 100) if total > 0 else 0.0, 2)
+
+    return ChargebackResponse(
+        organization_id=org_id,
+        dimension_type=dim_attr,
+        groups=sorted(groups.values(), key=lambda g: g.total_cost_usd, reverse=True),
+        total_mapped_cost_usd=round(total_mapped, 2),
+        total_unmapped_cost_usd=round(total_unmapped, 2),
+        total_cost_usd=round(total, 2),
+        coverage_percent=coverage,
+    )
+
+
+@router.get("/chargeback/coverage", response_model=AllocationCoverageResponse)
+async def get_allocation_coverage(
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> AllocationCoverageResponse:
+    """Return allocation quality: mapped vs unmapped spend breakdown."""
+    org_id = membership.organization_id
+    customer_id = f"org-{org_id}"
+
+    # Auto-apply rules if no dimension rows exist yet
+    count = (
+        db.query(NormalizedCostDimension)
+        .filter(NormalizedCostDimension.organization_id == org_id)
+        .count()
+    )
+    if count == 0:
+        rules = (
+            db.query(BusinessMappingRule)
+            .filter(
+                BusinessMappingRule.organization_id == org_id,
+                BusinessMappingRule.is_active == True,  # noqa: E712
+            )
+            .all()
+        )
+        if rules:
+            records = (
+                db.query(ImportedCostRecord)
+                .filter(ImportedCostRecord.customer_id == customer_id)
+                .all()
+            )
+            _apply_mapping_rules(org_id, customer_id, records, rules, db)
+
+    rows = (
+        db.query(NormalizedCostDimension)
+        .filter(NormalizedCostDimension.organization_id == org_id)
+        .all()
+    )
+
+    total_cost = sum(float(r.cost_usd or 0) for r in rows)
+    mapped_cost = sum(float(r.cost_usd or 0) for r in rows if r.is_mapped)
+    unmapped_cost = total_cost - mapped_cost
+    coverage = round((mapped_cost / total_cost * 100) if total_cost > 0 else 0.0, 2)
+
+    dim_coverage: Dict[str, float] = {}
+    for dim in VALID_DIMENSIONS:
+        dim_mapped = sum(float(r.cost_usd or 0) for r in rows if getattr(r, dim, None) is not None)
+        dim_coverage[dim] = round((dim_mapped / total_cost * 100) if total_cost > 0 else 0.0, 2)
+
+    prov_totals: Dict[str, float] = {}
+    prov_mapped: Dict[str, float] = {}
+    for r in rows:
+        prov_totals[r.provider] = prov_totals.get(r.provider, 0.0) + float(r.cost_usd or 0)
+        if r.is_mapped:
+            prov_mapped[r.provider] = prov_mapped.get(r.provider, 0.0) + float(r.cost_usd or 0)
+    provider_coverage = {
+        prov: round((prov_mapped.get(prov, 0.0) / tot * 100) if tot > 0 else 0.0, 2)
+        for prov, tot in prov_totals.items()
+    }
+
+    # Top unmapped services by cost
+    unmapped_services: Dict[str, float] = {}
+    for r in rows:
+        if not r.is_mapped and r.service_name:
+            unmapped_services[r.service_name] = (
+                unmapped_services.get(r.service_name, 0.0) + float(r.cost_usd or 0)
+            )
+    top_unmapped = sorted(
+        [{"service": s, "cost_usd": round(c, 2)} for s, c in unmapped_services.items()],
+        key=lambda x: x["cost_usd"],
+        reverse=True,
+    )[:10]
+
+    return AllocationCoverageResponse(
+        organization_id=org_id,
+        total_cost_usd=round(total_cost, 2),
+        mapped_cost_usd=round(mapped_cost, 2),
+        unmapped_cost_usd=round(unmapped_cost, 2),
+        coverage_percent=coverage,
+        dimension_coverage=dim_coverage,
+        provider_coverage=provider_coverage,
+        unmapped_top_services=top_unmapped,
+    )
+
+
+# ── End Business Mapping & Chargeback endpoints ──────────────────────────────
 
 
 async def run_scheduled_scans_once(requested_organization_id: Optional[int] = None) -> Dict[str, Any]:

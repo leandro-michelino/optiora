@@ -8,10 +8,12 @@ import {
   Brain,
   CheckCircle2,
   Lightbulb,
+  Tag,
   TrendingDown,
   Zap,
 } from 'lucide-react'
 import {
+  fetchAllocationCoverage,
   fetchApiHealth,
   fetchFinOpsAnalytics,
   fetchImportedCostSummary,
@@ -21,6 +23,7 @@ import {
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
 import {
+  AllocationCoverageResponse,
   ApiHealth,
   FinOpsAnalyticsResponse,
   ImportedCostSummaryResponse,
@@ -39,6 +42,7 @@ function formatCurrency(value: number): string {
 export default function AIInsightsPage() {
   const [analytics, setAnalytics] = useState<FinOpsAnalyticsResponse | null>(null)
   const [recommendations, setRecommendations] = useState<RecommendationResponse[]>([])
+  const [coverage, setCoverage] = useState<AllocationCoverageResponse | null>(null)
   const [health, setHealth] = useState<ApiHealth | null>(null)
   const [importedSummary, setImportedSummary] = useState<ImportedCostSummaryResponse | null>(null)
   const [diagnostics, setDiagnostics] = useState<ProviderDiagnostic[]>([])
@@ -48,12 +52,13 @@ export default function AIInsightsPage() {
 
   useEffect(() => {
     async function loadInsights() {
-      const [analyticsResult, recommendationsResult, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+      const [analyticsResult, recommendationsResult, importedResult, healthResult, diagnosticsResult, coverageResult] = await Promise.allSettled([
         fetchFinOpsAnalytics(),
         fetchRecommendations(),
         fetchImportedCostSummary(),
         fetchApiHealth(),
         fetchProviderDiagnostics(),
+        fetchAllocationCoverage(),
       ])
 
       if (analyticsResult.status === 'fulfilled') {
@@ -69,6 +74,7 @@ export default function AIInsightsPage() {
       setRecommendations(
         recommendationsResult.status === 'fulfilled' ? recommendationsResult.value.items : [],
       )
+      setCoverage(coverageResult.status === 'fulfilled' ? coverageResult.value : null)
       setImportedSummary(importedResult.status === 'fulfilled' ? importedResult.value : null)
       setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
       setDiagnostics(diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [])
@@ -272,6 +278,57 @@ export default function AIInsightsPage() {
           </Link>
         </div>
       </div>
+
+      {/* ── Allocation Coverage Widget ────────────────────────────── */}
+      {coverage && (
+        <div className="card">
+          <h3 className="font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            <Tag className="w-5 h-5 text-violet-500" />
+            Allocation Coverage
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Overall Mapped</p>
+              <p className="text-3xl font-bold text-violet-600">{coverage.coverage_percent.toFixed(1)}%</p>
+              <div className="mt-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700">
+                <div className="h-2 rounded-full bg-violet-500" style={{ width: `${Math.min(coverage.coverage_percent, 100)}%` }} />
+              </div>
+            </div>
+            {Object.entries(coverage.dimension_coverage).slice(0, 4).map(([dim, pct]) => (
+              <div key={dim}>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">{dim.replace('_', ' ')}</p>
+                <p className="text-xl font-bold text-slate-900 dark:text-white">{pct.toFixed(1)}%</p>
+                <div className="mt-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700">
+                  <div className="h-2 rounded-full bg-indigo-400" style={{ width: `${Math.min(pct, 100)}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          {coverage.unmapped_top_services.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Top Unmapped Services</p>
+              <div className="space-y-1">
+                {coverage.unmapped_top_services.slice(0, 5).map((s) => (
+                  <div key={s.service} className="flex justify-between text-sm">
+                    <span className="text-slate-700 dark:text-slate-300">{s.service}</span>
+                    <span className="font-medium text-slate-900 dark:text-white">
+                      {s.cost_usd.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="mt-4">
+            <Link
+              href="/dashboard/costs"
+              className="inline-flex items-center gap-1 text-sm font-medium text-violet-600 hover:underline dark:text-violet-400"
+            >
+              Manage mapping rules <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      )}
         </>
       )}
 

@@ -441,5 +441,122 @@ class AccountInventoryOrgScopeTest(unittest.TestCase):
         self.assertNotIn("scope-acct-a", identifiers)
 
 
+class HierarchyAwareScanOrchestrationTest(unittest.TestCase):
+    """Test hierarchy-aware scan orchestration via target_accounts on scan start."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _setup_db()
+        cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        _teardown_db()
+
+    def test_scan_start_accepts_target_accounts_field(self) -> None:
+        """POST /scanning/start with target_accounts is accepted (200) when approved."""
+        self.client.post(
+            "/auth/register",
+            json={"email": "hier-owner@example.com", "password": "StrongPass1!", "full_name": "Hier Owner"},
+        )
+        self.client.post("/auth/login", json={"email": "hier-owner@example.com", "password": "StrongPass1!"})
+
+        import finops_mcp.api as api_module
+
+        async def _noop(scan_id: str, customer_id: str, providers: list, target_accounts=None) -> None:
+            _ = (scan_id, customer_id, providers, target_accounts)
+
+        orig_cost = api_module._run_cost_analysis
+        try:
+            api_module._run_cost_analysis = _noop
+
+            self.client.post(
+                "/api/v1/scanning/approve",
+                json={"scan_frequency": "daily", "auto_remediate": False},
+            )
+
+            resp = self.client.post(
+                "/api/v1/scanning/start",
+                json={"providers": ["aws"], "target_accounts": ["111111111111", "222222222222"]},
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("scan_id", resp.json())
+        finally:
+            api_module._run_cost_analysis = orig_cost
+
+    def test_scan_start_without_target_accounts_still_works(self) -> None:
+        """POST /scanning/start without target_accounts runs as normal."""
+        self.client.post(
+            "/auth/register",
+            json={"email": "hier-owner2@example.com", "password": "StrongPass1!", "full_name": "Hier Owner 2"},
+        )
+        self.client.post("/auth/login", json={"email": "hier-owner2@example.com", "password": "StrongPass1!"})
+
+        import finops_mcp.api as api_module
+
+        async def _noop(scan_id: str, customer_id: str, providers: list, target_accounts=None) -> None:
+            _ = (scan_id, customer_id, providers, target_accounts)
+
+        orig_cost = api_module._run_cost_analysis
+        try:
+            api_module._run_cost_analysis = _noop
+
+            self.client.post(
+                "/api/v1/scanning/approve",
+                json={"scan_frequency": "daily", "auto_remediate": False},
+            )
+
+            resp = self.client.post(
+                "/api/v1/scanning/start",
+                json={"providers": ["aws"]},
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("scan_id", resp.json())
+        finally:
+            api_module._run_cost_analysis = orig_cost
+
+
+class OciCompartmentListTest(unittest.TestCase):
+    """Verify OCI _compartment_list returns tenancy plus any extra compartment IDs."""
+
+    def test_compartment_list_tenancy_only(self) -> None:
+        from finops_mcp.tools.oci_costs import _compartment_list
+        import os
+
+        orig = os.environ.pop("OCI_COMPARTMENT_IDS", None)
+        try:
+            result = _compartment_list("ocid1.tenancy.oc1..aaaatest")
+            self.assertEqual(result, ["ocid1.tenancy.oc1..aaaatest"])
+        finally:
+            if orig is not None:
+                os.environ["OCI_COMPARTMENT_IDS"] = orig
+
+    def test_compartment_list_with_extra_compartments(self) -> None:
+        from finops_mcp.tools.oci_costs import _compartment_list
+        import os
+
+        os.environ["OCI_COMPARTMENT_IDS"] = "ocid1.compartment.oc1..comp1, ocid1.compartment.oc1..comp2"
+        try:
+            result = _compartment_list("ocid1.tenancy.oc1..aaaatest")
+            self.assertEqual(len(result), 3)
+            self.assertEqual(result[0], "ocid1.tenancy.oc1..aaaatest")
+            self.assertIn("ocid1.compartment.oc1..comp1", result)
+            self.assertIn("ocid1.compartment.oc1..comp2", result)
+        finally:
+            os.environ.pop("OCI_COMPARTMENT_IDS", None)
+
+    def test_compartment_list_deduplicates_tenancy(self) -> None:
+        from finops_mcp.tools.oci_costs import _compartment_list
+        import os
+
+        os.environ["OCI_COMPARTMENT_IDS"] = "ocid1.tenancy.oc1..aaaatest,ocid1.compartment.oc1..compX"
+        try:
+            result = _compartment_list("ocid1.tenancy.oc1..aaaatest")
+            self.assertEqual(result.count("ocid1.tenancy.oc1..aaaatest"), 1)
+            self.assertEqual(len(result), 2)
+        finally:
+            os.environ.pop("OCI_COMPARTMENT_IDS", None)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,10 +11,13 @@ import {
   Grid,
   Layers3,
   Lightbulb,
+  Tag,
 } from 'lucide-react'
 import {
   fetchAlerts,
+  fetchAllocationCoverage,
   fetchApiHealth,
+  fetchChargeback,
   fetchCostsStrict,
   fetchImportedCostSummary,
   fetchProviderAccountRollups,
@@ -25,7 +28,9 @@ import {
 import { buildCostDataSourceStatus } from '@/lib/data-source'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import {
+  AllocationCoverageResponse,
   ApiHealth,
+  ChargebackResponse,
   CostResponse,
   ImportedCostSummaryResponse,
   ProviderAccountRollupResponse,
@@ -54,6 +59,8 @@ interface MyDashboardsState {
   importedSummary: ImportedCostSummaryResponse | null
   health: ApiHealth | null
   diagnostics: ProviderDiagnostic[]
+  coverage: AllocationCoverageResponse | null
+  chargeback: ChargebackResponse | null
   loading: boolean
   error: string | null
 }
@@ -67,6 +74,8 @@ const initialState: MyDashboardsState = {
   importedSummary: null,
   health: null,
   diagnostics: [],
+  coverage: null,
+  chargeback: null,
   loading: true,
   error: null,
 }
@@ -93,6 +102,8 @@ export default function MyDashboardsPage() {
         importedSummary,
         health,
         diagnostics,
+        coverageResult,
+        chargebackResult,
       ] = await Promise.allSettled([
         fetchCostsStrict(),
         fetchProviderAccountRollups(),
@@ -102,6 +113,8 @@ export default function MyDashboardsPage() {
         fetchImportedCostSummary(),
         fetchApiHealth(),
         fetchProviderDiagnostics(),
+        fetchAllocationCoverage(),
+        fetchChargeback('team'),
       ])
 
       setState({
@@ -114,6 +127,8 @@ export default function MyDashboardsPage() {
         importedSummary: importedSummary.status === 'fulfilled' ? importedSummary.value : null,
         health: health.status === 'fulfilled' ? health.value : null,
         diagnostics: diagnostics.status === 'fulfilled' ? diagnostics.value : [],
+        coverage: coverageResult.status === 'fulfilled' ? coverageResult.value : null,
+        chargeback: chargebackResult.status === 'fulfilled' ? chargebackResult.value : null,
         loading: false,
         error:
           costs.status === 'rejected'
@@ -188,8 +203,19 @@ export default function MyDashboardsPage() {
             : 'No open alerts right now',
         icon: <Activity className="w-6 h-6" />,
       },
+      {
+        id: 'chargeback',
+        name: 'Chargeback & Allocation',
+        description: 'Business mapping coverage and team-level cost attribution.',
+        href: '/dashboard/costs',
+        metric: state.coverage ? `${state.coverage.coverage_percent.toFixed(0)}%` : '—',
+        submetric: state.coverage
+          ? `${formatCurrency(state.coverage.mapped_cost_usd)} mapped of ${formatCurrency(state.coverage.total_cost_usd)}`
+          : 'No allocation data yet — define mapping rules',
+        icon: <Tag className="w-6 h-6" />,
+      },
     ]
-  }, [state.alerts, state.costs, state.history, state.recommendations, state.rollups])
+  }, [state.alerts, state.costs, state.coverage, state.history, state.recommendations, state.rollups])
 
   if (state.loading) {
     return <div className="flex items-center justify-center h-64">Loading workspace dashboards...</div>
@@ -321,6 +347,41 @@ export default function MyDashboardsPage() {
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
             Open alert(s) awaiting acknowledgement or further investigation.
           </p>
+        </div>
+
+        {/* Chargeback Overview Card */}
+        <div className="card">
+          <div className="flex items-center gap-2 mb-3">
+            <Tag className="w-5 h-5 text-violet-600" />
+            <h3 className="font-semibold text-slate-900 dark:text-white">Chargeback Coverage</h3>
+          </div>
+          {state.coverage ? (
+            <>
+              <p className="text-3xl font-bold text-violet-600">
+                {state.coverage.coverage_percent.toFixed(1)}%
+              </p>
+              <div className="mt-2 h-2 rounded-full bg-slate-200 dark:bg-slate-700">
+                <div
+                  className="h-2 rounded-full bg-violet-500"
+                  style={{ width: `${Math.min(state.coverage.coverage_percent, 100)}%` }}
+                />
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                {state.chargeback?.groups.length || 0} team(s) mapped ·{' '}
+                {formatCurrency(state.coverage.unmapped_cost_usd)} unmapped
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              No allocation data yet. Define mapping rules and upload tagged cost data.
+            </p>
+          )}
+          <Link
+            href="/dashboard/costs"
+            className="inline-flex items-center gap-1 text-sm font-medium text-violet-600 hover:underline dark:text-violet-400 mt-3"
+          >
+            View chargeback <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </div>
     </div>

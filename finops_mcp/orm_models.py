@@ -378,6 +378,7 @@ class ImportedCostRecord(Base):
     cost_usd = Column(Float, nullable=False, default=0.0)
     currency = Column(String(10), nullable=False, default="USD")
     line_number = Column(Integer, nullable=False)
+    tags_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
     def __repr__(self):
@@ -625,6 +626,85 @@ class ExportJob(Base):
         return (
             f"<ExportJob(org_id={self.organization_id}, name={self.name}, "
             f"report={self.report_type}, format={self.export_format})>"
+        )
+
+
+class BusinessMappingRule(Base):
+    """Tag/label-based rules that normalize cost records to business dimensions.
+
+    A rule matches imported or scanned cost records by *tag_key* + optional *tag_value*
+    (wildcard ``*`` means any value) and assigns them to a business dimension such as
+    ``team``, ``environment``, ``application``, or ``cost_center``.
+    """
+
+    __tablename__ = "business_mapping_rules"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "tag_key",
+            "tag_value",
+            "dimension",
+            name="uq_business_mapping_rule",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    # Matching criteria
+    tag_key = Column(String(255), nullable=False, index=True)
+    tag_value = Column(String(255), nullable=False, default="*")  # "*" = any value
+    # Business dimension type: team | environment | application | cost_center
+    dimension = Column(String(80), nullable=False, index=True)
+    # The normalized value to assign (e.g. "platform-team", "production", "payments")
+    mapped_value = Column(String(255), nullable=False)
+    priority = Column(Integer, nullable=False, default=100)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self):
+        return (
+            f"<BusinessMappingRule(org_id={self.organization_id}, "
+            f"tag={self.tag_key}={self.tag_value!r}, "
+            f"dim={self.dimension}={self.mapped_value!r})>"
+        )
+
+
+class NormalizedCostDimension(Base):
+    """Normalized business-dimension assignments derived from mapping rules.
+
+    Each row represents a single imported cost record that has been mapped to one
+    or more business dimensions via the active ``BusinessMappingRule`` set.  Multiple
+    rows can exist per ``imported_cost_record_id`` when a record matches rules for
+    different dimension types.
+    """
+
+    __tablename__ = "normalized_cost_dimensions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    imported_cost_record_id = Column(Integer, ForeignKey("imported_cost_records.id"), nullable=True, index=True)
+    scan_id = Column(String(255), nullable=True, index=True)
+    provider = Column(String(50), nullable=False, index=True)
+    service_name = Column(String(255), nullable=True, index=True)
+    region = Column(String(100), nullable=True)
+    cost_usd = Column(Float, nullable=False, default=0.0)
+    # Normalized dimension fields (null = not mapped)
+    team = Column(String(255), nullable=True, index=True)
+    environment = Column(String(255), nullable=True, index=True)
+    application = Column(String(255), nullable=True, index=True)
+    cost_center = Column(String(255), nullable=True, index=True)
+    is_mapped = Column(Boolean, nullable=False, default=False, index=True)
+    mapping_rule_ids_json = Column(Text, nullable=False, default="[]")
+    captured_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return (
+            f"<NormalizedCostDimension(org_id={self.organization_id}, "
+            f"provider={self.provider}, cost=${self.cost_usd:.2f}, "
+            f"team={self.team!r}, env={self.environment!r})>"
         )
 
 
