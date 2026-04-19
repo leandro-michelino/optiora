@@ -4,6 +4,14 @@ Terraform stays limited to OCI infrastructure primitives: VCN, subnet, route tab
 
 Primary OCI region defaults to `uk-london-1` so the deployed stack can lean on OCI GenAI by default.
 
+Preferred end-to-end path:
+
+```bash
+./setup.sh --interactive
+```
+
+The interactive wizard can generate `terraform/terraform.tfvars`, optionally apply Terraform, generate `ansible/inventory.yml`, and optionally run this playbook automatically.
+
 ## First Run
 
 1. Apply or otherwise create the OCI compute host.

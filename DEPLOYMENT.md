@@ -12,10 +12,31 @@ Deployment can be done two ways:
 
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
 
+## Recommended End-to-End Setup (Interactive)
+
+Use the interactive wizard to run Terraform + Ansible in one guided flow:
+
+```bash
+./setup.sh --interactive
+```
+
+What the wizard does:
+
+- checks core tooling and local prerequisites
+- prompts for required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`)
+- writes/updates `terraform/terraform.tfvars`
+- runs `terraform init`, `terraform validate`, `terraform plan`
+- optionally runs `terraform apply`
+- prompts for host SSH details and writes `ansible/inventory.yml`
+- optionally runs `ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml`
+- prints a deployment summary with dashboard/API URLs
+
+Tip: add `--auto-install-tools` on macOS to auto-install missing dependencies when possible.
+
 ## Prerequisites
 
 - OCI CLI installed and configured (`oci setup config`)
-- `OCI_COMPARTMENT_ID` exported
+- `OCI_COMPARTMENT_ID` exported (required for `deploy/deploy-oci.sh` quick path)
 - SSH keypair available locally
 - outbound access from the VM to package registries and any cloud APIs you plan to call
 

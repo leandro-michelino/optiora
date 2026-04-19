@@ -1,5 +1,6 @@
 compartment_id = "ocid1.compartment.oc1..your_compartment_ocid"
 region         = "uk-london-1"
+oci_object_storage_namespace = "your_object_storage_namespace"
 
 # Restrict ingress to your laptop public IP only.
 laptop_cidr = "<your_laptop_public_ip>/32"

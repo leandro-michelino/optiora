@@ -171,6 +171,14 @@ Supported Python for backend setup: `3.10` through `3.13`
 
 This creates a backend virtualenv, installs dashboard dependencies, and runs Terraform init/validate.
 
+For guided end-to-end infrastructure + host provisioning with Terraform and Ansible:
+
+```bash
+./setup.sh --interactive
+```
+
+This interactive flow updates `terraform/terraform.tfvars`, runs Terraform plan/apply (optional), prepares `ansible/inventory.yml`, and can run the Ansible playbook directly.
+
 ### Backend
 
 ```bash
@@ -219,6 +227,16 @@ Database config:
 
 ## OCI Deployment
 
+Recommended guided path:
+
+```bash
+./setup.sh --interactive
+```
+
+This runs a full Terraform + Ansible guided flow (with optional apply/provision steps) and prints final dashboard/API URLs.
+
+Alternative quick path (deploy script):
+
 ```bash
 export OCI_REGION=uk-london-1
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
@@ -252,6 +270,7 @@ terraform -chdir=terraform validate
 terraform -chdir=terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
   -var="region=uk-london-1" \
+  -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 

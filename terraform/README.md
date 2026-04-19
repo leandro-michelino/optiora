@@ -2,6 +2,14 @@
 
 This folder contains the OCI network baseline used by OptiOra. It does not provision the application runtime; Ansible owns host setup and service configuration.
 
+Preferred operator flow is the interactive root setup wizard:
+
+```bash
+./setup.sh --interactive
+```
+
+That flow manages Terraform variables and optional apply, then hands off to Ansible.
+
 ## Design Intent
 
 - OCI naming convention:
@@ -35,6 +43,7 @@ terraform validate
 terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
   -var="region=uk-london-1" \
+  -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
 
@@ -43,6 +52,7 @@ Example with restricted egress:
 ```bash
 terraform plan \
   -var="compartment_id=<your_compartment_ocid>" \
+  -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32" \
   -var="egress_cidr=<trusted-egress-cidr>"
 ```

@@ -261,6 +261,7 @@ Migrations:
 ```text
 Terraform    → provisions OCI network baseline (VCN, subnets, security lists)
 Ansible      → provisions app runtime (Python venv, systemd services, health checks)
+setup.sh --interactive → guided end-to-end TF vars + plan/apply + Ansible inventory/playbook
 deploy-oci.sh→ image discovery, upload, environment render, service restart
 OCI region   → uk-london-1 (hosting + GenAI inference)
 

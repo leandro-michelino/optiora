@@ -76,7 +76,13 @@ Required deployment inputs:
 
 ### 3. Deploy
 
-Quick OCI deploy:
+Preferred guided deploy path:
+
+```bash
+./setup.sh --interactive
+```
+
+Alternative quick OCI deploy:
 
 ```bash
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
