@@ -30,6 +30,8 @@ import {
   NotificationDestinationTestResponse,
   ExportJob,
   ExportJobRun,
+  CostTrendResponse,
+  PeriodSummaryComputeResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -498,4 +500,40 @@ export async function fetchChargeback(dimensionType: string = 'team'): Promise<C
 
 export async function fetchAllocationCoverage(): Promise<AllocationCoverageResponse> {
   return requestJson<AllocationCoverageResponse>('/api/v1/chargeback/coverage')
+}
+
+// ── Epic 4: Reporting & Trend ─────────────────────────────────────────────
+
+export async function fetchCostTrend(
+  periodType: 'monthly' | 'weekly' = 'monthly',
+  lookback = 6,
+  provider?: string,
+): Promise<CostTrendResponse> {
+  return requestJson<CostTrendResponse>(
+    `/api/v1/reports/cost-trend${toQueryString({ period_type: periodType, lookback, provider })}`,
+  )
+}
+
+export async function computePeriodSummaries(
+  periodType: 'monthly' | 'weekly' = 'monthly',
+): Promise<PeriodSummaryComputeResponse> {
+  return requestJson<PeriodSummaryComputeResponse>(
+    `/api/v1/reports/period-summaries/compute${toQueryString({ period_type: periodType })}`,
+    { method: 'POST' },
+  )
+}
+
+export async function downloadChargebackCsv(): Promise<void> {
+  const blob = await requestBlob('/api/v1/reports/chargeback.csv')
+  saveBlob(blob, `optiora-chargeback-${new Date().toISOString().slice(0, 10)}.csv`)
+}
+
+export async function downloadChargebackXlsx(): Promise<void> {
+  const blob = await requestBlob('/api/v1/reports/chargeback.xlsx')
+  saveBlob(blob, `optiora-report-${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
+export async function downloadExecutiveSummaryXlsx(): Promise<void> {
+  const blob = await requestBlob('/api/v1/reports/executive-summary.xlsx')
+  saveBlob(blob, `optiora-executive-summary-${new Date().toISOString().slice(0, 10)}.xlsx`)
 }

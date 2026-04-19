@@ -516,3 +516,37 @@ export interface AllocationCoverageResponse {
   provider_coverage: Record<string, number>
   unmapped_top_services: Array<{ service: string; cost_usd: number }>
 }
+
+// ── Epic 4: Reporting & Trend types ───────────────────────────────────────
+
+export interface CostTrendPoint {
+  period_start: string
+  period_end: string
+  provider: string
+  total_cost_usd: number
+  mapped_cost_usd: number
+  unmapped_cost_usd: number
+  record_count: number
+  team?: string | null
+  environment?: string | null
+  service_breakdown: Record<string, number>
+}
+
+export interface CostTrendResponse {
+  organization_id: number
+  period_type: string
+  lookback_periods: number
+  data_source: 'computed' | 'raw_records' | 'empty' | string
+  points: CostTrendPoint[]
+  provider_totals: Record<string, number>
+  grand_total_usd: number
+}
+
+export interface PeriodSummaryComputeResponse {
+  organization_id: number
+  period_type: string
+  periods_computed: number
+  rows_written: number
+  computed_at: string
+}
+

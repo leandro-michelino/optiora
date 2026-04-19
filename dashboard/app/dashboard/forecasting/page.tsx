@@ -15,6 +15,7 @@ import {
 import { AlertCircle, Download, Target, TrendingUp } from 'lucide-react'
 import {
   fetchApiHealth,
+  fetchCostTrend,
   fetchForecast,
   fetchImportedCostSummary,
   fetchProviderDiagnostics,
@@ -23,6 +24,7 @@ import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
 import {
   ApiHealth,
+  CostTrendResponse,
   ForecastPoint,
   ForecastResponse,
   ForecastScenario,
@@ -87,6 +89,7 @@ ${projectionRows}
 
 export default function PredictiveAnalyticsPage() {
   const [forecast, setForecast] = useState<ForecastResponse | null>(null)
+  const [trend, setTrend] = useState<CostTrendResponse | null>(null)
   const [health, setHealth] = useState<ApiHealth | null>(null)
   const [importedSummary, setImportedSummary] = useState<ImportedCostSummaryResponse | null>(null)
   const [diagnostics, setDiagnostics] = useState<ProviderDiagnostic[]>([])
@@ -96,11 +99,12 @@ export default function PredictiveAnalyticsPage() {
 
   useEffect(() => {
     async function loadForecast() {
-      const [forecastResult, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+      const [forecastResult, importedResult, healthResult, diagnosticsResult, trendResult] = await Promise.allSettled([
         fetchForecast(12),
         fetchImportedCostSummary(),
         fetchApiHealth(),
         fetchProviderDiagnostics(),
+        fetchCostTrend('monthly', 6),
       ])
 
       if (forecastResult.status === 'fulfilled') {
@@ -119,6 +123,7 @@ export default function PredictiveAnalyticsPage() {
       setImportedSummary(importedResult.status === 'fulfilled' ? importedResult.value : null)
       setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
       setDiagnostics(diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [])
+      setTrend(trendResult.status === 'fulfilled' ? trendResult.value : null)
       setLoading(false)
     }
 
@@ -249,6 +254,31 @@ export default function PredictiveAnalyticsPage() {
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">
+              {/* Historical Cost Trend */}
+              {trend && trend.points.length > 0 && (
+                <div className="card bg-white dark:bg-slate-800">
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-blue-500" />
+                    Historical Cost Trend
+                    <span className="text-sm font-normal text-slate-400 ml-2">({trend.data_source})</span>
+                  </h2>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <AreaChart data={trend.points.map(p => ({
+                      month: p.period_start.slice(0, 7),
+                      total: p.total_cost_usd,
+                      mapped: p.mapped_cost_usd,
+                    }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" stroke="#64748b" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v) => v != null ? formatCurrency(Number(v)) : ''} />
+                      <Area type="monotone" dataKey="total" name="Total" stroke="#2563eb" fill="#2563eb" fillOpacity={0.12} />
+                      <Area type="monotone" dataKey="mapped" name="Allocated" stroke="#10b981" fill="#10b981" fillOpacity={0.12} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
               <div className="card bg-white dark:bg-slate-800">
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
                   Forecast Trajectory

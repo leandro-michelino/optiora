@@ -731,6 +731,46 @@ class ExportJobRun(Base):
         )
 
 
+class CostPeriodSummary(Base):
+    """Pre-aggregated weekly/monthly cost summaries per provider and business dimension.
+
+    Computed from ImportedCostRecord and NormalizedCostDimension rows.
+    Used for trend charts, executive dashboards, and scheduled report generation.
+    """
+
+    __tablename__ = "cost_period_summaries"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "period_type", "period_start", "provider", "team", "environment",
+            name="uq_cost_period_summary",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    period_type = Column(String(10), nullable=False)          # "monthly" | "weekly"
+    period_start = Column(DateTime, nullable=False, index=True)
+    period_end = Column(DateTime, nullable=False)
+    provider = Column(String(50), nullable=False, index=True)  # "aws", "azure", "gcp", "oci", "imported", "all"
+    region = Column(String(100), nullable=True)
+    team = Column(String(160), nullable=True)
+    environment = Column(String(160), nullable=True)
+    total_cost_usd = Column(Float, nullable=False, default=0.0)
+    mapped_cost_usd = Column(Float, nullable=False, default=0.0)
+    unmapped_cost_usd = Column(Float, nullable=False, default=0.0)
+    record_count = Column(Integer, nullable=False, default=0)
+    service_breakdown_json = Column(Text, nullable=True)       # JSON: {service: cost_usd}
+    computed_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return (
+            f"<CostPeriodSummary({self.period_type} {self.period_start} "
+            f"{self.provider} ${self.total_cost_usd:.2f})>"
+        )
+
+
+
 # Dependency
 def get_db():
     """FastAPI dependency for database session."""

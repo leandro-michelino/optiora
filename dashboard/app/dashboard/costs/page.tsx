@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -26,13 +29,16 @@ import {
 } from 'lucide-react'
 import {
   applyMappingRules,
+  computePeriodSummaries,
   createMappingRule,
   deleteMappingRule,
+  downloadChargebackXlsx,
   downloadExecutiveSummaryCsv,
   downloadExecutiveSummaryExcel,
   fetchAllocationCoverage,
   fetchApiHealth,
   fetchChargeback,
+  fetchCostTrend,
   fetchCostsStrict,
   fetchImportedCostSummary,
   fetchMappingRules,
@@ -48,6 +54,7 @@ import {
   BusinessMappingRule,
   ChargebackResponse,
   CostResponse,
+  CostTrendResponse,
   ImportedCostSummaryResponse,
   PaginatedResponse,
   ProviderAccountRollupResponse,
@@ -74,6 +81,7 @@ interface CostsPageState {
   mappingRules: BusinessMappingRule[]
   chargeback: ChargebackResponse | null
   coverage: AllocationCoverageResponse | null
+  trend: CostTrendResponse | null
   loading: boolean
   error: string | null
 }
@@ -95,6 +103,7 @@ const initialState: CostsPageState = {
   mappingRules: [],
   chargeback: null,
   coverage: null,
+  trend: null,
   loading: true,
   error: null,
 }
@@ -160,10 +169,11 @@ export default function CostsPage() {
         fetchProviderDiagnostics(),
       ])
 
-      const [mappingRulesResult, chargebackResult, coverageResult] = await Promise.allSettled([
+      const [mappingRulesResult, chargebackResult, coverageResult, trendResult] = await Promise.allSettled([
         fetchMappingRules(undefined, false),
         fetchChargeback('team'),
         fetchAllocationCoverage(),
+        fetchCostTrend('monthly', 6),
       ])
 
       setState({
@@ -176,6 +186,7 @@ export default function CostsPage() {
         mappingRules: mappingRulesResult.status === 'fulfilled' ? mappingRulesResult.value.rules : [],
         chargeback: chargebackResult.status === 'fulfilled' ? chargebackResult.value : null,
         coverage: coverageResult.status === 'fulfilled' ? coverageResult.value : null,
+        trend: trendResult.status === 'fulfilled' ? trendResult.value : null,
         loading: false,
         error:
           costs.status === 'rejected'
@@ -487,6 +498,38 @@ export default function CostsPage() {
       </div>
 
       <div className="flex flex-wrap gap-4">
+        {/* Trend chart */}
+        {state.trend && state.trend.points.length > 0 && (
+          <div className="w-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-500" />
+                Cost Trend — Last {state.trend.lookback_periods} Months
+              </h2>
+              <span className="text-xs text-slate-400">
+                Source: {state.trend.data_source}
+              </span>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={state.trend.points.map(p => ({
+                month: p.period_start.slice(0, 7),
+                provider: p.provider,
+                total: p.total_cost_usd,
+                mapped: p.mapped_cost_usd,
+                unmapped: p.unmapped_cost_usd,
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.2} />
+                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v) => v != null ? `$${Number(v).toLocaleString()}` : ''} />
+                <Legend />
+                <Area type="monotone" dataKey="total" name="Total" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} />
+                <Area type="monotone" dataKey="mapped" name="Allocated" stroke="#10b981" fill="#10b981" fillOpacity={0.15} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={() => void downloadExecutiveSummaryCsv()}
@@ -502,6 +545,14 @@ export default function CostsPage() {
         >
           <Download className="w-5 h-5" />
           Export Executive Excel
+        </button>
+        <button
+          type="button"
+          onClick={() => void downloadChargebackXlsx()}
+          className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition"
+        >
+          <Download className="w-5 h-5" />
+          Full Report (XLSX)
         </button>
         <a
           href="/dashboard/ai-insights"

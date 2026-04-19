@@ -20,6 +20,13 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill
+    _OPENPYXL_AVAILABLE = True
+except ImportError:
+    _OPENPYXL_AVAILABLE = False
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -40,6 +47,7 @@ from .orm_models import (
     AuditLog,
     BusinessMappingRule,
     CostAllocationSnapshot,
+    CostPeriodSummary,
     CostSnapshot,
     ExportJob,
     ExportJobRun,
@@ -356,7 +364,42 @@ class AllocationCoverageResponse(BaseModel):
     unmapped_top_services: List[Dict[str, Any]]
 
 
-# ── End business mapping models ──────────────────────────────────────────────
+# ── Trend / Period Summary models ─────────────────────────────────────────────
+
+class CostTrendPoint(BaseModel):
+    period_start: str
+    period_end: str
+    provider: str
+    total_cost_usd: float
+    mapped_cost_usd: float
+    unmapped_cost_usd: float
+    record_count: int
+    team: Optional[str] = None
+    environment: Optional[str] = None
+    service_breakdown: Dict[str, float] = {}
+
+
+class CostTrendResponse(BaseModel):
+    organization_id: int
+    period_type: str             # "monthly" | "weekly"
+    lookback_periods: int
+    data_source: str             # "computed" | "raw_records" | "empty"
+    points: List[CostTrendPoint]
+    provider_totals: Dict[str, float]
+    grand_total_usd: float
+
+
+class PeriodSummaryComputeResponse(BaseModel):
+    organization_id: int
+    period_type: str
+    periods_computed: int
+    rows_written: int
+    computed_at: str
+
+
+# ── End trend models ──────────────────────────────────────────────────────────
+
+
 
 
 class AlertRoutingPolicyRequest(BaseModel):
@@ -2783,6 +2826,35 @@ async def _executive_summary_rows(
             alert["created_at"],
         ])
 
+    # ── Business mapping / chargeback section ─────────────────────────────
+    try:
+        with SessionLocal() as _db:
+            org_id = _organization_id_for_membership(membership)
+            customer_id = _customer_id_for_org(membership)
+            dim_rows = (
+                _db.query(NormalizedCostDimension)
+                .filter(NormalizedCostDimension.organization_id == org_id)
+                .all()
+            )
+            if dim_rows:
+                total_dim = sum(float(r.cost_usd or 0) for r in dim_rows)
+                mapped_dim = sum(float(r.cost_usd or 0) for r in dim_rows if r.is_mapped)
+                coverage_pct = round((mapped_dim / total_dim * 100) if total_dim > 0 else 0.0, 1)
+                rows.extend([
+                    ["Allocation Coverage", "Total Cost USD", round(total_dim, 2)],
+                    ["Allocation Coverage", "Mapped Cost USD", round(mapped_dim, 2)],
+                    ["Allocation Coverage", "Coverage Percent", coverage_pct],
+                ])
+                # Per-team chargeback
+                team_totals: Dict[str, float] = {}
+                for r in dim_rows:
+                    t = r.team or "(unmapped)"
+                    team_totals[t] = team_totals.get(t, 0.0) + float(r.cost_usd or 0)
+                for team, cost in sorted(team_totals.items(), key=lambda x: -x[1])[:15]:
+                    rows.append(["Chargeback by Team", team, round(cost, 2)])
+    except Exception:
+        pass
+
     return rows
 
 
@@ -4519,7 +4591,410 @@ async def get_allocation_coverage(
     )
 
 
-# ── End Business Mapping & Chargeback endpoints ──────────────────────────────
+# ── Epic 4: Reporting & Executive Outputs ────────────────────────────────────
+
+def _compute_period_bucket(dt: datetime, period_type: str) -> tuple[datetime, datetime]:
+    """Return (period_start, period_end) for a datetime given period_type."""
+    if period_type == "weekly":
+        # Monday-anchored ISO week
+        start = dt - timedelta(days=dt.weekday())
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=7) - timedelta(seconds=1)
+    else:  # monthly
+        start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if dt.month == 12:
+            end = start.replace(year=dt.year + 1, month=1) - timedelta(seconds=1)
+        else:
+            end = start.replace(month=dt.month + 1) - timedelta(seconds=1)
+    return start, end
+
+
+def _build_xlsx_workbook(sheets: List[tuple[str, List[List[Any]]]]) -> bytes:
+    """Build an xlsx workbook from a list of (sheet_name, rows) tuples.
+
+    Each row is a list of cell values; the first row is treated as a header.
+    Returns raw bytes of the workbook.
+    """
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # remove default blank sheet
+
+    header_fill = PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+
+    for sheet_name, rows in sheets:
+        ws = wb.create_sheet(title=sheet_name[:31])  # Excel sheet name max 31 chars
+        for row_idx, row in enumerate(rows, start=1):
+            for col_idx, value in enumerate(row, start=1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                if row_idx == 1:
+                    cell.fill = header_fill
+                    cell.font = header_font
+        # Auto-width approximation
+        for col in ws.columns:
+            max_len = max((len(str(c.value or "")) for c in col), default=8)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 50)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _chargeback_csv_rows(
+    org_id: int,
+    customer_id: str,
+    db: Session,
+) -> tuple[List[str], List[List[Any]]]:
+    """Return (header, data_rows) for a full chargeback export."""
+    dim_rows = (
+        db.query(NormalizedCostDimension)
+        .filter(NormalizedCostDimension.organization_id == org_id)
+        .order_by(NormalizedCostDimension.captured_at.desc())
+        .all()
+    )
+    header = [
+        "provider", "service_name", "region",
+        "cost_usd", "team", "environment", "application", "cost_center",
+        "is_mapped", "mapping_rule_ids", "captured_at",
+    ]
+    data: List[List[Any]] = []
+    for r in dim_rows:
+        data.append([
+            r.provider or "",
+            r.service_name or "",
+            r.region or "",
+            round(float(r.cost_usd or 0), 4),
+            r.team or "",
+            r.environment or "",
+            r.application or "",
+            r.cost_center or "",
+            "yes" if r.is_mapped else "no",
+            r.mapping_rule_ids_json or "",
+            r.captured_at.isoformat() if r.captured_at else "",
+        ])
+    return header, data
+
+
+@router.post("/reports/period-summaries/compute", response_model=PeriodSummaryComputeResponse)
+async def compute_period_summaries(
+    period_type: str = "monthly",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> PeriodSummaryComputeResponse:
+    """Aggregate ImportedCostRecord rows into CostPeriodSummary buckets.
+
+    Re-computing is idempotent — existing rows are overwritten via upsert.
+    Supported period_type values: 'monthly', 'weekly'.
+    """
+    if period_type not in ("monthly", "weekly"):
+        raise HTTPException(status_code=400, detail="period_type must be 'monthly' or 'weekly'.")
+    org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+
+    records = (
+        db.query(ImportedCostRecord)
+        .filter(ImportedCostRecord.organization_id == org_id)
+        .all()
+    )
+
+    # Fetch normalized dimension rows (for mapped cost tracking)
+    dim_by_record_id: Dict[int, NormalizedCostDimension] = {
+        r.imported_cost_record_id: r
+        for r in db.query(NormalizedCostDimension)
+        .filter(NormalizedCostDimension.organization_id == org_id)
+        .all()
+        if r.imported_cost_record_id is not None
+    }
+
+    # Bucket: (period_start, provider, team, environment) → aggregation dict
+    buckets: Dict[tuple, Dict[str, Any]] = {}
+
+    now = _utcnow()
+    for rec in records:
+        anchor = rec.period_start or rec.created_at or now
+        pstart, pend = _compute_period_bucket(anchor, period_type)
+        dim = dim_by_record_id.get(rec.id)
+        team = (dim.team or "") if dim else ""
+        environment = (dim.environment or "") if dim else ""
+        key = (pstart, pend, rec.provider or "imported", team, environment)
+
+        cost = float(rec.cost_usd or 0)
+        if key not in buckets:
+            buckets[key] = {
+                "total_cost_usd": 0.0,
+                "mapped_cost_usd": 0.0,
+                "unmapped_cost_usd": 0.0,
+                "record_count": 0,
+                "services": {},
+            }
+        b = buckets[key]
+        b["total_cost_usd"] += cost
+        if dim and dim.is_mapped:
+            b["mapped_cost_usd"] += cost
+        else:
+            b["unmapped_cost_usd"] += cost
+        b["record_count"] += 1
+        svc = rec.service_name or "unknown"
+        b["services"][svc] = b["services"].get(svc, 0.0) + cost
+
+    rows_written = 0
+    computed_at = _utcnow()
+    for (pstart, pend, provider, team, environment), b in buckets.items():
+        # Upsert: delete any existing row for this bucket key
+        db.query(CostPeriodSummary).filter(
+            CostPeriodSummary.organization_id == org_id,
+            CostPeriodSummary.period_type == period_type,
+            CostPeriodSummary.period_start == pstart,
+            CostPeriodSummary.provider == provider,
+            CostPeriodSummary.team == (team or None),
+            CostPeriodSummary.environment == (environment or None),
+        ).delete(synchronize_session=False)
+
+        row = CostPeriodSummary(
+            organization_id=org_id,
+            customer_id=customer_id,
+            period_type=period_type,
+            period_start=pstart,
+            period_end=pend,
+            provider=provider,
+            team=team or None,
+            environment=environment or None,
+            total_cost_usd=round(b["total_cost_usd"], 4),
+            mapped_cost_usd=round(b["mapped_cost_usd"], 4),
+            unmapped_cost_usd=round(b["unmapped_cost_usd"], 4),
+            record_count=b["record_count"],
+            service_breakdown_json=json.dumps(
+                {k: round(v, 4) for k, v in sorted(b["services"].items(), key=lambda x: -x[1])[:20]}
+            ),
+            computed_at=computed_at,
+        )
+        db.add(row)
+        rows_written += 1
+
+    db.commit()
+
+    return PeriodSummaryComputeResponse(
+        organization_id=org_id,
+        period_type=period_type,
+        periods_computed=len({(k[0], k[2]) for k in buckets}),
+        rows_written=rows_written,
+        computed_at=computed_at.isoformat(),
+    )
+
+
+@router.get("/reports/cost-trend", response_model=CostTrendResponse)
+async def get_cost_trend(
+    period_type: str = "monthly",
+    lookback: int = 6,
+    provider: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> CostTrendResponse:
+    """Return time-series cost data for trend charts.
+
+    Uses pre-computed CostPeriodSummary rows when available; falls back to
+    aggregating ImportedCostRecord rows on the fly.
+    """
+    if period_type not in ("monthly", "weekly"):
+        raise HTTPException(status_code=400, detail="period_type must be 'monthly' or 'weekly'.")
+    lookback = max(1, min(lookback, 52))
+    org_id = _organization_id_for_membership(membership)
+
+    # Try pre-computed summaries first
+    q = db.query(CostPeriodSummary).filter(
+        CostPeriodSummary.organization_id == org_id,
+        CostPeriodSummary.period_type == period_type,
+    )
+    if provider:
+        q = q.filter(CostPeriodSummary.provider == provider.lower())
+    summaries = q.order_by(CostPeriodSummary.period_start.desc()).all()
+
+    data_source = "computed" if summaries else "raw_records"
+
+    if not summaries:
+        # Fallback: aggregate ImportedCostRecord on the fly
+        records = (
+            db.query(ImportedCostRecord)
+            .filter(ImportedCostRecord.organization_id == org_id)
+            .all()
+        )
+        if not records:
+            return CostTrendResponse(
+                organization_id=org_id,
+                period_type=period_type,
+                lookback_periods=lookback,
+                data_source="empty",
+                points=[],
+                provider_totals={},
+                grand_total_usd=0.0,
+            )
+
+        # Group on the fly
+        now = _utcnow()
+        buckets: Dict[tuple, Dict[str, Any]] = {}
+        for rec in records:
+            if provider and (rec.provider or "").lower() != provider.lower():
+                continue
+            anchor = rec.period_start or rec.created_at or now
+            pstart, pend = _compute_period_bucket(anchor, period_type)
+            key = (pstart, pend, rec.provider or "imported")
+            cost = float(rec.cost_usd or 0)
+            if key not in buckets:
+                buckets[key] = {"pend": pend, "total": 0.0, "mapped": 0.0, "unmapped": 0.0, "count": 0, "svcs": {}}
+            b = buckets[key]
+            b["total"] += cost
+            b["unmapped"] += cost
+            b["count"] += 1
+            svc = rec.service_name or "unknown"
+            b["svcs"][svc] = b["svcs"].get(svc, 0.0) + cost
+
+        sorted_keys = sorted(buckets.keys(), key=lambda k: k[0], reverse=True)[:lookback]
+        points = [
+            CostTrendPoint(
+                period_start=k[0].isoformat(),
+                period_end=buckets[k]["pend"].isoformat(),
+                provider=k[2],
+                total_cost_usd=round(buckets[k]["total"], 2),
+                mapped_cost_usd=round(buckets[k]["mapped"], 2),
+                unmapped_cost_usd=round(buckets[k]["unmapped"], 2),
+                record_count=buckets[k]["count"],
+                service_breakdown={s: round(c, 2) for s, c in list(buckets[k]["svcs"].items())[:10]},
+            )
+            for k in sorted(sorted_keys, key=lambda k: k[0])
+        ]
+    else:
+        # Use pre-computed summaries — group by period + provider
+        by_period: Dict[tuple, Dict[str, Any]] = {}
+        for s in summaries:
+            key = (s.period_start, s.period_end, s.provider)
+            if key not in by_period:
+                by_period[key] = {"total": 0.0, "mapped": 0.0, "unmapped": 0.0, "count": 0, "svcs": {}}
+            b = by_period[key]
+            b["total"] += float(s.total_cost_usd or 0)
+            b["mapped"] += float(s.mapped_cost_usd or 0)
+            b["unmapped"] += float(s.unmapped_cost_usd or 0)
+            b["count"] += int(s.record_count or 0)
+            if s.service_breakdown_json:
+                try:
+                    for svc, c in json.loads(s.service_breakdown_json).items():
+                        b["svcs"][svc] = b["svcs"].get(svc, 0.0) + c
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        sorted_keys = sorted(by_period.keys(), key=lambda k: k[0], reverse=True)[:lookback]
+        points = [
+            CostTrendPoint(
+                period_start=k[0].isoformat(),
+                period_end=k[1].isoformat(),
+                provider=k[2],
+                total_cost_usd=round(by_period[k]["total"], 2),
+                mapped_cost_usd=round(by_period[k]["mapped"], 2),
+                unmapped_cost_usd=round(by_period[k]["unmapped"], 2),
+                record_count=by_period[k]["count"],
+                service_breakdown={s: round(c, 2) for s, c in list(by_period[k]["svcs"].items())[:10]},
+            )
+            for k in sorted(sorted_keys, key=lambda k: k[0])
+        ]
+
+    provider_totals: Dict[str, float] = {}
+    for p in points:
+        provider_totals[p.provider] = round(provider_totals.get(p.provider, 0.0) + p.total_cost_usd, 2)
+
+    return CostTrendResponse(
+        organization_id=org_id,
+        period_type=period_type,
+        lookback_periods=lookback,
+        data_source=data_source,
+        points=points,
+        provider_totals=provider_totals,
+        grand_total_usd=round(sum(provider_totals.values()), 2),
+    )
+
+
+@router.get("/reports/chargeback.csv")
+async def download_chargeback_csv(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Download a full chargeback/allocation CSV with all business dimensions."""
+    org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    header, data = _chargeback_csv_rows(org_id, customer_id, db)
+    return _csv_response("optiora-chargeback.csv", header, data)
+
+
+@router.get("/reports/chargeback.xlsx")
+async def download_chargeback_xlsx(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Download a multi-sheet Excel workbook with chargeback + executive summary."""
+    if not _OPENPYXL_AVAILABLE:
+        raise HTTPException(status_code=501, detail="openpyxl is not installed on this server.")
+    org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+
+    # Sheet 1: Chargeback detail
+    header, data = _chargeback_csv_rows(org_id, customer_id, db)
+    chargeback_rows = [header] + data
+
+    # Sheet 2: Executive summary (reuse existing helper)
+    exec_rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
+
+    # Sheet 3: Trend summary (last 6 monthly periods)
+    trend = await get_cost_trend(
+        period_type="monthly",
+        lookback=6,
+        provider=None,
+        current_user=current_user,
+        membership=membership,
+        db=db,
+    )
+    trend_header = ["period_start", "period_end", "provider", "total_cost_usd", "mapped_cost_usd", "unmapped_cost_usd", "record_count"]
+    trend_rows: List[List[Any]] = [trend_header] + [
+        [p.period_start[:10], p.period_end[:10], p.provider, p.total_cost_usd, p.mapped_cost_usd, p.unmapped_cost_usd, p.record_count]
+        for p in trend.points
+    ]
+
+    xlsx_bytes = _build_xlsx_workbook([
+        ("Chargeback Detail", chargeback_rows),
+        ("Executive Summary", exec_rows),
+        ("Cost Trend", trend_rows),
+    ])
+
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="optiora-report-{_utcnow().strftime("%Y%m%d")}.xlsx"'
+        },
+    )
+
+
+@router.get("/reports/executive-summary.xlsx")
+async def download_executive_summary_xlsx(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Download the executive summary as a proper XLSX workbook."""
+    if not _OPENPYXL_AVAILABLE:
+        raise HTTPException(status_code=501, detail="openpyxl is not installed on this server.")
+    exec_rows = await _executive_summary_rows(current_user=current_user, membership=membership, db=db)
+    xlsx_bytes = _build_xlsx_workbook([("Executive Summary", exec_rows)])
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="optiora-executive-summary-{_utcnow().strftime("%Y%m%d")}.xlsx"'
+        },
+    )
+
+
+# ── End Epic 4 endpoints ──────────────────────────────────────────────────────
 
 
 async def run_scheduled_scans_once(requested_organization_id: Optional[int] = None) -> Dict[str, Any]:
