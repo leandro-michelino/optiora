@@ -1,7 +1,10 @@
 """Configuration management for OptiOra API backend."""
 
+import logging
 import os
 from dataclasses import dataclass
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -109,4 +112,12 @@ class Config:
         if not any([has_aws, has_azure, has_gcp, has_oci]):
             raise ValueError(
                 "At least one cloud provider must be configured for cost analysis (AWS, Azure, GCP, or OCI)"
+            )
+        # Warn clearly about insecure runtime defaults
+        _env = os.getenv("ENVIRONMENT", "development").strip().lower()
+        if not self.auth_enabled and _env == "production":
+            _logger.warning(
+                "SECURITY WARNING: ENABLE_AUTH=false in a production environment. "
+                "All API endpoints are publicly accessible without authentication. "
+                "Set ENABLE_AUTH=true before exposing this instance to the internet."
             )

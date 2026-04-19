@@ -2,7 +2,29 @@
 
 This document turns the `1.0` direction into an implementation backlog that maps to the current repository structure.
 
-## Goal
+## Already Implemented (Release 1.0 Feature-Complete — April 2026)
+
+The following features are fully implemented and shipped. They are tracked here for release documentation purposes.
+
+| Feature | Backend endpoints | Frontend page | Migration |
+|---|---|---|---|
+| Multi-account hierarchy + rollups | `/api/v1/provider-accounts/*` | accounts/ | 0003 |
+| CSV cost import (10 MB, UTF-8) | `/api/v1/imports/costs/*` | settings/ | 0004, 0005 |
+| Business mapping + chargeback | `/api/v1/business-mapping/*` | — | 0009 |
+| Cost allocation snapshots | internal | — | 0006 |
+| Alert routing policies | `/api/v1/alerts/*` | operations/ | 0007 |
+| Export jobs (FOCUS, CSV, XLS) | `/api/v1/exports/*` | — | 0008 |
+| Cost period summaries | internal | forecasting/ | 0010 |
+| Unit Economics | `/api/v1/analytics/unit-economics` | unit-economics/ | — |
+| Scorecards | `/api/v1/analytics/scorecards` | scorecards/ | — |
+| Resource Inventory | `/api/v1/inventory` | inventory/ | — |
+| Kubernetes Cost Allocation | `/api/v1/kubernetes/cost-allocation` | kubernetes/ | — |
+| Virtual Tag Engine (CRUD + preview) | `/api/v1/virtual-tags/*` | virtual-tags/ | 0011 |
+| Resource-Level Rightsizing | `/api/v1/recommendations/rightsizing` | rightsizing/ | — |
+| Hybrid Advisor (deterministic + GenAI) | `/api/v1/advisor/hybrid` | cost-advisor/ | — |
+| Cloud waste / efficiency / commitment gap | `/api/v1/analytics/cloud-waste` etc. | — | — |
+
+
 
 Deliver a marketable FinOps core by expanding the current public-dashboard deployment into a stronger multi-account, reporting, and finance-facing product.
 

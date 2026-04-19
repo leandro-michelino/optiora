@@ -11,7 +11,14 @@ The dashboard is the main workspace for:
 - multi-cloud cost overview across AWS, Azure, GCP, and OCI
 - provider connection, CSV billing upload, and scan readiness checks
 - anomaly detection and optimization recommendations
-- deeper FinOps analytics surfaces (cloud waste categories, efficiency score, commitment gap opportunity) with animated KPI cards
+- FinOps Analytics surfaces:
+  - **Unit Economics** — cost-per-resource, waste-to-spend ratio, dollar efficiency grade
+  - **Scorecards** — per-team/environment FinOps maturity scoring with historical trends
+  - **Resource Inventory** — searchable asset inventory across all connected providers
+  - **Kubernetes Cost Allocation** — namespace-level cost attribution with workload breakdown
+  - **Virtual Tags** — rule-based virtual tagging engine with dry-run coverage preview
+  - **Resource-Level Rightsizing** — per-instance/volume savings with utilization signals
+- deeper FinOps analytics (cloud waste categories, efficiency score, commitment gap) with animated KPI cards
 - deterministic forecasting with baseline/conservative/balanced/aggressive scenarios, p10/p50/p90 fan percentiles, budget guardrails, trend+smoothing blends, provider concentration (HHI), and breach-probability executive metrics
 - OCI GenAI-assisted cost advisor conversations, AI insights, and advisory workflows with London South (`uk-london-1`) as the primary OCI GenAI region
 
@@ -38,26 +45,32 @@ The dashboard is the main workspace for:
 │  - cost views and AI advisor chat            │
 │  - credential, CSV import, and scan setup    │
 │  - anomaly detection and recommendations     │
+│  - unit economics, scorecards, inventory     │
+│  - kubernetes costs, virtual tags, rightsizing│
 └────────────────────────┬─────────────────────┘
-                         │ REST
+                         │ REST /api/v1/*
                          v
 ┌──────────────────────────────────────────────┐
 │           FastAPI Backend (port 8000)        │
-│  /api/v1/credentials/*                       │
-│  /api/v1/imports/costs/*                     │
-│  /api/v1/scanning/*                          │
-│  /api/v1/costs|anomalies|recommendations     │
-│  /api/v1/provider-diagnostics                │
+│  /auth/*              /api/v1/credentials/*  │
+│  /api/v1/imports/*    /api/v1/scanning/*     │
+│  /api/v1/analytics/*  /api/v1/advisor/*      │
+│  /api/v1/virtual-tags/*                      │
+│  /api/v1/recommendations/rightsizing         │
+│  /api/v1/inventory    /api/v1/kubernetes/*   │
+│  /api/v1/business-mapping/*                  │
 └───────────────┬──────────────────┬───────────┘
                 │                  │
-                │ SQLAlchemy       │ Cloud SDK / APIs
+                │ SQLAlchemy ORM   │ Cloud SDK / APIs
                 v                  v
       ┌──────────────────┐   ┌───────────────────────┐
-      │ SQLite/Postgres  │   │ AWS / Azure / GCP / OCI│
-      │ - org mapping    │   │ cost + usage endpoints │
+      │ SQLite (dev) /   │   │ AWS / Azure / GCP / OCI│
+      │ PostgreSQL (prod) │   │ cost + usage endpoints │
+      │ - organizations  │   │ OCI GenAI inference    │
       │ - credentials    │   └───────────────────────┘
       │ - imported costs │
       │ - scan runs      │
+      │ - virtual tags   │
       └──────────────────┘
 ```
 
@@ -112,6 +125,15 @@ The dashboard is the main workspace for:
 - `GET /api/v1/analytics/cloud-waste` (waste category decomposition, remediation effort, quick wins)
 - `GET /api/v1/analytics/efficiency-score` (weighted 0-100 efficiency score with grade and weakest dimensions)
 - `GET /api/v1/analytics/commitment-gap` (per-provider commitment coverage gaps with 1-year/3-year scenarios)
+- `GET /api/v1/analytics/scorecards` (per-team/environment FinOps maturity scorecards with trends)
+- `GET /api/v1/inventory` (searchable resource inventory across all connected providers)
+- `GET /api/v1/kubernetes/cost-allocation` (namespace-level Kubernetes cost attribution)
+- `GET /api/v1/virtual-tags/rules` (list virtual tag rules)
+- `POST /api/v1/virtual-tags/rules` (create virtual tag rule)
+- `PUT /api/v1/virtual-tags/rules/{rule_id}` (update virtual tag rule)
+- `DELETE /api/v1/virtual-tags/rules/{rule_id}` (delete virtual tag rule)
+- `GET /api/v1/virtual-tags/preview` (dry-run preview of tag coverage across active cost data)
+- `GET /api/v1/recommendations/rightsizing` (per-resource rightsizing with downsize/terminate/reserve/modernize actions)
 - `GET /api/v1/advisor/hybrid` (hybrid advisor payload combining deterministic analytics and GenAI narrative overlays)
 - `POST /api/v1/genai/analyze` (backend OCI GenAI narration: `spend`, `anomaly`, `optimization`, `maturity`, `budget_risk`, `waste_insights`, `optimization_roadmap`, `executive_narrative`)
 - `GET /api/v1/provider-accounts/rollups` (hierarchy tree with rolled-up costs + top_regions)
@@ -293,6 +315,10 @@ Optional CSV columns:
 - `period_start`
 - `period_end`
 - `currency`
+- `tags_json` (JSON object of key/value pairs, e.g. `{"team":"platform","env":"prod"}`)
+- `resource_id`
+- `resource_name`
+- `resource_type`
 
 Current CSV rules:
 

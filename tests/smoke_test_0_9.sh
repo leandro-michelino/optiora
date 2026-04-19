@@ -307,7 +307,40 @@ ai_status=$(_request_json_status "POST" "${DASHBOARD_BASE}/api/ai/chat" '{"messa
     || _check "POST /api/ai/chat returns 200" "HTTP $ai_status"
 
 echo ""
-echo "--- 6. Optional live credential and scan flow ---"
+echo "--- 6. FinOps Analytics endpoints ---"
+for endpoint in \
+    "/api/v1/analytics/cloud-waste" \
+    "/api/v1/analytics/efficiency-score" \
+    "/api/v1/analytics/commitment-gap" \
+    "/api/v1/analytics/unit-economics" \
+    "/api/v1/analytics/scorecards" \
+    "/api/v1/inventory" \
+    "/api/v1/kubernetes/cost-allocation" \
+    "/api/v1/virtual-tags/rules" \
+    "/api/v1/virtual-tags/preview" \
+    "/api/v1/recommendations/rightsizing"; do
+    status=$(_http_status "${API_BASE}${endpoint}")
+    [ "$status" = "200" ] \
+        && _check "GET ${endpoint} returns 200" "ok" \
+        || _check "GET ${endpoint} returns 200" "HTTP $status"
+done
+
+# Virtual tag rule roundtrip
+vtag_create_body=$(_request_json_body "POST" "${API_BASE}/api/v1/virtual-tags/rules" \
+    '{"tag_key":"smoke-env","tag_value":"verification","match_provider":"aws","priority":1}')
+vtag_id=$(printf '%s' "$vtag_create_body" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || true)
+if [ -n "$vtag_id" ]; then
+    _check "POST /api/v1/virtual-tags/rules roundtrip creates rule" "ok"
+    del_status=$(_http_status -X DELETE "${API_BASE}/api/v1/virtual-tags/rules/${vtag_id}")
+    [ "$del_status" = "204" ] \
+        && _check "DELETE /api/v1/virtual-tags/rules/{id} returns 204" "ok" \
+        || _check "DELETE /api/v1/virtual-tags/rules/{id} returns 204" "HTTP $del_status"
+else
+    _check "POST /api/v1/virtual-tags/rules roundtrip creates rule" "body: $vtag_create_body"
+fi
+
+echo ""
+echo "--- 7. Optional live credential and scan flow ---"
 if [ -z "$SMOKE_CREDENTIAL_JSON" ]; then
     _skip "Credential validation/add + scan flow" "Set SMOKE_CREDENTIAL_JSON with a real provider payload to verify live credential flow."
 else

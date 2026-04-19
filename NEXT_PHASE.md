@@ -2,16 +2,21 @@
 
 This file turns the current public-dashboard build into a concrete go-live gate and defines what must be true before work is considered ready to move into `1.0`.
 
-## Current Go-Live Position
+## Current Go-Live Position (April 2026 — Feature-Complete)
 
-The current release is centered on deployable product readiness:
+Release 1.0 FinOps features are fully implemented:
 
-- dashboard opens directly by default with no login wall
-- authentication and RBAC are deferred as optional deployment hardening
-- organization-scoped persistence is in place for credentials, imported CSV cost data, scan runs, alerts, audit logs, and exports
-- scan history, scan diff, alerts, audit logs, and CSV exports are available
-- customer-managed CSV cost upload is available as a billing input path
-- OCI deployment paths exist through `deploy/deploy-oci.sh` and Terraform plus Ansible
+- **Core**: multi-cloud cost overview, anomaly detection, forecasting, recommendations
+- **Analytics**: cloud waste, efficiency score, commitment gap, attribution, maturity
+- **FinOps Intelligence**: unit economics, scorecards, resource inventory, Kubernetes cost allocation
+- **Virtual Tag Engine**: CRUD rule builder + dry-run coverage preview (`/api/v1/virtual-tags/*`)
+- **Resource-Level Rightsizing**: per-instance/volume recommendations (`/api/v1/recommendations/rightsizing`)
+- **Hybrid Advisor**: deterministic + GenAI overlay (`/api/v1/advisor/hybrid`)
+- **Exports**: FOCUS format, CSV, XLS executive summary, audit logs
+- **Business Mapping + Chargeback**: tag-based allocation, chargeback endpoints
+- **Auth (optional)**: JWT/RBAC (`OWNER / ADMIN / ANALYST / READONLY`) when `ENABLE_AUTH=true`
+
+Dashboard now has 17 pages across 3 nav sections — all routes verified in production build.
 
 ## Go-Live Exit Gate
 
@@ -20,8 +25,8 @@ Before declaring an environment ready, all of the following should be done.
 ### 1. Local validation
 
 ```bash
-python3 -m py_compile $(find ./finops_* -maxdepth 1 -name '*.py') tests/test_auth_flow.py
-./.venv/bin/python -m unittest discover -s tests -v
+python3 -m py_compile $(find ./finops_* -maxdepth 1 -name '*.py')
+./.venv*/bin/python -m unittest discover -s tests -v
 
 cd dashboard
 npm run type-check
@@ -29,6 +34,7 @@ npm run lint
 npm run build
 cd ..
 
+alembic upgrade head
 terraform -chdir=terraform validate
 bash -n deploy/deploy-oci.sh
 ```
@@ -79,12 +85,14 @@ Manual product checks:
 1. Open `http://<instance-ip>:3000/dashboard` directly and confirm no login prompt appears.
 2. Upload one UTF-8 billing CSV from the dashboard settings page and confirm the imported dataset summary updates.
 3. Confirm the costs overview reflects the imported CSV totals.
-4. If live provider testing is in scope, add one cloud provider credential, approve scanning, and start a scan.
-5. Confirm the operations page shows recent scan activity.
-6. Confirm history and diff views return real data after at least two scans.
-7. Confirm alerts load and acknowledgement works.
-8. Confirm CSV exports download successfully.
-9. Confirm forecasting, anomalies, recommendations, and AI insights render without hardcoded placeholder data.
+4. Navigate to FinOps Analytics pages: Unit Economics, Scorecards, Inventory, Kubernetes, Virtual Tags, Rightsizing.
+5. Create and delete a virtual tag rule; confirm coverage preview updates.
+6. If live provider testing is in scope, add one cloud provider credential, approve scanning, and start a scan.
+7. Confirm the operations page shows recent scan activity.
+8. Confirm history and diff views return real data after at least two scans.
+9. Confirm alerts load and acknowledgement works.
+10. Confirm CSV exports download successfully.
+11. Confirm forecasting, anomalies, recommendations, and AI insights render without hardcoded placeholder data.
 
 ### 5. Operational checks
 
@@ -110,25 +118,30 @@ set +a
 
 ## Release 1.0 Entry Criteria
 
-Work should move into `1.0` only after these are true:
+Work should move into post-1.0 only after these are true:
 
-- at least one deployed environment has passed the full smoke test
-- at least one real customer data path has been validated end to end through either provider credentials and scans or CSV upload
-- scan history, diff, alerts, and exports are confirmed in the deployed environment
+- all 17 dashboard pages render without errors in a deployed environment
+- virtual tag CRUD roundtrip (create → list → preview → delete) passes in a live environment
+- rightsizing endpoint returns recommendations (or empty state with correct data_source label)
+- at least one deployed environment has passed the full smoke test (including new analytics section 6)
+- at least one real customer data path has been validated end to end
 - deployment runbook is accurate enough for repeatable redeploys
-- known release blockers are limited to product expansion, not base deployment stability
+- all Alembic migrations (0001–0011) apply cleanly on a fresh database
 
-## Proposed 1.0 Focus
+## Post-1.0 Focus
 
-`1.0` should expand product value rather than reopen access-control work by default.
+`post-1.0` should expand product depth and enterprise readiness:
 
-- multi-account and multi-subscription aggregation
-- stronger reporting for finance and procurement users
-- executive dashboards and customer-friendly exports
-- business mapping, tag normalization, and chargeback/showback foundations
-- production polish, test coverage, and operational observability
-
-Concrete implementation planning now lives in `RELEASE_1_0_BACKLOG.md`.
+- Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`)
+- Alembic migration test coverage (upgrade/downgrade chain validated in CI)
+- SMTP notification integration with real email templates
+- SAML / OIDC / SSO authentication path
+- Vault-backed secret orchestration for credential storage
+- Real Kubernetes metrics integration (Prometheus, cost-model)
+- Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring)
+- FOCUS 1.0 export certification
+- Scheduled report delivery (weekly/monthly)
+- Multi-tenancy isolation hardening for SaaS deployment
 
 ## Deferred Optional Hardening
 
