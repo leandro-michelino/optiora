@@ -413,7 +413,7 @@ ${YELLOW}COMMON ENV:${NC}
 ${YELLOW}EXAMPLE:${NC}
     export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
     export OCI_SUBNET_ID=ocid1.subnet.oc1...
-    export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/id_ed25519
+    export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
     export OCI_PROFILE=DEFAULT
     ./deploy/deploy-oci.sh compute
 EOF
@@ -545,6 +545,8 @@ resolve_ssh_credentials() {
         if [ -z "$pub_path" ]; then
             if [ -n "$priv_path" ] && [ -f "${priv_path}.pub" ]; then
                 pub_path="${priv_path}.pub"
+            elif [ -f "$HOME/.ssh/optiora-deploy.pub" ]; then
+                pub_path="$HOME/.ssh/optiora-deploy.pub"
             elif [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
                 pub_path="$HOME/.ssh/id_ed25519.pub"
             elif [ -f "$HOME/.ssh/id_rsa.pub" ]; then
@@ -564,7 +566,9 @@ resolve_ssh_credentials() {
     fi
 
     if [ -z "$priv_path" ]; then
-        if [ -f "$HOME/.ssh/id_ed25519" ]; then
+        if [ -f "$HOME/.ssh/optiora-deploy" ]; then
+            priv_path="$HOME/.ssh/optiora-deploy"
+        elif [ -f "$HOME/.ssh/id_ed25519" ]; then
             priv_path="$HOME/.ssh/id_ed25519"
         elif [ -f "$HOME/.ssh/id_rsa" ]; then
             priv_path="$HOME/.ssh/id_rsa"
