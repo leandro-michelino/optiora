@@ -411,6 +411,21 @@ export interface AlertRoutingPolicy {
   updated_at: string
 }
 
+export interface AlertRoutingPolicySimulationRequest {
+  severity: 'warning' | 'critical'
+  title?: string
+  alert_type?: string
+}
+
+export interface AlertRoutingPolicySimulationResponse {
+  severity: string
+  matched_policy_id: number | null
+  evaluated_channels: string[]
+  expected_channels: string[]
+  configured_channels: string[]
+  inactive_policy: boolean
+}
+
 export interface NotificationDestinationStatus {
   channel: 'email' | 'slack' | 'teams' | string
   configured: boolean

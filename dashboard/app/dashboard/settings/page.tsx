@@ -10,10 +10,12 @@ import {
   downloadImportedCostTemplateCsv,
   fetchImportedCostSummary,
   fetchNotificationDestinations,
+  fetchAlertRoutingPolicies,
   listExportJobRuns,
   listExportJobs,
   previewImportedCostCsv,
   runExportJob,
+  simulateAlertRouting,
   testNotificationDestination,
   toggleNotificationDestination,
   uploadImportedCostCsv,
@@ -27,6 +29,8 @@ import {
   ImportedCostSummaryResponse,
   ImportPreviewResponse,
   NotificationDestinationStatus,
+  AlertRoutingPolicy,
+  AlertRoutingPolicySimulationResponse,
 } from '@/lib/types';
 
 
@@ -98,6 +102,13 @@ export default function SettingsPage() {
   const [creatingExportJob, setCreatingExportJob] = useState(false)
   const [runningExportJobId, setRunningExportJobId] = useState<number | null>(null)
   const [exportJobName, setExportJobName] = useState('Weekly Executive Export')
+  const [routingPolicies, setRoutingPolicies] = useState<AlertRoutingPolicy[]>([])
+  const [loadingRoutingPolicies, setLoadingRoutingPolicies] = useState(true)
+  const [simulatorSeverity, setSimulatorSeverity] = useState<'warning' | 'critical'>('warning')
+  const [simulatorTitle, setSimulatorTitle] = useState('Test Alert')
+  const [simulatorResult, setSimulatorResult] = useState<AlertRoutingPolicySimulationResponse | null>(null)
+  const [simulatingRouting, setSimulatingRouting] = useState(false)
+  const [routingSimulatorError, setRoutingSimulatorError] = useState<string | null>(null)
   const [exportJobFrequency, setExportJobFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
   const [exportJobFormat, setExportJobFormat] = useState<'csv' | 'xls'>('csv')
   const [exportJobMessage, setExportJobMessage] = useState<string | null>(null)
@@ -391,6 +402,51 @@ export default function SettingsPage() {
       )
     } finally {
       setRunningExportJobId(null)
+    }
+  }
+
+  const loadRoutingPolicies = useCallback(async () => {
+    if (authEnabled && !user) {
+      return
+    }
+
+    try {
+      const policies = await fetchAlertRoutingPolicies()
+      setRoutingPolicies(policies)
+    } catch (error) {
+      console.error('Failed to load routing policies:', error)
+    } finally {
+      setLoadingRoutingPolicies(false)
+    }
+  }, [authEnabled, user])
+
+  useEffect(() => {
+    if (authEnabled && !user) {
+      setRoutingPolicies([])
+      setLoadingRoutingPolicies(false)
+      return
+    }
+
+    setLoadingRoutingPolicies(true)
+    void loadRoutingPolicies()
+  }, [authEnabled, user, loadRoutingPolicies])
+
+  const handleSimulateRouting = async () => {
+    setSimulatingRouting(true)
+    setRoutingSimulatorError(null)
+    setSimulatorResult(null)
+    try {
+      const result = await simulateAlertRouting(
+        simulatorSeverity,
+        simulatorTitle.trim() || undefined,
+      )
+      setSimulatorResult(result)
+    } catch (error) {
+      setRoutingSimulatorError(
+        error instanceof Error ? formatApiErrorMessage(error.message) : 'Failed to simulate routing.',
+      )
+    } finally {
+      setSimulatingRouting(false)
     }
   }
 
@@ -859,6 +915,121 @@ export default function SettingsPage() {
             {destinationError && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
                 {destinationError}
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 border-b border-slate-200 dark:border-slate-700 space-y-3">
+            <div>
+              <h3 className="font-semibold text-slate-900 dark:text-white">Alert Routing Simulator</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Preview which notification channels will receive alerts based on severity and current routing policies before saving new configurations.
+              </p>
+            </div>
+
+            {loadingRoutingPolicies ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader className="w-5 h-5 animate-spin text-slate-400" />
+              </div>
+            ) : routingPolicies.length === 0 ? (
+              <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-900/50 dark:text-slate-400">
+                No routing policies configured yet. Configure policies under Notification Destinations first.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                    Test Severity
+                  </label>
+                  <select
+                    value={simulatorSeverity}
+                    onChange={(e) => setSimulatorSeverity(e.target.value as 'warning' | 'critical')}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="warning">Warning</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                    Test Alert Title (optional)
+                  </label>
+                  <input
+                    value={simulatorTitle}
+                    onChange={(e) => setSimulatorTitle(e.target.value)}
+                    placeholder="E.g., CPU usage exceeded threshold"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleSimulateRouting()}
+                  disabled={simulatingRouting}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                >
+                  {simulatingRouting ? (
+                    <>
+                      <Loader className="h-4 w-4 animate-spin" />
+                      Simulating...
+                    </>
+                  ) : (
+                    'Run Simulation'
+                  )}
+                </button>
+
+                {simulatorResult && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                    <div className="text-sm space-y-2">
+                      <div>
+                        <div className="font-medium text-slate-900 dark:text-white">Matched Policy</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">
+                          {simulatorResult.matched_policy_id ? `Policy ID: ${simulatorResult.matched_policy_id}` : 'No matching policy (using defaults)'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-medium text-slate-900 dark:text-white">Expected Channels</div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {simulatorResult.expected_channels.length > 0 ? (
+                            simulatorResult.expected_channels.map((ch) => (
+                              <span
+                                key={ch}
+                                className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200"
+                              >
+                                {ch}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-slate-500">No channels configured for this severity</span>
+                          )}
+                        </div>
+                      </div>
+                      {simulatorResult.configured_channels.length > 0 && (
+                        <div>
+                          <div className="font-medium text-slate-900 dark:text-white text-xs mt-2">Configured Channels</div>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {simulatorResult.configured_channels.map((ch) => (
+                              <span
+                                key={ch}
+                                className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                              >
+                                {ch}
+                              </span>
+                            ))
+                          }
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {routingSimulatorError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+                    {routingSimulatorError}
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -51,6 +51,8 @@ import {
   VirtualTagRuleCreate,
   VirtualTagPreviewResponse,
   RightsizingResponse,
+  AlertRoutingPolicySimulationRequest,
+  AlertRoutingPolicySimulationResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -385,6 +387,20 @@ export async function upsertAlertRoutingPolicy(
     method: 'POST',
     body: JSON.stringify({ severity, channels, is_active: isActive }),
   })
+}
+
+export async function simulateAlertRouting(
+  severity: 'warning' | 'critical',
+  title?: string,
+  alertType?: string,
+): Promise<AlertRoutingPolicySimulationResponse> {
+  return requestJson<AlertRoutingPolicySimulationResponse>(
+    '/api/v1/alerts/routing-policies/simulate',
+    {
+      method: 'POST',
+      body: JSON.stringify({ severity, title, alert_type: alertType }),
+    },
+  )
 }
 
 export async function fetchNotificationDestinations(): Promise<NotificationDestinationsResponse> {

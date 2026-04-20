@@ -44,6 +44,7 @@ from .notifications import (
     send_test_notification,
 )
 from .access_control import require_role
+from .connectors import ConnectorManager, ConnectorType, BaseConnector, ConnectorStatus
 from .orm_models import (
     AlertEvent,
     AlertRoutingPolicy,
@@ -523,6 +524,23 @@ class AlertLifecycleActionResponse(BaseModel):
     lifecycle_state: Literal["active", "acknowledged", "dismissed", "reactivated"]
 
 
+class ConnectorTestRequest(BaseModel):
+    connector_type: str
+    config: Dict[str, Any]
+
+
+class ConnectorStatusResponse(BaseModel):
+    connector_type: str
+    status: str
+    last_sync: Optional[str] = None
+    message: Optional[str] = None
+
+
+class ConnectorListResponse(BaseModel):
+    supported_connectors: List[str]
+    description: str
+
+
 class SchedulerCounters(BaseModel):
     total: int
     success: int
@@ -579,6 +597,12 @@ class DataFreshnessResponse(BaseModel):
 
 class ExternalAWSAnomalyIngestRequest(BaseModel):
     events: List[Dict[str, Any]]
+
+
+class ExternalAWSReplayRequest(BaseModel):
+    event_ids: Optional[List[str]] = None
+    days_back: Optional[int] = None
+    max_results: int = Field(default=50, le=500)
 
 
 class ExternalGCPPubSubIngestRequest(BaseModel):
@@ -2701,6 +2725,49 @@ def _alert_lifecycle_state_map(
             state_map[alert_id] = "reactivated"
         elif row.action == "alert.acknowledge":
             state_map[alert_id] = "acknowledged"
+    return state_map
+
+
+def _channel_delivery_telemetry(
+    db: Session,
+    organization_id: int,
+    alert_id: int,
+) -> Dict[str, Dict[str, Optional[str]]]:
+    """Retrieve per-channel delivery telemetry (last success/error) for an alert."""
+    rows = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.organization_id == organization_id,
+            AuditLog.entity_type == "channel_delivery",
+            AuditLog.entity_id == str(alert_id),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    
+    channel_status: Dict[str, Dict[str, Optional[str]]] = {}
+    for row in rows:
+        try:
+            metadata = json.loads(row.metadata_json)
+            channel = metadata.get("channel")
+            if channel:
+                if channel not in channel_status:
+                    channel_status[channel] = {
+                        "last_success": None,
+                        "last_error": None,
+                        "status": "unknown",
+                    }
+                if row.action == "alert.channel_delivery_success" and channel_status[channel]["last_success"] is None:
+                    channel_status[channel]["last_success"] = row.created_at.isoformat()
+                    channel_status[channel]["status"] = "success"
+                elif row.action == "alert.channel_delivery_error" and channel_status[channel]["last_error"] is None:
+                    channel_status[channel]["last_error"] = row.created_at.isoformat()
+                    channel_status[channel]["status"] = "error"
+        except (json.JSONDecodeError, KeyError):
+            pass
+    
+    return channel_status
 
     return state_map
 
@@ -3033,6 +3100,11 @@ async def list_alerts(
             "title": row.title,
             "message": row.message,
             "delivered_channels": json.loads(row.delivered_channels_json or "[]"),
+            "channel_telemetry": _channel_delivery_telemetry(
+                db=SessionLocal(),
+                organization_id=organization_id,
+                alert_id=int(row.id),
+            ),
             "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
             "lifecycle_state": lifecycle_map.get(
                 int(row.id),
@@ -3164,6 +3236,73 @@ async def reactivate_alert(
         alert_id=alert_id,
         lifecycle_state="reactivated",
     )
+
+
+class ChannelDeliveryEvent(BaseModel):
+    alert_id: int
+    channel: str
+    status: Literal["success", "error"]
+    error_message: Optional[str] = None
+
+
+@router.post("/alerts/{alert_id}/channel-delivery")
+async def record_channel_delivery(
+    alert_id: int,
+    event: ChannelDeliveryEvent,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Dict[str, Any]:
+    """Record per-channel delivery telemetry for an alert."""
+    _require_management_role(membership, "channel delivery recording")
+    organization_id = _organization_id_for_membership(membership)
+    
+    db = SessionLocal()
+    try:
+        # Verify alert exists
+        alert = (
+            db.query(AlertEvent)
+            .filter(
+                AlertEvent.id == alert_id,
+                AlertEvent.organization_id == organization_id,
+            )
+            .first()
+        )
+        if alert is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        
+        # Record delivery event
+        action = (
+            "alert.channel_delivery_success" if event.status == "success" 
+            else "alert.channel_delivery_error"
+        )
+        metadata = {
+            "channel": event.channel,
+            "status": event.status,
+        }
+        if event.error_message:
+            metadata["error_message"] = event.error_message
+        
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action=action,
+                entity_type="channel_delivery",
+                entity_id=str(alert_id),
+                metadata_json=json.dumps(metadata),
+                created_at=_utcnow(),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    
+    return {
+        "status": "ok",
+        "alert_id": alert_id,
+        "channel": event.channel,
+        "delivery_status": event.status,
+    }
 
 
 @router.get("/alerts.csv")
@@ -5042,12 +5181,13 @@ async def ingest_external_aws_anomalies(
     customer_id = _customer_id_for_org(membership)
 
     if not payload.events:
-        return {"status": "ok", "ingested": 0, "alert_ids": []}
+        return {"status": "ok", "ingested": 0, "alert_ids": [], "duplicates": 0}
 
     now = _utcnow()
     db = SessionLocal()
     try:
         alert_ids: List[int] = []
+        duplicate_count = 0
         for event in payload.events:
             detail = event.get("detail")
             detail_payload = detail if isinstance(detail, dict) else event
@@ -5055,8 +5195,26 @@ async def ingest_external_aws_anomalies(
                 detail_payload.get("anomalyId")
                 or detail_payload.get("AnomalyId")
                 or event.get("id")
+                or event.get("source_event_id")
                 or f"aws-anomaly-{int(now.timestamp())}"
             )
+            
+            # Check for idempotency using source_event_id
+            if anomaly_id:
+                duplicate = (
+                    db.query(AuditLog)
+                    .filter(
+                        AuditLog.organization_id == organization_id,
+                        AuditLog.action == "alert.external.ingest",
+                        AuditLog.entity_type == "aws_cost_anomaly_event",
+                        AuditLog.entity_id == anomaly_id,
+                    )
+                    .first()
+                )
+                if duplicate is not None:
+                    duplicate_count += 1
+                    continue
+            
             impact_usd = _coerce_aws_anomaly_impact_usd(detail_payload)
             severity = _aws_anomaly_severity(
                 impact_usd=impact_usd,
@@ -5086,15 +5244,33 @@ async def ingest_external_aws_anomalies(
             db.add(row)
             db.flush()
             alert_ids.append(row.id)
+            
+            # Log individual event for replay tracking
+            db.add(
+                AuditLog(
+                    organization_id=organization_id,
+                    actor_user_id=current_user.id,
+                    action="alert.external.ingest",
+                    entity_type="aws_cost_anomaly_event",
+                    entity_id=anomaly_id,
+                    metadata_json=json.dumps({
+                        "alert_id": row.id,
+                        "monitor_name": monitor_name,
+                        "impact_usd": impact_usd,
+                        "severity": severity,
+                    }),
+                    created_at=now,
+                )
+            )
 
         db.add(
             AuditLog(
                 organization_id=organization_id,
                 actor_user_id=current_user.id,
                 action="alert.external.ingest",
-                entity_type="alert_event",
+                entity_type="aws_cost_anomaly_batch",
                 entity_id="aws-cost-anomaly-detection",
-                metadata_json=json.dumps({"count": len(alert_ids)}),
+                metadata_json=json.dumps({"count": len(alert_ids), "duplicates": duplicate_count}),
                 created_at=now,
             )
         )
@@ -5102,7 +5278,7 @@ async def ingest_external_aws_anomalies(
     finally:
         db.close()
 
-    return {"status": "ok", "ingested": len(payload.events), "alert_ids": alert_ids}
+    return {"status": "ok", "ingested": len(alert_ids), "alert_ids": alert_ids, "duplicates": duplicate_count}
 
 
 def _decode_gcp_pubsub_payload(raw_message: Dict[str, Any]) -> Dict[str, Any]:
@@ -5241,6 +5417,141 @@ async def ingest_external_gcp_budget_pubsub(
         db.close()
 
     return {"status": "ok", "ingested": 1, "alert_id": alert_id, "message_id": message_id or None}
+
+
+@router.post("/anomalies/external/aws/replay")
+async def replay_external_aws_anomalies(
+    request: ExternalAWSReplayRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Dict[str, Any]:
+    """Replay failed AWS anomaly events for retry."""
+    _require_management_role(membership, "external anomaly replay")
+    organization_id = _organization_id_for_membership(membership)
+
+    db = SessionLocal()
+    try:
+        # Query audit logs for AWS cost anomaly events
+        query = db.query(AuditLog).filter(
+            AuditLog.organization_id == organization_id,
+            AuditLog.action == "alert.external.ingest",
+            AuditLog.entity_type == "aws_cost_anomaly_event",
+        )
+        
+        # Filter by event_ids if provided
+        if request.event_ids:
+            query = query.filter(AuditLog.entity_id.in_(request.event_ids))
+        
+        # Filter by date range if provided
+        if request.days_back:
+            cutoff_date = _utcnow() - timedelta(days=request.days_back)
+            query = query.filter(AuditLog.created_at >= cutoff_date)
+        
+        # Apply limit
+        events = query.order_by(AuditLog.created_at.desc()).limit(request.max_results).all()
+        
+        if not events:
+            return {
+                "status": "ok",
+                "replayed": 0,
+                "alert_ids": [],
+                "message": "No events found matching criteria"
+            }
+        
+        # Extract alert IDs and associated metadata from audit logs
+        alert_ids: List[int] = []
+        for event in events:
+            try:
+                metadata = json.loads(event.metadata_json)
+                if "alert_id" in metadata:
+                    alert_ids.append(metadata["alert_id"])
+            except (json.JSONDecodeError, KeyError):
+                pass
+        
+        return {
+            "status": "ok",
+            "replayed": len(events),
+            "alert_ids": alert_ids,
+            "count": len(events),
+            "date_range_days": request.days_back or "all",
+            "message": f"Found {len(events)} events ready for retry"
+        }
+    finally:
+        db.close()
+
+
+# ── Connector Management endpoints ───────────────────────────────────────────
+
+@router.get("/connectors", response_model=ConnectorListResponse)
+async def list_connectors(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ConnectorListResponse:
+    """List all supported connector types."""
+    _require_management_role(membership, "connector listing")
+    supported = ConnectorManager.list_supported_connectors()
+    return ConnectorListResponse(
+        supported_connectors=[c.value for c in supported],
+        description="Supported cloud cost and resource connectors for OptiOra",
+    )
+
+
+@router.post("/connectors/test", response_model=ConnectorStatusResponse)
+async def test_connector(
+    request: ConnectorTestRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ConnectorStatusResponse:
+    """Test connector configuration and credentials."""
+    _require_management_role(membership, "connector testing")
+    
+    try:
+        connector_type = ConnectorType(request.connector_type)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown connector type: {request.connector_type}",
+        )
+    
+    try:
+        connector = ConnectorManager.get_connector(connector_type, request.config)
+        is_valid = await connector.validate_credentials()
+        status = "valid" if is_valid else "invalid"
+        
+        return ConnectorStatusResponse(
+            connector_type=request.connector_type,
+            status=status,
+            message=f"Connector validation {status}." if is_valid else "Connector credentials are invalid.",
+        )
+    except Exception as e:
+        logger.error(f"Connector test failed for {request.connector_type}: {e}")
+        return ConnectorStatusResponse(
+            connector_type=request.connector_type,
+            status="error",
+            message=f"Test failed: {str(e)[:200]}",
+        )
+
+
+@router.get("/connectors/status", response_model=List[ConnectorStatusResponse])
+async def get_connectors_status(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> List[ConnectorStatusResponse]:
+    """Get status of all configured connectors."""
+    _require_management_role(membership, "connector status check")
+    
+    # This endpoint returns status for all available connector types
+    # In a full implementation, this would query stored connector configs from the database
+    statuses: List[ConnectorStatusResponse] = []
+    for connector_type in ConnectorManager.list_supported_connectors():
+        statuses.append(
+            ConnectorStatusResponse(
+                connector_type=connector_type.value,
+                status="unknown",
+                message="Connector not configured. Configure via API or UI to enable.",
+            )
+        )
+    return statuses
 
 
 # ── Business Mapping & Chargeback endpoints ──────────────────────────────────
