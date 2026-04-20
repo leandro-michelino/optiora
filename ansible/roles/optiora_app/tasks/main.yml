@@ -458,6 +458,19 @@
     - Restart optiora api
     - Restart optiora dashboard
 
+- name: Create log files for services
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ optiora_app_user }}"
+    group: "{{ optiora_app_user }}"
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - /var/log/optiora-api.log
+    - /var/log/optiora-dashboard.log
+
 - name: Install API systemd unit
   ansible.builtin.template:
     src: optiora-api.service.j2

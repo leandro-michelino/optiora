@@ -135,9 +135,17 @@ The same script also manages the extra block volume. It reads `extra_block_volum
 Quick-deploy troubleshooting on the VM:
 
 ```bash
+# Service logs (written by systemd via StandardOutput/StandardError)
 sudo tail -f /var/log/optiora-api.log
 sudo tail -f /var/log/optiora-dashboard.log
-sudo tail -f /var/log/optiora-setup.log
+
+# Or via journalctl (always works, even before log files are created)
+sudo journalctl -u optiora-api -f
+sudo journalctl -u optiora-dashboard -f
+
+# Service status
+sudo systemctl status optiora-api
+sudo systemctl status optiora-dashboard
 ```
 
 ## What The Deploy Script Fixes Automatically
@@ -274,9 +282,10 @@ On the VM:
 ```bash
 sudo systemctl status optiora-api
 sudo systemctl status optiora-dashboard
+sudo journalctl -u optiora-api -n 100 --no-pager
+sudo journalctl -u optiora-dashboard -n 100 --no-pager
 sudo tail -f /var/log/optiora-api.log
 sudo tail -f /var/log/optiora-dashboard.log
-sudo tail -f /var/log/optiora-setup.log
 ```
 
 Manual migration check if needed:
@@ -316,6 +325,30 @@ set +a
 2. Confirm the CSV header includes `provider` and `cost_usd`
 3. Confirm `provider` values are limited to `aws`, `azure`, `gcp`, or `oci`
 4. Confirm `currency` is omitted or set to `USD`
+
+## Known Issues and Workarounds
+
+### passlib + bcrypt ≥ 4.x incompatibility (fixed)
+
+`passlib 1.7.4` (the last release, now unmaintained) cannot detect the `bcrypt` backend version when `bcrypt >= 4.0.0` is installed, because `bcrypt` removed its `__about__` module in that release. This causes a crash at API startup.
+
+`pyproject.toml` pins `bcrypt = ">=3.2.0,<4.0.0"` to avoid this. Do not bump the bcrypt constraint until passlib is replaced.
+
+### Python version on Oracle Linux 9 (resolved)
+
+Oracle Linux 9 ships Python 3.9, which is below the `requires-python = ">=3.10"` floor in `pyproject.toml`. The Ansible playbook installs `python3.11` and `python3.11-devel` via `dnf` and creates the virtualenv with `python3.11` explicitly. The default `python3` symlink on OL9 is not used.
+
+### SQLite DB owned by root after first deploy (fixed)
+
+When `alembic upgrade head` runs under root (via the Ansible `command` module), it creates `optiora.db` owned by root. The `optiora` service user cannot write to it, causing a startup crash. The Ansible playbook includes a "Fix database file ownership" task that runs immediately after migrations.
+
+### SSH key must be passphrase-free
+
+The deploy script calls `ssh-keygen -y -f` to extract the public key from the private key file. This call does not use `ssh-agent` and will hang or fail if the key has a passphrase. Generate a dedicated deploy key without a passphrase:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/optiora-deploy -N '' -C 'optiora-deploy'
+```
 
 ## Deployment Architecture
 
