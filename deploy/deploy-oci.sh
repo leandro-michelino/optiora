@@ -455,7 +455,7 @@ get_instance_json() {
     oci compute instance list \
         --compartment-id "$COMPARTMENT_ID" \
         --region "$REGION" \
-        --query "data[?\"display-name\" == '$INSTANCE_NAME'] | [0]" \
+        --query "data[?\"display-name\" == '$INSTANCE_NAME' && \"lifecycle-state\" != 'TERMINATED'] | [0]" \
         2>/dev/null || echo "null"
 }
 
@@ -763,9 +763,15 @@ prepare_compute_instance() {
     local instance_found="false"
 
     if instance_id=$(get_instance_id); then
-        instance_found="true"
         state=$(get_instance_state || echo "")
         log_info "Found existing instance: $instance_id (state: $state)"
+        if [ "$state" = "TERMINATED" ]; then
+            log_info "Instance is TERMINATED — creating a new one"
+            instance_found="false"
+            instance_id=""
+        else
+            instance_found="true"
+        fi
     fi
 
     if [ "$instance_found" = "false" ]; then
