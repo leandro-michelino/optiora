@@ -4173,7 +4173,13 @@ async def analytics_unit_economics(
 
 
 class GenAIAnalyzeRequest(BaseModel):
-    analysis_type: Literal["spend", "anomaly", "optimization", "maturity", "budget_risk", "waste_insights", "optimization_roadmap", "executive_narrative", "commitment_strategy"] = "spend"
+    analysis_type: Literal[
+        "spend", "anomaly", "optimization", "maturity", "budget_risk",
+        "waste_insights", "optimization_roadmap", "executive_narrative", "commitment_strategy",
+        "tagging_strategy", "sustainability_narrative", "chargeback_narrative",
+        "cross_provider_comparison_brief", "alert_triage", "rightsizing_brief",
+        "vendor_negotiation_brief",
+    ] = "spend"
     context: Dict[str, Any] = Field(default_factory=dict)
     anomaly: Optional[Dict[str, Any]] = None
 
@@ -4236,7 +4242,10 @@ async def _deterministic_recommendations(
 @router.get("/advisor/hybrid", response_model=HybridAdvisorResponse)
 async def advisor_hybrid(
     cloud_provider: str = "all",
-    narrative_type: Literal["waste_insights", "optimization_roadmap", "executive_narrative"] = "optimization_roadmap",
+    narrative_type: Literal[
+        "waste_insights", "optimization_roadmap", "executive_narrative",
+        "tagging_strategy", "sustainability_narrative",
+    ] = "optimization_roadmap",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
     db: Session = Depends(get_db),
@@ -4344,6 +4353,10 @@ async def advisor_hybrid(
         narrative, prompt = genai_advisor.generate_waste_insights(genai_context)
     elif narrative_type == "executive_narrative":
         narrative, prompt = genai_advisor.generate_executive_narrative(genai_context)
+    elif narrative_type == "tagging_strategy":
+        narrative, prompt = genai_advisor.generate_tagging_strategy(genai_context)
+    elif narrative_type == "sustainability_narrative":
+        narrative, prompt = genai_advisor.generate_sustainability_narrative(genai_context)
     else:
         narrative, prompt = genai_advisor.generate_optimization_roadmap(genai_context)
 
@@ -4409,6 +4422,21 @@ async def genai_analyze(
         narrative, prompt = genai_advisor.generate_executive_narrative(ctx)
     elif request.analysis_type == "commitment_strategy":
         narrative, prompt = genai_advisor.generate_commitment_strategy(ctx)
+    elif request.analysis_type == "tagging_strategy":
+        narrative, prompt = genai_advisor.generate_tagging_strategy(ctx)
+    elif request.analysis_type == "sustainability_narrative":
+        narrative, prompt = genai_advisor.generate_sustainability_narrative(ctx)
+    elif request.analysis_type == "chargeback_narrative":
+        narrative, prompt = genai_advisor.generate_chargeback_narrative(ctx)
+    elif request.analysis_type == "cross_provider_comparison_brief":
+        narrative, prompt = genai_advisor.generate_cross_provider_comparison_brief(ctx)
+    elif request.analysis_type == "alert_triage":
+        alerts = ctx.pop("alerts", [])
+        narrative, prompt = genai_advisor.generate_alert_triage(alerts, ctx)
+    elif request.analysis_type == "rightsizing_brief":
+        narrative, prompt = genai_advisor.generate_rightsizing_brief(ctx)
+    elif request.analysis_type == "vendor_negotiation_brief":
+        narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(ctx)
 
     return {
         "analysis_type": request.analysis_type,
@@ -4497,6 +4525,16 @@ async def genai_copilot_pack(
             narrative, prompt = genai_advisor.generate_optimization_roadmap(base_context)
         elif item == "executive_narrative":
             narrative, prompt = genai_advisor.generate_executive_narrative(base_context)
+        elif item == "tagging_strategy":
+            narrative, prompt = genai_advisor.generate_tagging_strategy(base_context)
+        elif item == "sustainability_narrative":
+            narrative, prompt = genai_advisor.generate_sustainability_narrative(base_context)
+        elif item == "chargeback_narrative":
+            narrative, prompt = genai_advisor.generate_chargeback_narrative(base_context)
+        elif item == "rightsizing_brief":
+            narrative, prompt = genai_advisor.generate_rightsizing_brief(base_context)
+        elif item == "vendor_negotiation_brief":
+            narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(base_context)
         else:
             narrative, prompt = genai_advisor.generate_commitment_strategy(base_context)
 
@@ -4633,6 +4671,172 @@ async def analytics_optimization_portfolio(
             "current_monthly_spend_usd": context["total_cost"],
             "top_opportunities": result.get("ranked_actions", [])[:5],
             "total_annual_savings_usd": result.get("total_annual_savings_usd", 0),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/tagging-coverage")
+async def analytics_tagging_coverage(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Deep tagging compliance: per-tag analysis, allocation readiness score, and financial risk from untagged spend."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_tagging_strategy(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "coverage_percent": result.get("overall_coverage_percent", 0),
+            "untagged_spend_usd": result.get("untagged_spend_usd", 0),
+            "critical_tag_gaps": result.get("critical_tag_gaps", []),
+            "allocation_readiness_score": result.get("allocation_readiness_score", 0),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/sustainability")
+async def analytics_sustainability(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Carbon footprint estimation with regional intensity modifiers, sustainability score, and reduction opportunities."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_sustainability_metrics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_sustainability_narrative(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "total_carbon_kg_co2e_monthly": result.get("total_carbon_kg_co2e_monthly", 0),
+            "sustainability_score": result.get("sustainability_score", 0),
+            "provider_footprints": result.get("provider_footprints", []),
+            "reduction_opportunities": result.get("reduction_opportunities", []),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/cross-provider-comparison")
+async def analytics_cross_provider_comparison(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Multi-cloud efficiency benchmarking: health scores, HHI concentration risk, and workload arbitrage opportunities."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", "all")
+    result = _safe_json_load(
+        await finops_analytics.get_cross_provider_comparison(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_cross_provider_comparison_brief(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "provider_health_scores": result.get("provider_health_scores", []),
+            "hhi_concentration_score": result.get("hhi_concentration_score", 0),
+            "arbitrage_opportunities": result.get("arbitrage_opportunities", []),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/anomaly-intelligence")
+async def analytics_anomaly_intelligence(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Anomaly root-cause classification with investigation playbooks, escalation recommendations, and annualized risk."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_cost_anomaly_intelligence(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    alerts_payload = result.get("anomalies", [])
+    narrative, prompt = genai_advisor.generate_alert_triage(
+        alerts_payload,
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "annualized_risk_usd": result.get("annualized_risk_usd", 0),
+        },
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/chargeback-summary")
+async def analytics_chargeback_summary(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Team/cost-center chargeback/showback allocation with unallocated spend risk."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_chargeback_summary(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_chargeback_narrative(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "allocated_spend_usd": result.get("allocated_spend_usd", 0),
+            "unallocated_spend_usd": result.get("unallocated_spend_usd", 0),
+            "team_allocations": result.get("team_allocations", []),
         }
     )
     result["genai_narrative"] = narrative
