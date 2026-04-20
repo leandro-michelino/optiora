@@ -109,6 +109,7 @@ OCI_FINGERPRINT='<api_key_fingerprint>' \
 OCI_PRIVATE_KEY_PATH="$HOME/.oci/oci_api_key.pem" \
 OCI_REGION='uk-london-1' \
 OCI_COMPARTMENT_ID='ocid1.compartment.oc1..<compartment_ocid>' \
+OCI_IMAGE_COMPARTMENT_ID='ocid1.tenancy.oc1..<tenancy_ocid>' \
 OCI_SUBNET_ID='ocid1.subnet.oc1..<subnet_ocid>' \
 OCI_SSH_PUBLIC_KEY_PATH="$HOME/.ssh/optiora-deploy.pub" \
 OCI_SSH_PRIVATE_KEY_PATH="$HOME/.ssh/optiora-deploy" \
@@ -116,7 +117,7 @@ OCI_PROFILE='DEFAULT' \
 ./deploy/deploy-oci.sh full
 ```
 
-The `OCI_SUBNET_ID` is output by Terraform as `public_subnet_id`. Run `terraform -chdir=terraform output public_subnet_id` after network provisioning to get it.
+`OCI_IMAGE_COMPARTMENT_ID` must be your **tenancy OCID** (not the compartment OCID). Oracle platform images (`Oracle Linux 9`) are published under the root tenancy, not under individual compartments. If this variable is unset, the script attempts to derive it from `OCI_PROFILE` in `~/.oci/config`. Set it explicitly to avoid lookup failures when using a non-DEFAULT profile name.
 
 ### GenAI-ready deployment checklist
 
@@ -181,18 +182,18 @@ The quick deploy path also runs `alembic upgrade head` on the VM before restarti
 ```env
 OCI_REGION=uk-london-1
 OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
+OCI_IMAGE_COMPARTMENT_ID=ocid1.tenancy.oc1...   # set to your tenancy OCID
 OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex
 OCI_OCPU_COUNT=2
 OCI_MEMORY_GB=8
 OCI_PROFILE=DEFAULT
-OCI_IMAGE_COMPARTMENT_ID=
-OCI_SUBNET_ID=ocid1.subnet.oc1...
+OCI_SUBNET_ID=ocid1.subnet.oc1...               # run: terraform -chdir=terraform output public_subnet_id
 OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
 OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
 ```
 
-`OCI_IMAGE_COMPARTMENT_ID` is optional. If it is unset, the deploy script resolves the platform-image compartment from the tenancy configured in `OCI_PROFILE`.
+`OCI_IMAGE_COMPARTMENT_ID` is **required for reliable image lookup**. Set it to your tenancy OCID. If unset, the deploy script resolves the platform-image compartment from the tenancy configured in `OCI_PROFILE`. This auto-resolution fails when the profile name in `~/.oci/config` does not match the value of `OCI_PROFILE`.
 
 Optional runtime values copied into the remote `.env`:
 
@@ -340,7 +341,7 @@ Oracle Linux 9 ships Python 3.9, which is below the `requires-python = ">=3.10"`
 
 ### SQLite DB owned by root after first deploy (fixed)
 
-When `alembic upgrade head` runs under root (via the Ansible `command` module), it creates `optiora.db` owned by root. The `optiora` service user cannot write to it, causing a startup crash. The Ansible playbook includes a "Fix database file ownership" task that runs immediately after migrations.
+When `alembic upgrade head` runs under root (via the Ansible `command` module), it creates `optiora.db` owned by root. The `optiora` service user cannot write to it, causing a startup crash. The Ansible playbook includes a "Fix database file ownership" task that runs immediately after migrations, using the correct `optiora_app_user` variable.
 
 ### SSH key must be passphrase-free
 

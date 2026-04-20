@@ -164,6 +164,10 @@ class UserOrganization(Base):
     # Relationships
     user = relationship("User", back_populates="user_organizations")
     organization = relationship("Organization", back_populates="user_organizations")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "organization_id", name="uq_user_organization_membership"),
+    )
     
     def __repr__(self):
         return f"<UserOrganization(user_id={self.user_id}, org_id={self.organization_id}, role={self.role})>"

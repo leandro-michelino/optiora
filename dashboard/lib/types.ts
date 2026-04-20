@@ -1184,4 +1184,138 @@ export interface RightsizingResponse {
   recommendations: RightsizingRecommendation[]
 }
 
+// ---------------------------------------------------------------------------
+// Tagging Coverage Analytics
+// ---------------------------------------------------------------------------
+
+export interface TagCoverageDetail {
+  tag_key: string
+  coverage_percent: number
+  missing_on_resources: number
+  estimated_untagged_spend_usd: number
+  is_critical: boolean
+}
+
+export interface TaggingCoverageResponse {
+  generated_at: string
+  overall_coverage_percent: number
+  allocation_readiness_score: number
+  untagged_spend_usd: number
+  critical_tag_gaps: string[]
+  tag_details: TagCoverageDetail[]
+  genai_narrative: string | null
+  genai_prompt: string
+  cost_context: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// Sustainability Metrics
+// ---------------------------------------------------------------------------
+
+export interface ProviderFootprint {
+  provider: string
+  carbon_kg_co2e_monthly: number
+  carbon_intensity_kg_per_usd: number
+  region_modifier: number
+}
+
+export interface SustainabilityReductionOpportunity {
+  action: string
+  estimated_reduction_kg_co2e: number
+  estimated_savings_usd: number
+  effort: string
+}
+
+export interface SustainabilityResponse {
+  generated_at: string
+  total_carbon_kg_co2e_monthly: number
+  total_carbon_tonnes_co2e_annual: number
+  sustainability_score: number
+  provider_footprints: ProviderFootprint[]
+  reduction_opportunities: SustainabilityReductionOpportunity[]
+  genai_narrative: string | null
+  genai_prompt: string
+  cost_context: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// Cross-Provider Comparison
+// ---------------------------------------------------------------------------
+
+export interface ProviderHealthScore {
+  provider: string
+  health_score: number
+  cost_share_percent: number
+  waste_rate_percent: number
+  commitment_coverage_percent: number
+  tagging_coverage_percent: number
+}
+
+export interface ArbitrageOpportunity {
+  workload: string
+  current_provider: string
+  target_provider: string
+  estimated_monthly_savings_usd: number
+  confidence: string
+}
+
+export interface CrossProviderComparisonResponse {
+  generated_at: string
+  hhi_concentration_score: number
+  concentration_risk: string
+  provider_health_scores: ProviderHealthScore[]
+  arbitrage_opportunities: ArbitrageOpportunity[]
+  genai_narrative: string | null
+  genai_prompt: string
+  cost_context: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// Anomaly Intelligence
+// ---------------------------------------------------------------------------
+
+export interface AnomalyIntelligenceItem {
+  service: string
+  provider: string
+  anomaly_score: number
+  root_cause_pattern: string
+  investigation_playbook: string[]
+  escalation_recommended: boolean
+  estimated_monthly_impact_usd: number
+}
+
+export interface AnomalyIntelligenceResponse {
+  generated_at: string
+  total_anomalies_detected: number
+  high_confidence_anomalies: number
+  annualized_risk_usd: number
+  anomalies: AnomalyIntelligenceItem[]
+  genai_narrative: string | null
+  genai_prompt: string
+  cost_context: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// Chargeback Summary
+// ---------------------------------------------------------------------------
+
+export interface TeamAllocation {
+  team: string
+  allocated_spend_usd: number
+  share_percent: number
+  top_providers: string[]
+}
+
+export interface ChargebackSummaryResponse {
+  generated_at: string
+  total_spend_usd: number
+  allocated_spend_usd: number
+  unallocated_spend_usd: number
+  allocation_coverage_percent: number
+  team_allocations: TeamAllocation[]
+  genai_narrative: string | null
+  genai_prompt: string
+  cost_context: Record<string, unknown>
+}
+
 

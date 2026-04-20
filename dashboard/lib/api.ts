@@ -62,6 +62,11 @@ import {
   RemediationLoopResponse,
   AlertRoutingPolicySimulationRequest,
   AlertRoutingPolicySimulationResponse,
+  TaggingCoverageResponse,
+  SustainabilityResponse,
+  CrossProviderComparisonResponse,
+  AnomalyIntelligenceResponse,
+  ChargebackSummaryResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -878,4 +883,34 @@ export function fetchRightsizingRecommendations(params?: {
   if (params?.limit !== undefined) q.set('limit', String(params.limit))
   const qs = q.toString()
   return requestJson<RightsizingResponse>(`/api/v1/recommendations/rightsizing${qs ? `?${qs}` : ''}`)
+}
+
+// --- New FinOps Analytics ---
+
+export function fetchTaggingCoverage(cloudProvider = 'all'): Promise<TaggingCoverageResponse> {
+  return requestJson<TaggingCoverageResponse>(
+    `/api/v1/analytics/tagging-coverage${toQueryString({ cloud_provider: cloudProvider })}`,
+  )
+}
+
+export function fetchSustainabilityMetrics(cloudProvider = 'all'): Promise<SustainabilityResponse> {
+  return requestJson<SustainabilityResponse>(
+    `/api/v1/analytics/sustainability${toQueryString({ cloud_provider: cloudProvider })}`,
+  )
+}
+
+export function fetchCrossProviderComparison(): Promise<CrossProviderComparisonResponse> {
+  return requestJson<CrossProviderComparisonResponse>('/api/v1/analytics/cross-provider-comparison')
+}
+
+export function fetchAnomalyIntelligence(cloudProvider = 'all'): Promise<AnomalyIntelligenceResponse> {
+  return requestJson<AnomalyIntelligenceResponse>(
+    `/api/v1/analytics/anomaly-intelligence${toQueryString({ cloud_provider: cloudProvider })}`,
+  )
+}
+
+export function fetchChargebackSummary(cloudProvider = 'all'): Promise<ChargebackSummaryResponse> {
+  return requestJson<ChargebackSummaryResponse>(
+    `/api/v1/analytics/chargeback-summary${toQueryString({ cloud_provider: cloudProvider })}`,
+  )
 }

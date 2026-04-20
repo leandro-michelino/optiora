@@ -1,18 +1,28 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Bot, RefreshCw, ShieldCheck, Tags, Users } from 'lucide-react'
+import { Bot, Leaf, RefreshCw, ShieldCheck, Tags, Users, BarChart3, AlertTriangle, DollarSign } from 'lucide-react'
 import {
   fetchDecisionGradeRecommendations,
   fetchFederatedCosts,
   fetchTagQualityScore,
   runAutoRemediationLoop,
+  fetchTaggingCoverage,
+  fetchSustainabilityMetrics,
+  fetchCrossProviderComparison,
+  fetchAnomalyIntelligence,
+  fetchChargebackSummary,
 } from '@/lib/api'
 import {
   DecisionRecommendationResponse,
   FederationCostResponse,
   RemediationLoopResponse,
   TagQualityScoreResponse,
+  TaggingCoverageResponse,
+  SustainabilityResponse,
+  CrossProviderComparisonResponse,
+  AnomalyIntelligenceResponse,
+  ChargebackSummaryResponse,
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -53,6 +63,13 @@ export default function AdvancedFinOpsPage() {
   const [loopResult, setLoopResult] = useState<RemediationLoopResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // New analytics state
+  const [taggingCoverage, setTaggingCoverage] = useState<TaggingCoverageResponse | null>(null)
+  const [sustainability, setSustainability] = useState<SustainabilityResponse | null>(null)
+  const [crossProvider, setCrossProvider] = useState<CrossProviderComparisonResponse | null>(null)
+  const [anomalyIntel, setAnomalyIntel] = useState<AnomalyIntelligenceResponse | null>(null)
+  const [chargeback, setChargeback] = useState<ChargebackSummaryResponse | null>(null)
+
   function pushToast(title: string, detail: string, kind: ToastKind = 'info') {
     const id = Date.now() + Math.floor(Math.random() * 1000)
     setToasts(prev => [...prev, { id, title, detail, kind }])
@@ -70,11 +87,55 @@ export default function AdvancedFinOpsPage() {
     setLoadingTagQuality(true)
     setLoadingDecision(true)
     setLoadingFederation(true)
-    const [tagRes, decRes, fedRes] = await Promise.allSettled([
+    const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes] = await Promise.allSettled([
       fetchTagQualityScore('all'),
       fetchDecisionGradeRecommendations({ top_n: 8, provider: 'all', min_monthly_savings: 10 }),
       fetchFederatedCosts({ provider: 'all', include_regions: true }),
+      fetchTaggingCoverage('all'),
+      fetchSustainabilityMetrics('all'),
+      fetchCrossProviderComparison(),
+      fetchAnomalyIntelligence('all'),
+      fetchChargebackSummary('all'),
     ])
+
+    if (tagRes.status === 'fulfilled') {
+      setTagQuality(tagRes.value)
+      pushToast('Tag quality loaded', `Completeness ${tagRes.value.completeness_score.toFixed(1)}%`, 'success')
+    } else {
+      setTagQualityError('Failed to load tag quality section.')
+      pushToast('Tag quality failed', 'Could not load tag quality section.', 'error')
+    }
+    setLoadingTagQuality(false)
+
+    if (decRes.status === 'fulfilled') {
+      setDecision(decRes.value)
+      pushToast('Decision-grade loaded', `${decRes.value.total_candidates} candidates`, 'success')
+    } else {
+      setDecisionError('Failed to load decision-grade recommendations.')
+      pushToast('Decision-grade failed', 'Could not load recommendation section.', 'error')
+    }
+    setLoadingDecision(false)
+
+    if (fedRes.status === 'fulfilled') {
+      setFederation(fedRes.value)
+      pushToast('Federation loaded', `${fedRes.value.total_accounts} accounts`, 'success')
+    } else {
+      setFederationError('Failed to load federation cost section.')
+      pushToast('Federation failed', 'Could not load federation section.', 'error')
+    }
+    setLoadingFederation(false)
+
+    if (tcRes.status === 'fulfilled') setTaggingCoverage(tcRes.value)
+    if (susRes.status === 'fulfilled') setSustainability(susRes.value)
+    if (cpRes.status === 'fulfilled') setCrossProvider(cpRes.value)
+    if (aiRes.status === 'fulfilled') setAnomalyIntel(aiRes.value)
+    if (cbRes.status === 'fulfilled') setChargeback(cbRes.value)
+
+    if (tagRes.status === 'rejected' && decRes.status === 'rejected' && fedRes.status === 'rejected') {
+      setError('Failed to load advanced FinOps data.')
+    }
+    setLoading(false)
+  }
 
     if (tagRes.status === 'fulfilled') {
       setTagQuality(tagRes.value)
@@ -309,6 +370,202 @@ export default function AdvancedFinOpsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* New deep analytics section */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card>
+              <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-2"><Tags className="h-5 w-5" />Tagging Coverage &amp; Allocation Readiness</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                {taggingCoverage ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-xs text-slate-500">Overall Coverage</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{taggingCoverage.overall_coverage_percent.toFixed(1)}%</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-xs text-slate-500">Allocation Readiness</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{taggingCoverage.allocation_readiness_score.toFixed(0)}/100</p>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+                      <p className="font-medium text-amber-800 dark:text-amber-200">Untagged Spend: {fmt(taggingCoverage.untagged_spend_usd)}</p>
+                      {taggingCoverage.critical_tag_gaps.length > 0 && (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Critical gaps: {taggingCoverage.critical_tag_gaps.join(', ')}</p>
+                      )}
+                    </div>
+                    {taggingCoverage.genai_narrative && (
+                      <p className="text-xs text-slate-600 dark:text-slate-400 italic">{taggingCoverage.genai_narrative}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Loading tagging coverage...</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-2"><Leaf className="h-5 w-5" />Sustainability &amp; Carbon Footprint</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                {sustainability ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-xs text-slate-500">Monthly CO₂e</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{sustainability.total_carbon_kg_co2e_monthly.toFixed(0)} kg</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-xs text-slate-500">Sustainability Score</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{sustainability.sustainability_score.toFixed(0)}/100</p>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      {sustainability.provider_footprints.map(pf => (
+                        <div key={pf.provider} className="flex justify-between text-sm rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
+                          <span className="text-slate-700 dark:text-slate-300 uppercase">{pf.provider}</span>
+                          <span className="font-medium text-slate-900 dark:text-white">{pf.carbon_kg_co2e_monthly.toFixed(1)} kg CO₂e/mo</span>
+                        </div>
+                      ))}
+                    </div>
+                    {sustainability.genai_narrative && (
+                      <p className="text-xs text-slate-600 dark:text-slate-400 italic">{sustainability.genai_narrative}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Loading sustainability metrics...</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card>
+              <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />Cross-Provider Comparison</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                {crossProvider ? (
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-slate-200 p-2 text-xs text-center dark:border-slate-700">
+                      HHI Concentration: <span className="font-bold">{crossProvider.hhi_concentration_score.toFixed(2)}</span>
+                      {' · '}<span className="capitalize">{crossProvider.concentration_risk}</span> risk
+                    </div>
+                    {crossProvider.provider_health_scores.map(p => (
+                      <div key={p.provider} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium uppercase text-slate-900 dark:text-white">{p.provider}</span>
+                          <span className="text-xs text-slate-500">Health: {p.health_score.toFixed(0)}/100</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Share: {p.cost_share_percent.toFixed(1)}% · Waste: {p.waste_rate_percent.toFixed(1)}% · Commitment: {p.commitment_coverage_percent.toFixed(0)}%
+                        </div>
+                      </div>
+                    ))}
+                    {crossProvider.genai_narrative && (
+                      <p className="text-xs text-slate-600 dark:text-slate-400 italic">{crossProvider.genai_narrative}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Loading cross-provider comparison...</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5" />Anomaly Intelligence</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                {anomalyIntel ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-xs text-slate-500">Detected Anomalies</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{anomalyIntel.total_anomalies_detected}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-xs text-slate-500">Annualised Risk</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{fmt(anomalyIntel.annualized_risk_usd)}</p>
+                      </div>
+                    </div>
+                    <div className="max-h-64 space-y-2 overflow-y-auto">
+                      {anomalyIntel.anomalies.slice(0, 8).map((a, i) => (
+                        <div key={i} className="rounded border border-slate-200 px-2 py-2 text-xs dark:border-slate-700">
+                          <div className="flex justify-between">
+                            <span className="font-medium text-slate-800 dark:text-slate-200">{a.service} ({a.provider.toUpperCase()})</span>
+                            {a.escalation_recommended && <Badge variant="outline" className="text-red-600 border-red-300 rounded-md">Escalate</Badge>}
+                          </div>
+                          <p className="text-slate-500 mt-0.5">{a.root_cause_pattern} · {fmt(a.estimated_monthly_impact_usd)}/mo</p>
+                        </div>
+                      ))}
+                    </div>
+                    {anomalyIntel.genai_narrative && (
+                      <p className="text-xs text-slate-600 dark:text-slate-400 italic">{anomalyIntel.genai_narrative}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Loading anomaly intelligence...</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+              <CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5" />Chargeback / Showback Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {chargeback ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs text-slate-500">Allocated</p>
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">{fmt(chargeback.allocated_spend_usd)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs text-slate-500">Unallocated</p>
+                      <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{fmt(chargeback.unallocated_spend_usd)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs text-slate-500">Coverage</p>
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">{chargeback.allocation_coverage_percent.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                          <th className="pb-2 text-left text-xs text-slate-500 font-medium">Team</th>
+                          <th className="pb-2 text-right text-xs text-slate-500 font-medium">Spend</th>
+                          <th className="pb-2 text-right text-xs text-slate-500 font-medium">Share</th>
+                          <th className="pb-2 text-left text-xs text-slate-500 font-medium">Top Providers</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {chargeback.team_allocations.map(t => (
+                          <tr key={t.team}>
+                            <td className="py-1.5 text-slate-900 dark:text-white font-medium">{t.team}</td>
+                            <td className="py-1.5 text-right text-slate-700 dark:text-slate-300">{fmt(t.allocated_spend_usd)}</td>
+                            <td className="py-1.5 text-right text-slate-500">{t.share_percent.toFixed(1)}%</td>
+                            <td className="py-1.5 text-slate-500 uppercase text-xs">{t.top_providers.join(', ')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {chargeback.genai_narrative && (
+                    <p className="text-xs text-slate-600 dark:text-slate-400 italic">{chargeback.genai_narrative}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Loading chargeback summary...</p>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
 

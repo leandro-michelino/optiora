@@ -498,8 +498,8 @@
 - name: Fix database file ownership
   ansible.builtin.file:
     path: "{{ optiora_app_dir }}/optiora.db"
-    owner: "{{ optiora_user }}"
-    group: "{{ optiora_user }}"
+    owner: "{{ optiora_app_user }}"
+    group: "{{ optiora_app_user }}"
     mode: '0640'
   failed_when: false
 

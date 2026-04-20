@@ -891,7 +891,8 @@ deploy_compute() {
     log_success "Dashboard: http://$CURRENT_PUBLIC_IP:3000"
     log_success "API: http://$CURRENT_PUBLIC_IP:8000"
     log_info "Verification: ./deploy/deploy-oci.sh verify"
-    log_info "On VM, use tail -f /var/log/optiora-api.log and tail -f /var/log/optiora-dashboard.log"
+    log_info "API logs:   sudo journalctl -u optiora-api -n 100 --no-pager"
+    log_info "UI logs:    sudo journalctl -u optiora-dashboard -n 100 --no-pager"
 }
 
 instance_action() {
@@ -981,9 +982,9 @@ view_logs() {
 
     log_info "Use the following commands from your laptop:"
     echo "ssh -i \"$RESOLVED_SSH_PRIVATE_KEY_PATH\" ${REMOTE_USER}@${public_ip}"
+    echo "sudo journalctl -u optiora-api -n 100 --no-pager"
+    echo "sudo journalctl -u optiora-dashboard -n 100 --no-pager"
     echo "sudo tail -f /var/log/optiora-api.log"
-    echo "sudo tail -f /var/log/optiora-dashboard.log"
-    echo "sudo tail -f /var/log/optiora-setup.log"
 }
 
 verify_deployment() {
