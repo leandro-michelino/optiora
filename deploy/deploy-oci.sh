@@ -13,6 +13,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TFVARS_PATH="${ROOT_DIR}/terraform/terraform.tfvars"
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -70,6 +74,136 @@ log_step() {
     echo -e "${BLUE}============================================================${NC}"
 }
 
+prompt_value() {
+    local label="$1"
+    local default_value="${2:-}"
+    local answer
+
+    if [[ -n "$default_value" ]]; then
+        read -r -p "$label [$default_value]: " answer
+        if [[ -z "$answer" ]]; then
+            echo "$default_value"
+            return 0
+        fi
+        echo "$answer"
+        return 0
+    fi
+
+    read -r -p "$label: " answer
+    echo "$answer"
+}
+
+prompt_yes_no() {
+    local label="$1"
+    local default_yes="${2:-true}"
+    local answer
+    local suffix="[Y/n]"
+
+    if [[ "$default_yes" != "true" ]]; then
+        suffix="[y/N]"
+    fi
+
+    read -r -p "$label $suffix " answer
+    local normalized
+    normalized="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+        y|yes) return 0 ;;
+        n|no) return 1 ;;
+        "") [[ "$default_yes" == "true" ]] && return 0 || return 1 ;;
+        *) [[ "$default_yes" == "true" ]] && return 0 || return 1 ;;
+    esac
+}
+
+read_tfvar() {
+    local key="$1"
+    local file="$2"
+    if [[ ! -f "$file" ]]; then
+        return 0
+    fi
+    sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\"\(.*\)\"[[:space:]]*$/\1/p" "$file" | head -n 1
+}
+
+read_tfvar_list() {
+    local key="$1"
+    local file="$2"
+    if [[ ! -f "$file" ]]; then
+        return 0
+    fi
+    sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\[\(.*\)\][[:space:]]*$/\1/p" "$file" | head -n 1 | tr -d '"' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
+}
+
+upsert_tfvar() {
+    local key="$1"
+    local value="$2"
+    local file="$3"
+    local escaped
+    local tmp_file
+
+    escaped="${value//\"/\\\"}"
+    tmp_file="$(mktemp)"
+
+    if [[ ! -f "$file" ]]; then
+        touch "$file"
+    fi
+
+    if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$file"; then
+        awk -v k="$key" -v v="$escaped" '
+      BEGIN { updated = 0 }
+      $0 ~ "^[[:space:]]*" k "[[:space:]]*=" {
+        print k " = \"" v "\""
+        updated = 1
+        next
+      }
+      { print }
+      END {
+        if (updated == 0) {
+          print k " = \"" v "\""
+        }
+      }
+    ' "$file" > "$tmp_file"
+    else
+        cat "$file" > "$tmp_file"
+        echo "${key} = \"${escaped}\"" >> "$tmp_file"
+    fi
+
+    mv "$tmp_file" "$file"
+}
+
+upsert_tfvar_raw() {
+    local key="$1"
+    local value="$2"
+    local file="$3"
+    local tmp_file
+
+    tmp_file="$(mktemp)"
+
+    if [[ ! -f "$file" ]]; then
+        touch "$file"
+    fi
+
+    if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$file"; then
+        awk -v k="$key" -v v="$value" '
+      BEGIN { updated = 0 }
+      $0 ~ "^[[:space:]]*" k "[[:space:]]*=" {
+        print k " = " v
+        updated = 1
+        next
+      }
+      { print }
+      END {
+        if (updated == 0) {
+          print k " = " v
+        }
+      }
+    ' "$file" > "$tmp_file"
+    else
+        cat "$file" > "$tmp_file"
+        echo "${key} = ${value}" >> "$tmp_file"
+    fi
+
+    mv "$tmp_file" "$file"
+}
+
 require_command() {
     local cmd="$1"
     if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -86,6 +220,8 @@ ${YELLOW}USAGE:${NC}
     $0 [COMMAND]
 
 ${YELLOW}COMMANDS:${NC}
+    menu                 Interactive deployment menu (scratch setup, review/fix, CIDR management, ideas)
+    full                 Fancy end-to-end flow (Terraform + compute + Ansible + verify)
     compute              Create/start instance and deploy local code (default)
     status               Check current deployment status
     verify               Run end-to-end verification against the deployed dashboard and API
@@ -151,7 +287,7 @@ check_prerequisites() {
     fi
     log_success "Compartment ID configured"
 
-    if [ ! -f ".env.example" ]; then
+    if [ ! -f "${ROOT_DIR}/.env.example" ]; then
         log_error ".env.example not found in project root"
         exit 1
     fi
@@ -906,6 +1042,249 @@ verify_deployment() {
     bash "$(dirname "$0")/../tests/smoke_test_0_9.sh"
 }
 
+run_ansible_playbook_for_instance() {
+    local public_ip="$1"
+
+    if ! command -v ansible-playbook >/dev/null 2>&1; then
+        log_warning "ansible-playbook not installed. Skipping Ansible provisioning step."
+        return 0
+    fi
+
+    local inv
+    local ssh_user
+    local ssh_key
+
+    ssh_user="${OCI_ANSIBLE_USER:-$REMOTE_USER}"
+    ssh_key="${OCI_ANSIBLE_SSH_KEY_PATH:-$RESOLVED_SSH_PRIVATE_KEY_PATH}"
+    inv="$(mktemp)"
+
+    cat > "$inv" <<EOF
+all:
+  children:
+    optiora:
+      hosts:
+        optiora-prod:
+          ansible_host: ${public_ip}
+          ansible_user: ${ssh_user}
+          ansible_ssh_private_key_file: ${ssh_key}
+          optiora_configure_firewall: true
+          optiora_firewall_expose_direct_services: true
+EOF
+
+    log_info "Running Ansible post-provisioning hardening/playbook..."
+    ansible-playbook -i "$inv" "${ROOT_DIR}/ansible/playbooks/site.yml"
+    rm -f "$inv"
+    log_success "Ansible provisioning completed"
+}
+
+run_fancy_end_to_end_deploy() {
+    log_step "Fancy End-to-End Deploy (Terraform + Compute + Ansible)"
+
+    if [[ ! -f "$TFVARS_PATH" && -f "${ROOT_DIR}/terraform/terraform.tfvars.example" ]]; then
+        cp "${ROOT_DIR}/terraform/terraform.tfvars.example" "$TFVARS_PATH"
+        log_warning "Created terraform/terraform.tfvars from example"
+    fi
+
+    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" init
+    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" validate
+    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" plan -out=tfplan
+
+    if prompt_yes_no "Apply Terraform network baseline now?" true; then
+        TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" apply tfplan
+    else
+        log_warning "Terraform apply skipped by user"
+    fi
+
+    deploy_compute
+
+    local instance_id
+    local public_ip
+    if instance_id=$(get_instance_id); then
+        public_ip=$(get_public_ip_for_instance "$instance_id")
+        if [[ -n "$public_ip" && "$public_ip" != "null" ]]; then
+            run_ansible_playbook_for_instance "$public_ip"
+            verify_deployment || true
+        fi
+    fi
+
+    log_success "End-to-end deployment flow finished"
+}
+
+review_and_fix_deployment() {
+    log_step "Review Current Deployment And Fix Issues"
+    get_status || true
+
+    if verify_deployment; then
+        log_success "Deployment verification passed — no repair actions needed"
+        return 0
+    fi
+
+    log_warning "Verification failed. Attempting automated repair..."
+    local instance_id
+    local public_ip
+
+    if ! instance_id=$(get_instance_id); then
+        log_error "No running deployment found to repair"
+        return 1
+    fi
+
+    public_ip=$(get_public_ip_for_instance "$instance_id")
+    if [[ -z "$public_ip" || "$public_ip" == "null" ]]; then
+        log_error "Could not resolve instance public IP for repair"
+        return 1
+    fi
+
+    resolve_ssh_credentials
+    ssh -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -i "$RESOLVED_SSH_PRIVATE_KEY_PATH" \
+        "${REMOTE_USER}@${public_ip}" "sudo APP_DIR='$APP_DIR' bash -s" <<'EOF'
+set -euo pipefail
+
+if [ -f "$APP_DIR/.env" ]; then
+  set -a
+  . "$APP_DIR/.env"
+  set +a
+fi
+
+if [ -d "$APP_DIR/venv" ] && [ -f "$APP_DIR/alembic.ini" ]; then
+  "$APP_DIR/venv/bin/alembic" -c "$APP_DIR/alembic.ini" upgrade head || true
+fi
+
+systemctl daemon-reload || true
+systemctl restart optiora-api.service || true
+systemctl restart optiora-dashboard.service || true
+EOF
+
+    run_ansible_playbook_for_instance "$public_ip"
+    verify_deployment
+    log_success "Repair cycle completed"
+}
+
+manage_allowed_ips() {
+    log_step "Manage Allowed Ingress CIDRs"
+
+    if [[ ! -f "$TFVARS_PATH" && -f "${ROOT_DIR}/terraform/terraform.tfvars.example" ]]; then
+        cp "${ROOT_DIR}/terraform/terraform.tfvars.example" "$TFVARS_PATH"
+    fi
+
+    local current_laptop
+    local new_laptop
+    local action
+    local cidr
+    local list_items=()
+    local updated=()
+
+    current_laptop="$(read_tfvar laptop_cidr "$TFVARS_PATH")"
+    echo "Current primary laptop CIDR: ${current_laptop:-<unset>}"
+    echo "Current additional CIDRs:"
+    while IFS= read -r item; do
+        list_items+=("$item")
+    done < <(read_tfvar_list allowed_public_ingress_cidrs "$TFVARS_PATH")
+    if [[ ${#list_items[@]} -eq 0 ]]; then
+        echo "  (none)"
+    else
+        for cidr in "${list_items[@]}"; do
+            echo "  - $cidr"
+        done
+    fi
+
+    if prompt_yes_no "Update primary laptop CIDR?" false; then
+        new_laptop="$(prompt_value "Enter new laptop CIDR" "$current_laptop")"
+        if [[ -n "$new_laptop" ]]; then
+            upsert_tfvar "laptop_cidr" "$new_laptop" "$TFVARS_PATH"
+            log_success "Updated laptop_cidr"
+        fi
+    fi
+
+    action="$(prompt_value "Choose action: add/remove/skip" "skip")"
+    case "$action" in
+        add|ADD|Add)
+            cidr="$(prompt_value "CIDR to add")"
+            if [[ -n "$cidr" ]]; then
+                updated=("${list_items[@]}")
+                updated+=("$cidr")
+            fi
+            ;;
+        remove|REMOVE|Remove)
+            cidr="$(prompt_value "CIDR to remove")"
+            for item in "${list_items[@]}"; do
+                if [[ "$item" != "$cidr" ]]; then
+                    updated+=("$item")
+                fi
+            done
+            ;;
+        *)
+            updated=("${list_items[@]}")
+            ;;
+    esac
+
+    # de-duplicate list while preserving order
+    local dedup=()
+    local seen=""
+    for item in "${updated[@]}"; do
+        [[ -z "$item" ]] && continue
+        if [[ ",${seen}," == *",${item},"* ]]; then
+            continue
+        fi
+        dedup+=("$item")
+        seen="${seen},${item}"
+    done
+
+    local cidr_array="[]"
+    if [[ ${#dedup[@]} -gt 0 ]]; then
+        cidr_array="["
+        for item in "${dedup[@]}"; do
+            if [[ "$cidr_array" != "[" ]]; then
+                cidr_array+=" , "
+            fi
+            cidr_array+="\"$item\""
+        done
+        cidr_array+="]"
+    fi
+    upsert_tfvar_raw "allowed_public_ingress_cidrs" "$cidr_array" "$TFVARS_PATH"
+    log_success "Updated allowed_public_ingress_cidrs"
+
+    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" init
+    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" validate
+    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" plan
+    if prompt_yes_no "Apply security-list CIDR changes now?" true; then
+        TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" apply -auto-approve
+        log_success "Security list CIDR changes applied"
+    else
+        log_warning "CIDR changes saved in tfvars but not applied"
+    fi
+}
+
+show_deployment_ideas() {
+    log_step "Deployment Ideas"
+    cat <<'EOF'
+1) Add nginx + TLS front door and disable direct 3000/8000 ingress in Terraform.
+2) Add Redis-backed rate limiting for auth endpoints (multi-replica safe).
+3) Add blue/green release flow with health-gated service switch and rollback.
+4) Add nightly verify + smoke + drift detection job (Terraform plan in CI).
+5) Add OCI Load Balancer + WAF for internet-facing production environments.
+EOF
+}
+
+interactive_deploy_menu() {
+    log_step "Interactive Deployment Menu"
+    echo "1 - New setup from scratch"
+    echo "2 - Review the current deployment and fix issues"
+    echo "3 - Add or remove allowed IPs from security list"
+    echo "4 - Give some ideas"
+
+    local choice
+    choice="$(prompt_value "Select option" "1")"
+    case "$choice" in
+        1) run_fancy_end_to_end_deploy ;;
+        2) review_and_fix_deployment ;;
+        3) manage_allowed_ips ;;
+        4) show_deployment_ideas ;;
+        *) log_error "Invalid menu option: $choice"; return 1 ;;
+    esac
+}
+
 destroy_deployment() {
     log_step "Destroy Deployment"
     log_warning "This permanently terminates the compute instance and attached storage."
@@ -934,6 +1313,7 @@ destroy_deployment() {
 }
 
 main() {
+    cd "$ROOT_DIR"
     echo "============================================================"
     echo "OptiOra OCI Deployment"
     echo "Mode: $DEPLOYMENT_TYPE"
@@ -946,6 +1326,14 @@ main() {
         compute)
             check_prerequisites
             deploy_compute
+            ;;
+        full)
+            check_prerequisites
+            run_fancy_end_to_end_deploy
+            ;;
+        menu)
+            check_prerequisites
+            interactive_deploy_menu
             ;;
         status)
             check_prerequisites

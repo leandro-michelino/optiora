@@ -168,10 +168,10 @@ export default function PredictiveAnalyticsPage() {
   const selectedColor = selectedScenarioData ? (scenarioColors[selectedScenarioData.name] || '#10b981') : '#10b981'
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-3">
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-3">
             <TrendingUp className="w-10 h-10 text-emerald-600" />
             Predictive Cost Analytics
           </h1>
@@ -267,7 +267,7 @@ export default function PredictiveAnalyticsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:gap-8 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">
               {/* Historical Cost Trend */}
               {trend && trend.points.length > 0 && (
@@ -298,7 +298,7 @@ export default function PredictiveAnalyticsPage() {
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">
                   Forecast Trajectory
                 </h2>
-                <ResponsiveContainer width="100%" height={400}>
+                <ResponsiveContainer width="100%" height={360}>
                   <AreaChart data={forecast.forecast} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="month" stroke="#64748b" />
@@ -389,7 +389,7 @@ export default function PredictiveAnalyticsPage() {
                       <p className="text-sm text-emerald-800 dark:text-emerald-300 mb-4">
                         {selectedScenarioData.description}
                       </p>
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <p className="text-xs text-emerald-700 dark:text-emerald-400">Savings</p>
                           <p className="text-lg font-bold text-emerald-900 dark:text-emerald-100">
@@ -415,7 +415,7 @@ export default function PredictiveAnalyticsPage() {
               )}
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 lg:sticky lg:top-4 self-start">
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white px-1">
                 Optimization Scenarios
               </h2>

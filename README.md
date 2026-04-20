@@ -261,6 +261,12 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
+
+# Fancy end-to-end deployment (Terraform + compute + Ansible + verify)
+./deploy/deploy-oci.sh full
+
+# Interactive deployment menu
+./deploy/deploy-oci.sh menu
 ```
 
 Deployment script behavior:
@@ -273,6 +279,12 @@ Deployment path selection:
 
 - Use `./setup.sh --interactive` when you want guided Terraform + Ansible provisioning.
 - Use `./deploy/deploy-oci.sh compute` when you want fast laptop-driven deploy/redeploy to a single VM.
+- Use `./deploy/deploy-oci.sh full` when you want a one-command end-to-end flow (Terraform + compute + Ansible + verification).
+- Use `./deploy/deploy-oci.sh menu` for the interactive operations menu:
+  - new setup from scratch
+  - review current deployment and auto-repair
+  - add/remove allowed dashboard ingress CIDRs
+  - deployment improvement ideas
 - replaces placeholder JWT secrets with a generated value
 - applies `alembic upgrade head` on the VM before services restart
 - installs backend + dashboard dependencies with `dnf` on Oracle Linux hosts and starts systemd services

@@ -14,6 +14,8 @@ Choose the path that matches your deployment style:
 
 - `./setup.sh --interactive`: guided Terraform + Ansible workflow with prompts.
 - `./deploy/deploy-oci.sh compute`: fast redeploy workflow for a single VM from your laptop.
+- `./deploy/deploy-oci.sh full`: fancy end-to-end flow (Terraform + compute provisioning + Ansible + verify).
+- `./deploy/deploy-oci.sh menu`: interactive operations menu with setup/review/CIDR management ideas.
 
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
 
@@ -115,6 +117,8 @@ The quick deploy path also runs `alembic upgrade head` on the VM before restarti
 
 ```bash
 ./deploy/deploy-oci.sh compute
+./deploy/deploy-oci.sh full
+./deploy/deploy-oci.sh menu
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
 ./deploy/deploy-oci.sh logs
