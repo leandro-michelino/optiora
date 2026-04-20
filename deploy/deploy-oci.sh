@@ -970,8 +970,8 @@ view_logs() {
 
     log_info "Use the following commands from your laptop:"
     echo "ssh -i \"$RESOLVED_SSH_PRIVATE_KEY_PATH\" ${REMOTE_USER}@${public_ip}"
-    echo "sudo journalctl -u optiora-api.service -f"
-    echo "sudo journalctl -u optiora-dashboard.service -f"
+    echo "sudo tail -f /var/log/optiora-api.log"
+    echo "sudo tail -f /var/log/optiora-dashboard.log"
     echo "sudo tail -f /var/log/optiora-setup.log"
 }
 

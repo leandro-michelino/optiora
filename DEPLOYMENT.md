@@ -107,8 +107,8 @@ The same script also manages the extra block volume. It reads `extra_block_volum
 Quick-deploy troubleshooting on the VM:
 
 ```bash
-sudo journalctl -u optiora-api.service -f
-sudo journalctl -u optiora-dashboard.service -f
+sudo tail -f /var/log/optiora-api.log
+sudo tail -f /var/log/optiora-dashboard.log
 sudo tail -f /var/log/optiora-setup.log
 ```
 
@@ -246,8 +246,8 @@ On the VM:
 ```bash
 sudo systemctl status optiora-api
 sudo systemctl status optiora-dashboard
-sudo journalctl -u optiora-api.service -f
-sudo journalctl -u optiora-dashboard.service -f
+sudo tail -f /var/log/optiora-api.log
+sudo tail -f /var/log/optiora-dashboard.log
 sudo tail -f /var/log/optiora-setup.log
 ```
 

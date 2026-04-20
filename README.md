@@ -284,7 +284,7 @@ Deployment path selection:
   - add/remove allowed dashboard ingress CIDRs
   - deployment improvement ideas
 - The recommended extra data disk is `200 GiB` at `10 VPUs/GB` (balanced). That gives enough persistent space for PostgreSQL growth, imports, exports, and build artifacts without overprovisioning.
-- The quick deploy path now runs the services as the dedicated `optiora` system user and is easiest to inspect with `journalctl -u optiora-api.service` and `journalctl -u optiora-dashboard.service`.
+- The single deploy path runs the services as the dedicated `optiora` system user, with API/dashboard output written to `/var/log/optiora-api.log` and `/var/log/optiora-dashboard.log`.
 - Terraform stores the canonical block-volume settings in `terraform/terraform.tfvars`, and the deploy script uses those values when creating and attaching the disk.
 
 Optional OCI deploy environment:
