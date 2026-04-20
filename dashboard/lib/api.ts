@@ -34,6 +34,7 @@ import {
   ProviderDiagnostic,
   NotificationDestinationsResponse,
   NotificationDestinationTestResponse,
+  DataFreshnessResponse,
   ExportJob,
   ExportJobRun,
   CostTrendResponse,
@@ -431,6 +432,14 @@ export async function runScheduledScanNow(): Promise<{ status: string; started: 
 export async function fetchSchedulerStatus(): Promise<SchedulerStatusResponse | null> {
   try {
     return await requestJson<SchedulerStatusResponse>('/api/v1/scanning/scheduler/status')
+  } catch {
+    return null
+  }
+}
+
+export async function fetchDataFreshness(): Promise<DataFreshnessResponse | null> {
+  try {
+    return await requestJson<DataFreshnessResponse>('/api/v1/operations/data-freshness')
   } catch {
     return null
   }

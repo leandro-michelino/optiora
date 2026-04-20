@@ -36,6 +36,7 @@ import {
   fetchNotificationDestinations,
   fetchProviderDiagnostics,
   fetchSchedulerStatus,
+  fetchDataFreshness,
   fetchScanDiff,
   fetchScanHistory,
   fetchScanningPermission,
@@ -53,6 +54,7 @@ import {
   ScanHistoryItem,
   ScanningPermission,
   SchedulerStatusResponse,
+  DataFreshnessResponse,
   StoredCredential,
   ScanStartResponse,
   ProviderDiagnostic,
@@ -83,6 +85,7 @@ interface OperationsState {
   permission: ScanningPermission | null
   scan: ScanStartResponse | null
   scheduler: SchedulerStatusResponse | null
+  dataFreshness: DataFreshnessResponse | null
   history: ScanHistoryItem[]
   latestDiff: ScanDiffResponse | null
   alerts: AlertEvent[]
@@ -101,6 +104,7 @@ const initialState: OperationsState = {
   permission: null,
   scan: null,
   scheduler: null,
+  dataFreshness: null,
   history: [],
   latestDiff: null,
   alerts: [],
@@ -126,6 +130,19 @@ function formatEta(seconds?: number | null): string {
     return `${hours}h ${minutes}m`
   }
   return `${Math.max(1, minutes)}m`
+}
+
+function formatAge(seconds?: number | null): string {
+  if (seconds == null || Number.isNaN(seconds)) {
+    return 'n/a'
+  }
+  if (seconds < 60) {
+    return `${seconds}s`
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)}m`
+  }
+  return `${Math.floor(seconds / 3600)}h`
 }
 
 function CapabilityCard({
@@ -192,7 +209,7 @@ export default function OperationsPage() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
 
-    const [health, info, credentials, diagnostics, destinations, permission, scheduler, history, alerts, auditLogs, exportJobs] = await Promise.allSettled([
+    const [health, info, credentials, diagnostics, destinations, permission, scheduler, dataFreshness, history, alerts, auditLogs, exportJobs] = await Promise.allSettled([
       fetchApiHealth(),
       fetchApiInfo(),
       fetchCredentials(),
@@ -200,6 +217,7 @@ export default function OperationsPage() {
       fetchNotificationDestinations(),
       fetchScanningPermission(),
       fetchSchedulerStatus(),
+      fetchDataFreshness(),
       fetchScanHistory(8),
       fetchAlerts(8),
       fetchAuditLogs(8),
@@ -239,6 +257,7 @@ export default function OperationsPage() {
       notificationDestinations: destinations.status === 'fulfilled' ? destinations.value.destinations || [] : [],
       permission: permission.status === 'fulfilled' ? permission.value : null,
       scheduler: scheduler.status === 'fulfilled' ? scheduler.value : null,
+      dataFreshness: dataFreshness.status === 'fulfilled' ? dataFreshness.value : null,
       history: historyItems,
       latestDiff,
       alerts: alerts.status === 'fulfilled' ? alerts.value : [],
@@ -534,6 +553,34 @@ export default function OperationsPage() {
                 <span>{state.scheduler?.counters.total ?? 0}</span>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Data Freshness
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+              <div className="flex items-center justify-between">
+                <span>Scheduler lag</span>
+                <Badge className={`rounded-md border ${statusTone(state.dataFreshness?.scheduler_status !== 'lagging')}`}>
+                  {formatAge(state.dataFreshness?.scheduler_lag_seconds)}
+                </Badge>
+              </div>
+              {(state.dataFreshness?.providers || []).map((item) => (
+                <div key={item.provider} className="flex items-center justify-between">
+                  <span className="uppercase">{item.provider}</span>
+                  <span>{formatAge(item.age_seconds)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-500">
+              Freshness is computed from latest provider snapshots/imports and external connector events.
+            </p>
           </CardContent>
         </Card>
       </div>

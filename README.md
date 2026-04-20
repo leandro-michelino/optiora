@@ -112,6 +112,7 @@ The dashboard is the main workspace for:
 - `GET /api/v1/scanning/{scan_id}/diff`
 - `POST /api/v1/scanning/scheduler/run-now`
 - `GET /api/v1/scanning/scheduler/status`
+- `GET /api/v1/operations/data-freshness` (provider ingestion age, connector lag, scheduler lag)
 - `GET /api/v1/scanning/history.csv`
 - `GET /api/v1/scanning/{scan_id}/diff.csv`
 - `GET /api/v1/costs`
@@ -145,8 +146,11 @@ The dashboard is the main workspace for:
 - `GET /api/v1/provider-accounts/{id}/region-breakdown` (per-region cost rows)
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/{alert_id}/acknowledge`
+- `POST /api/v1/alerts/{alert_id}/dismiss`
+- `POST /api/v1/alerts/{alert_id}/reactivate`
 - `GET /api/v1/alerts/routing-policies`
 - `POST /api/v1/alerts/routing-policies`
+- `POST /api/v1/alerts/routing-policies/simulate` (dry-run expected channel routing)
 - `GET /api/v1/notifications/destinations`
 - `POST /api/v1/notifications/destinations/{channel}/toggle`
 - `POST /api/v1/notifications/test-destination`

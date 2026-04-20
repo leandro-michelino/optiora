@@ -31,6 +31,7 @@ Regression tests:
 
 ```bash
 .venv/bin/python -m unittest discover -s tests
+./scripts/check-animated-svg-routes.sh
 ```
 
 Current backend coverage includes:
@@ -74,6 +75,12 @@ Current backend coverage includes:
 
 - budget alert event creation with email/Slack/Teams channel tracking
 - alert skip conditions for disabled notifications and below-threshold spend
+
+**Competitive operations** (`tests/test_competitive_ops.py`):
+
+- alert lifecycle transitions (`acknowledge`, `dismiss`, `reactivate`) and list-state projection
+- routing policy dry-run simulator contract
+- operations data freshness endpoint contract (`/api/v1/operations/data-freshness`)
 
 Smoke endpoints:
 

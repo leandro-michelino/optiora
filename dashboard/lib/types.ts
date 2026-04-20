@@ -373,8 +373,33 @@ export interface AlertEvent {
   title: string
   message: string
   delivered_channels: string[]
+  lifecycle_state?: 'active' | 'acknowledged' | 'dismissed' | 'reactivated' | string
   acknowledged_at?: string | null
   created_at: string
+}
+
+export interface DataFreshnessProviderItem {
+  provider: string
+  last_ingested_at?: string | null
+  age_seconds?: number | null
+  status: 'fresh' | 'stale' | 'unknown' | string
+}
+
+export interface DataFreshnessConnectorItem {
+  connector: string
+  last_event_at?: string | null
+  age_seconds?: number | null
+  status: 'fresh' | 'stale' | 'unknown' | string
+}
+
+export interface DataFreshnessResponse {
+  organization_id: number
+  customer_id: string
+  generated_at: string
+  providers: DataFreshnessProviderItem[]
+  connectors: DataFreshnessConnectorItem[]
+  scheduler_lag_seconds?: number | null
+  scheduler_status: 'healthy' | 'lagging' | 'unknown' | string
 }
 
 export interface AlertRoutingPolicy {

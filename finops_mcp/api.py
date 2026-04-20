@@ -502,6 +502,27 @@ class NotificationDestinationTestResponse(BaseModel):
     detail: str
 
 
+class AlertRoutingPolicySimulationRequest(BaseModel):
+    severity: Literal["warning", "critical"]
+    title: Optional[str] = None
+    alert_type: Optional[str] = None
+
+
+class AlertRoutingPolicySimulationResponse(BaseModel):
+    severity: str
+    matched_policy_id: Optional[int] = None
+    evaluated_channels: List[str]
+    expected_channels: List[str]
+    configured_channels: List[str]
+    inactive_policy: bool = False
+
+
+class AlertLifecycleActionResponse(BaseModel):
+    status: str
+    alert_id: int
+    lifecycle_state: Literal["active", "acknowledged", "dismissed", "reactivated"]
+
+
 class SchedulerCounters(BaseModel):
     total: int
     success: int
@@ -530,6 +551,30 @@ class SchedulerStatusResponse(BaseModel):
     last_failure_at: Optional[str] = None
     counters: SchedulerCounters
     timeline: List[SchedulerTimelineItem]
+
+
+class DataFreshnessProviderItem(BaseModel):
+    provider: str
+    last_ingested_at: Optional[str] = None
+    age_seconds: Optional[int] = None
+    status: Literal["fresh", "stale", "unknown"]
+
+
+class DataFreshnessConnectorItem(BaseModel):
+    connector: str
+    last_event_at: Optional[str] = None
+    age_seconds: Optional[int] = None
+    status: Literal["fresh", "stale", "unknown"]
+
+
+class DataFreshnessResponse(BaseModel):
+    organization_id: int
+    customer_id: str
+    generated_at: str
+    providers: List[DataFreshnessProviderItem]
+    connectors: List[DataFreshnessConnectorItem]
+    scheduler_lag_seconds: Optional[int] = None
+    scheduler_status: Literal["healthy", "lagging", "unknown"] = "unknown"
 
 
 class ExternalAWSAnomalyIngestRequest(BaseModel):
@@ -2625,6 +2670,41 @@ def _latest_delivery_timestamp_for_channel(
     return None
 
 
+def _alert_lifecycle_state_map(
+    db: Session,
+    organization_id: int,
+    alert_ids: List[int],
+) -> Dict[int, str]:
+    if not alert_ids:
+        return {}
+    rows = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.organization_id == organization_id,
+            AuditLog.entity_type == "alert_event",
+            AuditLog.entity_id.in_([str(alert_id) for alert_id in alert_ids]),
+            AuditLog.action.in_(["alert.acknowledge", "alert.dismiss", "alert.reactivate"]),
+        )
+        .order_by(AuditLog.created_at.asc())
+        .all()
+    )
+
+    state_map: Dict[int, str] = {}
+    for row in rows:
+        try:
+            alert_id = int(str(row.entity_id or "0"))
+        except ValueError:
+            continue
+        if row.action == "alert.dismiss":
+            state_map[alert_id] = "dismissed"
+        elif row.action == "alert.reactivate":
+            state_map[alert_id] = "reactivated"
+        elif row.action == "alert.acknowledge":
+            state_map[alert_id] = "acknowledged"
+
+    return state_map
+
+
 @router.get("/alerts/routing-policies", response_model=List[AlertRoutingPolicyResponse])
 async def list_alert_routing_policies(
     current_user: User = Depends(get_current_user),
@@ -2719,6 +2799,47 @@ async def upsert_alert_routing_policy(
         )
     finally:
         db.close()
+
+
+@router.post("/alerts/routing-policies/simulate", response_model=AlertRoutingPolicySimulationResponse)
+async def simulate_alert_routing_policy(
+    payload: AlertRoutingPolicySimulationRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AlertRoutingPolicySimulationResponse:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(AlertRoutingPolicy)
+            .filter(
+                AlertRoutingPolicy.organization_id == organization_id,
+                AlertRoutingPolicy.severity == payload.severity,
+            )
+            .first()
+        )
+    finally:
+        db.close()
+
+    channels = _safe_json_load(row.channels_json, []) if row else list(SUPPORTED_NOTIFICATION_CHANNELS)
+    configured = [
+        channel
+        for channel in channels
+        if destination_configured(Config(), channel)
+    ]
+    return AlertRoutingPolicySimulationResponse(
+        severity=payload.severity,
+        matched_policy_id=row.id if row else None,
+        evaluated_channels=channels,
+        expected_channels=configured,
+        configured_channels=[
+            channel
+            for channel in SUPPORTED_NOTIFICATION_CHANNELS
+            if destination_configured(Config(), channel)
+        ],
+        inactive_policy=(bool(row) and not bool(row.is_active)),
+    )
 
 
 @router.get("/notifications/destinations", response_model=NotificationDestinationsResponse)
@@ -2897,6 +3018,11 @@ async def list_alerts(
             .limit(max(1, min(limit, 200)))
             .all()
         )
+        lifecycle_map = _alert_lifecycle_state_map(
+            db=db,
+            organization_id=organization_id,
+            alert_ids=[int(row.id) for row in rows],
+        )
     finally:
         db.close()
     return [
@@ -2908,18 +3034,22 @@ async def list_alerts(
             "message": row.message,
             "delivered_channels": json.loads(row.delivered_channels_json or "[]"),
             "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
+            "lifecycle_state": lifecycle_map.get(
+                int(row.id),
+                "acknowledged" if row.acknowledged_at else "active",
+            ),
             "created_at": row.created_at.isoformat(),
         }
         for row in rows
     ]
 
 
-@router.post("/alerts/{alert_id}/acknowledge")
+@router.post("/alerts/{alert_id}/acknowledge", response_model=AlertLifecycleActionResponse)
 async def acknowledge_alert(
     alert_id: int,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
-) -> Dict[str, Any]:
+) -> AlertLifecycleActionResponse:
     _require_management_role(membership, "alert acknowledgement")
     organization_id = _organization_id_for_membership(membership)
     db = SessionLocal()
@@ -2949,7 +3079,91 @@ async def acknowledge_alert(
         db.commit()
     finally:
         db.close()
-    return {"status": "ok", "alert_id": alert_id}
+    return AlertLifecycleActionResponse(
+        status="ok",
+        alert_id=alert_id,
+        lifecycle_state="acknowledged",
+    )
+
+
+@router.post("/alerts/{alert_id}/dismiss", response_model=AlertLifecycleActionResponse)
+async def dismiss_alert(
+    alert_id: int,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AlertLifecycleActionResponse:
+    _require_management_role(membership, "alert dismissal")
+    organization_id = _organization_id_for_membership(membership)
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(AlertEvent)
+            .filter(
+                AlertEvent.id == alert_id,
+                AlertEvent.organization_id == organization_id,
+            )
+            .first()
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="alert.dismiss",
+                entity_type="alert_event",
+                entity_id=str(row.id),
+                metadata_json=json.dumps({"alert_type": row.alert_type}),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    return AlertLifecycleActionResponse(
+        status="ok",
+        alert_id=alert_id,
+        lifecycle_state="dismissed",
+    )
+
+
+@router.post("/alerts/{alert_id}/reactivate", response_model=AlertLifecycleActionResponse)
+async def reactivate_alert(
+    alert_id: int,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AlertLifecycleActionResponse:
+    _require_management_role(membership, "alert reactivation")
+    organization_id = _organization_id_for_membership(membership)
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(AlertEvent)
+            .filter(
+                AlertEvent.id == alert_id,
+                AlertEvent.organization_id == organization_id,
+            )
+            .first()
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="alert.reactivate",
+                entity_type="alert_event",
+                entity_id=str(row.id),
+                metadata_json=json.dumps({"alert_type": row.alert_type}),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    return AlertLifecycleActionResponse(
+        status="ok",
+        alert_id=alert_id,
+        lifecycle_state="reactivated",
+    )
 
 
 @router.get("/alerts.csv")
@@ -2959,12 +3173,13 @@ async def download_alerts_csv(
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Response:
     rows = await list_alerts(limit=limit, current_user=current_user, membership=membership)
-    lines = ["id,alert_type,severity,title,message,acknowledged_at,created_at"]
+    lines = ["id,alert_type,severity,title,message,lifecycle_state,acknowledged_at,created_at"]
     for row in rows:
         lines.append(
             f"{row['id']},{row['alert_type']},{row['severity']},"
             f"{_csv_escape(row['title'])},"
             f"{_csv_escape(row['message'])},"
+            f"{row.get('lifecycle_state', 'active')},"
             f"{row['acknowledged_at'] or ''},{row['created_at']}"
         )
     return Response("\n".join(lines), media_type="text/csv")
@@ -4241,6 +4456,9 @@ async def api_info() -> Dict[str, Any]:
             "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,
             "audit_logging": True,
+            "alert_lifecycle": True,
+            "routing_policy_simulator": True,
+            "operations_data_freshness": True,
             "budget_alerts": True,
             "csv_exports": True,
             "csv_imports": True,
@@ -4669,6 +4887,147 @@ async def get_scheduler_status(
             failure=failed_runs,
         ),
         timeline=timeline,
+    )
+
+
+def _freshness_state_for_age(age_seconds: Optional[int], stale_after_seconds: int) -> str:
+    if age_seconds is None:
+        return "unknown"
+    return "stale" if age_seconds > stale_after_seconds else "fresh"
+
+
+@router.get("/operations/data-freshness", response_model=DataFreshnessResponse)
+async def get_data_freshness(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> DataFreshnessResponse:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    now = _utcnow()
+
+    db = SessionLocal()
+    try:
+        cost_rows = (
+            db.query(CostSnapshot)
+            .filter(CostSnapshot.customer_id == customer_id)
+            .order_by(CostSnapshot.captured_at.desc())
+            .limit(500)
+            .all()
+        )
+        imported_rows = (
+            db.query(ImportedCostRecord)
+            .filter(ImportedCostRecord.customer_id == customer_id)
+            .order_by(ImportedCostRecord.created_at.desc())
+            .limit(500)
+            .all()
+        )
+        permission = (
+            db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        runs = (
+            db.query(ScanRunRecord)
+            .filter(ScanRunRecord.customer_id == customer_id)
+            .order_by(ScanRunRecord.started_at.desc())
+            .limit(20)
+            .all()
+        )
+        external_alerts = (
+            db.query(AlertEvent)
+            .filter(
+                AlertEvent.customer_id == customer_id,
+                AlertEvent.alert_type.in_(
+                    [
+                        "external.aws.cost_anomaly",
+                        "external.gcp.budget_pubsub",
+                    ]
+                ),
+            )
+            .order_by(AlertEvent.created_at.desc())
+            .limit(200)
+            .all()
+        )
+    finally:
+        db.close()
+
+    latest_by_provider: Dict[str, datetime] = {}
+    for row in cost_rows:
+        provider = str(row.provider or "").strip().lower()
+        if not provider:
+            continue
+        if provider not in latest_by_provider:
+            latest_by_provider[provider] = row.captured_at
+
+    for row in imported_rows:
+        provider = str(row.provider or "").strip().lower()
+        if not provider:
+            continue
+        current = latest_by_provider.get(provider)
+        if current is None or row.created_at > current:
+            latest_by_provider[provider] = row.created_at
+
+    providers: List[DataFreshnessProviderItem] = []
+    for provider in ["aws", "azure", "gcp", "oci"]:
+        last = latest_by_provider.get(provider)
+        age_seconds = int((now - last).total_seconds()) if last else None
+        providers.append(
+            DataFreshnessProviderItem(
+                provider=provider,
+                last_ingested_at=last.isoformat() if last else None,
+                age_seconds=age_seconds,
+                status=_freshness_state_for_age(age_seconds, stale_after_seconds=48 * 3600),
+            )
+        )
+
+    connector_latest: Dict[str, Optional[datetime]] = {
+        "aws_cost_anomaly": None,
+        "gcp_budget_pubsub": None,
+    }
+    for row in external_alerts:
+        if row.alert_type == "external.aws.cost_anomaly" and connector_latest["aws_cost_anomaly"] is None:
+            connector_latest["aws_cost_anomaly"] = row.created_at
+        if row.alert_type == "external.gcp.budget_pubsub" and connector_latest["gcp_budget_pubsub"] is None:
+            connector_latest["gcp_budget_pubsub"] = row.created_at
+
+    connectors: List[DataFreshnessConnectorItem] = []
+    for connector, last in connector_latest.items():
+        age_seconds = int((now - last).total_seconds()) if last else None
+        connectors.append(
+            DataFreshnessConnectorItem(
+                connector=connector,
+                last_event_at=last.isoformat() if last else None,
+                age_seconds=age_seconds,
+                status=_freshness_state_for_age(age_seconds, stale_after_seconds=72 * 3600),
+            )
+        )
+
+    scheduler_lag_seconds: Optional[int] = None
+    scheduler_status: Literal["healthy", "lagging", "unknown"] = "unknown"
+    if permission:
+        interval_seconds = _scan_interval_seconds(permission.scan_frequency)
+        last_success = next(
+            (
+                row.completed_at or row.started_at
+                for row in runs
+                if row.state == ScanningState.COMPLETED.value
+            ),
+            None,
+        )
+        if last_success is not None:
+            lag = int((now - last_success).total_seconds()) - interval_seconds
+            scheduler_lag_seconds = max(lag, 0)
+            scheduler_status = "lagging" if scheduler_lag_seconds > max(interval_seconds // 4, 900) else "healthy"
+
+    return DataFreshnessResponse(
+        organization_id=organization_id,
+        customer_id=customer_id,
+        generated_at=now.isoformat(),
+        providers=providers,
+        connectors=connectors,
+        scheduler_lag_seconds=scheduler_lag_seconds,
+        scheduler_status=scheduler_status,
     )
 
 
