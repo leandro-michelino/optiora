@@ -46,6 +46,7 @@ PASSWORD_RESET_RETURN_TOKEN = os.getenv(
     os.getenv("ENVIRONMENT", "development").lower() != "production",
 )
 _RATE_LIMIT_BUCKETS: Dict[str, List[datetime]] = {}
+_RATE_LIMIT_LAST_PURGE: datetime = datetime.now(timezone.utc).replace(tzinfo=None)
 ACCESS_TOKEN_COOKIE_NAME = "optiora_access_token"
 REFRESH_TOKEN_COOKIE_NAME = "optiora_refresh_token"
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", os.getenv("ENVIRONMENT", "development").lower() == "production")
@@ -140,8 +141,21 @@ def _client_ip(request: Request) -> str:
 
 
 def _check_rate_limit(key: str, limit: int, window_seconds: int) -> None:
-    """In-process fixed-window rate limiting for auth abuse protection."""
+    """In-process fixed-window rate limiting for auth abuse protection.
+
+    Stale buckets are purged periodically to prevent unbounded memory growth.
+    """
+    global _RATE_LIMIT_LAST_PURGE
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # Purge expired entries once per minute to prevent memory leak
+    if (now - _RATE_LIMIT_LAST_PURGE).total_seconds() > 60:
+        purge_cutoff = now - timedelta(seconds=max(window_seconds, 3600))
+        stale_keys = [k for k, v in _RATE_LIMIT_BUCKETS.items() if not v or max(v) < purge_cutoff]
+        for k in stale_keys:
+            del _RATE_LIMIT_BUCKETS[k]
+        _RATE_LIMIT_LAST_PURGE = now
+
     window_start = now - timedelta(seconds=window_seconds)
     attempts = [
         timestamp for timestamp in _RATE_LIMIT_BUCKETS.get(key, []) if timestamp > window_start

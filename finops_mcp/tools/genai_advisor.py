@@ -542,3 +542,260 @@ def generate_commitment_strategy(context: dict[str, Any]) -> tuple[Optional[str]
     if not _is_configured():
         return None, prompt
     return _sign_and_call(prompt), prompt
+
+
+def generate_tagging_strategy(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a tagging enforcement strategy from tagging coverage analytics.
+
+    ``context`` should contain output from ``build_tagging_coverage_analytics()`` or equivalent.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    coverage = context.get("coverage_percent", 0)
+    grade = context.get("grade", "C")
+    allocation_score = context.get("allocation_readiness_score", 0)
+    critical_gaps = context.get("critical_tag_gaps", [])
+    untagged_annual = context.get("untagged_spend_annual_usd", 0)
+    coverage_gap = context.get("coverage_gap_percent", 0)
+    recommendations = context.get("enforcement_recommendations", [])
+
+    gaps_str = ", ".join(critical_gaps[:4]) if critical_gaps else "none identified"
+    recs_str = "\n".join(f"- {r}" for r in recommendations[:3])
+
+    prompt = (
+        "You are a FinOps engineer advising a platform team on cloud tagging compliance. "
+        "Write a 3-4 sentence action plan to close the tagging gap.\n\n"
+        f"Current tagging coverage: {coverage:.1f}% (grade {grade}). "
+        f"Allocation readiness score: {allocation_score}/100. "
+        f"Coverage gap vs. benchmark: {coverage_gap:.1f}%. "
+        f"Annual spend at risk from untagged resources: ${untagged_annual:,.0f}. "
+        f"Missing critical tags: {gaps_str}.\n\n"
+        f"Recommended enforcement actions:\n{recs_str}\n\n"
+        "Explain the business impact of poor tagging and give 2 concrete enforcement steps "
+        "an engineer can implement this sprint."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_sustainability_narrative(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a sustainability and carbon footprint narrative from metrics.
+
+    ``context`` should contain output from ``build_sustainability_metrics()`` or equivalent.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    total_tonnes = context.get("total_tonnes_co2e_annual", 0)
+    score = context.get("sustainability_score", 0)
+    grade = context.get("sustainability_grade", "C")
+    renewable_pct = context.get("current_renewable_energy_percent", 0)
+    reductions = context.get("reduction_opportunities", {})
+    total_reduction_pct = reductions.get("total_reduction_potential_percent", 0)
+    recommendations = context.get("recommendations", [])
+
+    recs_str = "\n".join(f"- {r}" for r in recommendations[:3])
+    monthly_co2e = context.get("total_kg_co2e_monthly", 0)
+
+    prompt = (
+        "You are a cloud sustainability advisor writing a brief for a CTO preparing an "
+        "ESG report. Write 3-4 sentences covering current carbon position, top reduction "
+        "opportunities, and a recommended next action. Be factual and avoid alarmism.\n\n"
+        f"Annual cloud carbon footprint: {total_tonnes:.2f} tonnes CO2e. "
+        f"Monthly carbon: {monthly_co2e:.0f} kg CO2e. "
+        f"Sustainability score: {score}/100 (grade {grade}). "
+        f"Current renewable energy mix: {renewable_pct:.0f}%. "
+        f"Identified reduction potential: {total_reduction_pct:.0f}% through rightsizing and "
+        f"renewable region selection.\n\n"
+        f"Top recommendations:\n{recs_str}"
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_chargeback_narrative(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a chargeback/showback narrative for finance reporting.
+
+    ``context`` should contain output from ``build_chargeback_summary()`` or equivalent.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    model = context.get("model", "showback")
+    total = context.get("total_monthly_spend_usd", 0)
+    allocated_pct = context.get("allocation_coverage_percent", 0)
+    unallocated = context.get("unallocated_usd", 0)
+    unallocated_pct = context.get("unallocated_percent", 0)
+    top_spenders = context.get("top_spenders", [])
+    team_count = context.get("team_count", 0)
+
+    top_str = ", ".join(
+        f"{s['team']} (${s['allocated_spend_usd']:,.0f})" for s in top_spenders[:3]
+    ) if top_spenders else "data not available"
+
+    prompt = (
+        f"You are a FinOps manager presenting a {model} report to finance leadership. "
+        "Summarise spend allocation in 3-4 sentences. Cover coverage, top spenders, "
+        "and unallocated risk. Recommend one governance action.\n\n"
+        f"Total monthly cloud spend: ${total:,.0f}. "
+        f"Allocation coverage: {allocated_pct:.1f}% across {team_count} teams/cost-centers. "
+        f"Unallocated spend: ${unallocated:,.0f}/month ({unallocated_pct:.1f}%). "
+        f"Top spenders: {top_str}.\n\n"
+        f"If unallocated > 15%, emphasise urgency. Otherwise focus on top-spender accountability."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_cross_provider_comparison_brief(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a multi-cloud comparative efficiency brief.
+
+    ``context`` should contain output from ``build_cross_provider_comparison()`` or equivalent.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    total = context.get("total_monthly_spend_usd", 0)
+    best = context.get("best_performing_provider", "aws")
+    worst = context.get("lowest_health_provider", "")
+    concentration_risk = context.get("concentration_risk", "medium")
+    arbitrage = context.get("arbitrage_opportunities", [])
+    providers = context.get("providers", [])
+
+    provider_str = "\n".join(
+        f"- {p['provider'].upper()}: ${p['monthly_cost_usd']:,.0f}/month, "
+        f"health {p['health_score']}/100, waste {p['waste_rate_percent']:.1f}%, "
+        f"commitment {p['commitment_coverage_percent']:.0f}%"
+        for p in providers[:4]
+    )
+    arb_str = (
+        f"Arbitrage opportunity: move workloads from {arbitrage[0]['from_provider'].upper()} "
+        f"to {arbitrage[0]['to_provider'].upper()} — "
+        f"~${arbitrage[0]['estimated_annual_savings_usd']:,.0f}/year savings."
+        if arbitrage else "No immediate arbitrage opportunity identified."
+    )
+
+    prompt = (
+        "You are a FinOps strategist presenting a multi-cloud comparison to a VP of Engineering. "
+        "Write 3-4 sentences comparing provider efficiency, highlighting the strongest and weakest "
+        "performers, concentration risk, and any arbitrage opportunity.\n\n"
+        f"Total multi-cloud spend: ${total:,.0f}/month. "
+        f"Best-performing provider: {best.upper() if best else 'N/A'}. "
+        f"Lowest health provider: {worst.upper() if worst else 'N/A'}. "
+        f"Concentration risk: {concentration_risk}.\n\n"
+        f"Provider breakdown:\n{provider_str}\n\n"
+        f"{arb_str}"
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_alert_triage(alerts: list[dict[str, Any]], context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Use GenAI to classify and prioritize a batch of cost alerts to reduce alert fatigue.
+
+    ``alerts`` is a list of alert dicts with at minimum: title, severity, amount_usd, provider.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    monthly = context.get("current_monthly_spend_usd", 0)
+    critical_alerts = [a for a in alerts if str(a.get("severity", "")).lower() == "critical"]
+    high_alerts = [a for a in alerts if str(a.get("severity", "")).lower() == "high"]
+
+    alert_lines = "\n".join(
+        f"- [{a.get('severity', 'medium').upper()}] {a.get('title', 'Unknown alert')}: "
+        f"${_safe_float(a.get('amount_usd', 0)):,.0f} ({a.get('provider', '?').upper()})"
+        for a in alerts[:10]
+    )
+
+    prompt = (
+        "You are a FinOps on-call specialist performing alert triage. "
+        "Review the following alerts and classify each as: IMMEDIATE (act now), "
+        "INVESTIGATE (review today), or MONITOR (log and watch). "
+        "Give a one-line action for each IMMEDIATE or INVESTIGATE alert. "
+        "End with a 1-sentence overall risk summary.\n\n"
+        f"Context: total monthly spend ${monthly:,.0f}. "
+        f"{len(critical_alerts)} critical, {len(high_alerts)} high severity alerts.\n\n"
+        f"Alerts:\n{alert_lines}"
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_rightsizing_brief(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate an AI-powered rightsizing recommendation brief.
+
+    ``context`` may include: provider, total_potential_savings_usd,
+    resource_count, recommendation_count, top_resources (list of dicts with
+    resource_id, current_type, recommended_type, monthly_savings_usd).
+    Returns (generated_text_or_None, prompt_used).
+    """
+    provider = context.get("provider", "multi-cloud")
+    total_savings = context.get("total_potential_savings_usd", 0)
+    resource_count = context.get("resource_count", 0)
+    rec_count = context.get("recommendation_count", 0)
+    top_resources = context.get("top_resources", [])
+    monthly = context.get("current_monthly_spend_usd", 0)
+
+    resource_lines = "\n".join(
+        f"- {r.get('resource_id', 'unknown')}: {r.get('current_type', '?')} → "
+        f"{r.get('recommended_type', '?')}, save ${_safe_float(r.get('monthly_savings_usd', 0)):,.0f}/month"
+        for r in top_resources[:5]
+    ) if top_resources else "- No specific resource data provided"
+
+    prompt = (
+        "You are a cloud architect advising on rightsizing. "
+        "Write a 3-4 sentence rightsizing brief for a platform engineering team. "
+        "Be specific about the opportunity size and execution risk.\n\n"
+        f"Provider: {provider.upper()}. "
+        f"Total monthly spend: ${monthly:,.0f}. "
+        f"Total rightsizing savings: ${total_savings:,.0f}/month "
+        f"(${total_savings * 12:,.0f}/year). "
+        f"Resources analysed: {resource_count}. Recommendations: {rec_count}.\n\n"
+        f"Top rightsizing candidates:\n{resource_lines}\n\n"
+        "Highlight the highest-ROI candidate, execution risk, and testing approach."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_vendor_negotiation_brief(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate contract/vendor negotiation talking points from commitment and spend data.
+
+    Useful for enterprise discount program (EDP) renewals, private pricing agreements,
+    or annual commitment negotiations with AWS, Azure, GCP, or OCI.
+    Returns (generated_text_or_None, prompt_used).
+    """
+    provider = context.get("provider", "aws")
+    annual_spend = context.get("annual_spend_usd", 0)
+    current_discount_pct = context.get("current_discount_percent", 0)
+    commitment_coverage_pct = context.get("commitment_coverage_percent", 0)
+    contract_renewal_months = context.get("contract_renewal_months", 6)
+    growth_pct = context.get("yoy_growth_percent", 15)
+    competitive_alternatives = context.get("competitive_alternatives", [])
+
+    alt_str = ", ".join(competitive_alternatives[:3]) if competitive_alternatives else "Azure, GCP"
+    projected_3yr = annual_spend * ((1 + growth_pct / 100) ** 3)
+
+    prompt = (
+        "You are a FinOps procurement advisor preparing talking points for a cloud vendor "
+        "contract negotiation. Write 5-6 bullet points the customer should use in their "
+        "next negotiation call. Be commercially assertive but realistic.\n\n"
+        f"Provider: {provider.upper()}. "
+        f"Current annual cloud spend: ${annual_spend:,.0f}. "
+        f"Current discount: {current_discount_pct:.1f}%. "
+        f"Commitment coverage: {commitment_coverage_pct:.0f}%. "
+        f"Contract renewal in: {contract_renewal_months} months. "
+        f"YoY spend growth: {growth_pct:.0f}%. "
+        f"Projected 3-year total: ${projected_3yr:,.0f}. "
+        f"Competitive alternatives being evaluated: {alt_str}.\n\n"
+        "Cover: leverage points, minimum ask on discount %, bundled services to request, "
+        "SLA improvements, and a walk-away threshold."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt

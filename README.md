@@ -24,12 +24,18 @@ The dashboard is the main workspace for:
   - **Kubernetes Cost Allocation** — namespace-level cost attribution with workload breakdown
   - **Virtual Tags** — rule-based virtual tagging engine with dry-run coverage preview
   - **Resource-Level Rightsizing** — per-instance/volume savings with utilization signals
+  - **Tagging Coverage** — deep tagging compliance scoring with allocation readiness and financial risk from untagged spend
+  - **Sustainability Metrics** — carbon footprint estimation (kg CO₂e) with regional intensity modifiers and reduction opportunities
+  - **Cross-Provider Comparison** — multi-cloud efficiency benchmarking, health scores, HHI concentration risk, and workload arbitrage
+  - **Anomaly Intelligence** — root-cause pattern classification with investigation playbooks and escalation recommendations
+  - **Chargeback / Showback** — team-level cost allocation reports with unallocated spend risk
 - deeper FinOps analytics (cloud waste categories, efficiency score, commitment gap) with animated KPI cards
 - deterministic forecasting with baseline/conservative/balanced/aggressive scenarios, p10/p50/p90 fan percentiles, CVaR downside risk, forecast quality scoring, budget guardrails, trend+smoothing blends, provider concentration (HHI), and breach-probability executive metrics
 - deterministic what-if forecasting (`POST /api/v1/forecast/what-if`) with phased optimization actions, ROI, and payback month
 - deterministic stress-test forecasting (`POST /api/v1/forecast/stress-test`) with demand/price/execution shock envelopes and hedging playbooks
 - OCI GenAI-assisted cost advisor conversations, AI insights, and advisory workflows with London South (`uk-london-1`) as the primary OCI GenAI region
 - GenAI copilot packs (`POST /api/v1/genai/copilot-pack`) that produce spend, budget risk, waste insights, optimization roadmap, executive narrative, and commitment strategy outputs
+- Expanded GenAI advisory: tagging enforcement strategy, carbon/ESG narrative, chargeback finance report, multi-cloud comparison brief, AI-powered alert triage (IMMEDIATE/INVESTIGATE/MONITOR), rightsizing ROI brief, and vendor negotiation talking points
 
 ## Repository Layout
 
@@ -139,6 +145,11 @@ The dashboard is the main workspace for:
 - `GET /api/v1/analytics/efficiency-score` (weighted 0-100 efficiency score with grade and weakest dimensions)
 - `GET /api/v1/analytics/commitment-gap` (per-provider commitment coverage gaps with 1-year/3-year scenarios)
 - `GET /api/v1/analytics/optimization-portfolio` (action portfolio ranking by savings, ROI, payback, and execution effort)
+- `GET /api/v1/analytics/tagging-coverage` (deep tagging compliance with per-tag analysis, allocation readiness score, and financial risk from untagged spend)
+- `GET /api/v1/analytics/sustainability` (carbon footprint by provider with regional modifiers, sustainability score, and reduction opportunities)
+- `GET /api/v1/analytics/cross-provider-comparison` (multi-cloud health scores, HHI concentration risk, and workload arbitrage opportunities)
+- `GET /api/v1/analytics/anomaly-intelligence` (anomaly root-cause classification with investigation playbooks and annualized risk)
+- `GET /api/v1/analytics/chargeback` (team/cost-center chargeback/showback allocation with unallocated spend risk)
 - `GET /api/v1/analytics/scorecards` (per-team/environment FinOps maturity scorecards with trends)
 - `GET /api/v1/inventory/resources` (searchable resource inventory across all connected providers)
 - `GET /api/v1/analytics/kubernetes/summary` / `POST /api/v1/analytics/kubernetes/cluster-cost` (namespace-level Kubernetes cost attribution)
@@ -149,7 +160,7 @@ The dashboard is the main workspace for:
 - `GET /api/v1/virtual-tags/preview` (dry-run preview of tag coverage across active cost data)
 - `GET /api/v1/recommendations/rightsizing` (per-resource rightsizing with downsize/terminate/reserve/modernize actions)
 - `GET /api/v1/advisor/hybrid` (hybrid advisor payload combining deterministic analytics and GenAI narrative overlays)
-- `POST /api/v1/genai/analyze` (backend OCI GenAI narration: `spend`, `anomaly`, `optimization`, `maturity`, `budget_risk`, `waste_insights`, `optimization_roadmap`, `executive_narrative`, `commitment_strategy`)
+- `POST /api/v1/genai/analyze` (backend OCI GenAI narration: `spend`, `anomaly`, `optimization`, `maturity`, `budget_risk`, `waste_insights`, `optimization_roadmap`, `executive_narrative`, `commitment_strategy`, `tagging_strategy`, `sustainability_narrative`, `chargeback_narrative`, `cross_provider_comparison_brief`, `alert_triage`, `rightsizing_brief`, `vendor_negotiation_brief`)
 - `POST /api/v1/genai/copilot-pack` (single-call, multi-narrative package with deterministic context + advisory overlays)
 - `GET /api/v1/provider-accounts/rollups` (hierarchy tree with rolled-up costs + top_regions)
 - `GET /api/v1/provider-accounts` (flat account inventory, filterable by provider)
