@@ -269,6 +269,7 @@
     cmd: swapon /swapfile
   register: swapon_result
   failed_when: swapon_result.rc != 0 and 'already' not in (swapon_result.stderr | lower)
+    failed_when: swapon_result.rc != 0 and 'already' not in (swapon_result.stderr | lower) and 'busy' not in (swapon_result.stderr | lower)
   changed_when: swapon_result.rc == 0
   when: optiora_swap_size | length > 0
 
