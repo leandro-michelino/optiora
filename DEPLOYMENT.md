@@ -46,7 +46,15 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
 
 - OCI CLI installed and configured (`oci setup config`)
 - `OCI_COMPARTMENT_ID` exported (required for `deploy/deploy-oci.sh` quick path)
-- SSH keypair available locally
+- SSH keypair available locally — **must be passphrase-free** (the deploy script calls `ssh-keygen -y -f` to validate the key, which cannot use ssh-agent). Create one with:
+  ```bash
+  ssh-keygen -t ed25519 -f ~/.ssh/optiora-deploy -N '' -C 'optiora-deploy'
+  ```
+  Then pass it via:
+  ```bash
+  export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
+  export OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
+  ```
 - outbound access from the VM to package registries and any cloud APIs you plan to call
 
 ## Local Preflight
@@ -89,6 +97,26 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
 ```
+
+### Full end-to-end deploy command
+
+Replace the values below with your real credentials. `OCI_PRIVATE_KEY_PATH` is your OCI API signing key (not the SSH deploy key).
+
+```bash
+OCI_USER_OCID='ocid1.user.oc1..<user_ocid>' \
+OCI_TENANCY_OCID='ocid1.tenancy.oc1..<tenancy_ocid>' \
+OCI_FINGERPRINT='<api_key_fingerprint>' \
+OCI_PRIVATE_KEY_PATH="$HOME/.oci/oci_api_key.pem" \
+OCI_REGION='uk-london-1' \
+OCI_COMPARTMENT_ID='ocid1.compartment.oc1..<compartment_ocid>' \
+OCI_SUBNET_ID='ocid1.subnet.oc1..<subnet_ocid>' \
+OCI_SSH_PUBLIC_KEY_PATH="$HOME/.ssh/optiora-deploy.pub" \
+OCI_SSH_PRIVATE_KEY_PATH="$HOME/.ssh/optiora-deploy" \
+OCI_PROFILE='DEFAULT' \
+./deploy/deploy-oci.sh full
+```
+
+The `OCI_SUBNET_ID` is output by Terraform as `public_subnet_id`. Run `terraform -chdir=terraform output public_subnet_id` after network provisioning to get it.
 
 ### GenAI-ready deployment checklist
 
@@ -152,8 +180,8 @@ OCI_MEMORY_GB=8
 OCI_PROFILE=DEFAULT
 OCI_IMAGE_COMPARTMENT_ID=
 OCI_SUBNET_ID=ocid1.subnet.oc1...
-OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/id_ed25519
-OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/id_ed25519.pub
+OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
+OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
 ```
 
 `OCI_IMAGE_COMPARTMENT_ID` is optional. If it is unset, the deploy script resolves the platform-image compartment from the tenancy configured in `OCI_PROFILE`.
@@ -168,7 +196,7 @@ NEXT_PUBLIC_ENABLE_AUTH=false
 PUBLIC_WORKSPACE_NAME=OptiOra Public Workspace
 PUBLIC_WORKSPACE_EMAIL=public@optiora.local
 OCI_GENAI_ENDPOINT=https://inference.generativeai.uk-london-1.oci.oraclecloud.com
-OCI_GENAI_MODEL=ocid1.generativeaimodel.oc1..<model_ocid>
+OCI_GENAI_MODEL=meta.llama-3-70b-instruct
 OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..<tenancy_ocid>
 OCI_USER_OCID=ocid1.user.oc1..<user_ocid>

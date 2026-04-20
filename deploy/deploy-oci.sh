@@ -481,6 +481,7 @@ get_public_ip_for_instance() {
     local instance_id="$1"
     oci compute instance list-vnics \
         --instance-id "$instance_id" \
+        --region "$REGION" \
         --query 'data[0]."public-ip"' \
         --raw-output 2>/dev/null
 }
@@ -1006,10 +1007,20 @@ run_ansible_playbook_for_instance() {
     local inv
     local ssh_user
     local ssh_key
+    local genai_key_path=""
 
     ssh_user="${OCI_ANSIBLE_USER:-$REMOTE_USER}"
     ssh_key="${OCI_ANSIBLE_SSH_KEY_PATH:-$RESOLVED_SSH_PRIVATE_KEY_PATH}"
-    inv="$(mktemp)"
+    inv="$(mktemp -t optiora-inventory.XXXXXX).yml"
+
+    # Resolve OCI private key path for GenAI (env var > local .env file)
+    if [ -n "${OCI_PRIVATE_KEY_PATH:-}" ] && [ -f "${OCI_PRIVATE_KEY_PATH}" ]; then
+        genai_key_path="/opt/optiora/oci_api_key.pem"
+        log_info "Copying OCI API key to VM for GenAI use..."
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i "$ssh_key" \
+            "$OCI_PRIVATE_KEY_PATH" "${ssh_user}@${public_ip}:/tmp/optiora-oci-api-key.pem"
+    fi
 
     cat > "$inv" <<EOF
 all:
@@ -1026,6 +1037,12 @@ all:
           optiora_remote_archive: /tmp/optiora-deploy.tar.gz
           optiora_frontend_url: http://${public_ip}:3000
           optiora_api_url: http://${public_ip}:8000
+          optiora_region: ${REGION}
+          optiora_tenancy_ocid: "${OCI_TENANCY_OCID:-}"
+          optiora_user_ocid: "${OCI_USER_OCID:-}"
+          optiora_fingerprint: "${OCI_FINGERPRINT:-}"
+          optiora_private_key_path: "${genai_key_path}"
+          optiora_compartment_ocid: "${COMPARTMENT_ID:-}"
 EOF
 
     if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then
@@ -1035,7 +1052,10 @@ EOF
     fi
 
     log_info "Running Ansible post-provisioning hardening/playbook..."
-    ansible-playbook -i "$inv" "${ROOT_DIR}/ansible/playbooks/site.yml"
+    ANSIBLE_STDOUT_CALLBACK=default ansible-playbook \
+        -i "$inv" \
+        --extra-vars "@${ROOT_DIR}/ansible/group_vars/all.yml" \
+        "${ROOT_DIR}/ansible/playbooks/site.yml"
     rm -f "$inv"
     log_success "Ansible provisioning completed"
 }

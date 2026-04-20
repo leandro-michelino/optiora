@@ -370,6 +370,17 @@
     group: "{{ optiora_app_user }}"
     recurse: true
 
+- name: Install OCI API key for GenAI (from upload)
+  ansible.builtin.copy:
+    src: /tmp/optiora-oci-api-key.pem
+    dest: "{{ optiora_app_dir }}/oci_api_key.pem"
+    owner: root
+    group: "{{ optiora_app_user }}"
+    mode: "0640"
+    remote_src: true
+  when: optiora_private_key_path | length > 0
+  ignore_errors: true
+
 - name: Create Python virtualenv
   ansible.builtin.command:
     cmd: "{{ optiora_python_bin }} -m venv {{ optiora_app_dir }}/venv"

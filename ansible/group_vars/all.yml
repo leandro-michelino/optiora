@@ -6,6 +6,13 @@ optiora_python_bin: python3
 optiora_node_major: 20
 optiora_region: uk-london-1
 optiora_genai_endpoint: "https://inference.generativeai.uk-london-1.oci.oraclecloud.com"
+optiora_genai_model: "meta.llama-3-70b-instruct"
+# OCI credentials for GenAI (overridden at deploy time from OCI env vars)
+optiora_tenancy_ocid: ""
+optiora_user_ocid: ""
+optiora_fingerprint: ""
+optiora_private_key_path: ""
+optiora_compartment_ocid: ""
 optiora_frontend_url: "http://{{ ansible_host }}:{{ optiora_dashboard_port }}"
 optiora_api_url: "http://{{ ansible_host }}:{{ optiora_api_port }}"
 optiora_manage_source: false
