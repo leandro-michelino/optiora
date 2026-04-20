@@ -159,10 +159,10 @@
   <text   x="130" y="287" fill="#fff" font-size="7.5" font-weight="700" text-anchor="middle">NEW</text>
 
   <circle cx="26" cy="300" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="304" fill="#e2e8f0" font-size="10.5">Resource Inventory</text>
+  <text   x="38"  y="304" fill="#e2e8f0" font-size="10.5">Cloud Resources</text>
 
   <circle cx="26" cy="317" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="321" fill="#e2e8f0" font-size="10.5">Kubernetes</text>
+  <text   x="38"  y="321" fill="#e2e8f0" font-size="10.5">K8s Namespaces</text>
 
   <circle cx="26" cy="334" r="3.5" fill="#10b981"/>
   <text   x="38"  y="338" fill="#e2e8f0" font-size="10.5">Virtual Tags</text>
@@ -211,13 +211,13 @@
   <text class="scene2" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Deep FinOps Analytics — Maturity · Attribution · Commitment ROI</text>
   <text class="scene3" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Forecasting with GenAI Narration + Budget Risk</text>
   <text class="scene4" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Anomaly Z-Score Scoring + Operations + Export Jobs</text>
-  <text class="scene5" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">FinOps Intelligence — Virtual Tags · Rightsizing · Scorecards · Inventory · Kubernetes</text>
+  <text class="scene5" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">FinOps Intelligence — Virtual Tags · Rightsizing · Scorecards · Cloud Resources · K8s Namespaces</text>
 
   <text class="scene1" x="202" y="40" fill="#64748b" font-size="9.5">Epic 2 · tree view, region drill-down, cost rollups + budget utilization/status per account</text>
   <text class="scene2" x="202" y="40" fill="#64748b" font-size="9.5">CRAWL/WALK/RUN/OPTIMIZE · Pareto 80/20 · RI savings projection per provider tier</text>
   <text class="scene3" x="202" y="40" fill="#64748b" font-size="9.5">p10/p50/p90/p95 fan · velocity +3.2% MoM · OCI GenAI backend narration active</text>
   <text class="scene4" x="202" y="40" fill="#64748b" font-size="9.5">z-score severity ranking · financial impact % · scan history · diff exports · scheduled executive exports</text>
-  <text class="scene5" x="202" y="40" fill="#64748b" font-size="9.5">rule builder + coverage preview · per-resource savings · team scorecards · 1,240 assets · namespace attribution</text>
+  <text class="scene5" x="202" y="40" fill="#64748b" font-size="9.5">rule builder + coverage preview · per-resource savings · scorecards · expandable inventory rows · OpenCost namespace sync</text>
 
   <rect x="810" y="12" width="72" height="26" rx="7" fill="#f8fafc"/>
   <text x="846" y="29" fill="#334155" font-size="10" text-anchor="middle" font-weight="700">Apr 2026</text>
@@ -843,14 +843,14 @@
   </g>
 
   <!-- ═══════════════════════════════════════════════════════
-       SCENE 5 — FinOps Intelligence: Virtual Tags · Rightsizing · Scorecards · Inventory · Kubernetes
+      SCENE 5 — FinOps Intelligence: Virtual Tags · Rightsizing · Scorecards · Cloud Resources · K8s Namespaces
        ═══════════════════════════════════════════════════════ -->
   <g class="scene5">
     <!-- Banner -->
     <rect x="202" y="64" width="560" height="26" rx="9" fill="#f0fdf4" filter="url(#shadow)"/>
     <circle cx="220" cy="77" r="4.5" fill="#10b981"/>
     <text x="232" y="81" fill="#065f46" font-size="9.5" font-weight="700">FinOps Intelligence</text>
-    <text x="336" y="81" fill="#065f46" font-size="9.5">Virtual Tags · Rightsizing · Scorecards · Resource Inventory · Kubernetes</text>
+    <text x="336" y="81" fill="#065f46" font-size="9.5">Virtual Tags · Rightsizing · Scorecards · Cloud Resources · K8s Namespaces</text>
 
     <!-- ── Virtual Tag Engine (left top) ─────────────────────── -->
     <rect x="202" y="100" width="306" height="200" rx="12" fill="#ffffff" filter="url(#shadow)"/>
@@ -995,10 +995,10 @@
     <text x="540" y="470" fill="#64748b" font-size="8.5">Waste ratio: 16.0%  Grade: B+</text>
     <text x="540" y="484" fill="#94a3b8" font-size="7.5">GET /api/v1/analytics/unit-economics</text>
 
-    <!-- ── Kubernetes + Resource Inventory (right bottom right) ── -->
+    <!-- ── K8s Namespaces + Cloud Resources (right bottom right) ── -->
     <rect x="706" y="308" width="174" height="184" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="726" y="330" fill="#0f172a" font-size="11" font-weight="700">Kubernetes Costs</text>
-    <text x="726" y="344" fill="#94a3b8" font-size="8.5">Namespace attribution</text>
+    <text x="726" y="330" fill="#0f172a" font-size="11" font-weight="700">K8s Namespace Costs</text>
+    <text x="726" y="344" fill="#94a3b8" font-size="8.5">OpenCost namespace attribution</text>
     <line x1="726" y1="352" x2="860" y2="352" stroke="#f1f5f9"/>
     <text x="726" y="368" fill="#475569" font-size="8.5">production</text>
     <text x="858" y="368" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">$8,400</text>
@@ -1009,7 +1009,7 @@
     <text x="726" y="416" fill="#94a3b8" font-size="8">monitoring</text>
     <text x="858" y="416" fill="#94a3b8" font-size="9" text-anchor="end">$640</text>
     <line x1="726" y1="424" x2="860" y2="424" stroke="#f1f5f9"/>
-    <text x="726" y="440" fill="#475569" font-size="8.5" font-weight="700">Resource Inventory</text>
+    <text x="726" y="440" fill="#475569" font-size="8.5" font-weight="700">Cloud Resources</text>
     <text x="726" y="455" fill="#64748b" font-size="8.5">Total: 1,240 assets</text>
     <rect x="726" y="460" width="124" height="30" rx="7" fill="#f8fafc"/>
     <text x="730" y="472" fill="#f97316" font-size="7.5" font-weight="700">AWS</text>
