@@ -880,7 +880,7 @@ deploy_compute() {
     log_success "Dashboard: http://$CURRENT_PUBLIC_IP:3000"
     log_success "API: http://$CURRENT_PUBLIC_IP:8000"
     log_info "Verification: ./deploy/deploy-oci.sh verify"
-    log_info "On VM, use journalctl -u optiora-api.service and journalctl -u optiora-dashboard.service"
+    log_info "On VM, use tail -f /var/log/optiora-api.log and tail -f /var/log/optiora-dashboard.log"
 }
 
 instance_action() {
