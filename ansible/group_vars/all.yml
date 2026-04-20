@@ -2,7 +2,7 @@ optiora_app_dir: /opt/optiora
 optiora_app_user: optiora
 optiora_api_port: 8000
 optiora_dashboard_port: 3000
-optiora_python_bin: python3
+optiora_python_bin: python3.11
 optiora_node_major: 20
 optiora_region: uk-london-1
 optiora_genai_endpoint: "https://inference.generativeai.uk-london-1.oci.oraclecloud.com"

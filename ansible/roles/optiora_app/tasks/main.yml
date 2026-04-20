@@ -52,6 +52,8 @@
       - python3
       - python3-devel
       - python3-pip
+      - python3.11
+      - python3.11-devel
       - rsync
       - wget
     state: present
@@ -380,6 +382,25 @@
     remote_src: true
   when: optiora_private_key_path | length > 0
   ignore_errors: true
+
+- name: Remove old venv if built with wrong Python version
+  ansible.builtin.shell: |
+    if [ -d "{{ optiora_app_dir }}/venv" ]; then
+      py_ver=$("{{ optiora_app_dir }}/venv/bin/python" --version 2>&1 | awk '{print $2}')
+      required_minor=$(echo "{{ optiora_python_bin }}" | grep -oP '\d+\.\d+$' || echo "")
+      if [ -n "$required_minor" ] && [[ "$py_ver" != "${required_minor}."* ]]; then
+        rm -rf "{{ optiora_app_dir }}/venv"
+        echo "removed"
+      else
+        echo "ok"
+      fi
+    else
+      echo "absent"
+    fi
+  register: venv_cleanup
+  changed_when: venv_cleanup.stdout == "removed"
+  args:
+    executable: /bin/bash
 
 - name: Create Python virtualenv
   ansible.builtin.command:
