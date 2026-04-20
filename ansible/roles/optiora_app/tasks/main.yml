@@ -482,6 +482,14 @@
     chdir: "{{ optiora_app_dir }}"
   changed_when: true
 
+- name: Fix database file ownership
+  ansible.builtin.file:
+    path: "{{ optiora_app_dir }}/optiora.db"
+    owner: "{{ optiora_user }}"
+    group: "{{ optiora_user }}"
+    mode: '0640'
+  failed_when: false
+
 - name: Flush service handlers
   ansible.builtin.meta: flush_handlers
 
