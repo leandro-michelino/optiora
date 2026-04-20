@@ -1,0 +1,4 @@
+# Role defaults (lowest precedence — overridden by group_vars, inventory, and extra-vars)
+optiora_manage_source: false
+optiora_remote_archive: /tmp/optiora-deploy.tar.gz
+optiora_private_key_path: ""

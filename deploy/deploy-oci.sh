@@ -1064,7 +1064,7 @@ EOF
     log_info "Running Ansible post-provisioning hardening/playbook..."
     ANSIBLE_STDOUT_CALLBACK=default ansible-playbook \
         -i "$inv" \
-        -i "${ROOT_DIR}/ansible" \
+        --extra-vars "@${ROOT_DIR}/ansible/group_vars/all.yml" \
         "${ROOT_DIR}/ansible/playbooks/site.yml"
     rm -f "$inv"
     log_success "Ansible provisioning completed"

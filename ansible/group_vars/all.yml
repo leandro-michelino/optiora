@@ -11,12 +11,9 @@ optiora_genai_model: "meta.llama-3-70b-instruct"
 optiora_tenancy_ocid: ""
 optiora_user_ocid: ""
 optiora_fingerprint: ""
-optiora_private_key_path: ""
 optiora_compartment_ocid: ""
 optiora_frontend_url: "http://{{ ansible_host }}:{{ optiora_dashboard_port }}"
 optiora_api_url: "http://{{ ansible_host }}:{{ optiora_api_port }}"
-optiora_manage_source: true
-optiora_remote_archive: /tmp/optiora-deploy.tar.gz
 optiora_install_nginx: false
 optiora_enable_auth: false
 optiora_public_workspace_name: "OptiOra Public Workspace"
