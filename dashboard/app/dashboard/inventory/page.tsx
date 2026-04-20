@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Filter, Loader, RefreshCw, Server } from 'lucide-react'
-import { fetchResourceInventory } from '@/lib/api'
-import { ResourceInventoryResponse, ResourceInventoryItem } from '@/lib/types'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, ChevronDown, ChevronRight, Filter, Loader, RefreshCw, Server, X } from 'lucide-react'
+import { fetchProviderAccountInventory, fetchResourceInventory } from '@/lib/api'
+import { ResourceInventoryResponse, ResourceInventoryItem, ProviderAccountInventoryResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,50 +25,230 @@ function ProviderBadge({ provider }: { provider: string }) {
   return <Badge className={`rounded-md border text-xs ${cls}`}>{provider.toUpperCase()}</Badge>
 }
 
-function ResourceRow({ item }: { item: ResourceInventoryItem }) {
+function fmtJson(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? {}, null, 2)
+  } catch {
+    return '{}'
+  }
+}
+
+function ResourceDetailsDrawer({
+  item,
+  accountMeta,
+  onClose,
+}: {
+  item: ResourceInventoryItem
+  accountMeta?: Record<string, unknown>
+  onClose: () => void
+}) {
   return (
-    <tr className="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/40 transition">
-      <td className="py-3 px-4">
-        <div>
-          <p className="text-sm font-medium text-slate-900 dark:text-white">{item.resource_name || item.resource_id}</p>
-          <p className="text-xs text-slate-400 font-mono">{item.resource_id}</p>
-        </div>
-      </td>
-      <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">{item.resource_type}</td>
-      <td className="py-3 px-4"><ProviderBadge provider={item.provider} /></td>
-      <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">{item.region}</td>
-      <td className="py-3 px-4 text-sm font-semibold text-slate-800 dark:text-slate-200">{fmt(item.cost_usd)}/mo</td>
-      <td className="py-3 px-4">
-        {item.waste_flag ? (
-          <div className="flex items-center gap-1.5">
-            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-            <span className="text-xs text-amber-600 dark:text-amber-400">{item.waste_reason ?? 'Flagged'}</span>
+    <div className="fixed inset-0 z-50 flex">
+      <div className="flex-1 bg-slate-900/40" onClick={onClose} />
+      <div className="h-full w-full max-w-xl overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Resource Details</p>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{item.resource_name || item.resource_id}</h3>
+            <p className="font-mono text-xs text-slate-500">{item.resource_id}</p>
           </div>
-        ) : (
-          <span className="text-xs text-emerald-600 dark:text-emerald-400">OK</span>
-        )}
-      </td>
-    </tr>
+          <button
+            className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+            onClick={onClose}
+            aria-label="Close details"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Summary</p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-slate-500">Provider</p>
+                <p className="font-medium text-slate-900 dark:text-white">{item.provider.toUpperCase()}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Region</p>
+                <p className="font-medium text-slate-900 dark:text-white">{item.region}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Type</p>
+                <p className="font-medium text-slate-900 dark:text-white">{item.resource_type}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Monthly Cost</p>
+                <p className="font-medium text-slate-900 dark:text-white">{fmt(item.cost_usd)}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-slate-500">Account Identifier</p>
+                <p className="font-mono text-xs text-slate-800 dark:text-slate-200">{item.account_id || 'n/a'}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Tags</p>
+            {Object.keys(item.tags || {}).length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(item.tags).map(([k, v]) => (
+                  <Badge key={`${k}-${v}`} variant="outline" className="rounded-md">{k}: {v}</Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">No tags found for this resource.</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Account Metadata JSON</p>
+            <pre className="overflow-x-auto rounded bg-slate-50 p-3 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              {fmtJson(accountMeta || {})}
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ResourceRow({
+  item,
+  expanded,
+  toggleExpanded,
+  onOpenDetails,
+  accountMeta,
+}: {
+  item: ResourceInventoryItem
+  expanded: boolean
+  toggleExpanded: () => void
+  onOpenDetails: () => void
+  accountMeta?: Record<string, unknown>
+}) {
+  return (
+    <>
+      <tr className="border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/40 transition">
+        <td className="py-3 px-4">
+          <div className="flex items-start gap-2">
+            <button
+              onClick={toggleExpanded}
+              className="mt-0.5 rounded p-0.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label={expanded ? 'Collapse row details' : 'Expand row details'}
+            >
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-white">{item.resource_name || item.resource_id}</p>
+              <p className="text-xs text-slate-400 font-mono">{item.resource_id}</p>
+            </div>
+          </div>
+        </td>
+        <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">{item.resource_type}</td>
+        <td className="py-3 px-4"><ProviderBadge provider={item.provider} /></td>
+        <td className="py-3 px-4 text-sm text-slate-600 dark:text-slate-400">{item.region}</td>
+        <td className="py-3 px-4 text-sm font-semibold text-slate-800 dark:text-slate-200">{fmt(item.cost_usd)}/mo</td>
+        <td className="py-3 px-4">
+          {item.waste_flag ? (
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs text-amber-600 dark:text-amber-400">{item.waste_reason ?? 'Flagged'}</span>
+            </div>
+          ) : (
+            <span className="text-xs text-emerald-600 dark:text-emerald-400">OK</span>
+          )}
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="border-b border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40">
+          <td colSpan={6} className="px-4 pb-4 pt-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-slate-600 dark:text-slate-400">
+                  Account: <span className="font-mono">{item.account_id || 'n/a'}</span>
+                </div>
+                <button
+                  onClick={onOpenDetails}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Open Details Drawer
+                </button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Tags</p>
+                  {Object.keys(item.tags || {}).length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(item.tags).map(([k, v]) => (
+                        <Badge key={`${item.resource_id}-${k}-${v}`} variant="outline" className="rounded-md">{k}: {v}</Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No tags available.</p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Account Metadata JSON</p>
+                  <pre className="max-h-40 overflow-auto rounded bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    {fmtJson(accountMeta || {})}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
 export default function InventoryPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ResourceInventoryResponse | null>(null)
+  const [accountInventory, setAccountInventory] = useState<ProviderAccountInventoryResponse | null>(null)
   const [provider, setProvider] = useState('all')
   const [wasteOnly, setWasteOnly] = useState(false)
   const [regionFilter, setRegionFilter] = useState('')
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const [drawerItem, setDrawerItem] = useState<ResourceInventoryItem | null>(null)
+
+  const accountMetadataLookup = useMemo(() => {
+    const lookup: Record<string, Record<string, unknown>> = {}
+    for (const account of accountInventory?.accounts || []) {
+      const key = `${account.provider}:${account.account_identifier}`
+      lookup[key] = account.metadata || {}
+    }
+    return lookup
+  }, [accountInventory])
+
+  const rowKey = (item: ResourceInventoryItem) => `${item.provider}:${item.resource_id}`
+  const accountKey = (item: ResourceInventoryItem) => `${item.provider}:${item.account_id}`
+
+  const toggleRow = (key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetchResourceInventory({
-        provider: provider === 'all' ? undefined : provider,
-        region: regionFilter || undefined,
-        waste_only: wasteOnly,
-        limit: 200,
-      })
-      setData(res)
+      const [inventoryRes, accountsRes] = await Promise.all([
+        fetchResourceInventory({
+          provider: provider === 'all' ? undefined : provider,
+          region: regionFilter || undefined,
+          waste_only: wasteOnly,
+          limit: 200,
+        }),
+        fetchProviderAccountInventory(provider === 'all' ? undefined : provider),
+      ])
+      setData(inventoryRes)
+      setAccountInventory(accountsRes)
     } finally {
       setLoading(false)
     }
@@ -93,7 +273,6 @@ export default function InventoryPage() {
         </Button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         {PROVIDERS.map(p => (
           <button
@@ -129,7 +308,6 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* KPI strip */}
       {data && (
         <div className="grid gap-4 sm:grid-cols-3">
           {[
@@ -174,9 +352,20 @@ export default function InventoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.items.map(item => (
-                    <ResourceRow key={item.resource_id} item={item} />
-                  ))}
+                  {data.items.map(item => {
+                    const key = rowKey(item)
+                    const accMeta = accountMetadataLookup[accountKey(item)]
+                    return (
+                      <ResourceRow
+                        key={key}
+                        item={item}
+                        expanded={expandedRows.has(key)}
+                        toggleExpanded={() => toggleRow(key)}
+                        onOpenDetails={() => setDrawerItem(item)}
+                        accountMeta={accMeta}
+                      />
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -195,6 +384,14 @@ export default function InventoryPage() {
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
           Could not load inventory. Check backend connectivity.
         </div>
+      )}
+
+      {drawerItem && (
+        <ResourceDetailsDrawer
+          item={drawerItem}
+          accountMeta={accountMetadataLookup[accountKey(drawerItem)]}
+          onClose={() => setDrawerItem(null)}
+        />
       )}
     </div>
   )

@@ -860,6 +860,135 @@ export interface KubernetesSummaryResponse {
   opencost_docs: string
 }
 
+export interface OpenCostNamespaceCost {
+  namespace: string
+  cost_usd: number
+  share_percent: number
+}
+
+export interface OpenCostSyncResponse {
+  generated_at: string
+  cluster_name: string
+  source: string
+  window_days: number
+  total_cost_usd: number
+  namespace_count: number
+  namespaces: OpenCostNamespaceCost[]
+}
+
+// ---------------------------------------------------------------------------
+// Advanced FinOps (competitive feature set)
+// ---------------------------------------------------------------------------
+
+export interface TagDimensionScore {
+  dimension: string
+  completeness_percent: number
+  covered_cost_usd: number
+  uncovered_cost_usd: number
+  missing_records: number
+}
+
+export interface TagQualityScoreResponse {
+  generated_at: string
+  organization_id: number
+  provider_filter: string
+  data_source: string
+  total_records: number
+  total_cost_usd: number
+  completeness_score: number
+  quality_grade: string
+  dimensions: TagDimensionScore[]
+  recommendations: string[]
+}
+
+export interface DecisionRecommendationItem {
+  recommendation_id: string
+  provider: string
+  category: string
+  title: string
+  estimated_monthly_savings_usd: number
+  payback_months: number
+  confidence_score: number
+  urgency_score: number
+  decision_score: number
+  rationale: string
+}
+
+export interface DecisionRecommendationResponse {
+  generated_at: string
+  organization_id: number
+  provider_filter: string
+  model: string
+  total_candidates: number
+  top_recommendations: DecisionRecommendationItem[]
+  model_features: string[]
+}
+
+export interface FederatedAccountCostItem {
+  provider: string
+  account_identifier: string
+  account_name: string
+  account_type: string
+  parent_account_identifier?: string | null
+  source: string
+  direct_cost_usd: number
+  regions: Record<string, number>
+}
+
+export interface FederationCostResponse {
+  generated_at: string
+  organization_id: number
+  customer_id: string
+  provider_filter: string
+  total_accounts: number
+  total_cost_usd: number
+  provider_totals_usd: Record<string, number>
+  accounts: FederatedAccountCostItem[]
+}
+
+export interface RemediationCandidateInput {
+  action_id: string
+  provider: string
+  resource_id: string
+  action_type: 'downsize' | 'terminate' | 'reserve' | 'modernize'
+  estimated_monthly_impact_usd: number
+  risk_level?: 'low' | 'medium' | 'high'
+  confidence?: 'high' | 'medium' | 'low'
+  metadata?: Record<string, unknown>
+}
+
+export interface RemediationLoopRequestPayload {
+  dry_run?: boolean
+  max_actions_per_run?: number
+  max_total_impact_usd?: number
+  require_approval_above_usd?: number
+  allowed_providers?: string[]
+  allowed_actions?: string[]
+  candidates?: RemediationCandidateInput[]
+}
+
+export interface RemediationDecision {
+  action_id: string
+  provider: string
+  resource_id: string
+  action_type: string
+  estimated_monthly_impact_usd: number
+  status: 'planned' | 'executed' | 'requires_approval' | 'skipped'
+  reason: string
+}
+
+export interface RemediationLoopResponse {
+  generated_at: string
+  dry_run: boolean
+  guardrails: Record<string, unknown>
+  executed_count: number
+  planned_count: number
+  requires_approval_count: number
+  skipped_count: number
+  total_planned_impact_usd: number
+  decisions: RemediationDecision[]
+}
+
 // ---------------------------------------------------------------------------
 // Virtual Tagging
 // ---------------------------------------------------------------------------

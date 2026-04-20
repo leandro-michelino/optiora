@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { ThemeToggle } from '@/components/ThemeToggle'
-import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut, Activity, Building2, Award, Server, Box, Tag, BarChart2 } from 'lucide-react'
+import { Cloud, BarChart3, AlertTriangle, Lightbulb, Settings, Brain, MessageCircle, TrendingUp, Zap, Grid, LogOut, Activity, Building2, Award, Server, Box, Tag, BarChart2, ShieldCheck } from 'lucide-react'
 
 function DashboardLayoutContent({
   children,
@@ -31,8 +31,9 @@ function DashboardLayoutContent({
   const finopsNavItems = [
     { href: '/dashboard/unit-economics', label: 'Unit Economics', icon: TrendingUp },
     { href: '/dashboard/scorecards', label: 'Scorecards', icon: Award },
-    { href: '/dashboard/inventory', label: 'Resource Inventory', icon: Server },
-    { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box },
+    { href: '/dashboard/advanced-finops', label: 'Advanced FinOps', icon: ShieldCheck },
+    { href: '/dashboard/inventory', label: 'Cloud Resources', icon: Server },
+    { href: '/dashboard/kubernetes', label: 'K8s Namespaces', icon: Box },
     { href: '/dashboard/virtual-tags', label: 'Virtual Tags', icon: Tag },
     { href: '/dashboard/rightsizing', label: 'Rightsizing', icon: BarChart2 },
   ]

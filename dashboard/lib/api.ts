@@ -46,11 +46,17 @@ import {
   ResourceInventoryResponse,
   KubernetesClusterCostResponse,
   KubernetesSummaryResponse,
+  OpenCostSyncResponse,
   VirtualTagRulesResponse,
   VirtualTagRuleOut,
   VirtualTagRuleCreate,
   VirtualTagPreviewResponse,
   RightsizingResponse,
+  TagQualityScoreResponse,
+  DecisionRecommendationResponse,
+  FederationCostResponse,
+  RemediationLoopRequestPayload,
+  RemediationLoopResponse,
   AlertRoutingPolicySimulationRequest,
   AlertRoutingPolicySimulationResponse,
 } from './types'
@@ -718,8 +724,65 @@ export async function calculateKubernetesClusterCost(payload: {
   node_type: string
   monthly_node_cost_usd: number
   namespaces?: string[]
+  opencost_enabled?: boolean
+  opencost_url?: string
+  opencost_window_days?: number
 }): Promise<KubernetesClusterCostResponse> {
   return requestJson<KubernetesClusterCostResponse>('/api/v1/analytics/kubernetes/cluster-cost', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function syncOpenCostCosts(payload: {
+  api_url: string
+  cluster_name: string
+  window_days?: number
+}): Promise<OpenCostSyncResponse> {
+  return requestJson<OpenCostSyncResponse>('/api/v1/analytics/kubernetes/opencost/sync', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ── Advanced FinOps endpoints ───────────────────────────────────────────────
+
+export async function fetchTagQualityScore(provider = 'all'): Promise<TagQualityScoreResponse> {
+  return requestJson<TagQualityScoreResponse>(
+    `/api/v1/analytics/tag-quality${toQueryString({ provider })}`,
+  )
+}
+
+export async function fetchDecisionGradeRecommendations(params?: {
+  provider?: string
+  top_n?: number
+  min_monthly_savings?: number
+}): Promise<DecisionRecommendationResponse> {
+  return requestJson<DecisionRecommendationResponse>(
+    `/api/v1/recommendations/decision-grade${toQueryString({
+      provider: params?.provider,
+      top_n: params?.top_n,
+      min_monthly_savings: params?.min_monthly_savings,
+    })}`,
+  )
+}
+
+export async function fetchFederatedCosts(params?: {
+  provider?: string
+  include_regions?: boolean
+}): Promise<FederationCostResponse> {
+  return requestJson<FederationCostResponse>(
+    `/api/v1/federation/costs${toQueryString({
+      provider: params?.provider,
+      include_regions: params?.include_regions ? 'true' : undefined,
+    })}`,
+  )
+}
+
+export async function runAutoRemediationLoop(
+  payload: RemediationLoopRequestPayload,
+): Promise<RemediationLoopResponse> {
+  return requestJson<RemediationLoopResponse>('/api/v1/automation/remediation/loop', {
     method: 'POST',
     body: JSON.stringify(payload),
   })

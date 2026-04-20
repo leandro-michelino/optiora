@@ -10,6 +10,11 @@ Deployment can be done two ways:
 - `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services on the latest Oracle Linux 9 platform image for the selected shape.
 - Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime on either Debian-family or Oracle Linux / RHEL hosts.
 
+Choose the path that matches your deployment style:
+
+- `./setup.sh --interactive`: guided Terraform + Ansible workflow with prompts.
+- `./deploy/deploy-oci.sh compute`: fast redeploy workflow for a single VM from your laptop.
+
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
 
 ## Recommended End-to-End Setup (Interactive)

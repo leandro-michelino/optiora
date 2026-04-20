@@ -1,5 +1,6 @@
 // OCI Generative AI chat via HTTPS with request signing using OCI SDK credentials.
 // This module avoids any non-OCI providers (e.g., Anthropic / OpenAI) by design.
+// All queries are scoped to FinOps domain to prevent misuse.
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
@@ -10,6 +11,49 @@ interface ConversationEntry {
 }
 
 type OCIHttpMethod = 'POST' | 'GET';
+
+// GenAI scope validation (client-side)
+const FINOPS_KEYWORDS = new Set([
+  "cost", "budget", "spend", "billing", "invoice", "pricing", "rate",
+  "savings", "optimization", "efficiency", "roi", "forecast", "trend",
+  "anomaly", "alert", "threshold", "scaling", "rightsizing",
+  "aws", "azure", "gcp", "oci", "ec2", "s3", "rds", "lambda",
+  "compute", "storage", "database", "network", "resource", "instance",
+]);
+
+const BLOCKED_PHRASES = new Set([
+  "politics", "election", "investment advice", "stock recommendation",
+  "recipe", "cooking", "sports", "entertainment", "legal advice",
+  "hire", "fire", "salary", "medical", "health", "crypto",
+]);
+
+function validateQueryScope(query: string): { valid: boolean; reason: string } {
+  const queryLower = query.toLowerCase();
+  
+  // Check blocked phrases
+  for (const phrase of BLOCKED_PHRASES) {
+    if (queryLower.includes(phrase)) {
+      return {
+        valid: false,
+        reason: `This assistant is restricted to FinOps and cloud cost analysis. Questions about "${phrase}" are not supported.`
+      };
+    }
+  }
+  
+  // Check for FinOps keywords
+  const keywordCount = Array.from(FINOPS_KEYWORDS).filter(k => queryLower.includes(k)).length;
+  const wordCount = query.split(/\s+/).length;
+  const keywordDensity = keywordCount / Math.max(wordCount, 1);
+  
+  if (keywordCount >= 2 || keywordDensity > 0.3) {
+    return { valid: true, reason: "In scope" };
+  }
+  
+  return {
+    valid: false,
+    reason: "Query appears to be outside FinOps scope. Please ask about cloud costs, budgets, optimization, or resource analysis."
+  };
+}
 
 function required(name: string, value: string | undefined): string {
   if (!value) throw new Error(`${name} is not configured`);
@@ -95,10 +139,28 @@ async function callOCIGenAI(prompt: string, history: ConversationEntry[]): Promi
   const host = new URL(endpoint).host;
   const path = `/20231130/actions/chat`; // OCI Generative AI Chat Inference path
 
+  // System prompt that constrains GenAI to FinOps domain
+  const systemPrompt = `You are OptiOra FinOps AI Assistant, specialized in cloud cost optimization.
+
+SCOPE: Answer ONLY questions about:
+- Cloud costs (AWS, Azure, GCP, OCI)
+- Budget management and forecasting
+- Resource optimization and rightsizing
+- Unit economics and cost allocation
+
+REFUSE to answer about:
+- Politics, current events, personal advice
+- General knowledge outside FinOps
+- Legal, HR, medical, investment advice
+- Any non-FinOps topic
+
+Provide specific metrics and actionable recommendations using customer data.`;
+
   const payload = {
     compartmentId: required('OCI_COMPARTMENT_OCID', process.env.OCI_COMPARTMENT_OCID),
     modelId: model,
     messages: [
+      { role: 'user', content: [{ type: 'text', text: systemPrompt }] },
       ...history.map(h => ({ role: h.role, content: [{ type: 'text', text: h.content }] })),
       { role: 'user', content: [{ type: 'text', text: prompt }] }
     ],
@@ -143,6 +205,10 @@ export async function askCostQuestion(
   conversationHistory: ConversationEntry[] = []
 ): Promise<string> {
   try {
+    const validation = validateQueryScope(message);
+    if (!validation.valid) {
+      throw new Error(validation.reason);
+    }
     return await callOCIGenAI(message, conversationHistory);
   } catch (error) {
     console.error('OCI GenAI error:', error);

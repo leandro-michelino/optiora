@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { Box, Calculator, Info, Loader, RefreshCw } from 'lucide-react'
-import { fetchKubernetesSummary, calculateKubernetesClusterCost } from '@/lib/api'
-import { KubernetesSummaryResponse, KubernetesClusterCostResponse } from '@/lib/types'
+import { fetchKubernetesSummary, calculateKubernetesClusterCost, syncOpenCostCosts } from '@/lib/api'
+import { KubernetesSummaryResponse, KubernetesClusterCostResponse, OpenCostSyncResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,6 +25,12 @@ export default function KubernetesPage() {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<KubernetesSummaryResponse | null>(null)
   const [form, setForm] = useState(defaultForm)
+  const [opencostEnabled, setOpencostEnabled] = useState(false)
+  const [opencostUrl, setOpencostUrl] = useState('http://localhost:9003')
+  const [opencostWindowDays, setOpencostWindowDays] = useState(7)
+  const [opencostSyncLoading, setOpencostSyncLoading] = useState(false)
+  const [opencostSyncError, setOpencostSyncError] = useState<string | null>(null)
+  const [opencostSyncResult, setOpencostSyncResult] = useState<OpenCostSyncResponse | null>(null)
   const [calcResult, setCalcResult] = useState<KubernetesClusterCostResponse | null>(null)
   const [calcLoading, setCalcLoading] = useState(false)
 
@@ -54,10 +60,31 @@ export default function KubernetesPage() {
         node_count: Number(form.node_count),
         node_type: form.node_type,
         monthly_node_cost_usd: Number(form.monthly_node_cost_usd),
+        opencost_enabled: opencostEnabled,
+        opencost_url: opencostEnabled ? opencostUrl : undefined,
+        opencost_window_days: opencostEnabled ? opencostWindowDays : undefined,
       })
       setCalcResult(res)
     } finally {
       setCalcLoading(false)
+    }
+  }
+
+  async function handleOpenCostSync(e: React.FormEvent) {
+    e.preventDefault()
+    setOpencostSyncLoading(true)
+    setOpencostSyncError(null)
+    try {
+      const result = await syncOpenCostCosts({
+        api_url: opencostUrl,
+        cluster_name: form.cluster_name,
+        window_days: opencostWindowDays,
+      })
+      setOpencostSyncResult(result)
+    } catch (err) {
+      setOpencostSyncError(err instanceof Error ? err.message : 'OpenCost sync failed')
+    } finally {
+      setOpencostSyncLoading(false)
     }
   }
 
@@ -69,9 +96,9 @@ export default function KubernetesPage() {
             <Badge variant="outline" className="rounded-md">Kubernetes Cost Allocation</Badge>
             <Badge variant="outline" className="rounded-md border-purple-300 bg-purple-50 text-purple-800 dark:bg-purple-950/30">OpenCost-Ready</Badge>
           </div>
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Kubernetes Costs</h1>
+          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Kubernetes Namespace Costs</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
-            Estimate and break down Kubernetes cluster costs by namespace. Full OpenCost integration surfaces per-pod allocation. Use the calculator to model any cluster.
+            Estimate and break down Kubernetes cluster costs by namespace. OpenCost sync brings live namespace allocation, and the calculator models any cluster configuration.
           </p>
         </div>
         <Button variant="outline" onClick={() => void loadSummary()} className="rounded-lg">
@@ -196,6 +223,44 @@ export default function KubernetesPage() {
                   />
                 </div>
               </div>
+
+              <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                <label className="mb-3 flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={opencostEnabled}
+                    onChange={(e) => setOpencostEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  Use live OpenCost allocation
+                </label>
+                {opencostEnabled && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">OpenCost URL</label>
+                      <input
+                        type="text"
+                        value={opencostUrl}
+                        onChange={e => setOpencostUrl(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                        placeholder="http://localhost:9003"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Window (days)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={opencostWindowDays}
+                        onChange={e => setOpencostWindowDays(Number(e.target.value))}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <Button type="submit" disabled={calcLoading} className="w-full rounded-lg">
                 {calcLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
                 Calculate Cluster Cost
@@ -259,6 +324,102 @@ export default function KubernetesPage() {
             </CardContent>
           </Card>
         )}
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <Card>
+          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+            <CardTitle>OpenCost Namespace/Pod Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <form onSubmit={(e) => void handleOpenCostSync(e)} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">OpenCost URL</label>
+                <input
+                  type="text"
+                  value={opencostUrl}
+                  onChange={e => setOpencostUrl(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Cluster Name</label>
+                  <input
+                    type="text"
+                    value={form.cluster_name}
+                    onChange={e => handleFormChange('cluster_name', e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Window (days)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={opencostWindowDays}
+                    onChange={e => setOpencostWindowDays(Number(e.target.value))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                  />
+                </div>
+              </div>
+              {opencostSyncError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                  {opencostSyncError}
+                </div>
+              )}
+              <Button type="submit" className="w-full rounded-lg" disabled={opencostSyncLoading}>
+                {opencostSyncLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Sync OpenCost
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+            <CardTitle>Namespace & Pod Panel</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-5 space-y-4">
+            {opencostSyncResult ? (
+              <>
+                <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Source: {opencostSyncResult.source}</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {fmt(opencostSyncResult.total_cost_usd)} total / {opencostSyncResult.window_days} days
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Namespace breakdown (live)</p>
+                  <div className="space-y-2">
+                    {opencostSyncResult.namespaces.map((row) => (
+                      <div key={row.namespace}>
+                        <div className="mb-0.5 flex justify-between text-xs">
+                          <span className="font-mono text-slate-700 dark:text-slate-300">{row.namespace}</span>
+                          <span className="text-slate-500">{fmt(row.cost_usd)} ({row.share_percent.toFixed(1)}%)</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                          <div
+                            className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-indigo-500"
+                            style={{ width: `${Math.min(row.share_percent, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  Pod-level breakdown requires pod aggregation exposure from the OpenCost endpoint. Namespace-level live costs are now fully wired.
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Sync OpenCost to load live namespace breakdown for this cluster.</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -4,7 +4,11 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 
 ## Dashboard Preview
 
-![OptiOra animated dashboard — cycling through provider-backed overview, forecasting with OCI GenAI insights, operations history and alerts, and optional CSV settings](dashboard/public/optiora-animated.svg)
+The animated landing dashboard now cycles through three live scenes:
+
+- **Overview**: provider cost distribution and KPI cards
+- **Cloud Resources**: inventory-style resource rows with provider/region/cost state
+- **K8s Namespaces**: namespace allocation bars with pod counts and OpenCost status
 
 The dashboard is the main workspace for:
 
@@ -33,6 +37,7 @@ The dashboard is the main workspace for:
 - `terraform/`: OCI network baseline
 - `ARCHITECTURE.md`: current ASCII architecture and deployment flows
 - `DEPLOYMENT.md`: deployment runbook
+- `DATA_POLICY.md`: data usage policy and GenAI scope guidelines
 
 ## Runtime Architecture
 
@@ -258,6 +263,11 @@ Deployment script behavior:
 - provisions or reuses an OCI compute instance with the latest Oracle Linux 9 platform image for the selected shape
 - uploads the current local workspace snapshot
 - rewrites remote `FRONTEND_URL` and `NEXT_PUBLIC_API_URL` to the instance public IP
+
+Deployment path selection:
+
+- Use `./setup.sh --interactive` when you want guided Terraform + Ansible provisioning.
+- Use `./deploy/deploy-oci.sh compute` when you want fast laptop-driven deploy/redeploy to a single VM.
 - replaces placeholder JWT secrets with a generated value
 - applies `alembic upgrade head` on the VM before services restart
 - installs backend + dashboard dependencies with `dnf` on Oracle Linux hosts and starts systemd services

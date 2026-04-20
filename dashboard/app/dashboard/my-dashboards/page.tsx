@@ -11,6 +11,7 @@ import {
   Grid,
   Layers3,
   Lightbulb,
+  ShieldCheck,
   Tag,
 } from 'lucide-react'
 import {
@@ -222,6 +223,15 @@ export default function MyDashboardsPage() {
           ? `${formatCurrency(state.coverage.mapped_cost_usd)} mapped of ${formatCurrency(state.coverage.total_cost_usd)}`
           : 'No allocation data yet — define mapping rules',
         icon: <Tag className="w-6 h-6" />,
+      },
+      {
+        id: 'advanced-finops',
+        name: 'Advanced FinOps',
+        description: 'Tag quality scoring, decision-grade recommendations, federation, and remediation guardrails.',
+        href: '/dashboard/advanced-finops',
+        metric: state.coverage ? `${state.coverage.coverage_percent.toFixed(0)}%` : '—',
+        submetric: `${state.rollups?.items.length || 0} hierarchy node(s) available`,
+        icon: <ShieldCheck className="w-6 h-6" />,
       },
     ]
   }, [state.alerts, state.costs, state.coverage, state.history, state.recommendations, state.rollups])
