@@ -27,27 +27,81 @@ function fmt(n: number) {
   })
 }
 
+type ToastKind = 'success' | 'error' | 'info'
+
+interface ToastMessage {
+  id: number
+  title: string
+  detail: string
+  kind: ToastKind
+}
+
 export default function AdvancedFinOpsPage() {
   const [loading, setLoading] = useState(true)
   const [runningLoop, setRunningLoop] = useState(false)
+  const [loadingTagQuality, setLoadingTagQuality] = useState(false)
+  const [loadingDecision, setLoadingDecision] = useState(false)
+  const [loadingFederation, setLoadingFederation] = useState(false)
+  const [tagQualityError, setTagQualityError] = useState<string | null>(null)
+  const [decisionError, setDecisionError] = useState<string | null>(null)
+  const [federationError, setFederationError] = useState<string | null>(null)
+  const [loopError, setLoopError] = useState<string | null>(null)
+  const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [tagQuality, setTagQuality] = useState<TagQualityScoreResponse | null>(null)
   const [decision, setDecision] = useState<DecisionRecommendationResponse | null>(null)
   const [federation, setFederation] = useState<FederationCostResponse | null>(null)
   const [loopResult, setLoopResult] = useState<RemediationLoopResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  function pushToast(title: string, detail: string, kind: ToastKind = 'info') {
+    const id = Date.now() + Math.floor(Math.random() * 1000)
+    setToasts(prev => [...prev, { id, title, detail, kind }])
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id))
+    }, 3500)
+  }
+
   async function load() {
     setLoading(true)
     setError(null)
+    setTagQualityError(null)
+    setDecisionError(null)
+    setFederationError(null)
+    setLoadingTagQuality(true)
+    setLoadingDecision(true)
+    setLoadingFederation(true)
     const [tagRes, decRes, fedRes] = await Promise.allSettled([
       fetchTagQualityScore('all'),
       fetchDecisionGradeRecommendations({ top_n: 8, provider: 'all', min_monthly_savings: 10 }),
       fetchFederatedCosts({ provider: 'all', include_regions: true }),
     ])
 
-    if (tagRes.status === 'fulfilled') setTagQuality(tagRes.value)
-    if (decRes.status === 'fulfilled') setDecision(decRes.value)
-    if (fedRes.status === 'fulfilled') setFederation(fedRes.value)
+    if (tagRes.status === 'fulfilled') {
+      setTagQuality(tagRes.value)
+      pushToast('Tag quality loaded', `Completeness ${tagRes.value.completeness_score.toFixed(1)}%`, 'success')
+    } else {
+      setTagQualityError('Failed to load tag quality section.')
+      pushToast('Tag quality failed', 'Could not load tag quality section.', 'error')
+    }
+    setLoadingTagQuality(false)
+
+    if (decRes.status === 'fulfilled') {
+      setDecision(decRes.value)
+      pushToast('Decision-grade loaded', `${decRes.value.total_candidates} candidates`, 'success')
+    } else {
+      setDecisionError('Failed to load decision-grade recommendations.')
+      pushToast('Decision-grade failed', 'Could not load recommendation section.', 'error')
+    }
+    setLoadingDecision(false)
+
+    if (fedRes.status === 'fulfilled') {
+      setFederation(fedRes.value)
+      pushToast('Federation loaded', `${fedRes.value.total_accounts} accounts`, 'success')
+    } else {
+      setFederationError('Failed to load federation cost section.')
+      pushToast('Federation failed', 'Could not load federation section.', 'error')
+    }
+    setLoadingFederation(false)
 
     if (tagRes.status === 'rejected' && decRes.status === 'rejected' && fedRes.status === 'rejected') {
       setError('Failed to load advanced FinOps data.')
@@ -57,6 +111,7 @@ export default function AdvancedFinOpsPage() {
 
   async function runDryRunLoop() {
     setRunningLoop(true)
+    setLoopError(null)
     try {
       const result = await runAutoRemediationLoop({
         dry_run: true,
@@ -65,6 +120,10 @@ export default function AdvancedFinOpsPage() {
         require_approval_above_usd: 250,
       })
       setLoopResult(result)
+      pushToast('Dry-run completed', `${result.planned_count} actions planned`, 'success')
+    } catch {
+      setLoopError('Failed to run remediation dry-run.')
+      pushToast('Dry-run failed', 'Could not execute guardrailed dry-run.', 'error')
     } finally {
       setRunningLoop(false)
     }
@@ -84,7 +143,7 @@ export default function AdvancedFinOpsPage() {
               Competitive Features
             </Badge>
           </div>
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Advanced FinOps Console</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2">Advanced FinOps Console</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
             Unified view of tag completeness scoring, decision-grade optimization ranking, multi-account federation, and safe remediation loops.
           </p>
@@ -143,6 +202,12 @@ export default function AdvancedFinOpsPage() {
                 <CardTitle className="flex items-center gap-2"><Tags className="h-5 w-5" />Tag Quality Dimensions</CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
+                {tagQualityError && (
+                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                    {tagQualityError}
+                  </div>
+                )}
+                {loadingTagQuality && <p className="mb-3 text-xs text-slate-500">Loading tag-quality section...</p>}
                 <div className="space-y-3">
                   {(tagQuality?.dimensions || []).map((d) => (
                     <div key={d.dimension} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
@@ -164,6 +229,12 @@ export default function AdvancedFinOpsPage() {
                 <CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" />Decision-Grade Recommendations</CardTitle>
               </CardHeader>
               <CardContent className="pt-4 space-y-3">
+                {decisionError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                    {decisionError}
+                  </div>
+                )}
+                {loadingDecision && <p className="text-xs text-slate-500">Loading decision-grade section...</p>}
                 {(decision?.top_recommendations || []).map((row) => (
                   <div key={row.recommendation_id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                     <div className="mb-1 flex items-start justify-between gap-3">
@@ -185,6 +256,12 @@ export default function AdvancedFinOpsPage() {
                 <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Multi-Account Federation</CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
+                {federationError && (
+                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                    {federationError}
+                  </div>
+                )}
+                {loadingFederation && <p className="mb-3 text-xs text-slate-500">Loading federation section...</p>}
                 <div className="space-y-2">
                   {(federation?.accounts || []).slice(0, 12).map((row) => (
                     <div key={`${row.provider}-${row.account_identifier}`} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
@@ -207,6 +284,11 @@ export default function AdvancedFinOpsPage() {
                 <Button className="w-full rounded-lg" onClick={() => void runDryRunLoop()} disabled={runningLoop}>
                   {runningLoop ? 'Running dry-run...' : 'Run Guardrailed Dry-run'}
                 </Button>
+                {loopError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                    {loopError}
+                  </div>
+                )}
                 {loopResult ? (
                   <div className="space-y-2 text-sm">
                     <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
@@ -229,6 +311,22 @@ export default function AdvancedFinOpsPage() {
           </div>
         </>
       )}
+
+      <div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] max-w-sm space-y-2">
+        {toasts.map((toast) => {
+          const color = toast.kind === 'error'
+            ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300'
+            : toast.kind === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+              : 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
+          return (
+            <div key={toast.id} className={`rounded-lg border p-3 shadow-lg ${color}`}>
+              <p className="text-xs font-semibold">{toast.title}</p>
+              <p className="text-xs opacity-90">{toast.detail}</p>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

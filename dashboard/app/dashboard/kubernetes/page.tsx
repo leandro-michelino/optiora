@@ -88,6 +88,8 @@ export default function KubernetesPage() {
     }
   }
 
+  const podRows = opencostSyncResult?.pods || []
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -96,7 +98,7 @@ export default function KubernetesPage() {
             <Badge variant="outline" className="rounded-md">Kubernetes Cost Allocation</Badge>
             <Badge variant="outline" className="rounded-md border-purple-300 bg-purple-50 text-purple-800 dark:bg-purple-950/30">OpenCost-Ready</Badge>
           </div>
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Kubernetes Namespace Costs</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2">Kubernetes Namespace Costs</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
             Estimate and break down Kubernetes cluster costs by namespace. OpenCost sync brings live namespace allocation, and the calculator models any cluster configuration.
           </p>
@@ -162,7 +164,7 @@ export default function KubernetesPage() {
           </CardHeader>
           <CardContent className="pt-5">
             <form onSubmit={(e) => void handleCalc(e)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Cluster Name</label>
                   <input
@@ -235,7 +237,7 @@ export default function KubernetesPage() {
                   Use live OpenCost allocation
                 </label>
                 {opencostEnabled && (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-3 md:grid-cols-2">
                     <div className="col-span-2">
                       <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">OpenCost URL</label>
                       <input
@@ -342,7 +344,7 @@ export default function KubernetesPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Cluster Name</label>
                   <input
@@ -411,9 +413,39 @@ export default function KubernetesPage() {
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                  Pod-level breakdown requires pod aggregation exposure from the OpenCost endpoint. Namespace-level live costs are now fully wired.
-                </div>
+                {podRows.length > 0 ? (
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Pod-level breakdown (compact)</p>
+                    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                      <table className="w-full min-w-[520px] text-xs">
+                        <thead className="bg-slate-50 dark:bg-slate-800/60">
+                          <tr className="text-left text-slate-500">
+                            <th className="px-3 py-2 font-medium">Namespace</th>
+                            <th className="px-3 py-2 font-medium">Pod</th>
+                            <th className="px-3 py-2 font-medium text-right">Cost</th>
+                            <th className="px-3 py-2 font-medium text-right">Share</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {podRows.slice(0, 12).map((pod, idx) => (
+                            <tr key={`${pod.namespace}-${pod.pod_name}-${idx}`} className="border-t border-slate-100 dark:border-slate-800">
+                              <td className="px-3 py-2 text-slate-700 dark:text-slate-300 font-mono">{pod.namespace}</td>
+                              <td className="px-3 py-2 text-slate-700 dark:text-slate-300 font-mono">{pod.pod_name}</td>
+                              <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">{fmt(pod.cost_usd)}</td>
+                              <td className="px-3 py-2 text-right text-slate-500">{pod.share_percent.toFixed(2)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Showing up to 12 pod rows from OpenCost payload.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    Pod-level breakdown will appear automatically when OpenCost sync returns pod aggregation fields.
+                  </div>
+                )}
+
               </>
             ) : (
               <p className="text-sm text-slate-500">Sync OpenCost to load live namespace breakdown for this cluster.</p>

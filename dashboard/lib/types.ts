@@ -866,6 +866,13 @@ export interface OpenCostNamespaceCost {
   share_percent: number
 }
 
+export interface OpenCostPodCost {
+  namespace: string
+  pod_name: string
+  cost_usd: number
+  share_percent: number
+}
+
 export interface OpenCostSyncResponse {
   generated_at: string
   cluster_name: string
@@ -874,6 +881,7 @@ export interface OpenCostSyncResponse {
   total_cost_usd: number
   namespace_count: number
   namespaces: OpenCostNamespaceCost[]
+  pods?: OpenCostPodCost[]
 }
 
 // ---------------------------------------------------------------------------
