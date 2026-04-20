@@ -22,11 +22,14 @@ import {
   SchedulerStatusResponse,
   ScanStartResponse,
   ForecastResponse,
+  ForecastStressTestResponse,
   FinOpsAnalyticsResponse,
   CloudWasteResponse,
   EfficiencyScoreResponse,
   CommitmentGapResponse,
+  OptimizationPortfolioResponse,
   HybridAdvisorResponse,
+  GenAICopilotPackResponse,
   ImportedCostSummaryResponse,
   ImportedCostUploadResponse,
   ImportPreviewResponse,
@@ -241,6 +244,24 @@ export async function fetchForecast(months = 12): Promise<ForecastResponse> {
   )
 }
 
+export async function fetchForecastStressTest(payload: {
+  months?: number
+  cloud_provider?: string
+  severity?: 'low' | 'medium' | 'high'
+} = {}): Promise<ForecastStressTestResponse> {
+  return requestJson<ForecastStressTestResponse>(
+    '/api/v1/forecast/stress-test',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        months: payload.months ?? 12,
+        cloud_provider: payload.cloud_provider ?? 'all',
+        severity: payload.severity ?? 'medium',
+      }),
+    },
+  )
+}
+
 export async function fetchFinOpsAnalytics(): Promise<FinOpsAnalyticsResponse> {
   return requestJson<FinOpsAnalyticsResponse>(
     '/api/v1/analytics',
@@ -269,6 +290,13 @@ export async function fetchCommitmentGap(): Promise<CommitmentGapResponse> {
   )
 }
 
+export async function fetchOptimizationPortfolio(): Promise<OptimizationPortfolioResponse> {
+  return requestJson<OptimizationPortfolioResponse>(
+    '/api/v1/analytics/optimization-portfolio',
+    {},
+  )
+}
+
 export async function fetchHybridAdvisor(
   narrativeType: 'waste_insights' | 'optimization_roadmap' | 'executive_narrative' = 'optimization_roadmap',
 ): Promise<HybridAdvisorResponse> {
@@ -276,6 +304,26 @@ export async function fetchHybridAdvisor(
     `/api/v1/advisor/hybrid${toQueryString({ narrative_type: narrativeType })}`,
     {},
   )
+}
+
+export async function fetchGenAICopilotPack(payload: {
+  cloud_provider?: string
+  include?: Array<
+    'spend'
+    | 'budget_risk'
+    | 'waste_insights'
+    | 'optimization_roadmap'
+    | 'executive_narrative'
+    | 'commitment_strategy'
+  >
+} = {}): Promise<GenAICopilotPackResponse> {
+  return requestJson<GenAICopilotPackResponse>('/api/v1/genai/copilot-pack', {
+    method: 'POST',
+    body: JSON.stringify({
+      cloud_provider: payload.cloud_provider ?? 'all',
+      include: payload.include ?? ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy'],
+    }),
+  })
 }
 
 export async function fetchScanHistory(limit = 20): Promise<ScanHistoryItem[]> {

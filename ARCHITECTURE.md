@@ -15,7 +15,7 @@ Current as of April 2026 — Release 1.0 feature-complete.
 │                                                                              │
 │  Overview · Costs · Forecasting · Anomalies · Recommendations · Settings    │
 │  FinOps Analytics:                                                           │
-│    Unit Economics · Scorecards · Resource Inventory · Kubernetes Costs       │
+│    Unit Economics · Scorecards · Cloud Resources · K8s Namespace Costs       │
 │    Virtual Tags · Resource-Level Rightsizing                                 │
 │  Account hierarchy rollups, allocation coverage, FOCUS export                │
 │  Animated KPI surfaces: efficiency score, waste categories, commitment gap   │
@@ -33,10 +33,12 @@ Current as of April 2026 — Release 1.0 feature-complete.
 │  Scanning + scheduler     /api/v1/scanning/*                                 │
 │  Core dashboard data      /api/v1/costs | anomalies | recommendations       │
 │  Forecasting              /api/v1/forecast                                   │
-│  Forecast simulations      /api/v1/forecast/what-if                           │
+│  Forecast simulations     /api/v1/forecast/what-if                            │
+│  Forecast stress-tests    /api/v1/forecast/stress-test                        │
 │  Analytics family         /api/v1/analytics/*                                │
 │    base · attribution · commitment-optimization · maturity                   │
 │    unit-economics · cloud-waste · efficiency-score · commitment-gap          │
+│    optimization-portfolio                                                     │
 │  FinOps Intelligence                                                         │
 │    Hybrid advisor         /api/v1/advisor/hybrid                             │
 │    GenAI narratives       /api/v1/genai/analyze                              │
@@ -93,10 +95,12 @@ Current as of April 2026 — Release 1.0 feature-complete.
          v                         v                          v
   Forecasting               Core analytics            Advanced analytics
   build_forecast()          build_analytics()         build_cloud_waste_analysis()
+  build_forecast_stress_test()                       build_optimization_portfolio()
   - deterministic fan       - risk/maturity           build_cost_efficiency_score()
   - p10/p50/p90/p95         - spend-at-risk           build_commitment_gap_analysis()
   - CVaR downside risk      - optimization cap        build_unit_economics()
   - budget guardrails       - provider findings       build_forecast_what_if()
+  - stress envelopes                                  (portfolio ranking)
   - backtesting (MAPE)      - action plan signals     build_scorecards()
          │                         │                          │
          └─────────────────────────┴──────────────────────────┘
@@ -137,6 +141,15 @@ Path C: Backend copilot bundle (single-call narrative package)
       -> deterministic context assembly (analytics + forecast + commitment gap)
       -> selected narrative generators in genai_advisor
       -> narratives[] with fallback prompts when OCI GenAI is unavailable
+
+    Path D: Forecast stress and portfolio strategy
+      POST /api/v1/forecast/stress-test
+        -> deterministic stress envelopes (demand spike, price shock, execution delay)
+        -> GenAI budget-risk narrative overlay
+
+      GET /api/v1/analytics/optimization-portfolio
+        -> deterministic ranking by savings, ROI, payback, effort, confidence
+        -> GenAI optimization roadmap narrative overlay
 ```
 
 ## 4) Hybrid Advisor Orchestration

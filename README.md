@@ -4,6 +4,8 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 
 ## Dashboard Preview
 
+![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)
+
 The animated landing dashboard now cycles through three live scenes:
 
 - **Overview**: provider cost distribution and KPI cards
@@ -25,8 +27,9 @@ The dashboard is the main workspace for:
 - deeper FinOps analytics (cloud waste categories, efficiency score, commitment gap) with animated KPI cards
 - deterministic forecasting with baseline/conservative/balanced/aggressive scenarios, p10/p50/p90 fan percentiles, CVaR downside risk, forecast quality scoring, budget guardrails, trend+smoothing blends, provider concentration (HHI), and breach-probability executive metrics
 - deterministic what-if forecasting (`POST /api/v1/forecast/what-if`) with phased optimization actions, ROI, and payback month
+- deterministic stress-test forecasting (`POST /api/v1/forecast/stress-test`) with demand/price/execution shock envelopes and hedging playbooks
 - OCI GenAI-assisted cost advisor conversations, AI insights, and advisory workflows with London South (`uk-london-1`) as the primary OCI GenAI region
-- GenAI copilot packs (`POST /api/v1/genai/copilot-pack`) that produce multi-audience narratives from deterministic analytics context
+- GenAI copilot packs (`POST /api/v1/genai/copilot-pack`) that produce spend, budget risk, waste insights, optimization roadmap, executive narrative, and commitment strategy outputs
 
 ## Repository Layout
 
@@ -126,6 +129,7 @@ The dashboard is the main workspace for:
 - `GET /api/v1/recommendations`
 - `GET /api/v1/forecast` (budget guardrails, fan percentiles, cost velocity, CVaR downside risk, forecast quality score, backtesting)
 - `POST /api/v1/forecast/what-if` (deterministic scenario simulation with phased actions, NPV-friendly discounted timeline, ROI, payback)
+- `POST /api/v1/forecast/stress-test` (deterministic stress envelopes for demand, price, and execution-delay shocks)
 - `GET /api/v1/analytics` (risk/maturity scores, waste, commitment, MoM velocity, GenAI narrative)
 - `GET /api/v1/analytics/attribution` (Pareto cost driver analysis, HHI concentration)
 - `GET /api/v1/analytics/commitment-optimization` (RI/Savings Plan ROI at 50/65/80% tiers)
@@ -134,6 +138,7 @@ The dashboard is the main workspace for:
 - `GET /api/v1/analytics/cloud-waste` (waste category decomposition, remediation effort, quick wins)
 - `GET /api/v1/analytics/efficiency-score` (weighted 0-100 efficiency score with grade and weakest dimensions)
 - `GET /api/v1/analytics/commitment-gap` (per-provider commitment coverage gaps with 1-year/3-year scenarios)
+- `GET /api/v1/analytics/optimization-portfolio` (action portfolio ranking by savings, ROI, payback, and execution effort)
 - `GET /api/v1/analytics/scorecards` (per-team/environment FinOps maturity scorecards with trends)
 - `GET /api/v1/inventory/resources` (searchable resource inventory across all connected providers)
 - `GET /api/v1/analytics/kubernetes/summary` / `POST /api/v1/analytics/kubernetes/cluster-cost` (namespace-level Kubernetes cost attribution)

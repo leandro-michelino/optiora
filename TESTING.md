@@ -82,6 +82,12 @@ Current backend coverage includes:
 - routing policy dry-run simulator contract
 - operations data freshness endpoint contract (`/api/v1/operations/data-freshness`)
 
+**Forecast stress and portfolio analytics** (`tests/test_forecast_stress_and_portfolio.py`):
+
+- deterministic stress envelope endpoint contract (`POST /api/v1/forecast/stress-test`)
+- optimization portfolio ranking endpoint contract (`GET /api/v1/analytics/optimization-portfolio`)
+- API feature flags include `forecast_stress_test` and `optimization_portfolio`
+
 Smoke endpoints:
 
 ```bash

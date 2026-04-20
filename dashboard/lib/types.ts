@@ -295,6 +295,92 @@ export interface ForecastResponse {
   scenarios: ForecastScenario[]
 }
 
+export interface ForecastStressTimelinePoint {
+  month: string
+  baseline_usd: number
+  stressed_usd: number
+  delta_usd: number
+  budget_breach: boolean
+}
+
+export interface ForecastStressScenario {
+  name: string
+  description: string
+  starts_month: number
+  stressed_total_usd: number
+  incremental_risk_usd: number
+  peak_monthly_usd: number
+  breach_months: number
+  timeline: ForecastStressTimelinePoint[]
+}
+
+export interface ForecastStressTestResponse {
+  generated_at: string
+  forecast_months: number
+  severity: 'low' | 'medium' | 'high' | string
+  baseline_summary: {
+    projected_total_usd: number
+    average_monthly_usd: number
+    budget_monthly_usd?: number | null
+  }
+  scenarios: ForecastStressScenario[]
+  worst_case: {
+    name: string | null
+    incremental_risk_usd: number
+    breach_months: number
+  }
+  hedging_playbook: string[]
+  genai_narrative?: string | null
+  genai_prompt?: string
+}
+
+export interface OptimizationPortfolioAction {
+  id: string
+  title: string
+  service: string
+  monthly_savings_usd: number
+  annual_savings_usd: number
+  roi_percent: number
+  payback_months: number
+  effort: string
+  confidence: string
+  portfolio_score: number
+}
+
+export interface OptimizationPortfolioResponse {
+  generated_at: string
+  portfolio_count: number
+  total_monthly_savings_usd: number
+  total_annual_savings_usd: number
+  ranked_actions: OptimizationPortfolioAction[]
+  quick_wins: OptimizationPortfolioAction[]
+  strategic_bets: OptimizationPortfolioAction[]
+  genai_narrative?: string | null
+  genai_prompt?: string
+}
+
+export interface GenAICopilotNarrative {
+  narrative: string | null
+  prompt: string
+  fallback_mode: boolean
+}
+
+export interface GenAICopilotPackResponse {
+  generated_at: string
+  cloud_provider: string
+  deterministic_context: {
+    analytics: FinOpsAnalyticsResponse
+    forecast: {
+      forecast_quality?: Record<string, unknown>
+      budget_guardrails?: Record<string, unknown>
+      downside_risk?: Record<string, unknown>
+    }
+    commitment_gap: CommitmentGapResponse
+  }
+  narratives: Record<string, GenAICopilotNarrative>
+  genai_configured: boolean
+}
+
 export interface ScanHistoryItem {
   scan_id: string
   customer_id: string

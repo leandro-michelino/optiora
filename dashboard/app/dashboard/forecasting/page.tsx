@@ -17,7 +17,10 @@ import {
   fetchApiHealth,
   fetchCostTrend,
   fetchForecast,
+  fetchForecastStressTest,
+  fetchGenAICopilotPack,
   fetchImportedCostSummary,
+  fetchOptimizationPortfolio,
   fetchProviderDiagnostics,
 } from '@/lib/api'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
@@ -28,7 +31,10 @@ import {
   ForecastPoint,
   ForecastResponse,
   ForecastScenario,
+  ForecastStressTestResponse,
+  GenAICopilotPackResponse,
   ImportedCostSummaryResponse,
+  OptimizationPortfolioResponse,
   ProviderDiagnostic,
 } from '@/lib/types'
 
@@ -93,18 +99,24 @@ export default function PredictiveAnalyticsPage() {
   const [health, setHealth] = useState<ApiHealth | null>(null)
   const [importedSummary, setImportedSummary] = useState<ImportedCostSummaryResponse | null>(null)
   const [diagnostics, setDiagnostics] = useState<ProviderDiagnostic[]>([])
+  const [stressTest, setStressTest] = useState<ForecastStressTestResponse | null>(null)
+  const [portfolio, setPortfolio] = useState<OptimizationPortfolioResponse | null>(null)
+  const [copilotPack, setCopilotPack] = useState<GenAICopilotPackResponse | null>(null)
   const [selectedScenario, setSelectedScenario] = useState('balanced')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadForecast() {
-      const [forecastResult, importedResult, healthResult, diagnosticsResult, trendResult] = await Promise.allSettled([
+      const [forecastResult, importedResult, healthResult, diagnosticsResult, trendResult, stressResult, portfolioResult, copilotResult] = await Promise.allSettled([
         fetchForecast(12),
         fetchImportedCostSummary(),
         fetchApiHealth(),
         fetchProviderDiagnostics(),
         fetchCostTrend('monthly', 6),
+        fetchForecastStressTest({ months: 12, severity: 'medium' }),
+        fetchOptimizationPortfolio(),
+        fetchGenAICopilotPack({ include: ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy'] }),
       ])
 
       if (forecastResult.status === 'fulfilled') {
@@ -124,6 +136,9 @@ export default function PredictiveAnalyticsPage() {
       setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
       setDiagnostics(diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [])
       setTrend(trendResult.status === 'fulfilled' ? trendResult.value : null)
+      setStressTest(stressResult.status === 'fulfilled' ? stressResult.value : null)
+      setPortfolio(portfolioResult.status === 'fulfilled' ? portfolioResult.value : null)
+      setCopilotPack(copilotResult.status === 'fulfilled' ? copilotResult.value : null)
       setLoading(false)
     }
 
@@ -473,6 +488,55 @@ export default function PredictiveAnalyticsPage() {
                   </div>
                 )}
               </div>
+
+              {stressTest && (
+                <div className="card bg-white dark:bg-slate-800">
+                  <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Stress Test (Deterministic)</h3>
+                  <p className="text-xs text-slate-500 mb-3">Worst-case: {stressTest.worst_case.name || 'n/a'}</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md bg-slate-50 dark:bg-slate-900 p-2">
+                      <p className="text-slate-500">Incremental risk</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        {formatCurrency(stressTest.worst_case.incremental_risk_usd)}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 dark:bg-slate-900 p-2">
+                      <p className="text-slate-500">Breach months</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{stressTest.worst_case.breach_months}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {portfolio && (
+                <div className="card bg-white dark:bg-slate-800">
+                  <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Optimization Portfolio</h3>
+                  <p className="text-xs text-slate-500 mb-3">Ranked by savings, ROI, payback, and effort score.</p>
+                  <div className="text-xs space-y-1">
+                    <p><span className="text-slate-500">Annual opportunity:</span> <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(portfolio.total_annual_savings_usd)}</span></p>
+                    <p><span className="text-slate-500">Quick wins:</span> <span className="font-semibold text-slate-900 dark:text-white">{portfolio.quick_wins.length}</span></p>
+                    <p><span className="text-slate-500">Strategic bets:</span> <span className="font-semibold text-slate-900 dark:text-white">{portfolio.strategic_bets.length}</span></p>
+                  </div>
+                </div>
+              )}
+
+              {copilotPack?.narratives?.executive_narrative && (
+                <div className="card bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800">
+                  <h3 className="font-semibold text-indigo-900 dark:text-indigo-200 mb-2">GenAI Executive Narrative</h3>
+                  <p className="text-xs text-indigo-800 dark:text-indigo-300 whitespace-pre-wrap">
+                    {copilotPack.narratives.executive_narrative.narrative || copilotPack.narratives.executive_narrative.prompt}
+                  </p>
+                </div>
+              )}
+
+              {copilotPack?.narratives?.commitment_strategy && (
+                <div className="card bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                  <h3 className="font-semibold text-emerald-900 dark:text-emerald-200 mb-2">GenAI Commitment Strategy</h3>
+                  <p className="text-xs text-emerald-800 dark:text-emerald-300 whitespace-pre-wrap">
+                    {copilotPack.narratives.commitment_strategy.narrative || copilotPack.narratives.commitment_strategy.prompt}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </>

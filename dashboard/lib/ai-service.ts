@@ -212,6 +212,9 @@ export async function askCostQuestion(
     return await callOCIGenAI(message, conversationHistory);
   } catch (error) {
     console.error('OCI GenAI error:', error);
+    if (error instanceof Error) {
+      throw new Error(error.message);
+    }
     throw new Error('Failed to get AI response');
   }
 }

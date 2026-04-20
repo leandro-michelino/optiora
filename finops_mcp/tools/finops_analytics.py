@@ -625,6 +625,147 @@ def build_forecast_what_if(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_forecast_stress_test(params: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic stress-testing around baseline forecast trajectories.
+
+    Produces scenario envelopes for finance risk reviews without random sampling.
+    """
+    months = max(1, min(int(params.get("months", 12) or 12), 24))
+    severity = str(params.get("severity", "medium") or "medium").lower()
+    severity_factor = {
+        "low": 0.75,
+        "medium": 1.0,
+        "high": 1.3,
+    }.get(severity, 1.0)
+
+    baseline = build_forecast({
+        "months": months,
+        "cloud_provider": params.get("cloud_provider", "all"),
+        "current_monthly_spend": params.get("current_monthly_spend", 0.0),
+        "cost_breakdown": params.get("cost_breakdown", {}),
+        "historical_monthly_spend": params.get("historical_monthly_spend", []),
+        "budget_monthly": params.get("budget_monthly", 0.0),
+        "fallback_monthly_spend": params.get("fallback_monthly_spend", 0.0),
+    })
+
+    forecast_rows = baseline.get("forecast", [])
+    budget_monthly = _safe_float(params.get("budget_monthly"), 0.0)
+
+    scenario_profiles = [
+        {
+            "name": "demand_spike",
+            "description": "Unexpected workload demand increase and autoscaling pressure.",
+            "demand_mult": 1 + (0.08 * severity_factor),
+            "price_mult": 1.0,
+            "efficiency_drag": 0.03 * severity_factor,
+            "starts_month": 2,
+        },
+        {
+            "name": "price_shock",
+            "description": "Provider price mix deterioration and commitment under-utilization.",
+            "demand_mult": 1.0,
+            "price_mult": 1 + (0.06 * severity_factor),
+            "efficiency_drag": 0.02 * severity_factor,
+            "starts_month": 1,
+        },
+        {
+            "name": "execution_delay",
+            "description": "Optimization actions delayed while spend keeps growing.",
+            "demand_mult": 1 + (0.04 * severity_factor),
+            "price_mult": 1 + (0.03 * severity_factor),
+            "efficiency_drag": 0.06 * severity_factor,
+            "starts_month": 4,
+        },
+        {
+            "name": "compound_risk",
+            "description": "Demand spike and price pressure combined with slower remediation.",
+            "demand_mult": 1 + (0.10 * severity_factor),
+            "price_mult": 1 + (0.07 * severity_factor),
+            "efficiency_drag": 0.08 * severity_factor,
+            "starts_month": 2,
+        },
+    ]
+
+    scenarios: list[dict[str, Any]] = []
+    for profile in scenario_profiles:
+      timeline: list[dict[str, Any]] = []
+      stressed_total = 0.0
+      peak_monthly = 0.0
+      breach_count = 0
+
+      for month_index, row in enumerate(forecast_rows, start=1):
+          baseline_value = _safe_float(row.get("baseline"), 0.0)
+          stress_active = month_index >= int(profile["starts_month"])
+          demand_mult = profile["demand_mult"] if stress_active else 1.0
+          price_mult = profile["price_mult"] if stress_active else 1.0
+          drag = profile["efficiency_drag"] if stress_active else 0.0
+
+          stressed = baseline_value * demand_mult * price_mult * (1 + drag)
+          stressed = max(stressed, 0.0)
+          stressed_total += stressed
+          peak_monthly = max(peak_monthly, stressed)
+
+          breach = budget_monthly > 0 and stressed > budget_monthly
+          if breach:
+              breach_count += 1
+
+          timeline.append({
+              "month": row.get("month", f"M{month_index}"),
+              "baseline_usd": round(baseline_value, 2),
+              "stressed_usd": round(stressed, 2),
+              "delta_usd": round(stressed - baseline_value, 2),
+              "budget_breach": breach,
+          })
+
+      baseline_total = sum(_safe_float(r.get("baseline"), 0.0) for r in forecast_rows)
+      scenarios.append({
+          "name": profile["name"],
+          "description": profile["description"],
+          "starts_month": profile["starts_month"],
+          "stressed_total_usd": round(stressed_total, 2),
+          "incremental_risk_usd": round(max(stressed_total - baseline_total, 0.0), 2),
+          "peak_monthly_usd": round(peak_monthly, 2),
+          "breach_months": breach_count,
+          "timeline": timeline,
+      })
+
+    scenarios.sort(key=lambda s: s["incremental_risk_usd"], reverse=True)
+    worst_case = scenarios[0] if scenarios else None
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "forecast_months": months,
+        "severity": severity,
+        "baseline_summary": {
+            "projected_total_usd": round(sum(_safe_float(r.get("baseline"), 0.0) for r in forecast_rows), 2),
+            "average_monthly_usd": round(
+                sum(_safe_float(r.get("baseline"), 0.0) for r in forecast_rows) / max(len(forecast_rows), 1),
+                2,
+            ),
+            "budget_monthly_usd": round(budget_monthly, 2) if budget_monthly > 0 else None,
+        },
+        "scenarios": scenarios,
+        "worst_case": {
+            "name": worst_case.get("name") if worst_case else None,
+            "incremental_risk_usd": worst_case.get("incremental_risk_usd") if worst_case else 0.0,
+            "breach_months": worst_case.get("breach_months") if worst_case else 0,
+        },
+        "hedging_playbook": [
+            "Increase commitment coverage for predictable baseline workloads before peak months.",
+            "Prioritize rightsizing in high-volatility providers and enforce schedule-based shutdowns.",
+            "Apply budget guardrails with owner approval when stress scenario breach count rises.",
+        ],
+        "genai_context": {
+            "prompt": (
+                "Explain stress-test outcomes to finance and engineering audiences. Compare baseline vs. "
+                "worst case, call out breach months, and propose a phased mitigation plan with quick wins."
+            ),
+            "severity": severity,
+            "worst_case": worst_case,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Public: Analytics
 # ---------------------------------------------------------------------------
@@ -1571,6 +1712,68 @@ def build_commitment_gap_analysis(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_optimization_portfolio(params: dict[str, Any]) -> dict[str, Any]:
+    """Build a prioritized optimization portfolio balancing savings, ROI, and execution risk."""
+    recommendation_rows = params.get("recommendations") or []
+    current_monthly = _safe_float(params.get("current_monthly_spend"), 0.0)
+
+    portfolio_items: list[dict[str, Any]] = []
+    for row in recommendation_rows:
+        if not isinstance(row, dict):
+            continue
+        monthly_savings = _safe_float(row.get("savings_monthly_usd"), 0.0)
+        roi_percent = _safe_float(row.get("roi_percent"), 0.0)
+        payback = _safe_float(row.get("payback_months"), 12.0)
+        effort = str(row.get("effort", "medium") or "medium").lower()
+        confidence = str(row.get("confidence", "medium") or "medium").lower()
+        effort_penalty = {"low": 0.0, "medium": 8.0, "high": 15.0}.get(effort, 8.0)
+        confidence_bonus = {"high": 10.0, "medium": 4.0, "low": -4.0}.get(confidence, 0.0)
+
+        score = (
+            (monthly_savings / max(current_monthly, 1.0) * 1000)
+            + (roi_percent * 0.18)
+            - (payback * 2.0)
+            - effort_penalty
+            + confidence_bonus
+        )
+
+        portfolio_items.append({
+            "id": row.get("id") or row.get("recommendation_id") or "unknown",
+            "title": row.get("title") or row.get("description") or "Optimization action",
+            "service": row.get("service") or row.get("provider") or "unknown",
+            "monthly_savings_usd": round(monthly_savings, 2),
+            "annual_savings_usd": round(monthly_savings * 12, 2),
+            "roi_percent": round(roi_percent, 1),
+            "payback_months": round(payback, 1),
+            "effort": effort,
+            "confidence": confidence,
+            "portfolio_score": round(score, 2),
+        })
+
+    portfolio_items.sort(key=lambda item: item["portfolio_score"], reverse=True)
+    top_quick_wins = [i for i in portfolio_items if i["effort"] == "low"][:5]
+    top_strategic = [i for i in portfolio_items if i["effort"] in {"medium", "high"}][:5]
+    total_monthly_savings = sum(i["monthly_savings_usd"] for i in portfolio_items)
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "portfolio_count": len(portfolio_items),
+        "total_monthly_savings_usd": round(total_monthly_savings, 2),
+        "total_annual_savings_usd": round(total_monthly_savings * 12, 2),
+        "ranked_actions": portfolio_items[:15],
+        "quick_wins": top_quick_wins,
+        "strategic_bets": top_strategic,
+        "genai_context": {
+            "prompt": (
+                "Create an execution plan from this optimization portfolio. Separate immediate quick wins "
+                "from strategic initiatives, include expected savings impact, and sequence by portfolio_score."
+            ),
+            "portfolio_count": len(portfolio_items),
+            "total_annual_savings_usd": round(total_monthly_savings * 12, 2),
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Async wrappers (called by api.py endpoints)
 # ---------------------------------------------------------------------------
@@ -1615,5 +1818,13 @@ async def get_commitment_gap_analysis(params: dict[str, Any]) -> str:
     return json.dumps(build_commitment_gap_analysis(params))
 
 
+async def get_optimization_portfolio(params: dict[str, Any]) -> str:
+    return json.dumps(build_optimization_portfolio(params))
+
+
 async def get_forecast_what_if(params: dict[str, Any]) -> str:
     return json.dumps(build_forecast_what_if(params))
+
+
+async def get_forecast_stress_test(params: dict[str, Any]) -> str:
+    return json.dumps(build_forecast_stress_test(params))

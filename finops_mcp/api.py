@@ -3914,6 +3914,12 @@ class ForecastWhatIfRequest(BaseModel):
     discount_rate_monthly: float = Field(default=0.01, ge=0.0, le=0.2)
 
 
+class ForecastStressRequest(BaseModel):
+    months: int = Field(default=12, ge=1, le=24)
+    cloud_provider: str = "all"
+    severity: Literal["low", "medium", "high"] = "medium"
+
+
 @router.post("/forecast/what-if")
 async def dashboard_forecast_what_if(
     request: ForecastWhatIfRequest,
@@ -3950,6 +3956,55 @@ async def dashboard_forecast_what_if(
         ),
         {},
     )
+    result["cost_context"] = context
+    return result
+
+
+@router.post("/forecast/stress-test")
+async def dashboard_forecast_stress_test(
+    request: ForecastStressRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Deterministic stress-test envelope around forecast baseline."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", request.cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=request.cloud_provider,
+        months=18,
+    )
+
+    result = _safe_json_load(
+        await finops_analytics.get_forecast_stress_test(
+            {
+                "months": request.months,
+                "cloud_provider": request.cloud_provider,
+                "severity": request.severity,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            }
+        ),
+        {},
+    )
+
+    narrative, prompt = genai_advisor.generate_budget_risk_alert(
+        result.get("worst_case", {}),
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "worst_case": result.get("worst_case", {}),
+            "severity": request.severity,
+            "forecast_months": request.months,
+        },
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
     result["cost_context"] = context
     return result
 
@@ -4546,6 +4601,46 @@ async def analytics_commitment_gap(
     return result
 
 
+@router.get("/analytics/optimization-portfolio")
+async def analytics_optimization_portfolio(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Rank optimization actions by portfolio score (savings, ROI, payback, effort)."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+
+    recommendation_rows = await _deterministic_recommendations(
+        cloud_provider=cloud_provider,
+        current_monthly_spend=context["total_cost"],
+        cost_breakdown=context["breakdown"],
+    )
+
+    result = _safe_json_load(
+        await finops_analytics.get_optimization_portfolio(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "recommendations": recommendation_rows,
+            }
+        ),
+        {},
+    )
+
+    narrative, prompt = genai_advisor.generate_optimization_roadmap(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "top_opportunities": result.get("ranked_actions", [])[:5],
+            "total_annual_savings_usd": result.get("total_annual_savings_usd", 0),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/provider-diagnostics", response_model=List[ProviderDiagnostic])
 async def provider_diagnostics(current_user: User = Depends(get_current_user)) -> List[ProviderDiagnostic]:
     """Return provider readiness checks without exposing secret values."""
@@ -4577,8 +4672,10 @@ async def api_info() -> Dict[str, Any]:
             "finops_analytics": True,
             "forecasting": True,
             "forecast_what_if": True,
+            "forecast_stress_test": True,
             "cost_attribution": True,
             "commitment_optimization": True,
+            "optimization_portfolio": True,
             "maturity_assessment": True,
             "unit_economics": True,
             "anomaly_scoring": True,
