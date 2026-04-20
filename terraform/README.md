@@ -5,10 +5,10 @@ This folder contains the OCI network baseline used by OptiOra. It does not provi
 Preferred operator flow is the interactive root setup wizard:
 
 ```bash
-./setup.sh --interactive
+./deploy/deploy-oci.sh full
 ```
 
-That flow manages Terraform variables and optional apply, then hands off to Ansible.
+That flow manages Terraform variables and optional apply, then hands off to the same deploy script for compute creation, extra data volume attachment, and Ansible provisioning.
 
 ## Design Intent
 
@@ -29,6 +29,10 @@ That flow manages Terraform variables and optional apply, then hands off to Ansi
 - `allow_direct_app_ingress`: controls exposure of ports `3000`/`8000`
 - `allow_web_ingress`: controls exposure of ports `80`/`443`
 - `egress_cidr`: defaults to `0.0.0.0/0`
+- `extra_block_volume_enabled`: whether the deploy script creates and attaches the persistent data disk
+- `extra_block_volume_size_gbs`: recommended default `200`
+- `extra_block_volume_vpus_per_gb`: recommended default `10` (balanced)
+- `extra_block_volume_device`: expected device path on the VM, default `/dev/oracleoci/oraclevdb`
 
 That default keeps the subnet usable for:
 

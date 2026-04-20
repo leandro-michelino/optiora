@@ -10,35 +10,37 @@ Deployment can be done two ways:
 - `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services on the latest Oracle Linux 9 platform image for the selected shape.
 - Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime on either Debian-family or Oracle Linux / RHEL hosts.
 
+The quick deploy path now runs the application under the dedicated `optiora` system user instead of `root`.
+
 Choose the path that matches your deployment style:
 
-- `./setup.sh --interactive`: guided Terraform + Ansible workflow with prompts.
 - `./deploy/deploy-oci.sh compute`: fast redeploy workflow for a single VM from your laptop.
-- `./deploy/deploy-oci.sh full`: fancy end-to-end flow (Terraform + compute provisioning + Ansible + verify).
+- `./deploy/deploy-oci.sh full`: full end-to-end flow (Terraform + compute provisioning + extra block volume + Ansible + verify).
 - `./deploy/deploy-oci.sh menu`: interactive operations menu with setup/review/CIDR management ideas.
 
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
 
 ## Recommended End-to-End Setup (Interactive)
 
-Use the interactive wizard to run Terraform + Ansible in one guided flow:
+Use the deploy script menu to run Terraform + Ansible in one guided flow:
 
 ```bash
-./setup.sh --interactive
+./deploy/deploy-oci.sh menu
 ```
 
-What the wizard does:
+What the deploy script does for a fresh environment:
 
 - checks core tooling and local prerequisites
 - prompts for required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`)
 - writes/updates `terraform/terraform.tfvars`
 - runs `terraform init`, `terraform validate`, `terraform plan`
 - optionally runs `terraform apply`
-- prompts for host SSH details and writes `ansible/inventory.yml`
-- optionally runs `ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml`
+- creates or reuses the OCI compute instance
+- creates and attaches an extra OCI block volume when enabled in `terraform.tfvars`
+- uploads the source archive and runs Ansible provisioning automatically
 - prints a deployment summary with dashboard/API URLs
 
-Tip: add `--auto-install-tools` on macOS to auto-install missing dependencies when possible.
+Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). That is the default in the example tfvars and the recommended production baseline.
 
 ## Prerequisites
 
@@ -99,6 +101,16 @@ export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
 Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
 
 `./deploy/deploy-oci.sh verify` resolves the deployed instance IP and runs `tests/smoke_test_0_9.sh` against the live dashboard/API pair.
+
+The same script also manages the extra block volume. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
+
+Quick-deploy troubleshooting on the VM:
+
+```bash
+sudo journalctl -u optiora-api.service -f
+sudo journalctl -u optiora-dashboard.service -f
+sudo tail -f /var/log/optiora-setup.log
+```
 
 ## What The Deploy Script Fixes Automatically
 
@@ -234,8 +246,8 @@ On the VM:
 ```bash
 sudo systemctl status optiora-api
 sudo systemctl status optiora-dashboard
-sudo tail -f /var/log/optiora-api.log
-sudo tail -f /var/log/optiora-dashboard.log
+sudo journalctl -u optiora-api.service -f
+sudo journalctl -u optiora-dashboard.service -f
 sudo tail -f /var/log/optiora-setup.log
 ```
 

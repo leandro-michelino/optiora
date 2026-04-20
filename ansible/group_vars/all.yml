@@ -40,8 +40,9 @@ optiora_limits_nofile_soft: 65535
 optiora_limits_nofile_hard: 131072
 
 # ── Extra block volume (optional) ──────────────────────────────────────────
-# Set optiora_data_device to the OS path of an attached block device to have
-# the playbook format it (ext4, idempotent), mount it, and use it as the
+# The single deployment script can create and attach a dedicated OCI block
+# volume automatically. When it does, it passes /dev/oracleoci/oraclevdb here
+# so the playbook formats it (ext4, idempotent), mounts it, and uses it as the
 # backing store for the application directory and database.
 # Leave blank to skip all disk-provisioning tasks.
 # Examples:

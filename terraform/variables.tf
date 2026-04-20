@@ -78,3 +78,27 @@ variable "oci_object_storage_namespace" {
   description = "OCI Object Storage namespace (tenancy namespace, not the tenancy OCID). Find it with: oci os ns get"
   type        = string
 }
+
+variable "extra_block_volume_enabled" {
+  description = "Whether the single deploy script should create and attach an extra OCI block volume for app and database data."
+  type        = bool
+  default     = true
+}
+
+variable "extra_block_volume_size_gbs" {
+  description = "Size in GiB for the extra OCI block volume used for application and database data."
+  type        = number
+  default     = 200
+}
+
+variable "extra_block_volume_vpus_per_gb" {
+  description = "Performance tier for the extra OCI block volume. 10 is the balanced default."
+  type        = number
+  default     = 10
+}
+
+variable "extra_block_volume_device" {
+  description = "Device path expected by the host/Ansible when the extra block volume is attached."
+  type        = string
+  default     = "/dev/oracleoci/oraclevdb"
+}

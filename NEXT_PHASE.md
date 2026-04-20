@@ -79,7 +79,7 @@ Required deployment inputs:
 Preferred guided deploy path:
 
 ```bash
-./setup.sh --interactive
+./deploy/deploy-oci.sh menu
 ```
 
 Alternative quick OCI deploy:

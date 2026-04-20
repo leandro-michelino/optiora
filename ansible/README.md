@@ -7,15 +7,15 @@ Primary OCI region defaults to `uk-london-1` so the deployed stack can lean on O
 Preferred end-to-end path:
 
 ```bash
-./setup.sh --interactive
+./deploy/deploy-oci.sh full
 ```
 
-The interactive wizard can generate `terraform/terraform.tfvars`, optionally apply Terraform, generate `ansible/inventory.yml`, and optionally run this playbook automatically.
+The single deploy script generates the temporary inventory, applies Terraform when requested, creates/attaches the extra OCI data volume when enabled, uploads the source archive, and then runs this playbook automatically.
 
 ## First Run
 
 1. Apply or otherwise create the OCI compute host.
-2. Copy the inventory example and set the host IP:
+2. Copy the inventory example and set the host IP if you are running Ansible manually:
 
 ```bash
 cp ansible/inventory.example.yml ansible/inventory.yml
@@ -28,6 +28,8 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ```
 
 When the playbook finishes successfully it now prints a deployment summary with the dashboard URL, AI insights URL, cost advisor URL, API endpoints, SSH command, log commands, and the active OCI GenAI region/endpoint.
+
+Recommended data disk sizing: `200 GiB` at `10 VPUs/GB` (balanced). That is enough headroom for the database, imported billing files, exports, and dashboard build artifacts without wasting money on a very large boot disk.
 
 ## Source Deployment
 

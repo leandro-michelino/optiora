@@ -282,10 +282,10 @@ Migrations:
 ## 9) Deployment Model
 
 ```text
-Terraform    → provisions OCI network baseline (VCN, subnets, security lists)
-Ansible      → provisions app runtime (Python venv, systemd services, health checks)
-setup.sh --interactive → guided end-to-end TF vars + plan/apply + Ansible inventory/playbook
-deploy-oci.sh→ image discovery, upload, environment render, service restart
+Terraform    → provisions OCI network baseline and canonical extra-volume settings
+Ansible      → provisions app runtime (Python venv, mounted app disk, systemd services, health checks)
+deploy-oci.sh menu/full → guided end-to-end TF vars + plan/apply + compute + data-volume attach + Ansible
+deploy-oci.sh compute → image discovery, upload, Ansible-driven redeploy, service restart
 OCI region   → uk-london-1 (hosting + GenAI inference)
 
 Environment:

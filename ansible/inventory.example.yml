@@ -10,6 +10,8 @@ all:
           # Attach a block volume in OCI console first, then set this to the
           # device path. The playbook will format (ext4), mount at optiora_app_dir,
           # and persist the entry in /etc/fstab.
+          # The single deployment script writes this automatically when the
+          # extra OCI block volume is enabled.
           # optiora_data_device: /dev/oracleoci/oraclevdb
           #
           # --- Optional: swap file (recommended for < 4 GiB RAM instances) ---

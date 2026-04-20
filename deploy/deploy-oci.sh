@@ -41,16 +41,28 @@ SSH_PRIVATE_KEY_PATH=${OCI_SSH_PRIVATE_KEY_PATH:-}
 SSH_PUBLIC_KEY_VALUE=${OCI_SSH_PUBLIC_KEY:-}
 REMOTE_USER=${OCI_INSTANCE_USER:-opc}
 APP_DIR=${OCI_APP_DIR:-/opt/optiora}
+APP_USER=${OCI_APP_USER:-optiora}
 CLI_PROFILE=${OCI_PROFILE:-${OCI_CLI_PROFILE:-DEFAULT}}
 IMAGE_COMPARTMENT_ID=${OCI_IMAGE_COMPARTMENT_ID:-}
 IMAGE_OS=${OCI_IMAGE_OS:-"Oracle Linux"}
 IMAGE_OS_VERSION=${OCI_IMAGE_OS_VERSION:-"9"}
+RAW_EXTRA_VOLUME_ENABLED=${OCI_EXTRA_VOLUME_ENABLED:-}
+RAW_EXTRA_VOLUME_SIZE_GBS=${OCI_EXTRA_VOLUME_SIZE_GBS:-}
+RAW_EXTRA_VOLUME_VPUS_PER_GB=${OCI_EXTRA_VOLUME_VPUS_PER_GB:-}
+RAW_EXTRA_VOLUME_DEVICE=${OCI_EXTRA_VOLUME_DEVICE:-}
 
 RESOLVED_SUBNET_ID=""
 RESOLVED_SSH_PUBLIC_KEY=""
 RESOLVED_SSH_PUBLIC_KEY_PATH=""
 RESOLVED_SSH_PRIVATE_KEY_PATH=""
 RESOLVED_IMAGE_COMPARTMENT_ID=""
+RESOLVED_EXTRA_VOLUME_ENABLED=""
+RESOLVED_EXTRA_VOLUME_SIZE_GBS=""
+RESOLVED_EXTRA_VOLUME_VPUS_PER_GB=""
+RESOLVED_EXTRA_VOLUME_DEVICE=""
+CURRENT_INSTANCE_ID=""
+CURRENT_PUBLIC_IP=""
+CURRENT_AVAILABILITY_DOMAIN=""
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -120,7 +132,18 @@ read_tfvar() {
     if [[ ! -f "$file" ]]; then
         return 0
     fi
-    sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\"\(.*\)\"[[:space:]]*$/\1/p" "$file" | head -n 1
+    awk -v key="$key" '
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*", "", $0)
+            sub(/[[:space:]]*(#.*)?$/, "", $0)
+            if ($0 ~ /^".*"$/ || $0 ~ /^\047.*\047$/) {
+                print substr($0, 2, length($0) - 2)
+            } else {
+                print $0
+            }
+            exit
+        }
+    ' "$file"
 }
 
 read_tfvar_list() {
@@ -212,6 +235,135 @@ require_command() {
     fi
 }
 
+run_terraform() {
+    require_command terraform
+    terraform -chdir="${ROOT_DIR}/terraform" "$@"
+}
+
+is_true() {
+    local value
+    value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+    [[ "$value" == "true" || "$value" == "1" || "$value" == "yes" || "$value" == "y" ]]
+}
+
+resolve_extra_volume_config() {
+    local tf_enabled
+    local tf_size
+    local tf_vpus
+    local tf_device
+
+    tf_enabled="$(read_tfvar extra_block_volume_enabled "$TFVARS_PATH")"
+    tf_size="$(read_tfvar extra_block_volume_size_gbs "$TFVARS_PATH")"
+    tf_vpus="$(read_tfvar extra_block_volume_vpus_per_gb "$TFVARS_PATH")"
+    tf_device="$(read_tfvar extra_block_volume_device "$TFVARS_PATH")"
+
+    RESOLVED_EXTRA_VOLUME_ENABLED="${RAW_EXTRA_VOLUME_ENABLED:-$tf_enabled}"
+    RESOLVED_EXTRA_VOLUME_SIZE_GBS="${RAW_EXTRA_VOLUME_SIZE_GBS:-$tf_size}"
+    RESOLVED_EXTRA_VOLUME_VPUS_PER_GB="${RAW_EXTRA_VOLUME_VPUS_PER_GB:-$tf_vpus}"
+    RESOLVED_EXTRA_VOLUME_DEVICE="${RAW_EXTRA_VOLUME_DEVICE:-$tf_device}"
+
+    [[ -n "$RESOLVED_EXTRA_VOLUME_ENABLED" ]] || RESOLVED_EXTRA_VOLUME_ENABLED="true"
+    [[ -n "$RESOLVED_EXTRA_VOLUME_SIZE_GBS" ]] || RESOLVED_EXTRA_VOLUME_SIZE_GBS="200"
+    [[ -n "$RESOLVED_EXTRA_VOLUME_VPUS_PER_GB" ]] || RESOLVED_EXTRA_VOLUME_VPUS_PER_GB="10"
+    [[ -n "$RESOLVED_EXTRA_VOLUME_DEVICE" ]] || RESOLVED_EXTRA_VOLUME_DEVICE="/dev/oracleoci/oraclevdb"
+
+    if ! [[ "$RESOLVED_EXTRA_VOLUME_SIZE_GBS" =~ ^[0-9]+$ ]] || [ "$RESOLVED_EXTRA_VOLUME_SIZE_GBS" -lt 50 ]; then
+        log_error "Extra block volume size must be an integer >= 50 GiB"
+        exit 1
+    fi
+
+    if ! [[ "$RESOLVED_EXTRA_VOLUME_VPUS_PER_GB" =~ ^[0-9]+$ ]]; then
+        log_error "Extra block volume VPUs/GB must be an integer"
+        exit 1
+    fi
+}
+
+get_instance_availability_domain() {
+    local instance_id="$1"
+    oci compute instance get \
+        --instance-id "$instance_id" \
+        --region "$REGION" \
+        --query 'data."availability-domain"' \
+        --raw-output 2>/dev/null
+}
+
+get_extra_volume_name() {
+    echo "${INSTANCE_NAME}-data"
+}
+
+get_extra_volume_id() {
+    local availability_domain="$1"
+    local volume_name
+
+    volume_name="$(get_extra_volume_name)"
+    oci bv volume list \
+        --compartment-id "$COMPARTMENT_ID" \
+        --availability-domain "$availability_domain" \
+        --region "$REGION" \
+        --all \
+        --query "data[?\"display-name\" == '${volume_name}' && \"lifecycle-state\" != 'TERMINATED'] | [0].id" \
+        --raw-output 2>/dev/null
+}
+
+ensure_extra_block_volume() {
+    local instance_id="$1"
+    local availability_domain="$2"
+    local volume_id
+    local attachment_id
+    local volume_name
+
+    if ! is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then
+        return 0
+    fi
+
+    volume_name="$(get_extra_volume_name)"
+    volume_id="$(get_extra_volume_id "$availability_domain")"
+
+    if [ -z "$volume_id" ] || [ "$volume_id" = "null" ]; then
+        log_step "Creating Extra OCI Block Volume"
+        log_info "Volume: ${volume_name} (${RESOLVED_EXTRA_VOLUME_SIZE_GBS} GiB, ${RESOLVED_EXTRA_VOLUME_VPUS_PER_GB} VPUs/GB)"
+        volume_id=$(oci bv volume create \
+            --compartment-id "$COMPARTMENT_ID" \
+            --availability-domain "$availability_domain" \
+            --display-name "$volume_name" \
+            --size-in-gbs "$RESOLVED_EXTRA_VOLUME_SIZE_GBS" \
+            --vpus-per-gb "$RESOLVED_EXTRA_VOLUME_VPUS_PER_GB" \
+            --freeform-tags '{"project":"optiora","purpose":"app-data"}' \
+            --wait-for-state AVAILABLE \
+            --max-wait-seconds 1800 \
+            --region "$REGION" \
+            --query 'data.id' \
+            --raw-output)
+        log_success "Extra block volume created: $volume_id"
+    else
+        log_success "Using existing extra block volume: $volume_id"
+    fi
+
+    attachment_id=$(oci compute volume-attachment list \
+        --compartment-id "$COMPARTMENT_ID" \
+        --instance-id "$instance_id" \
+        --volume-id "$volume_id" \
+        --region "$REGION" \
+        --all \
+        --query 'data[0].id' \
+        --raw-output 2>/dev/null || echo "")
+
+    if [ -z "$attachment_id" ] || [ "$attachment_id" = "null" ]; then
+        log_info "Attaching extra block volume to instance..."
+        oci compute volume-attachment attach-paravirtualized-volume \
+            --instance-id "$instance_id" \
+            --volume-id "$volume_id" \
+            --device "$RESOLVED_EXTRA_VOLUME_DEVICE" \
+            --display-name "$volume_name" \
+            --wait-for-state ATTACHED \
+            --max-wait-seconds 1800 \
+            --region "$REGION" >/dev/null
+        log_success "Extra block volume attached at ${RESOLVED_EXTRA_VOLUME_DEVICE}"
+    else
+        log_success "Extra block volume already attached"
+    fi
+}
+
 show_help() {
     cat << EOF
 ${BLUE}OptiOra OCI Deployment Script${NC}
@@ -253,6 +405,10 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_SSH_PUBLIC_KEY         Raw public key string alternative
     OCI_INSTANCE_USER          SSH user (default: opc)
     OCI_APP_DIR                App directory on VM (default: /opt/optiora)
+    OCI_EXTRA_VOLUME_ENABLED   Attach extra data volume (default: true)
+    OCI_EXTRA_VOLUME_SIZE_GBS  Extra data volume size in GiB (default: 200)
+    OCI_EXTRA_VOLUME_VPUS_PER_GB Extra data volume performance tier (default: 10)
+    OCI_EXTRA_VOLUME_DEVICE    Device path presented to the VM (default: /dev/oracleoci/oraclevdb)
 
 ${YELLOW}EXAMPLE:${NC}
     export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
@@ -271,6 +427,7 @@ check_prerequisites() {
     require_command scp
     require_command tar
     require_command base64
+    require_command curl
     log_success "Local CLI tools found"
 
     if [ ! -f "$HOME/.oci/config" ]; then
@@ -421,6 +578,11 @@ resolve_ssh_credentials() {
         exit 1
     fi
 
+    if ! ssh-keygen -y -f "$priv_path" >/dev/null 2>&1; then
+        log_error "SSH private key is unreadable or invalid: $priv_path"
+        exit 1
+    fi
+
     RESOLVED_SSH_PRIVATE_KEY_PATH="$priv_path"
     log_success "SSH credentials resolved for local-to-OCI deployment"
 }
@@ -469,7 +631,7 @@ wait_for_ssh() {
     local public_ip="$1"
     log_info "Waiting for SSH on ${REMOTE_USER}@${public_ip} ..."
 
-    for _ in $(seq 1 36); do
+    for _ in {1..36}; do
         if ssh -o ConnectTimeout=8 \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
@@ -487,6 +649,7 @@ wait_for_ssh() {
 
 sync_local_project() {
     local public_ip="$1"
+    local unpack_remote="${2:-true}"
     local archive_path="/tmp/optiora-deploy-$$.tar.gz"
     local local_private_key_path=""
 
@@ -534,6 +697,11 @@ sync_local_project() {
 
     rm -f "$archive_path"
 
+    if [[ "$unpack_remote" != "true" ]]; then
+        log_success "Deployment archive uploaded to VM"
+        return 0
+    fi
+
     log_info "Unpacking project on VM ..."
     ssh -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
@@ -563,269 +731,8 @@ EOF
     log_success "Local project uploaded to VM"
 }
 
-provision_remote_services() {
-    local public_ip="$1"
-
-    log_step "Provisioning Services On OCI VM"
-    ssh -o StrictHostKeyChecking=no \
-        -o UserKnownHostsFile=/dev/null \
-        -i "$RESOLVED_SSH_PRIVATE_KEY_PATH" \
-        "${REMOTE_USER}@${public_ip}" "sudo APP_DIR='$APP_DIR' PUBLIC_IP='$public_ip' bash -s" <<'EOF'
-set -euo pipefail
-
-exec > >(tee -a /var/log/optiora-setup.log)
-exec 2>&1
-
-echo "=== OptiOra setup started: $(date) ==="
-
-install_runtime_dependencies() {
-    if command -v dnf >/dev/null 2>&1; then
-        dnf -y install \
-            python3 python3-pip python3-devel \
-            gcc gcc-c++ make \
-            openssl-devel libffi-devel \
-            curl wget openssl tar gzip findutils git jq \
-            postgresql
-
-        for pkg in \
-            python3.13 python3.13-pip python3.13-devel \
-            python3.12 python3.12-pip python3.12-devel \
-            python3.11 python3.11-pip python3.11-devel \
-            python3.10 python3.10-pip python3.10-devel; do
-            dnf -y install "$pkg" >/dev/null 2>&1 || true
-        done
-
-        if ! command -v node >/dev/null 2>&1 || ! node --version | grep -q '^v20\.'; then
-            dnf module reset -y nodejs >/dev/null 2>&1 || true
-            dnf module enable -y nodejs:20 >/dev/null 2>&1 || true
-            dnf -y install nodejs npm
-        fi
-        return
-    fi
-
-    if command -v apt-get >/dev/null 2>&1; then
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -y python3 python3-venv python3-pip python3-dev build-essential libssl-dev libffi-dev curl wget openssl postgresql-client jq
-
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt-get install -y nodejs
-        return
-    fi
-
-    echo "Unsupported package manager on target host"
-    exit 1
-}
-
-select_python_command() {
-    for cmd in python3.13 python3.12 python3.11 python3.10 python3; do
-        if command -v "$cmd" >/dev/null 2>&1; then
-            echo "$cmd"
-            return
-        fi
-    done
-
-    echo "python3"
-}
-
-install_runtime_dependencies
-
-PYTHON_CMD="$(select_python_command)"
-"$PYTHON_CMD" -m ensurepip --upgrade >/dev/null 2>&1 || true
-
-if [ ! -f "$APP_DIR/.env" ]; then
-    cp "$APP_DIR/.env.example" "$APP_DIR/.env"
-fi
-
-ensure_env_value() {
-    local key="$1"
-    local value="$2"
-    if grep -q "^${key}=" "$APP_DIR/.env"; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$APP_DIR/.env"
-    else
-        echo "${key}=${value}" >> "$APP_DIR/.env"
-    fi
-}
-
-normalize_env_for_shell() {
-    local sanitized_env
-    local key
-    local value
-    sanitized_env="$(mktemp)"
-
-    while IFS= read -r line || [ -n "$line" ]; do
-        if [[ -z "$line" ]] || [[ "$line" == \#* ]] || [[ "$line" != *=* ]]; then
-            printf '%s\n' "$line" >> "$sanitized_env"
-            continue
-        fi
-
-        key="${line%%=*}"
-        value="${line#*=}"
-
-        if [[ "$value" == *"<"* ]] || [[ "$value" == *">"* ]]; then
-            value=""
-        elif [[ "$value" == *" "* ]] && [[ "$value" != \"*\" ]] && [[ "$value" != \'*\' ]]; then
-            value="${value//\\/\\\\}"
-            value="${value//\"/\\\"}"
-            value="\"$value\""
-        fi
-
-        printf '%s=%s\n' "$key" "$value" >> "$sanitized_env"
-    done < "$APP_DIR/.env"
-
-    cat "$sanitized_env" > "$APP_DIR/.env"
-    rm -f "$sanitized_env"
-}
-
-current_secret="$(grep '^SECRET_KEY=' "$APP_DIR/.env" | tail -1 | cut -d'=' -f2- || true)"
-if [ -z "$current_secret" ] || [ "$current_secret" = "replace_with_random_64_char_hex" ] || [ "$current_secret" = "your-secret-key-change-in-production" ]; then
-    ensure_env_value "SECRET_KEY" "$(openssl rand -hex 32)"
-fi
-ensure_env_value "FRONTEND_URL" "http://${PUBLIC_IP}:3000"
-ensure_env_value "NEXT_PUBLIC_API_URL" "http://${PUBLIC_IP}:8000"
-ensure_env_value "PORT" "8000"
-ensure_env_value "UVICORN_RELOAD" "false"
-ensure_env_value "ENVIRONMENT" "production"
-ensure_env_value "PASSWORD_RESET_RETURN_TOKEN" "false"
-ensure_env_value "PASSWORD_RESET_TOKEN_MINUTES" "30"
-normalize_env_for_shell
-
-if [ -f /tmp/optiora-oci-api-key.pem ]; then
-    install -m 0600 /tmp/optiora-oci-api-key.pem "$APP_DIR/oci_api_key.pem"
-    rm -f /tmp/optiora-oci-api-key.pem
-    ensure_env_value "OCI_PRIVATE_KEY_PATH" "$APP_DIR/oci_api_key.pem"
-fi
-
-if [ ! -d "$APP_DIR/venv" ]; then
-    if "$PYTHON_CMD" -m venv "$APP_DIR/venv" >/dev/null 2>&1; then
-        true
-    else
-        "$PYTHON_CMD" -m pip install --upgrade virtualenv
-        "$PYTHON_CMD" -m virtualenv "$APP_DIR/venv"
-    fi
-fi
-
-"$APP_DIR/venv/bin/pip" install --upgrade pip setuptools wheel poetry-core
-"$APP_DIR/venv/bin/pip" install -e "$APP_DIR"
-
-set -a
-. "$APP_DIR/.env"
-set +a
-
-cd "$APP_DIR"
-
-# Validate database connectivity before running migrations.
-# If DATABASE_URL points to PostgreSQL, verify the server is reachable first so
-# that a failed migration does not leave the app starting on SQLite fallback.
-if echo "${DATABASE_URL:-}" | grep -q "^postgresql"; then
-    DB_HOST=$(echo "${DATABASE_URL}" | sed 's|.*@\([^:/]*\).*|\1|')
-    DB_PORT=$(echo "${DATABASE_URL}" | sed 's|.*:\([0-9]*\)/.*|\1|')
-    DB_PORT=${DB_PORT:-5432}
-    echo "Checking PostgreSQL connectivity at ${DB_HOST}:${DB_PORT}..."
-    _db_retries=0
-    until "$APP_DIR/venv/bin/python" -c "
-import sys, socket
-try:
-    s = socket.create_connection(('${DB_HOST}', ${DB_PORT}), timeout=5)
-    s.close()
-    sys.exit(0)
-except Exception as e:
-    print(f'DB not reachable: {e}', file=sys.stderr)
-    sys.exit(1)
-" 2>/dev/null; do
-        _db_retries=$((_db_retries + 1))
-        if [ "$_db_retries" -ge 12 ]; then
-            echo "ERROR: PostgreSQL at ${DB_HOST}:${DB_PORT} is not reachable after 60 seconds. Aborting deployment." >&2
-            exit 1
-        fi
-        echo "  Waiting for database... (attempt ${_db_retries}/12)"
-        sleep 5
-    done
-    echo "Database is reachable."
-fi
-
-"$APP_DIR/venv/bin/alembic" -c "$APP_DIR/alembic.ini" upgrade head
-
-cd "$APP_DIR/dashboard"
-npm ci --legacy-peer-deps
-export NEXT_PUBLIC_API_URL="http://${PUBLIC_IP}:8000"
-npm run build
-
-cat > /etc/systemd/system/optiora-api.service <<EOL
-[Unit]
-Description=OptiOra API Backend
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${APP_DIR}
-EnvironmentFile=${APP_DIR}/.env
-Environment=PATH=${APP_DIR}/venv/bin
-ExecStart=${APP_DIR}/venv/bin/python -m uvicorn finops_mcp.app:app --host 0.0.0.0 --port 8000
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/optiora-api.log
-StandardError=append:/var/log/optiora-api.log
-
-[Install]
-WantedBy=multi-user.target
-EOL
-
-cat > /etc/systemd/system/optiora-dashboard.service <<EOL
-[Unit]
-Description=OptiOra Dashboard
-After=network.target optiora-api.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=${APP_DIR}/dashboard
-EnvironmentFile=${APP_DIR}/.env
-ExecStart=/usr/bin/npm run start -- --hostname 0.0.0.0 --port 3000
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/optiora-dashboard.log
-StandardError=append:/var/log/optiora-dashboard.log
-
-[Install]
-WantedBy=multi-user.target
-EOL
-
-systemctl daemon-reload
-systemctl enable optiora-api.service optiora-dashboard.service
-systemctl restart optiora-api.service
-systemctl restart optiora-dashboard.service
-
-sleep 8
-curl -fsS http://localhost:8000/health >/dev/null
-curl -fsS http://localhost:3000 >/dev/null
-
-echo "=== OptiOra setup completed: $(date) ==="
-EOF
-
-    log_success "Remote services are provisioned and running"
-}
-
-ensure_instance_running() {
-    local instance_id="$1"
-    local state="$2"
-
-    if [ "$state" = "RUNNING" ]; then
-        return
-    fi
-
-    log_info "Starting instance ${instance_id} ..."
-    oci compute instance action \
-        --instance-id "$instance_id" \
-        --action START \
-        --region "$REGION" \
-        --wait-for-state RUNNING \
-        --max-wait-seconds 600 >/dev/null
-}
-
-deploy_compute() {
-    log_step "Deploying Local Workspace To OCI Compute"
+prepare_compute_instance() {
+    log_step "Preparing OCI Compute Instance"
     log_info "Region: $REGION"
     log_info "Shape: $SHAPE | OCPUs: $OCPU_COUNT | Memory: ${MEMORY_GB}GB"
     log_info "Instance: $INSTANCE_NAME"
@@ -833,12 +740,16 @@ deploy_compute() {
     resolve_subnet_id
     resolve_ssh_credentials
     resolve_image_compartment_id
+    resolve_extra_volume_config
 
     if [ "$DRY_RUN" = "true" ]; then
         log_warning "DRY RUN mode enabled"
         log_info "Would use subnet: $RESOLVED_SUBNET_ID"
         log_info "Would use SSH key: $RESOLVED_SSH_PRIVATE_KEY_PATH"
         log_info "Would use image compartment: $RESOLVED_IMAGE_COMPARTMENT_ID"
+        if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then
+            log_info "Would provision extra block volume: ${RESOLVED_EXTRA_VOLUME_SIZE_GBS} GiB at ${RESOLVED_EXTRA_VOLUME_DEVICE}"
+        fi
         return 0
     fi
 
@@ -870,7 +781,6 @@ deploy_compute() {
             --region "$REGION" \
             --operating-system "$IMAGE_OS" \
             --operating-system-version "$IMAGE_OS_VERSION" \
-            --shape "$SHAPE" \
             --query "reverse(sort_by(data, &\"time-created\"))[0].id" \
             --raw-output 2>/dev/null)
 
@@ -880,10 +790,17 @@ deploy_compute() {
         fi
         log_success "Image: $image_id"
 
-        ad=$(oci iam availability-domain list \
+        ad=$(oci network subnet get \
+            --subnet-id "$RESOLVED_SUBNET_ID" \
             --region "$REGION" \
-            --query 'data[0].name' \
-            --raw-output)
+            --query 'data."availability-domain"' \
+            --raw-output 2>/dev/null || echo "")
+        if [ -z "$ad" ] || [ "$ad" = "null" ]; then
+            ad=$(oci iam availability-domain list \
+                --region "$REGION" \
+                --query 'data[0].name' \
+                --raw-output)
+        fi
         log_info "Availability domain: $ad"
 
         log_info "Creating compute instance..."
@@ -921,24 +838,49 @@ deploy_compute() {
         ensure_instance_running "$instance_id" "$state"
     fi
 
-    local public_ip=""
-    public_ip=$(get_public_ip_for_instance "$instance_id")
-    if [ -z "$public_ip" ] || [ "$public_ip" = "null" ]; then
+    CURRENT_INSTANCE_ID="$instance_id"
+    CURRENT_AVAILABILITY_DOMAIN="$(get_instance_availability_domain "$instance_id")"
+
+    CURRENT_PUBLIC_IP=$(get_public_ip_for_instance "$instance_id")
+    if [ -z "$CURRENT_PUBLIC_IP" ] || [ "$CURRENT_PUBLIC_IP" = "null" ]; then
         log_error "Could not resolve public IP for instance"
         log_info "Ensure subnet allows public IPs or set OCI_ASSIGN_PUBLIC_IP=true"
         exit 1
     fi
-    log_success "Instance public IP: $public_ip"
+    log_success "Instance public IP: $CURRENT_PUBLIC_IP"
 
-    wait_for_ssh "$public_ip"
-    sync_local_project "$public_ip"
-    provision_remote_services "$public_ip"
+    wait_for_ssh "$CURRENT_PUBLIC_IP"
+}
+
+ensure_instance_running() {
+    local instance_id="$1"
+    local state="$2"
+
+    if [ "$state" = "RUNNING" ]; then
+        return
+    fi
+
+    log_info "Starting instance ${instance_id} ..."
+    oci compute instance action \
+        --instance-id "$instance_id" \
+        --action START \
+        --region "$REGION" \
+        --wait-for-state RUNNING \
+        --max-wait-seconds 600 >/dev/null
+}
+
+deploy_compute() {
+    prepare_compute_instance
+
+    ensure_extra_block_volume "$CURRENT_INSTANCE_ID" "$CURRENT_AVAILABILITY_DOMAIN"
+    sync_local_project "$CURRENT_PUBLIC_IP" false
+    run_ansible_playbook_for_instance "$CURRENT_PUBLIC_IP"
 
     log_step "Deployment Complete"
-    log_success "Dashboard: http://$public_ip:3000"
-    log_success "API: http://$public_ip:8000"
+    log_success "Dashboard: http://$CURRENT_PUBLIC_IP:3000"
+    log_success "API: http://$CURRENT_PUBLIC_IP:8000"
     log_info "Verification: ./deploy/deploy-oci.sh verify"
-    log_info "On VM, logs are in /var/log/optiora-api.log and /var/log/optiora-dashboard.log"
+    log_info "On VM, use journalctl -u optiora-api.service and journalctl -u optiora-dashboard.service"
 }
 
 instance_action() {
@@ -984,12 +926,26 @@ get_status() {
     log_info "Instance ID: $instance_id"
     log_info "State: $state"
 
+    resolve_extra_volume_config
+
     if [ "$state" = "RUNNING" ]; then
         public_ip=$(get_public_ip_for_instance "$instance_id")
         if [ -n "$public_ip" ] && [ "$public_ip" != "null" ]; then
             log_info "Public IP: $public_ip"
             log_info "Dashboard URL: http://$public_ip:3000"
             log_info "API URL: http://$public_ip:8000"
+        fi
+    fi
+
+    if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then
+        local ad
+        local volume_id
+        ad="$(get_instance_availability_domain "$instance_id")"
+        volume_id="$(get_extra_volume_id "$ad")"
+        if [ -n "$volume_id" ] && [ "$volume_id" != "null" ]; then
+            log_info "Extra data volume: $volume_id (${RESOLVED_EXTRA_VOLUME_SIZE_GBS} GiB target, device ${RESOLVED_EXTRA_VOLUME_DEVICE})"
+        else
+            log_warning "Extra data volume enabled in config but not found yet"
         fi
     fi
 }
@@ -1014,8 +970,8 @@ view_logs() {
 
     log_info "Use the following commands from your laptop:"
     echo "ssh -i \"$RESOLVED_SSH_PRIVATE_KEY_PATH\" ${REMOTE_USER}@${public_ip}"
-    echo "sudo tail -f /var/log/optiora-api.log"
-    echo "sudo tail -f /var/log/optiora-dashboard.log"
+    echo "sudo journalctl -u optiora-api.service -f"
+    echo "sudo journalctl -u optiora-dashboard.service -f"
     echo "sudo tail -f /var/log/optiora-setup.log"
 }
 
@@ -1045,10 +1001,7 @@ verify_deployment() {
 run_ansible_playbook_for_instance() {
     local public_ip="$1"
 
-    if ! command -v ansible-playbook >/dev/null 2>&1; then
-        log_warning "ansible-playbook not installed. Skipping Ansible provisioning step."
-        return 0
-    fi
+    require_command ansible-playbook
 
     local inv
     local ssh_user
@@ -1069,7 +1022,17 @@ all:
           ansible_ssh_private_key_file: ${ssh_key}
           optiora_configure_firewall: true
           optiora_firewall_expose_direct_services: true
+          optiora_manage_source: true
+          optiora_remote_archive: /tmp/optiora-deploy.tar.gz
+          optiora_frontend_url: http://${public_ip}:3000
+          optiora_api_url: http://${public_ip}:8000
 EOF
+
+    if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then
+        cat >> "$inv" <<EOF
+          optiora_data_device: ${RESOLVED_EXTRA_VOLUME_DEVICE}
+EOF
+    fi
 
     log_info "Running Ansible post-provisioning hardening/playbook..."
     ansible-playbook -i "$inv" "${ROOT_DIR}/ansible/playbooks/site.yml"
@@ -1085,27 +1048,18 @@ run_fancy_end_to_end_deploy() {
         log_warning "Created terraform/terraform.tfvars from example"
     fi
 
-    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" init
-    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" validate
-    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" plan -out=tfplan
+    run_terraform init
+    run_terraform validate
+    run_terraform plan -out=tfplan
 
     if prompt_yes_no "Apply Terraform network baseline now?" true; then
-        TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" apply tfplan
+        run_terraform apply tfplan
     else
         log_warning "Terraform apply skipped by user"
     fi
 
     deploy_compute
-
-    local instance_id
-    local public_ip
-    if instance_id=$(get_instance_id); then
-        public_ip=$(get_public_ip_for_instance "$instance_id")
-        if [[ -n "$public_ip" && "$public_ip" != "null" ]]; then
-            run_ansible_playbook_for_instance "$public_ip"
-            verify_deployment || true
-        fi
-    fi
+    verify_deployment || true
 
     log_success "End-to-end deployment flow finished"
 }
@@ -1245,11 +1199,11 @@ manage_allowed_ips() {
     upsert_tfvar_raw "allowed_public_ingress_cidrs" "$cidr_array" "$TFVARS_PATH"
     log_success "Updated allowed_public_ingress_cidrs"
 
-    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" init
-    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" validate
-    TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" plan
+    run_terraform init
+    run_terraform validate
+    run_terraform plan
     if prompt_yes_no "Apply security-list CIDR changes now?" true; then
-        TMPDIR=/tmp terraform -chdir="${ROOT_DIR}/terraform" apply -auto-approve
+        run_terraform apply -auto-approve
         log_success "Security list CIDR changes applied"
     else
         log_warning "CIDR changes saved in tfvars but not applied"
@@ -1308,6 +1262,28 @@ destroy_deployment() {
         --region "$REGION" \
         --wait-for-state TERMINATED \
         --max-wait-seconds 600 >/dev/null || true
+
+    resolve_extra_volume_config
+    if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then
+        local volume_name
+        local volume_id
+        volume_name="$(get_extra_volume_name)"
+        volume_id=$(oci bv volume list \
+            --compartment-id "$COMPARTMENT_ID" \
+            --region "$REGION" \
+            --all \
+            --query "data[?\"display-name\" == '${volume_name}' && \"lifecycle-state\" != 'TERMINATED'] | [0].id" \
+            --raw-output 2>/dev/null || echo "")
+        if [ -n "$volume_id" ] && [ "$volume_id" != "null" ]; then
+            log_info "Deleting extra block volume $volume_id ..."
+            oci bv volume delete \
+                --volume-id "$volume_id" \
+                --region "$REGION" \
+                --force \
+                --wait-for-state TERMINATED \
+                --max-wait-seconds 1800 >/dev/null || true
+        fi
+    fi
 
     log_success "Deployment destroyed"
 }

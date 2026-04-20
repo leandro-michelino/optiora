@@ -142,6 +142,6 @@ terraform -chdir=terraform validate
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
 - `./deploy/deploy-oci.sh verify` wraps `tests/smoke_test_0_9.sh` against the currently deployed OCI instance.
-- For Terraform + Ansible deployments, prefer `./setup.sh --interactive` to keep tfvars and inventory generation consistent before smoke checks.
+- For Terraform + Ansible deployments, prefer `./deploy/deploy-oci.sh full` or menu option `1` so the extra block volume attach, inventory generation, and source upload stay consistent before smoke checks.
 - Epic 1 (platform hardening) and Epic 2 (multi-account hierarchy) are fully covered by `test_platform_hardening.py` and `test_epic2_multi_account.py` respectively.
 - Frontend production build is a required deployment gate.

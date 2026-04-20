@@ -181,21 +181,20 @@ The dashboard is the main workspace for:
 
 Supported Python for backend setup: `3.10` through `3.13`
 
-### One-command bootstrap
+### Local bootstrap
 
 ```bash
-./setup.sh
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+cd dashboard
+npm install
+cd ..
+
+terraform -chdir=terraform init
+terraform -chdir=terraform validate
 ```
-
-This creates a backend virtualenv, installs dashboard dependencies, and runs Terraform init/validate.
-
-For guided end-to-end infrastructure + host provisioning with Terraform and Ansible:
-
-```bash
-./setup.sh --interactive
-```
-
-This interactive flow updates `terraform/terraform.tfvars`, runs Terraform plan/apply (optional), prepares `ansible/inventory.yml`, and can run the Ansible playbook directly.
 
 ### Backend
 
@@ -248,10 +247,10 @@ Database config:
 Recommended guided path:
 
 ```bash
-./setup.sh --interactive
+./deploy/deploy-oci.sh menu
 ```
 
-This runs a full Terraform + Ansible guided flow (with optional apply/provision steps) and prints final dashboard/API URLs.
+Choose option `1` for a fresh end-to-end deployment. The script handles Terraform, compute creation, extra block volume attachment, Ansible provisioning, and verification.
 
 Alternative quick path (deploy script):
 
@@ -277,17 +276,16 @@ Deployment script behavior:
 
 Deployment path selection:
 
-- Use `./setup.sh --interactive` when you want guided Terraform + Ansible provisioning.
-- Use `./deploy/deploy-oci.sh compute` when you want fast laptop-driven deploy/redeploy to a single VM.
-- Use `./deploy/deploy-oci.sh full` when you want a one-command end-to-end flow (Terraform + compute + Ansible + verification).
+- Use `./deploy/deploy-oci.sh compute` when you want a fast redeploy against the current OCI instance and configuration.
+- Use `./deploy/deploy-oci.sh full` when you want a one-command end-to-end flow (Terraform + compute + extra data volume + Ansible + verification).
 - Use `./deploy/deploy-oci.sh menu` for the interactive operations menu:
   - new setup from scratch
   - review current deployment and auto-repair
   - add/remove allowed dashboard ingress CIDRs
   - deployment improvement ideas
-- replaces placeholder JWT secrets with a generated value
-- applies `alembic upgrade head` on the VM before services restart
-- installs backend + dashboard dependencies with `dnf` on Oracle Linux hosts and starts systemd services
+- The recommended extra data disk is `200 GiB` at `10 VPUs/GB` (balanced). That gives enough persistent space for PostgreSQL growth, imports, exports, and build artifacts without overprovisioning.
+- The quick deploy path now runs the services as the dedicated `optiora` system user and is easiest to inspect with `journalctl -u optiora-api.service` and `journalctl -u optiora-dashboard.service`.
+- Terraform stores the canonical block-volume settings in `terraform/terraform.tfvars`, and the deploy script uses those values when creating and attaching the disk.
 
 Optional OCI deploy environment:
 
@@ -298,6 +296,8 @@ Optional OCI deploy environment:
 ## Terraform + Ansible Baseline
 
 Terraform is intentionally limited to OCI networking primitives. Ansible owns host package installation, runtime `.env` rendering, dashboard builds, systemd units, and health checks, and now supports both Debian-family hosts and Oracle Linux / RHEL hosts.
+
+The single deploy script is the operator entrypoint. Terraform supplies the network and canonical data-volume settings, the script creates and attaches the extra disk, and Ansible formats and mounts it at `/opt/optiora`.
 
 ```bash
 terraform -chdir=terraform init

@@ -43,6 +43,21 @@ output "cost_archive_bucket_namespace" {
   description = "OCI Object Storage namespace for the archive bucket."
 }
 
+output "extra_block_volume_enabled" {
+  value       = var.extra_block_volume_enabled
+  description = "Whether the deployment flow will create and attach an extra OCI block volume."
+}
+
+output "extra_block_volume_size_gbs" {
+  value       = var.extra_block_volume_size_gbs
+  description = "Configured size for the extra OCI block volume in GiB."
+}
+
+output "extra_block_volume_device" {
+  value       = var.extra_block_volume_device
+  description = "Expected device path for the extra OCI block volume on the VM."
+}
+
 output "next_step_banner" {
   value = <<-EOT
 
@@ -56,13 +71,13 @@ output "next_step_banner" {
     Allowed ingress:   ${join(", ", distinct(concat([var.laptop_cidr], var.allowed_public_ingress_cidrs)))}
     Direct app ports:  ${var.allow_direct_app_ingress}
     Web ports 80/443:  ${var.allow_web_ingress}
+    Extra data volume: ${var.extra_block_volume_enabled} (${var.extra_block_volume_size_gbs} GiB @ ${var.extra_block_volume_device})
     Egress:            ${var.egress_cidr}
 
     Next:
-      1. Launch or identify an OCI compute instance in the public subnet.
-      2. Point ansible inventory at the instance public IP.
-      3. Run:
-         ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
+      1. Run ./deploy/deploy-oci.sh full
+      2. Or run ./deploy/deploy-oci.sh compute against an existing network baseline
+      3. Use ./deploy/deploy-oci.sh verify after provisioning completes
 
     After Ansible finishes:
       Dashboard:       http://<instance-ip>:3000/dashboard
