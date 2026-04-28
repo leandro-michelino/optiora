@@ -26,7 +26,7 @@ OptiOra keeps cost math deterministic and inspectable. Forecast values, savings 
 - `dashboard/` > Next.js dashboard UI
 - `ansible/` > host provisioning and runtime configuration
 - `deploy/deploy-oci.sh` > laptop-driven OCI deployment entrypoint
-- `terraform/` > OCI network baseline
+- `terraform/` > OCI network baseline, cost archive bucket, and optional Resource Scheduler
 - `ARCHITECTURE.md` > authoritative ASCII architecture and processing flows
 - `DEPLOYMENT.md` > deployment runbook
 - `DATA_POLICY.md` > data usage and GenAI scope guidance
@@ -107,6 +107,8 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - provider diagnostics expose readiness without exposing secrets
 - dashboard views indicate whether data is live, imported, partial, or fallback
 - OCI GenAI is optional; prompt-only fallback remains supported when it is not configured
+- `OCI_GENAI_COMPARTMENT_ID` overrides `OCI_COMPARTMENT_OCID` for GenAI calls when the model lives in a separate compartment
+- optional data retention archives cold cost rows to OCI Object Storage before purging them from the database
 
 ## Core API Surface
 

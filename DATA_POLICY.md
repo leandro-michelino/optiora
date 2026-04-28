@@ -247,8 +247,12 @@ GENAI_STRICT_MODE=true              # Enable strict scope validation (default)
 GENAI_MIN_SCORE_THRESHOLD=0.65      # Minimum relevance score (0.0-1.0)
 
 # Data Policy
-DATA_RETENTION_DAYS=90              # How long to keep historical data
-AUDIT_LOG_ENABLED=true              # Enable audit logging
+REQUIRE_LIVE_PROVIDER_DATA=true     # Prefer live provider data over demo/CSV-only mode
+RETENTION_ENABLED=false             # Archive and purge cold cost rows when true
+RETENTION_HOT_MONTHS=3              # Keep this many months in the database
+RETENTION_RUN_INTERVAL_HOURS=24     # Background retention interval
+OCI_ARCHIVE_BUCKET=                 # Object Storage bucket for NDJSON archives
+OCI_ARCHIVE_NAMESPACE=              # Object Storage namespace
 
 # Demo Mode
 DEMO_MODE=false                     # Set true to load demo data on startup

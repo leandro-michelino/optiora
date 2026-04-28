@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -21,6 +22,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 _scheduler_task: asyncio.Task | None = None
 _retention_task: asyncio.Task | None = None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await startup_event()
+    try:
+        yield
+    finally:
+        await shutdown_event()
 
 
 def _resolve_allowed_origins() -> list[str]:
@@ -51,6 +61,7 @@ app = FastAPI(
     title="OptiOra API",
     description="Multi-Cloud Cost Optimization Platform",
     version=__version__,
+    lifespan=lifespan,
 )
 
 # CORS middleware
@@ -63,7 +74,6 @@ app.add_middleware(
 )
 
 # Initialize database
-@app.on_event("startup")
 async def startup_event():
     """Initialize database on startup."""
     try:
@@ -113,7 +123,6 @@ async def startup_event():
         raise RuntimeError("Database initialization failed") from e
 
 
-@app.on_event("shutdown")
 async def shutdown_event():
     """Stop background scheduler task cleanly."""
     global _scheduler_task, _retention_task

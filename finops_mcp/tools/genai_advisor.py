@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 _OCI_GENAI_ENDPOINT = os.getenv("OCI_GENAI_ENDPOINT", "")
 _OCI_GENAI_MODEL = os.getenv("OCI_GENAI_MODEL", "meta.llama-3-70b-instruct")
-_OCI_COMPARTMENT_ID = os.getenv("OCI_COMPARTMENT_OCID", os.getenv("OCI_GENAI_COMPARTMENT_ID", ""))
+_OCI_COMPARTMENT_ID = os.getenv("OCI_GENAI_COMPARTMENT_ID", "").strip() or os.getenv(
+    "OCI_COMPARTMENT_OCID", ""
+)
 _OCI_CONFIG_FILE = os.getenv("OCI_CONFIG_FILE", "")
 _OCI_PROFILE = os.getenv("OCI_PROFILE", "DEFAULT")
 _OCI_PRIVATE_KEY_PATH = os.getenv("OCI_PRIVATE_KEY_PATH", "")

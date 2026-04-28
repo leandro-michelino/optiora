@@ -409,6 +409,7 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_EXTRA_VOLUME_SIZE_GBS  Extra data volume size in GiB (default: 200)
     OCI_EXTRA_VOLUME_VPUS_PER_GB Extra data volume performance tier (default: 10)
     OCI_EXTRA_VOLUME_DEVICE    Device path presented to the VM (default: /dev/oracleoci/oraclevdb)
+    OCI_GENAI_COMPARTMENT_ID   Optional GenAI-specific compartment OCID
 
 ${YELLOW}EXAMPLE:${NC}
     export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
@@ -1054,6 +1055,7 @@ all:
           optiora_fingerprint: "${OCI_FINGERPRINT:-}"
           optiora_private_key_path: "${genai_key_path}"
           optiora_compartment_ocid: "${COMPARTMENT_ID:-}"
+          optiora_genai_compartment_ocid: "${OCI_GENAI_COMPARTMENT_ID:-}"
 EOF
 
     if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then

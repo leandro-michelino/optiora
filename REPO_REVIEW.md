@@ -4,6 +4,11 @@ Reviewed in April 2026.
 
 ## What was cleaned up in this pass
 
+- Fixed `Config` so each new instance reads the current environment instead of capturing env vars at module import time.
+- Corrected `OCI_GENAI_COMPARTMENT_ID` precedence so GenAI-specific compartments override the runtime compartment as documented.
+- Added regression tests for runtime config reload behavior and GenAI compartment fallback.
+- Aligned retention/archive configuration across `.env.example`, Ansible runtime env, deployment docs, and data policy docs.
+- Removed remaining `datetime.utcnow()` usage from the GenAI scope validator and connector tests.
 - Added forecast champion/challenger diagnostics and model-risk advisory prompts.
 - Fixed monthly cost snapshot history so repeated captures in the same month/provider do not inflate forecast history.
 - Updated the forecasting dashboard with model diagnostics.
@@ -18,19 +23,25 @@ Reviewed in April 2026.
 
 ## Key findings from the review
 
-### 1. Documentation drift
+### 1. Runtime configuration drift
+
+`Config` previously evaluated environment variables at import time. That made
+runtime env changes invisible to later `Config()` instances and made script/test
+behavior depend too heavily on import order.
+
+### 2. Documentation drift
 
 The repo documentation had grown broader than the most trustworthy, easy-to-maintain description of the platform. The main issue was not only missing detail, but also duplicated architecture content and overlapping capability descriptions.
 
-### 2. Architecture duplication
+### 3. Architecture duplication
 
 `ARCHITECTURE.md` contained repeated sections. This increases maintenance overhead and makes drift almost guaranteed after subsequent feature additions.
 
-### 3. GenAI surface is broad and valuable
+### 4. GenAI surface is broad and valuable
 
 The repository already supports a richer GenAI role than just forecast narration. It includes spend narratives, roadmap generation, anomaly explanation, maturity narration, tagging strategy, sustainability commentary, chargeback reporting language, comparison briefs, rightsizing briefs, and negotiation talking points.
 
-### 4. Deterministic analytics are the right design choice
+### 5. Deterministic analytics are the right design choice
 
 The forecasting and analytics implementation is already correctly oriented toward deterministic logic first, with GenAI layered on top for explanation and prioritisation. This is the right approach for FinOps products.
 

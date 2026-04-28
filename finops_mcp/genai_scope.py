@@ -7,6 +7,7 @@ to ensure GenAI stays focused on customer's FinOps context only.
 
 import re
 import logging
+from datetime import datetime, timezone
 from typing import Tuple
 
 logger = logging.getLogger(__name__)
@@ -205,7 +206,7 @@ class GenAIValidator:
             self.blocked_queries.append({
                 "query": query,
                 "reason": reason,
-                "timestamp": __import__('datetime').datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             })
             logger.warning(f"Blocked out-of-scope GenAI query: {query[:100]}")
         return is_valid, reason

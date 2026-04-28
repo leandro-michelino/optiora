@@ -3,7 +3,7 @@ Tests for connector framework supporting CloudHealth, Spot, and OpenCost.
 """
 
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from finops_mcp.connectors import (
     ConnectorManager,
     ConnectorType,
@@ -58,7 +58,7 @@ class ConnectorFrameworkTest(unittest.TestCase):
 
     def test_05_cost_data_point_creation(self):
         """Test CostDataPoint model."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         point = CostDataPoint(
             connector="cloudhealth",
             amount_usd=123.45,
@@ -101,7 +101,7 @@ class ConnectorFrameworkTest(unittest.TestCase):
 
     def test_09_cost_data_point_dict_conversion(self):
         """Test CostDataPoint serialization."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         point = CostDataPoint(
             connector="opencost",
             amount_usd=99.99,

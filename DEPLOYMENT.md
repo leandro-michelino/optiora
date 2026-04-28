@@ -207,6 +207,8 @@ PUBLIC_WORKSPACE_EMAIL=public@optiora.local
 OCI_GENAI_ENDPOINT=https://inference.generativeai.uk-london-1.oci.oraclecloud.com
 OCI_GENAI_MODEL=meta.llama-3-70b-instruct
 OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
+# Optional GenAI-specific compartment; overrides OCI_COMPARTMENT_OCID for GenAI calls.
+OCI_GENAI_COMPARTMENT_ID=ocid1.compartment.oc1..<genai_compartment_ocid>
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..<tenancy_ocid>
 OCI_USER_OCID=ocid1.user.oc1..<user_ocid>
 OCI_FINGERPRINT=<api_key_fingerprint>
@@ -220,6 +222,11 @@ PASSWORD_RESET_RETURN_TOKEN=false
 PASSWORD_RESET_TOKEN_MINUTES=30
 ENABLE_SCAN_SCHEDULER=false
 SCAN_SCHEDULER_INTERVAL_MINUTES=60
+RETENTION_ENABLED=false
+RETENTION_HOT_MONTHS=3
+RETENTION_RUN_INTERVAL_HOURS=24
+OCI_ARCHIVE_BUCKET=
+OCI_ARCHIVE_NAMESPACE=
 ```
 
 `OCI_PRIVATE_KEY_PATH` is the preferred deployment option because it avoids fragile multiline env formatting.
@@ -227,6 +234,7 @@ SCAN_SCHEDULER_INTERVAL_MINUTES=60
 - For `deploy/deploy-oci.sh`, the script will copy the referenced local key file onto the VM and rewrite `OCI_PRIVATE_KEY_PATH` to the deployed path automatically.
 - For Ansible-only provisioning, point `optiora_private_key_path` at a file path that exists on the target host.
 - Use `OCI_PRIVATE_KEY` only when you intentionally need to inject the PEM inline with literal `\n` escapes.
+- Enable `RETENTION_ENABLED` only after `OCI_ARCHIVE_BUCKET` and `OCI_ARCHIVE_NAMESPACE` point to the Object Storage archive bucket created by Terraform.
 
 Optional hardened deployment later:
 
