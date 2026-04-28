@@ -27,16 +27,31 @@ def upgrade() -> None:
         )
         """
     )
-    op.create_unique_constraint(
-        "uq_user_organization_membership",
-        "user_organizations",
-        ["user_id", "organization_id"],
-    )
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        # SQLite cannot ALTER TABLE to add a unique constraint directly.
+        # Use a unique index instead so migrations remain portable in tests/dev.
+        op.create_index(
+            "uq_user_organization_membership",
+            "user_organizations",
+            ["user_id", "organization_id"],
+            unique=True,
+        )
+    else:
+        op.create_unique_constraint(
+            "uq_user_organization_membership",
+            "user_organizations",
+            ["user_id", "organization_id"],
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "uq_user_organization_membership",
-        "user_organizations",
-        type_="unique",
-    )
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        op.drop_index("uq_user_organization_membership", table_name="user_organizations")
+    else:
+        op.drop_constraint(
+            "uq_user_organization_membership",
+            "user_organizations",
+            type_="unique",
+        )
