@@ -108,6 +108,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     "scope": f"/subscriptions/{subscription_id}",
                     "identifier": subscription_id,
                     "scope_type": "subscription",
+                    "parent_scope_id": config.azure_management_group_id or None,
+                    "parent_scope_type": "management_group" if config.azure_management_group_id else None,
                 }
             )
 
@@ -144,6 +146,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     {
                         "scope_type": scope_info["scope_type"],
                         "scope_id": scope_info["identifier"],
+                        "scope_name": scope_info["identifier"],
+                        "parent_scope_id": scope_info.get("parent_scope_id"),
+                        "parent_scope_type": scope_info.get("parent_scope_type"),
                         "total_cost_usd": round(scope_total, 2),
                     }
                 )
@@ -152,6 +157,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     {
                         "scope_type": scope_info["scope_type"],
                         "scope_id": scope_info["identifier"],
+                        "scope_name": scope_info["identifier"],
+                        "parent_scope_id": scope_info.get("parent_scope_id"),
+                        "parent_scope_type": scope_info.get("parent_scope_type"),
                         "error": str(scope_exc),
                     }
                 )

@@ -63,6 +63,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         services: Dict[str, float] = {}
         regions: Dict[str, float] = {}
         project_breakdown: List[Dict[str, Any]] = []
+        parent_scope_id = config.gcp_folder_id or config.gcp_organization_id or None
+        parent_scope_type = "folder" if config.gcp_folder_id else ("organization" if config.gcp_organization_id else None)
 
         for project_id in _project_list():
             # Typical billing export table: <project>.billing.gcp_billing_export_v1_*
@@ -112,6 +114,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     {
                         "scope_type": "project",
                         "scope_id": project_id,
+                        "scope_name": project_id,
+                        "parent_scope_id": parent_scope_id,
+                        "parent_scope_type": parent_scope_type,
                         "total_cost_usd": round(project_total, 2),
                     }
                 )
@@ -120,9 +125,34 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     {
                         "scope_type": "project",
                         "scope_id": project_id,
+                        "scope_name": project_id,
+                        "parent_scope_id": parent_scope_id,
+                        "parent_scope_type": parent_scope_type,
                         "error": str(project_exc),
                     }
                 )
+
+        hierarchy_prefix: List[Dict[str, Any]] = []
+        if config.gcp_organization_id:
+            hierarchy_prefix.append(
+                {
+                    "scope_type": "organization",
+                    "scope_id": config.gcp_organization_id,
+                    "scope_name": config.gcp_organization_id,
+                    "total_cost_usd": round(total_cost, 2),
+                }
+            )
+        if config.gcp_folder_id:
+            hierarchy_prefix.append(
+                {
+                    "scope_type": "folder",
+                    "scope_id": config.gcp_folder_id,
+                    "scope_name": config.gcp_folder_id,
+                    "parent_scope_id": config.gcp_organization_id or None,
+                    "parent_scope_type": "organization" if config.gcp_organization_id else None,
+                    "total_cost_usd": round(total_cost, 2),
+                }
+            )
 
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
         top_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -138,7 +168,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             "region_breakdown": [
                 {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
             ],
-            "account_breakdown": project_breakdown,
+            "account_breakdown": hierarchy_prefix + project_breakdown,
             "scope_context": {
                 "folder_id": config.gcp_folder_id or None,
                 "organization_id": config.gcp_organization_id or None,

@@ -106,6 +106,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         total_cost = 0.0
         services: Dict[str, float] = {}
         region_costs: Dict[str, float] = {}
+        organization_scope_id = "aws-organization"
+        organization_scope_name = "AWS Organization"
 
         def _query_account(account_id: str, client, role_arn: Optional[str] = None) -> None:
             nonlocal total_cost
@@ -133,6 +135,11 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
 
             account_rows.append(
                 {
+                    "scope_type": "account",
+                    "scope_id": account_id,
+                    "scope_name": account_id,
+                    "parent_scope_id": organization_scope_id if role_targets else None,
+                    "parent_scope_type": "organization" if role_targets else None,
                     "account_id": account_id,
                     "source": "assume_role" if role_arn else "default_credentials",
                     "role_arn": role_arn,
@@ -149,12 +156,28 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                 logger.warning("Skipping AWS org account %s (%s): %s", account_id, role_arn, exc)
                 account_rows.append(
                     {
+                        "scope_type": "account",
+                        "scope_id": account_id,
+                        "scope_name": account_id,
+                        "parent_scope_id": organization_scope_id if role_targets else None,
+                        "parent_scope_type": "organization" if role_targets else None,
                         "account_id": account_id,
                         "source": "assume_role",
                         "role_arn": role_arn,
                         "error": str(exc),
                     }
                 )
+
+        if role_targets:
+            account_rows.insert(
+                0,
+                {
+                    "scope_type": "organization",
+                    "scope_id": organization_scope_id,
+                    "scope_name": organization_scope_name,
+                    "total_cost_usd": round(total_cost, 2),
+                },
+            )
 
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
         top_regions = sorted(region_costs.items(), key=lambda x: x[1], reverse=True)[:10]

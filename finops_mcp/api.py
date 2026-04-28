@@ -5020,6 +5020,9 @@ async def _run_cost_analysis(
                         )
                     ]
 
+                provider_accounts_by_identifier: Dict[str, ProviderAccount] = {}
+                parent_hints_by_identifier: Dict[str, Dict[str, Optional[str]]] = {}
+
                 for account_row in account_rows:
                     account_identifier = str(
                         account_row.get("account_id")
@@ -5029,6 +5032,7 @@ async def _run_cost_analysis(
                     )
                     account_name = str(
                         account_row.get("account_name")
+                        or account_row.get("scope_name")
                         or account_row.get("scope_id")
                         or account_identifier
                     )
@@ -5036,7 +5040,13 @@ async def _run_cost_analysis(
                         account_row.get("scope_type")
                         or account_row.get("account_type")
                         or "account"
-                    )
+                    ).strip().lower().replace(" ", "_")
+                    parent_identifier = str(
+                        account_row.get("parent_scope_id")
+                        or account_row.get("parent_account_identifier")
+                        or ""
+                    ).strip()
+                    parent_type = str(account_row.get("parent_scope_type") or "").strip().lower().replace(" ", "_")
                     account_total_cost = float(account_row.get("total_cost_usd") or 0.0)
                     if account_total_cost == 0.0 and len(account_rows) == 1:
                         account_total_cost = total_cost
@@ -5069,6 +5079,12 @@ async def _run_cost_analysis(
                         provider_account.account_type = account_type
                         provider_account.metadata_json = json.dumps(account_row)
                         provider_account.updated_at = now
+
+                    provider_accounts_by_identifier[account_identifier] = provider_account
+                    parent_hints_by_identifier[account_identifier] = {
+                        "parent_identifier": parent_identifier or None,
+                        "parent_type": parent_type or None,
+                    }
 
                     existing_provider_snapshot = (
                         db.query(ProviderAccountSnapshot)
@@ -5126,6 +5142,71 @@ async def _run_cost_analysis(
                                     captured_at=now,
                                 )
                             )
+
+                for child_identifier, hint in parent_hints_by_identifier.items():
+                    parent_identifier = hint.get("parent_identifier")
+                    if not parent_identifier or parent_identifier == child_identifier:
+                        continue
+
+                    child_account = provider_accounts_by_identifier.get(child_identifier)
+                    if child_account is None:
+                        continue
+
+                    parent_account = provider_accounts_by_identifier.get(parent_identifier)
+                    if parent_account is None:
+                        parent_account = (
+                            db.query(ProviderAccount)
+                            .filter(
+                                ProviderAccount.customer_id == customer_id,
+                                ProviderAccount.provider == provider,
+                                ProviderAccount.account_identifier == parent_identifier,
+                            )
+                            .first()
+                        )
+                        if parent_account is None:
+                            inferred_parent_type = str(hint.get("parent_type") or "group").strip().lower().replace(" ", "_")
+                            parent_account = ProviderAccount(
+                                organization_id=organization_id,
+                                customer_id=customer_id,
+                                provider=provider,
+                                account_identifier=parent_identifier,
+                                account_name=parent_identifier,
+                                account_type=inferred_parent_type or "group",
+                                native_region=(summary.get("region_breakdown") or [{}])[0].get("region"),
+                                metadata_json=json.dumps(
+                                    {
+                                        "inferred": True,
+                                        "source": "parent_scope",
+                                        "scope_id": parent_identifier,
+                                        "scope_type": inferred_parent_type or "group",
+                                    }
+                                ),
+                                is_active=True,
+                            )
+                            db.add(parent_account)
+                            db.flush()
+                        provider_accounts_by_identifier[parent_identifier] = parent_account
+
+                    existing_link = (
+                        db.query(ProviderAccountLink)
+                        .filter(
+                            ProviderAccountLink.organization_id == organization_id,
+                            ProviderAccountLink.child_account_id == child_account.id,
+                        )
+                        .first()
+                    )
+                    if existing_link is None:
+                        db.add(
+                            ProviderAccountLink(
+                                organization_id=organization_id,
+                                parent_account_id=parent_account.id,
+                                child_account_id=child_account.id,
+                                relationship_type="contains",
+                            )
+                        )
+                    else:
+                        existing_link.parent_account_id = parent_account.id
+                        existing_link.relationship_type = "contains"
 
         permission = (
             db.query(ScanningPermissionRecord)
