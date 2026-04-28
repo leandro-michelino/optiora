@@ -41,7 +41,10 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        try:
+            os.remove(TEST_DB)
+        except FileNotFoundError:
+            pass
 
     def test_01_forecast_includes_quality_and_risk_blocks(self) -> None:
         resp = self.client.get("/api/v1/forecast", headers=self.headers)
@@ -93,93 +96,6 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         self.assertIn("deterministic_context", data)
         self.assertIn("commitment_strategy", data["narratives"])
         self.assertIn("prompt", data["narratives"]["commitment_strategy"])
-
-    def test_04_forecast_sensitivity_endpoint_contract(self) -> None:
-        resp = self.client.get("/api/v1/forecast/sensitivity", headers=self.headers)
-        self.assertEqual(resp.status_code, 200, resp.text)
-        data = resp.json()
-        self.assertIn("sensitivity_tests", data)
-        self.assertIn("elasticity", data)
-        self.assertIn("risk_window", data)
-        self.assertIn("genai_prompt", data)
-        self.assertIn("cost_context", data)
-
-    def test_05_optimization_portfolio_endpoint_contract(self) -> None:
-        resp = self.client.get("/api/v1/analytics/optimization-portfolio", headers=self.headers)
-        self.assertEqual(resp.status_code, 200, resp.text)
-        data = resp.json()
-        self.assertIn("portfolio", data)
-        self.assertIn("portfolio_summary", data)
-        self.assertIn("sequencing", data)
-        self.assertIn("genai_prompt", data)
-        self.assertIn("cost_context", data)
-
-    def test_06_genai_analyze_supports_new_analysis_types(self) -> None:
-        payloads = [
-            {
-                "analysis_type": "forecast_sensitivity",
-                "context": {
-                    "months": 12,
-                    "current_monthly_spend_usd": 15000,
-                    "cost_breakdown": {
-                        "aws": {"cost": 9000, "percentage": 60.0},
-                        "azure": {"cost": 6000, "percentage": 40.0},
-                    },
-                    "budget_monthly_usd": 16000,
-                },
-            },
-            {
-                "analysis_type": "optimization_portfolio",
-                "context": {
-                    "current_monthly_spend_usd": 15000,
-                    "cost_breakdown": {
-                        "aws": {"cost": 9000, "percentage": 60.0},
-                        "azure": {"cost": 6000, "percentage": 40.0},
-                    },
-                    "discount_rate_monthly": 0.01,
-                },
-            },
-            {
-                "analysis_type": "stakeholder_brief",
-                "audience": "engineering",
-                "context": {
-                    "current_monthly_spend_usd": 15000,
-                    "risk_score": 42,
-                    "estimated_monthly_waste_usd": 2200,
-                    "total_annual_opportunity_usd": 25000,
-                },
-            },
-        ]
-
-        for payload in payloads:
-            resp = self.client.post("/api/v1/genai/analyze", json=payload, headers=self.headers)
-            self.assertEqual(resp.status_code, 200, resp.text)
-            data = resp.json()
-            self.assertEqual(data.get("analysis_type"), payload["analysis_type"])
-            self.assertIn("prompt", data)
-            self.assertIsNotNone(data.get("prompt"))
-
-    def test_07_genai_copilot_pack_supports_new_include_items(self) -> None:
-        payload = {
-            "cloud_provider": "all",
-            "include": [
-                "forecast_sensitivity",
-                "optimization_portfolio",
-                "stakeholder_finance",
-                "stakeholder_engineering",
-                "stakeholder_operations",
-            ],
-        }
-        resp = self.client.post("/api/v1/genai/copilot-pack", json=payload, headers=self.headers)
-        self.assertEqual(resp.status_code, 200, resp.text)
-        data = resp.json()
-        self.assertIn("forecast_sensitivity", data.get("narratives", {}))
-        self.assertIn("optimization_portfolio", data.get("narratives", {}))
-        self.assertIn("stakeholder_finance", data.get("narratives", {}))
-        self.assertIn("stakeholder_engineering", data.get("narratives", {}))
-        self.assertIn("stakeholder_operations", data.get("narratives", {}))
-        self.assertIn("forecast_sensitivity", data.get("deterministic_context", {}))
-        self.assertIn("optimization_portfolio", data.get("deterministic_context", {}))
 
 
 if __name__ == "__main__":

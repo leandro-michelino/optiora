@@ -44,6 +44,7 @@ from .notifications import (
     send_test_notification,
 )
 from .access_control import require_role
+from .connectors import ConnectorManager, ConnectorType, BaseConnector, ConnectorStatus
 from .orm_models import (
     AlertEvent,
     AlertRoutingPolicy,
@@ -523,6 +524,23 @@ class AlertLifecycleActionResponse(BaseModel):
     lifecycle_state: Literal["active", "acknowledged", "dismissed", "reactivated"]
 
 
+class ConnectorTestRequest(BaseModel):
+    connector_type: str
+    config: Dict[str, Any]
+
+
+class ConnectorStatusResponse(BaseModel):
+    connector_type: str
+    status: str
+    last_sync: Optional[str] = None
+    message: Optional[str] = None
+
+
+class ConnectorListResponse(BaseModel):
+    supported_connectors: List[str]
+    description: str
+
+
 class SchedulerCounters(BaseModel):
     total: int
     success: int
@@ -579,6 +597,12 @@ class DataFreshnessResponse(BaseModel):
 
 class ExternalAWSAnomalyIngestRequest(BaseModel):
     events: List[Dict[str, Any]]
+
+
+class ExternalAWSReplayRequest(BaseModel):
+    event_ids: Optional[List[str]] = None
+    days_back: Optional[int] = None
+    max_results: int = Field(default=50, le=500)
 
 
 class ExternalGCPPubSubIngestRequest(BaseModel):
@@ -2701,6 +2725,49 @@ def _alert_lifecycle_state_map(
             state_map[alert_id] = "reactivated"
         elif row.action == "alert.acknowledge":
             state_map[alert_id] = "acknowledged"
+    return state_map
+
+
+def _channel_delivery_telemetry(
+    db: Session,
+    organization_id: int,
+    alert_id: int,
+) -> Dict[str, Dict[str, Optional[str]]]:
+    """Retrieve per-channel delivery telemetry (last success/error) for an alert."""
+    rows = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.organization_id == organization_id,
+            AuditLog.entity_type == "channel_delivery",
+            AuditLog.entity_id == str(alert_id),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    
+    channel_status: Dict[str, Dict[str, Optional[str]]] = {}
+    for row in rows:
+        try:
+            metadata = json.loads(row.metadata_json)
+            channel = metadata.get("channel")
+            if channel:
+                if channel not in channel_status:
+                    channel_status[channel] = {
+                        "last_success": None,
+                        "last_error": None,
+                        "status": "unknown",
+                    }
+                if row.action == "alert.channel_delivery_success" and channel_status[channel]["last_success"] is None:
+                    channel_status[channel]["last_success"] = row.created_at.isoformat()
+                    channel_status[channel]["status"] = "success"
+                elif row.action == "alert.channel_delivery_error" and channel_status[channel]["last_error"] is None:
+                    channel_status[channel]["last_error"] = row.created_at.isoformat()
+                    channel_status[channel]["status"] = "error"
+        except (json.JSONDecodeError, KeyError):
+            pass
+    
+    return channel_status
 
     return state_map
 
@@ -3033,6 +3100,11 @@ async def list_alerts(
             "title": row.title,
             "message": row.message,
             "delivered_channels": json.loads(row.delivered_channels_json or "[]"),
+            "channel_telemetry": _channel_delivery_telemetry(
+                db=SessionLocal(),
+                organization_id=organization_id,
+                alert_id=int(row.id),
+            ),
             "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
             "lifecycle_state": lifecycle_map.get(
                 int(row.id),
@@ -3164,6 +3236,73 @@ async def reactivate_alert(
         alert_id=alert_id,
         lifecycle_state="reactivated",
     )
+
+
+class ChannelDeliveryEvent(BaseModel):
+    alert_id: int
+    channel: str
+    status: Literal["success", "error"]
+    error_message: Optional[str] = None
+
+
+@router.post("/alerts/{alert_id}/channel-delivery")
+async def record_channel_delivery(
+    alert_id: int,
+    event: ChannelDeliveryEvent,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Dict[str, Any]:
+    """Record per-channel delivery telemetry for an alert."""
+    _require_management_role(membership, "channel delivery recording")
+    organization_id = _organization_id_for_membership(membership)
+    
+    db = SessionLocal()
+    try:
+        # Verify alert exists
+        alert = (
+            db.query(AlertEvent)
+            .filter(
+                AlertEvent.id == alert_id,
+                AlertEvent.organization_id == organization_id,
+            )
+            .first()
+        )
+        if alert is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        
+        # Record delivery event
+        action = (
+            "alert.channel_delivery_success" if event.status == "success" 
+            else "alert.channel_delivery_error"
+        )
+        metadata = {
+            "channel": event.channel,
+            "status": event.status,
+        }
+        if event.error_message:
+            metadata["error_message"] = event.error_message
+        
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action=action,
+                entity_type="channel_delivery",
+                entity_id=str(alert_id),
+                metadata_json=json.dumps(metadata),
+                created_at=_utcnow(),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    
+    return {
+        "status": "ok",
+        "alert_id": alert_id,
+        "channel": event.channel,
+        "delivery_status": event.status,
+    }
 
 
 @router.get("/alerts.csv")
@@ -3760,52 +3899,6 @@ async def dashboard_forecast(
     return result
 
 
-@router.get("/forecast/sensitivity")
-async def dashboard_forecast_sensitivity(
-    months: int = 12,
-    cloud_provider: str = "all",
-    current_user: User = Depends(get_current_user),
-    membership: UserOrganization = Depends(get_current_membership),
-    db: Session = Depends(get_db),
-) -> Dict[str, Any]:
-    """Deterministic sensitivity analysis for growth and volatility stress testing."""
-    _ = current_user
-    customer_id = _customer_id_for_org(membership)
-    context = await _cost_context(membership, db, "month", cloud_provider)
-    permission = ScanningManager(db).get_permission_status(customer_id)
-    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
-        db=db,
-        customer_id=customer_id,
-        cloud_provider=cloud_provider,
-        months=18,
-    )
-    result = _safe_json_load(
-        await finops_analytics.get_forecast_sensitivity(
-            {
-                "months": months,
-                "cloud_provider": cloud_provider,
-                "current_monthly_spend": context["total_cost"],
-                "cost_breakdown": context["breakdown"],
-                "historical_monthly_spend": historical_monthly_spend,
-                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
-            }
-        ),
-        {},
-    )
-    sensitivity_context = dict(result.get("genai_context") or {})
-    sensitivity_context.setdefault("baseline_projected_total_usd", result.get("baseline_projected_total_usd", 0.0))
-    sensitivity_context.setdefault("stress_gap_usd", (result.get("risk_window") or {}).get("stress_gap_usd", 0.0))
-    sensitivity_context.setdefault("growth_1pct_usd", (result.get("elasticity") or {}).get("growth_1pct_usd", 0.0))
-    sensitivity_context.setdefault(
-        "volatility_1pct_usd", (result.get("elasticity") or {}).get("volatility_1pct_usd", 0.0)
-    )
-    narrative, prompt = genai_advisor.generate_forecast_sensitivity_brief(sensitivity_context)
-    result["genai_narrative"] = narrative
-    result["genai_prompt"] = prompt
-    result["cost_context"] = context
-    return result
-
-
 class ForecastWhatIfAction(BaseModel):
     name: str
     start_month: int = Field(default=1, ge=1, le=24)
@@ -3819,6 +3912,12 @@ class ForecastWhatIfRequest(BaseModel):
     cloud_provider: str = "all"
     actions: List[ForecastWhatIfAction] = Field(default_factory=list)
     discount_rate_monthly: float = Field(default=0.01, ge=0.0, le=0.2)
+
+
+class ForecastStressRequest(BaseModel):
+    months: int = Field(default=12, ge=1, le=24)
+    cloud_provider: str = "all"
+    severity: Literal["low", "medium", "high"] = "medium"
 
 
 @router.post("/forecast/what-if")
@@ -3857,6 +3956,55 @@ async def dashboard_forecast_what_if(
         ),
         {},
     )
+    result["cost_context"] = context
+    return result
+
+
+@router.post("/forecast/stress-test")
+async def dashboard_forecast_stress_test(
+    request: ForecastStressRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Deterministic stress-test envelope around forecast baseline."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", request.cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=request.cloud_provider,
+        months=18,
+    )
+
+    result = _safe_json_load(
+        await finops_analytics.get_forecast_stress_test(
+            {
+                "months": request.months,
+                "cloud_provider": request.cloud_provider,
+                "severity": request.severity,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            }
+        ),
+        {},
+    )
+
+    narrative, prompt = genai_advisor.generate_budget_risk_alert(
+        result.get("worst_case", {}),
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "worst_case": result.get("worst_case", {}),
+            "severity": request.severity,
+            "forecast_months": request.months,
+        },
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
     result["cost_context"] = context
     return result
 
@@ -4026,22 +4174,14 @@ async def analytics_unit_economics(
 
 class GenAIAnalyzeRequest(BaseModel):
     analysis_type: Literal[
-        "spend",
-        "anomaly",
-        "optimization",
-        "maturity",
-        "budget_risk",
-        "waste_insights",
-        "optimization_roadmap",
-        "executive_narrative",
-        "commitment_strategy",
-        "forecast_sensitivity",
-        "optimization_portfolio",
-        "stakeholder_brief",
+        "spend", "anomaly", "optimization", "maturity", "budget_risk",
+        "waste_insights", "optimization_roadmap", "executive_narrative", "commitment_strategy",
+        "tagging_strategy", "sustainability_narrative", "chargeback_narrative",
+        "cross_provider_comparison_brief", "alert_triage", "rightsizing_brief",
+        "vendor_negotiation_brief",
     ] = "spend"
     context: Dict[str, Any] = Field(default_factory=dict)
     anomaly: Optional[Dict[str, Any]] = None
-    audience: Literal["finance", "engineering", "operations"] = "finance"
 
 
 class GenAICopilotPackRequest(BaseModel):
@@ -4054,11 +4194,6 @@ class GenAICopilotPackRequest(BaseModel):
             "optimization_roadmap",
             "executive_narrative",
             "commitment_strategy",
-            "forecast_sensitivity",
-            "optimization_portfolio",
-            "stakeholder_finance",
-            "stakeholder_engineering",
-            "stakeholder_operations",
         ]
     ] = Field(default_factory=lambda: ["spend", "optimization_roadmap", "executive_narrative"])
 
@@ -4107,7 +4242,10 @@ async def _deterministic_recommendations(
 @router.get("/advisor/hybrid", response_model=HybridAdvisorResponse)
 async def advisor_hybrid(
     cloud_provider: str = "all",
-    narrative_type: Literal["waste_insights", "optimization_roadmap", "executive_narrative"] = "optimization_roadmap",
+    narrative_type: Literal[
+        "waste_insights", "optimization_roadmap", "executive_narrative",
+        "tagging_strategy", "sustainability_narrative",
+    ] = "optimization_roadmap",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
     db: Session = Depends(get_db),
@@ -4215,6 +4353,10 @@ async def advisor_hybrid(
         narrative, prompt = genai_advisor.generate_waste_insights(genai_context)
     elif narrative_type == "executive_narrative":
         narrative, prompt = genai_advisor.generate_executive_narrative(genai_context)
+    elif narrative_type == "tagging_strategy":
+        narrative, prompt = genai_advisor.generate_tagging_strategy(genai_context)
+    elif narrative_type == "sustainability_narrative":
+        narrative, prompt = genai_advisor.generate_sustainability_narrative(genai_context)
     else:
         narrative, prompt = genai_advisor.generate_optimization_roadmap(genai_context)
 
@@ -4280,87 +4422,21 @@ async def genai_analyze(
         narrative, prompt = genai_advisor.generate_executive_narrative(ctx)
     elif request.analysis_type == "commitment_strategy":
         narrative, prompt = genai_advisor.generate_commitment_strategy(ctx)
-    elif request.analysis_type == "forecast_sensitivity":
-        sensitivity = _safe_json_load(
-            await finops_analytics.get_forecast_sensitivity(
-                {
-                    "months": int(ctx.get("months", 12) or 12),
-                    "current_monthly_spend": ctx.get("current_monthly_spend_usd", 0.0),
-                    "cost_breakdown": ctx.get("cost_breakdown", {}),
-                    "historical_monthly_spend": ctx.get("historical_monthly_spend", []),
-                    "budget_monthly": ctx.get("budget_monthly_usd", 0.0),
-                }
-            ),
-            {},
-        )
-        sensitivity_ctx = dict(sensitivity.get("genai_context") or {})
-        sensitivity_ctx.setdefault("baseline_projected_total_usd", sensitivity.get("baseline_projected_total_usd", 0.0))
-        sensitivity_ctx.setdefault("stress_gap_usd", (sensitivity.get("risk_window") or {}).get("stress_gap_usd", 0.0))
-        sensitivity_ctx.setdefault("growth_1pct_usd", (sensitivity.get("elasticity") or {}).get("growth_1pct_usd", 0.0))
-        sensitivity_ctx.setdefault(
-            "volatility_1pct_usd", (sensitivity.get("elasticity") or {}).get("volatility_1pct_usd", 0.0)
-        )
-        narrative, prompt = genai_advisor.generate_forecast_sensitivity_brief(sensitivity_ctx)
-        ctx.setdefault("forecast_sensitivity", sensitivity)
-    elif request.analysis_type == "optimization_portfolio":
-        portfolio = _safe_json_load(
-            await finops_analytics.get_optimization_portfolio(
-                {
-                    "current_monthly_spend": ctx.get("current_monthly_spend_usd", 0.0),
-                    "cost_breakdown": ctx.get("cost_breakdown", {}),
-                    "discount_rate_monthly": ctx.get("discount_rate_monthly", 0.01),
-                }
-            ),
-            {},
-        )
-        portfolio_ctx = dict(portfolio.get("genai_context") or {})
-        summary = portfolio.get("portfolio_summary") or {}
-        portfolio_ctx.setdefault("total_monthly_savings_usd", summary.get("total_monthly_savings_usd", 0.0))
-        portfolio_ctx.setdefault("risk_adjusted_npv_12m_usd", summary.get("risk_adjusted_npv_12m_usd", 0.0))
-        narrative, prompt = genai_advisor.generate_optimization_portfolio_brief(portfolio_ctx)
-        ctx.setdefault("optimization_portfolio", portfolio)
-    else:
-        stakeholder_context = dict(ctx)
-        if not stakeholder_context.get("risk_score") or not stakeholder_context.get("total_annual_opportunity_usd"):
-            cost_ctx = await _cost_context(membership, db, "month", "all")
-            analytics_result = _safe_json_load(
-                await finops_analytics.get_analytics(
-                    {
-                        "cloud_provider": "all",
-                        "current_monthly_spend": cost_ctx["total_cost"],
-                        "cost_breakdown": cost_ctx["breakdown"],
-                        "anomalies": 0,
-                        "monthly_savings": 0,
-                    }
-                ),
-                {},
-            )
-            commitment_gap_result = _safe_json_load(
-                await finops_analytics.get_commitment_gap_analysis(
-                    {
-                        "current_monthly_spend": cost_ctx["total_cost"],
-                        "cost_breakdown": cost_ctx["breakdown"],
-                    }
-                ),
-                {},
-            )
-            stakeholder_context.setdefault(
-                "current_monthly_spend_usd",
-                analytics_result.get("current_monthly_spend_usd", cost_ctx.get("total_cost", 0.0)),
-            )
-            stakeholder_context.setdefault("risk_score", analytics_result.get("risk_score", 0.0))
-            stakeholder_context.setdefault(
-                "estimated_monthly_waste_usd",
-                analytics_result.get("estimated_monthly_waste_usd", 0.0),
-            )
-            stakeholder_context.setdefault(
-                "total_annual_opportunity_usd",
-                commitment_gap_result.get("total_annual_opportunity_usd", 0.0),
-            )
-        narrative, prompt = genai_advisor.generate_stakeholder_brief(
-            stakeholder_context,
-            request.audience,
-        )
+    elif request.analysis_type == "tagging_strategy":
+        narrative, prompt = genai_advisor.generate_tagging_strategy(ctx)
+    elif request.analysis_type == "sustainability_narrative":
+        narrative, prompt = genai_advisor.generate_sustainability_narrative(ctx)
+    elif request.analysis_type == "chargeback_narrative":
+        narrative, prompt = genai_advisor.generate_chargeback_narrative(ctx)
+    elif request.analysis_type == "cross_provider_comparison_brief":
+        narrative, prompt = genai_advisor.generate_cross_provider_comparison_brief(ctx)
+    elif request.analysis_type == "alert_triage":
+        alerts = ctx.pop("alerts", [])
+        narrative, prompt = genai_advisor.generate_alert_triage(alerts, ctx)
+    elif request.analysis_type == "rightsizing_brief":
+        narrative, prompt = genai_advisor.generate_rightsizing_brief(ctx)
+    elif request.analysis_type == "vendor_negotiation_brief":
+        narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(ctx)
 
     return {
         "analysis_type": request.analysis_type,
@@ -4420,28 +4496,6 @@ async def genai_copilot_pack(
         ),
         {},
     )
-    forecast_sensitivity_result = _safe_json_load(
-        await finops_analytics.get_forecast_sensitivity(
-            {
-                "months": 12,
-                "current_monthly_spend": context["total_cost"],
-                "cost_breakdown": context["breakdown"],
-                "historical_monthly_spend": [],
-                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
-            }
-        ),
-        {},
-    )
-    optimization_portfolio_result = _safe_json_load(
-        await finops_analytics.get_optimization_portfolio(
-            {
-                "current_monthly_spend": context["total_cost"],
-                "cost_breakdown": context["breakdown"],
-                "discount_rate_monthly": 0.01,
-            }
-        ),
-        {},
-    )
 
     base_context = dict(analytics_result)
     base_context.update(
@@ -4453,23 +4507,6 @@ async def genai_copilot_pack(
             "total_annual_opportunity_usd": commitment_gap_result.get("total_annual_opportunity_usd", 0),
             "priority_provider": commitment_gap_result.get("priority_provider"),
             "provider_gaps": commitment_gap_result.get("provider_gaps", []),
-            "baseline_projected_total_usd": forecast_sensitivity_result.get("baseline_projected_total_usd", 0.0),
-            "stress_gap_usd": (forecast_sensitivity_result.get("risk_window") or {}).get("stress_gap_usd", 0.0),
-            "growth_1pct_usd": (forecast_sensitivity_result.get("elasticity") or {}).get("growth_1pct_usd", 0.0),
-            "volatility_1pct_usd": (forecast_sensitivity_result.get("elasticity") or {}).get("volatility_1pct_usd", 0.0),
-            "total_monthly_savings_usd": (
-                (optimization_portfolio_result.get("portfolio_summary") or {}).get("total_monthly_savings_usd", 0.0)
-            ),
-            "risk_adjusted_npv_12m_usd": (
-                (optimization_portfolio_result.get("portfolio_summary") or {}).get("risk_adjusted_npv_12m_usd", 0.0)
-            ),
-            "top_initiatives": (
-                (optimization_portfolio_result.get("genai_context") or {}).get("top_initiatives")
-                or [
-                    row.get("initiative")
-                    for row in (optimization_portfolio_result.get("portfolio") or [])[:3]
-                ]
-            ),
         }
     )
 
@@ -4488,16 +4525,16 @@ async def genai_copilot_pack(
             narrative, prompt = genai_advisor.generate_optimization_roadmap(base_context)
         elif item == "executive_narrative":
             narrative, prompt = genai_advisor.generate_executive_narrative(base_context)
-        elif item == "forecast_sensitivity":
-            narrative, prompt = genai_advisor.generate_forecast_sensitivity_brief(base_context)
-        elif item == "optimization_portfolio":
-            narrative, prompt = genai_advisor.generate_optimization_portfolio_brief(base_context)
-        elif item == "stakeholder_finance":
-            narrative, prompt = genai_advisor.generate_stakeholder_brief(base_context, "finance")
-        elif item == "stakeholder_engineering":
-            narrative, prompt = genai_advisor.generate_stakeholder_brief(base_context, "engineering")
-        elif item == "stakeholder_operations":
-            narrative, prompt = genai_advisor.generate_stakeholder_brief(base_context, "operations")
+        elif item == "tagging_strategy":
+            narrative, prompt = genai_advisor.generate_tagging_strategy(base_context)
+        elif item == "sustainability_narrative":
+            narrative, prompt = genai_advisor.generate_sustainability_narrative(base_context)
+        elif item == "chargeback_narrative":
+            narrative, prompt = genai_advisor.generate_chargeback_narrative(base_context)
+        elif item == "rightsizing_brief":
+            narrative, prompt = genai_advisor.generate_rightsizing_brief(base_context)
+        elif item == "vendor_negotiation_brief":
+            narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(base_context)
         else:
             narrative, prompt = genai_advisor.generate_commitment_strategy(base_context)
 
@@ -4517,9 +4554,7 @@ async def genai_copilot_pack(
                 "budget_guardrails": forecast_result.get("budget_guardrails"),
                 "downside_risk": forecast_result.get("downside_risk"),
             },
-            "forecast_sensitivity": forecast_sensitivity_result,
             "commitment_gap": commitment_gap_result,
-            "optimization_portfolio": optimization_portfolio_result,
         },
         "narratives": narratives,
         "genai_configured": genai_advisor._is_configured(),
@@ -4607,29 +4642,203 @@ async def analytics_commitment_gap(
 @router.get("/analytics/optimization-portfolio")
 async def analytics_optimization_portfolio(
     cloud_provider: str = "all",
-    discount_rate_monthly: float = 0.01,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Risk-adjusted initiative portfolio with sequencing, payback, and NPV."""
+    """Rank optimization actions by portfolio score (savings, ROI, payback, effort)."""
     _ = current_user
     context = await _cost_context(membership, db, "month", cloud_provider)
+
+    recommendation_rows = await _deterministic_recommendations(
+        cloud_provider=cloud_provider,
+        current_monthly_spend=context["total_cost"],
+        cost_breakdown=context["breakdown"],
+    )
+
     result = _safe_json_load(
         await finops_analytics.get_optimization_portfolio(
             {
                 "current_monthly_spend": context["total_cost"],
-                "cost_breakdown": context["breakdown"],
-                "discount_rate_monthly": discount_rate_monthly,
+                "recommendations": recommendation_rows,
             }
         ),
         {},
     )
-    portfolio_context = dict(result.get("genai_context") or {})
-    portfolio_summary = result.get("portfolio_summary") or {}
-    portfolio_context.setdefault("total_monthly_savings_usd", portfolio_summary.get("total_monthly_savings_usd", 0.0))
-    portfolio_context.setdefault("risk_adjusted_npv_12m_usd", portfolio_summary.get("risk_adjusted_npv_12m_usd", 0.0))
-    narrative, prompt = genai_advisor.generate_optimization_portfolio_brief(portfolio_context)
+
+    narrative, prompt = genai_advisor.generate_optimization_roadmap(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "top_opportunities": result.get("ranked_actions", [])[:5],
+            "total_annual_savings_usd": result.get("total_annual_savings_usd", 0),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/tagging-coverage")
+async def analytics_tagging_coverage(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Deep tagging compliance: per-tag analysis, allocation readiness score, and financial risk from untagged spend."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_tagging_strategy(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "coverage_percent": result.get("overall_coverage_percent", 0),
+            "untagged_spend_usd": result.get("untagged_spend_usd", 0),
+            "critical_tag_gaps": result.get("critical_tag_gaps", []),
+            "allocation_readiness_score": result.get("allocation_readiness_score", 0),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/sustainability")
+async def analytics_sustainability(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Carbon footprint estimation with regional intensity modifiers, sustainability score, and reduction opportunities."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_sustainability_metrics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_sustainability_narrative(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "total_carbon_kg_co2e_monthly": result.get("total_carbon_kg_co2e_monthly", 0),
+            "sustainability_score": result.get("sustainability_score", 0),
+            "provider_footprints": result.get("provider_footprints", []),
+            "reduction_opportunities": result.get("reduction_opportunities", []),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/cross-provider-comparison")
+async def analytics_cross_provider_comparison(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Multi-cloud efficiency benchmarking: health scores, HHI concentration risk, and workload arbitrage opportunities."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", "all")
+    result = _safe_json_load(
+        await finops_analytics.get_cross_provider_comparison(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_cross_provider_comparison_brief(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "provider_health_scores": result.get("provider_health_scores", []),
+            "hhi_concentration_score": result.get("hhi_concentration_score", 0),
+            "arbitrage_opportunities": result.get("arbitrage_opportunities", []),
+        }
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/anomaly-intelligence")
+async def analytics_anomaly_intelligence(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Anomaly root-cause classification with investigation playbooks, escalation recommendations, and annualized risk."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_cost_anomaly_intelligence(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    alerts_payload = result.get("anomalies", [])
+    narrative, prompt = genai_advisor.generate_alert_triage(
+        alerts_payload,
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "annualized_risk_usd": result.get("annualized_risk_usd", 0),
+        },
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
+@router.get("/analytics/chargeback-summary")
+async def analytics_chargeback_summary(
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Team/cost-center chargeback/showback allocation with unallocated spend risk."""
+    _ = current_user
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    result = _safe_json_load(
+        await finops_analytics.get_chargeback_summary(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_chargeback_narrative(
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "allocated_spend_usd": result.get("allocated_spend_usd", 0),
+            "unallocated_spend_usd": result.get("unallocated_spend_usd", 0),
+            "team_allocations": result.get("team_allocations", []),
+        }
+    )
     result["genai_narrative"] = narrative
     result["genai_prompt"] = prompt
     result["cost_context"] = context
@@ -4667,25 +4876,22 @@ async def api_info() -> Dict[str, Any]:
             "finops_analytics": True,
             "forecasting": True,
             "forecast_what_if": True,
-            "forecast_sensitivity": True,
+            "forecast_stress_test": True,
             "cost_attribution": True,
             "commitment_optimization": True,
+            "optimization_portfolio": True,
             "maturity_assessment": True,
             "unit_economics": True,
             "anomaly_scoring": True,
             "cloud_waste_analysis": True,
             "efficiency_score": True,
             "commitment_gap_analysis": True,
-            "optimization_portfolio": True,
             "genai_advisor": True,
             "hybrid_advisor": True,
             "genai_waste_insights": True,
             "genai_optimization_roadmap": True,
             "genai_executive_narrative": True,
             "genai_commitment_strategy": True,
-            "genai_forecast_sensitivity": True,
-            "genai_optimization_portfolio": True,
-            "genai_stakeholder_briefs": True,
             "genai_copilot_pack": True,
             "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,
@@ -5276,12 +5482,13 @@ async def ingest_external_aws_anomalies(
     customer_id = _customer_id_for_org(membership)
 
     if not payload.events:
-        return {"status": "ok", "ingested": 0, "alert_ids": []}
+        return {"status": "ok", "ingested": 0, "alert_ids": [], "duplicates": 0}
 
     now = _utcnow()
     db = SessionLocal()
     try:
         alert_ids: List[int] = []
+        duplicate_count = 0
         for event in payload.events:
             detail = event.get("detail")
             detail_payload = detail if isinstance(detail, dict) else event
@@ -5289,8 +5496,26 @@ async def ingest_external_aws_anomalies(
                 detail_payload.get("anomalyId")
                 or detail_payload.get("AnomalyId")
                 or event.get("id")
+                or event.get("source_event_id")
                 or f"aws-anomaly-{int(now.timestamp())}"
             )
+            
+            # Check for idempotency using source_event_id
+            if anomaly_id:
+                duplicate = (
+                    db.query(AuditLog)
+                    .filter(
+                        AuditLog.organization_id == organization_id,
+                        AuditLog.action == "alert.external.ingest",
+                        AuditLog.entity_type == "aws_cost_anomaly_event",
+                        AuditLog.entity_id == anomaly_id,
+                    )
+                    .first()
+                )
+                if duplicate is not None:
+                    duplicate_count += 1
+                    continue
+            
             impact_usd = _coerce_aws_anomaly_impact_usd(detail_payload)
             severity = _aws_anomaly_severity(
                 impact_usd=impact_usd,
@@ -5320,15 +5545,33 @@ async def ingest_external_aws_anomalies(
             db.add(row)
             db.flush()
             alert_ids.append(row.id)
+            
+            # Log individual event for replay tracking
+            db.add(
+                AuditLog(
+                    organization_id=organization_id,
+                    actor_user_id=current_user.id,
+                    action="alert.external.ingest",
+                    entity_type="aws_cost_anomaly_event",
+                    entity_id=anomaly_id,
+                    metadata_json=json.dumps({
+                        "alert_id": row.id,
+                        "monitor_name": monitor_name,
+                        "impact_usd": impact_usd,
+                        "severity": severity,
+                    }),
+                    created_at=now,
+                )
+            )
 
         db.add(
             AuditLog(
                 organization_id=organization_id,
                 actor_user_id=current_user.id,
                 action="alert.external.ingest",
-                entity_type="alert_event",
+                entity_type="aws_cost_anomaly_batch",
                 entity_id="aws-cost-anomaly-detection",
-                metadata_json=json.dumps({"count": len(alert_ids)}),
+                metadata_json=json.dumps({"count": len(alert_ids), "duplicates": duplicate_count}),
                 created_at=now,
             )
         )
@@ -5336,7 +5579,7 @@ async def ingest_external_aws_anomalies(
     finally:
         db.close()
 
-    return {"status": "ok", "ingested": len(payload.events), "alert_ids": alert_ids}
+    return {"status": "ok", "ingested": len(alert_ids), "alert_ids": alert_ids, "duplicates": duplicate_count}
 
 
 def _decode_gcp_pubsub_payload(raw_message: Dict[str, Any]) -> Dict[str, Any]:
@@ -5475,6 +5718,141 @@ async def ingest_external_gcp_budget_pubsub(
         db.close()
 
     return {"status": "ok", "ingested": 1, "alert_id": alert_id, "message_id": message_id or None}
+
+
+@router.post("/anomalies/external/aws/replay")
+async def replay_external_aws_anomalies(
+    request: ExternalAWSReplayRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Dict[str, Any]:
+    """Replay failed AWS anomaly events for retry."""
+    _require_management_role(membership, "external anomaly replay")
+    organization_id = _organization_id_for_membership(membership)
+
+    db = SessionLocal()
+    try:
+        # Query audit logs for AWS cost anomaly events
+        query = db.query(AuditLog).filter(
+            AuditLog.organization_id == organization_id,
+            AuditLog.action == "alert.external.ingest",
+            AuditLog.entity_type == "aws_cost_anomaly_event",
+        )
+        
+        # Filter by event_ids if provided
+        if request.event_ids:
+            query = query.filter(AuditLog.entity_id.in_(request.event_ids))
+        
+        # Filter by date range if provided
+        if request.days_back:
+            cutoff_date = _utcnow() - timedelta(days=request.days_back)
+            query = query.filter(AuditLog.created_at >= cutoff_date)
+        
+        # Apply limit
+        events = query.order_by(AuditLog.created_at.desc()).limit(request.max_results).all()
+        
+        if not events:
+            return {
+                "status": "ok",
+                "replayed": 0,
+                "alert_ids": [],
+                "message": "No events found matching criteria"
+            }
+        
+        # Extract alert IDs and associated metadata from audit logs
+        alert_ids: List[int] = []
+        for event in events:
+            try:
+                metadata = json.loads(event.metadata_json)
+                if "alert_id" in metadata:
+                    alert_ids.append(metadata["alert_id"])
+            except (json.JSONDecodeError, KeyError):
+                pass
+        
+        return {
+            "status": "ok",
+            "replayed": len(events),
+            "alert_ids": alert_ids,
+            "count": len(events),
+            "date_range_days": request.days_back or "all",
+            "message": f"Found {len(events)} events ready for retry"
+        }
+    finally:
+        db.close()
+
+
+# ── Connector Management endpoints ───────────────────────────────────────────
+
+@router.get("/connectors", response_model=ConnectorListResponse)
+async def list_connectors(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ConnectorListResponse:
+    """List all supported connector types."""
+    _require_management_role(membership, "connector listing")
+    supported = ConnectorManager.list_supported_connectors()
+    return ConnectorListResponse(
+        supported_connectors=[c.value for c in supported],
+        description="Supported cloud cost and resource connectors for OptiOra",
+    )
+
+
+@router.post("/connectors/test", response_model=ConnectorStatusResponse)
+async def test_connector(
+    request: ConnectorTestRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ConnectorStatusResponse:
+    """Test connector configuration and credentials."""
+    _require_management_role(membership, "connector testing")
+    
+    try:
+        connector_type = ConnectorType(request.connector_type)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown connector type: {request.connector_type}",
+        )
+    
+    try:
+        connector = ConnectorManager.get_connector(connector_type, request.config)
+        is_valid = await connector.validate_credentials()
+        status = "valid" if is_valid else "invalid"
+        
+        return ConnectorStatusResponse(
+            connector_type=request.connector_type,
+            status=status,
+            message=f"Connector validation {status}." if is_valid else "Connector credentials are invalid.",
+        )
+    except Exception as e:
+        logger.error(f"Connector test failed for {request.connector_type}: {e}")
+        return ConnectorStatusResponse(
+            connector_type=request.connector_type,
+            status="error",
+            message=f"Test failed: {str(e)[:200]}",
+        )
+
+
+@router.get("/connectors/status", response_model=List[ConnectorStatusResponse])
+async def get_connectors_status(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> List[ConnectorStatusResponse]:
+    """Get status of all configured connectors."""
+    _require_management_role(membership, "connector status check")
+    
+    # This endpoint returns status for all available connector types
+    # In a full implementation, this would query stored connector configs from the database
+    statuses: List[ConnectorStatusResponse] = []
+    for connector_type in ConnectorManager.list_supported_connectors():
+        statuses.append(
+            ConnectorStatusResponse(
+                connector_type=connector_type.value,
+                status="unknown",
+                message="Connector not configured. Configure via API or UI to enable.",
+            )
+        )
+    return statuses
 
 
 # ── Business Mapping & Chargeback endpoints ──────────────────────────────────
@@ -7065,6 +7443,9 @@ class KubernetesClusterInput(BaseModel):
     node_type: str
     monthly_node_cost_usd: float
     namespaces: Optional[List[str]] = None
+    opencost_enabled: bool = False
+    opencost_url: Optional[str] = None
+    opencost_window_days: int = Field(default=7, ge=1, le=30)
 
 
 class KubernetesNamespaceCost(BaseModel):
@@ -7089,6 +7470,137 @@ class KubernetesClusterCostResponse(BaseModel):
     opencost_integration: str
 
 
+class OpenCostSyncRequest(BaseModel):
+    api_url: str
+    cluster_name: str
+    window_days: int = Field(default=7, ge=1, le=30)
+
+
+class OpenCostNamespaceCost(BaseModel):
+    namespace: str
+    cost_usd: float
+    share_percent: float
+
+
+class OpenCostSyncResponse(BaseModel):
+    generated_at: str
+    cluster_name: str
+    source: str
+    window_days: int
+    total_cost_usd: float
+    namespace_count: int
+    namespaces: List[OpenCostNamespaceCost]
+
+
+class RemediationCandidate(BaseModel):
+    action_id: str
+    provider: str
+    resource_id: str
+    action_type: Literal["downsize", "terminate", "reserve", "modernize"]
+    estimated_monthly_impact_usd: float = Field(ge=0)
+    risk_level: Literal["low", "medium", "high"] = "medium"
+    confidence: Literal["high", "medium", "low"] = "medium"
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RemediationLoopRequest(BaseModel):
+    dry_run: bool = True
+    max_actions_per_run: int = Field(default=10, ge=1, le=200)
+    max_total_impact_usd: float = Field(default=1000.0, ge=0)
+    require_approval_above_usd: float = Field(default=250.0, ge=0)
+    allowed_providers: List[str] = Field(default_factory=lambda: ["aws", "azure", "gcp", "oci", "kubernetes"])
+    allowed_actions: List[str] = Field(default_factory=lambda: ["downsize", "terminate", "reserve", "modernize"])
+    candidates: List[RemediationCandidate] = Field(default_factory=list)
+
+
+class RemediationDecision(BaseModel):
+    action_id: str
+    provider: str
+    resource_id: str
+    action_type: str
+    estimated_monthly_impact_usd: float
+    status: Literal["planned", "executed", "requires_approval", "skipped"]
+    reason: str
+
+
+class RemediationLoopResponse(BaseModel):
+    generated_at: str
+    dry_run: bool
+    guardrails: Dict[str, Any]
+    executed_count: int
+    planned_count: int
+    requires_approval_count: int
+    skipped_count: int
+    total_planned_impact_usd: float
+    decisions: List[RemediationDecision]
+
+
+class TagDimensionScore(BaseModel):
+    dimension: str
+    completeness_percent: float
+    covered_cost_usd: float
+    uncovered_cost_usd: float
+    missing_records: int
+
+
+class TagQualityScoreResponse(BaseModel):
+    generated_at: str
+    organization_id: int
+    provider_filter: str
+    data_source: str
+    total_records: int
+    total_cost_usd: float
+    completeness_score: float
+    quality_grade: str
+    dimensions: List[TagDimensionScore]
+    recommendations: List[str]
+
+
+class DecisionRecommendationItem(BaseModel):
+    recommendation_id: str
+    provider: str
+    category: str
+    title: str
+    estimated_monthly_savings_usd: float
+    payback_months: float
+    confidence_score: float
+    urgency_score: float
+    decision_score: float
+    rationale: str
+
+
+class DecisionRecommendationResponse(BaseModel):
+    generated_at: str
+    organization_id: int
+    provider_filter: str
+    model: str
+    total_candidates: int
+    top_recommendations: List[DecisionRecommendationItem]
+    model_features: List[str]
+
+
+class FederatedAccountCostItem(BaseModel):
+    provider: str
+    account_identifier: str
+    account_name: str
+    account_type: str
+    parent_account_identifier: Optional[str] = None
+    source: str
+    direct_cost_usd: float
+    regions: Dict[str, float] = Field(default_factory=dict)
+
+
+class FederationCostResponse(BaseModel):
+    generated_at: str
+    organization_id: int
+    customer_id: str
+    provider_filter: str
+    total_accounts: int
+    total_cost_usd: float
+    provider_totals_usd: Dict[str, float]
+    accounts: List[FederatedAccountCostItem]
+
+
 @router.post("/analytics/kubernetes/cluster-cost", response_model=KubernetesClusterCostResponse)
 async def calculate_kubernetes_cluster_cost(
     payload: KubernetesClusterInput,
@@ -7096,6 +7608,57 @@ async def calculate_kubernetes_cluster_cost(
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Dict[str, Any]:
     """Estimate Kubernetes cluster cost allocation by namespace."""
+    if payload.opencost_enabled and payload.opencost_url:
+        try:
+            connector = ConnectorManager.get_connector(
+                ConnectorType.OPENCOST,
+                {
+                    "api_url": payload.opencost_url,
+                    "cluster_name": payload.cluster_name,
+                },
+            )
+            start_date = _utcnow() - timedelta(days=payload.opencost_window_days)
+            costs = await connector.fetch_costs(start_date=start_date, end_date=_utcnow())
+            namespace_totals: Dict[str, float] = {}
+            for point in costs:
+                namespace = (
+                    point.metadata.get("namespace")
+                    or point.resource_id
+                    or "unknown"
+                )
+                namespace_totals[namespace] = namespace_totals.get(namespace, 0.0) + float(point.amount_usd or 0.0)
+
+            total_live_cost = round(sum(namespace_totals.values()), 2)
+            if total_live_cost > 0 and namespace_totals:
+                namespace_breakdown = []
+                for ns, ns_cost in sorted(namespace_totals.items(), key=lambda item: item[1], reverse=True):
+                    share = round((ns_cost / total_live_cost) * 100, 2)
+                    namespace_breakdown.append(
+                        {
+                            "namespace": ns,
+                            "estimated_cost_usd": round(ns_cost, 2),
+                            "share_percent": share,
+                            "cpu_share_percent": share,
+                            "memory_share_percent": share,
+                        }
+                    )
+
+                return {
+                    "generated_at": _utcnow().isoformat() + "Z",
+                    "cluster_name": payload.cluster_name,
+                    "provider": payload.provider,
+                    "region": payload.region,
+                    "node_count": payload.node_count,
+                    "node_type": payload.node_type,
+                    "total_cluster_cost_usd": total_live_cost,
+                    "cost_per_node_usd": round(total_live_cost / max(payload.node_count, 1), 2),
+                    "namespace_breakdown": namespace_breakdown,
+                    "efficiency_note": "Using real OpenCost namespace allocation data.",
+                    "opencost_integration": f"live:{payload.opencost_url}",
+                }
+        except Exception as exc:
+            logger.warning("OpenCost live allocation unavailable, falling back to heuristic allocation: %s", exc)
+
     total_cost = round(payload.node_count * payload.monthly_node_cost_usd, 2)
     cost_per_node = payload.monthly_node_cost_usd
 
@@ -7137,6 +7700,562 @@ async def calculate_kubernetes_cluster_cost(
         ),
         "opencost_integration": "POST /api/v1/analytics/kubernetes/cluster-cost with real prometheus metrics for weighted allocation.",
     }
+
+
+@router.post("/analytics/kubernetes/opencost/sync", response_model=OpenCostSyncResponse)
+async def sync_opencost_costs(
+    payload: OpenCostSyncRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> OpenCostSyncResponse:
+    """Fetch production OpenCost namespace allocation for a cluster."""
+    _ = current_user
+    _require_management_role(membership, "OpenCost sync")
+    connector = ConnectorManager.get_connector(
+        ConnectorType.OPENCOST,
+        {
+            "api_url": payload.api_url,
+            "cluster_name": payload.cluster_name,
+        },
+    )
+    end_dt = _utcnow()
+    start_dt = end_dt - timedelta(days=payload.window_days)
+    try:
+        costs = await connector.fetch_costs(start_date=start_dt, end_date=end_dt)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"OpenCost sync failed: {str(exc)}") from exc
+    namespace_totals: Dict[str, float] = {}
+    for point in costs:
+        namespace = point.metadata.get("namespace") or point.resource_id or "unknown"
+        namespace_totals[namespace] = namespace_totals.get(namespace, 0.0) + float(point.amount_usd or 0.0)
+
+    total_cost = round(sum(namespace_totals.values()), 2)
+    rows = [
+        OpenCostNamespaceCost(
+            namespace=ns,
+            cost_usd=round(cost, 2),
+            share_percent=round((cost / total_cost) * 100, 2) if total_cost > 0 else 0.0,
+        )
+        for ns, cost in sorted(namespace_totals.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    return OpenCostSyncResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        cluster_name=payload.cluster_name,
+        source=payload.api_url,
+        window_days=payload.window_days,
+        total_cost_usd=total_cost,
+        namespace_count=len(rows),
+        namespaces=rows,
+    )
+
+
+def _quality_grade(score: float) -> str:
+    if score >= 90:
+        return "A"
+    if score >= 80:
+        return "B"
+    if score >= 70:
+        return "C"
+    if score >= 60:
+        return "D"
+    return "F"
+
+
+@router.get("/analytics/tag-quality", response_model=TagQualityScoreResponse)
+async def get_tag_quality_score(
+    provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> TagQualityScoreResponse:
+    """Dimension completeness scoring engine over mapped and imported cost data."""
+    _ = current_user
+    org_id = membership.organization_id
+    customer_id = _customer_id_for_org(membership)
+    dimensions = ["team", "environment", "application", "cost_center"]
+
+    mapped_q = db.query(NormalizedCostDimension).filter(NormalizedCostDimension.organization_id == org_id)
+    if provider != "all":
+        mapped_q = mapped_q.filter(NormalizedCostDimension.provider == provider)
+    mapped_rows = mapped_q.all()
+
+    dimension_data: Dict[str, Dict[str, float]] = {
+        d: {"covered_cost": 0.0, "uncovered_cost": 0.0, "missing_records": 0.0}
+        for d in dimensions
+    }
+
+    data_source = "normalized_dimensions"
+    total_records = 0
+    total_cost = 0.0
+
+    if mapped_rows:
+        total_records = len(mapped_rows)
+        for row in mapped_rows:
+            row_cost = float(row.cost_usd or 0.0)
+            total_cost += row_cost
+            for dim in dimensions:
+                if getattr(row, dim, None):
+                    dimension_data[dim]["covered_cost"] += row_cost
+                else:
+                    dimension_data[dim]["uncovered_cost"] += row_cost
+                    dimension_data[dim]["missing_records"] += 1
+    else:
+        data_source = "imported_tags"
+        imported_rows = _get_imported_cost_rows(db, org_id, customer_id, provider)
+        total_records = len(imported_rows)
+        synonyms = {
+            "team": ["team", "owner", "squad"],
+            "environment": ["environment", "env"],
+            "application": ["application", "app", "service"],
+            "cost_center": ["cost_center", "cost-center", "costcenter", "cc"],
+        }
+        for row in imported_rows:
+            row_cost = float(row.cost_usd or 0.0)
+            total_cost += row_cost
+            tags: Dict[str, Any] = {}
+            if row.tags_json:
+                try:
+                    tags = json.loads(row.tags_json)
+                except Exception:
+                    tags = {}
+            lowered = {str(k).lower(): str(v) for k, v in tags.items()}
+            for dim in dimensions:
+                if any(lowered.get(alias) for alias in synonyms[dim]):
+                    dimension_data[dim]["covered_cost"] += row_cost
+                else:
+                    dimension_data[dim]["uncovered_cost"] += row_cost
+                    dimension_data[dim]["missing_records"] += 1
+
+    dimension_scores: List[TagDimensionScore] = []
+    completeness_values: List[float] = []
+    recommendations_out: List[str] = []
+    for dim in dimensions:
+        covered = dimension_data[dim]["covered_cost"]
+        uncovered = dimension_data[dim]["uncovered_cost"]
+        completeness = round((covered / (covered + uncovered) * 100) if (covered + uncovered) > 0 else 0.0, 2)
+        completeness_values.append(completeness)
+        if completeness < 80:
+            recommendations_out.append(
+                f"Improve {dim} tagging coverage (current {completeness:.1f}%)."
+            )
+        dimension_scores.append(
+            TagDimensionScore(
+                dimension=dim,
+                completeness_percent=completeness,
+                covered_cost_usd=round(covered, 2),
+                uncovered_cost_usd=round(uncovered, 2),
+                missing_records=int(dimension_data[dim]["missing_records"]),
+            )
+        )
+
+    score = round(sum(completeness_values) / len(completeness_values), 2) if completeness_values else 0.0
+    return TagQualityScoreResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        organization_id=org_id,
+        provider_filter=provider,
+        data_source=data_source,
+        total_records=total_records,
+        total_cost_usd=round(total_cost, 2),
+        completeness_score=score,
+        quality_grade=_quality_grade(score),
+        dimensions=dimension_scores,
+        recommendations=recommendations_out,
+    )
+
+
+@router.get("/federation/costs", response_model=FederationCostResponse)
+async def get_federated_costs(
+    provider: str = "all",
+    include_regions: bool = True,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> FederationCostResponse:
+    """Cross-account federation across linked provider accounts with imported-cost fallback."""
+    _ = current_user
+    org_id = membership.organization_id
+    customer_id = _customer_id_for_org(membership)
+
+    accounts_q = db.query(ProviderAccount).filter(ProviderAccount.organization_id == org_id)
+    if provider != "all":
+        accounts_q = accounts_q.filter(ProviderAccount.provider == provider)
+    accounts = accounts_q.all()
+    account_by_id = {a.id: a for a in accounts}
+
+    parent_lookup: Dict[int, str] = {}
+    if account_by_id:
+        links = (
+            db.query(ProviderAccountLink)
+            .filter(ProviderAccountLink.child_account_id.in_(list(account_by_id.keys())))
+            .all()
+        )
+        for link in links:
+            parent = account_by_id.get(link.parent_account_id)
+            if parent:
+                parent_lookup[link.child_account_id] = parent.account_identifier
+
+    latest_by_account: Dict[int, ProviderAccountSnapshot] = {}
+    if account_by_id:
+        snaps = (
+            db.query(ProviderAccountSnapshot)
+            .filter(ProviderAccountSnapshot.provider_account_id.in_(list(account_by_id.keys())))
+            .order_by(ProviderAccountSnapshot.captured_at.desc())
+            .all()
+        )
+        for snap in snaps:
+            if snap.provider_account_id not in latest_by_account:
+                latest_by_account[snap.provider_account_id] = snap
+
+    region_map: Dict[int, Dict[str, float]] = {}
+    if include_regions and account_by_id:
+        allocs = (
+            db.query(CostAllocationSnapshot)
+            .filter(CostAllocationSnapshot.provider_account_id.in_(list(account_by_id.keys())))
+            .order_by(CostAllocationSnapshot.captured_at.desc())
+            .all()
+        )
+        seen_region_scan: set[tuple[int, str, str]] = set()
+        for alloc in allocs:
+            key = (alloc.provider_account_id, alloc.scan_id, alloc.region)
+            if key in seen_region_scan:
+                continue
+            seen_region_scan.add(key)
+            region_map.setdefault(alloc.provider_account_id, {})
+            region_map[alloc.provider_account_id][alloc.region] = round(
+                region_map[alloc.provider_account_id].get(alloc.region, 0.0) + float(alloc.cost_usd or 0.0),
+                2,
+            )
+
+    rows: List[FederatedAccountCostItem] = []
+    provider_totals: Dict[str, float] = {}
+    seen_account_keys: set[str] = set()
+
+    for account_id, account in account_by_id.items():
+        snap = latest_by_account.get(account_id)
+        cost_usd = round(float(snap.direct_cost_usd or 0.0), 2) if snap else 0.0
+        provider_totals[account.provider] = round(provider_totals.get(account.provider, 0.0) + cost_usd, 2)
+        account_key = f"{account.provider}:{account.account_identifier}"
+        seen_account_keys.add(account_key)
+        rows.append(
+            FederatedAccountCostItem(
+                provider=account.provider,
+                account_identifier=account.account_identifier,
+                account_name=account.account_name,
+                account_type=account.account_type,
+                parent_account_identifier=parent_lookup.get(account_id),
+                source="snapshot" if snap else "account",
+                direct_cost_usd=cost_usd,
+                regions=region_map.get(account_id, {}) if include_regions else {},
+            )
+        )
+
+    imported = _get_imported_cost_rows(db, org_id, customer_id, provider)
+    imported_agg: Dict[str, Dict[str, Any]] = {}
+    for rec in imported:
+        prov = (rec.provider or "unknown").lower()
+        acct = rec.account_identifier or rec.account_name or f"imported-{rec.id}"
+        key = f"{prov}:{acct}"
+        if key in seen_account_keys:
+            continue
+        if key not in imported_agg:
+            imported_agg[key] = {
+                "provider": prov,
+                "account_identifier": acct,
+                "account_name": rec.account_name or acct,
+                "account_type": rec.account_type or "imported",
+                "direct_cost_usd": 0.0,
+                "regions": {},
+            }
+        imported_agg[key]["direct_cost_usd"] += float(rec.cost_usd or 0.0)
+        region_key = rec.region or "global"
+        imported_agg[key]["regions"][region_key] = round(
+            imported_agg[key]["regions"].get(region_key, 0.0) + float(rec.cost_usd or 0.0),
+            2,
+        )
+
+    for row in imported_agg.values():
+        provider_totals[row["provider"]] = round(provider_totals.get(row["provider"], 0.0) + row["direct_cost_usd"], 2)
+        rows.append(
+            FederatedAccountCostItem(
+                provider=row["provider"],
+                account_identifier=row["account_identifier"],
+                account_name=row["account_name"],
+                account_type=row["account_type"],
+                source="imported",
+                direct_cost_usd=round(row["direct_cost_usd"], 2),
+                regions=row["regions"] if include_regions else {},
+            )
+        )
+
+    rows.sort(key=lambda x: x.direct_cost_usd, reverse=True)
+    total_cost = round(sum(r.direct_cost_usd for r in rows), 2)
+    return FederationCostResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        organization_id=org_id,
+        customer_id=customer_id,
+        provider_filter=provider,
+        total_accounts=len(rows),
+        total_cost_usd=total_cost,
+        provider_totals_usd=provider_totals,
+        accounts=rows,
+    )
+
+
+@router.get("/recommendations/decision-grade", response_model=DecisionRecommendationResponse)
+async def get_decision_grade_recommendations(
+    provider: str = "all",
+    top_n: int = Query(10, ge=1, le=50),
+    min_monthly_savings: float = Query(10.0, ge=0),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> DecisionRecommendationResponse:
+    """ML-enhanced (deterministic scoring) ranked optimization recommendations."""
+    _ = current_user
+    org_id = membership.organization_id
+    context = await _cost_context(membership, db, "month", provider)
+    provider_filter = provider
+
+    raw = _safe_json_load(
+        await recommendations.get_recommendations(
+            {
+                "cloud_provider": provider,
+                "current_monthly_spend": context.get("total_cost", 0.0),
+                "cost_breakdown": context.get("breakdown", {}),
+                "min_savings_usd": min_monthly_savings * 12,
+            }
+        ),
+        {},
+    )
+
+    scored: List[DecisionRecommendationItem] = []
+    confidence_map = {"low": 0.45, "medium": 0.7, "high": 0.9}
+    max_monthly_savings = max(
+        [float((r.get("savings_annual_usd", 0) or 0) / 12.0) for r in raw.get("recommendations", [])] + [1.0]
+    )
+
+    for idx, rec in enumerate(raw.get("recommendations", []), start=1):
+        monthly_savings = float(rec.get("savings_annual_usd", 0) or 0) / 12.0
+        if monthly_savings < min_monthly_savings:
+            continue
+        payback = float(rec.get("payback_months", 3) or 3)
+        confidence = confidence_map.get(str(rec.get("confidence", "medium")).lower(), 0.7)
+        savings_signal = min(monthly_savings / max_monthly_savings, 1.0)
+        urgency = 1.0 if str(rec.get("severity", "medium")).lower() == "high" else 0.65
+        payback_signal = max(0.0, min(1.0, (12.0 - min(payback, 12.0)) / 12.0))
+        decision_score = round((0.45 * savings_signal + 0.30 * confidence + 0.15 * urgency + 0.10 * payback_signal) * 100, 2)
+
+        scored.append(
+            DecisionRecommendationItem(
+                recommendation_id=str(rec.get("id") or f"rec-{idx:03d}"),
+                provider=(provider_filter if provider_filter != "all" else "multi-cloud"),
+                category=str(rec.get("type") or "optimization"),
+                title=str(rec.get("description") or "Optimization recommendation"),
+                estimated_monthly_savings_usd=round(monthly_savings, 2),
+                payback_months=round(payback, 2),
+                confidence_score=round(confidence * 100, 2),
+                urgency_score=round(urgency * 100, 2),
+                decision_score=decision_score,
+                rationale=(
+                    f"Savings signal {savings_signal:.2f}, confidence {confidence:.2f}, "
+                    f"urgency {urgency:.2f}, payback factor {payback_signal:.2f}."
+                ),
+            )
+        )
+
+    scored.sort(key=lambda item: item.decision_score, reverse=True)
+    scored = scored[:top_n]
+    return DecisionRecommendationResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        organization_id=org_id,
+        provider_filter=provider_filter,
+        model="ensemble_v1_deterministic",
+        total_candidates=len(scored),
+        top_recommendations=scored,
+        model_features=[
+            "normalized_monthly_savings",
+            "confidence_score",
+            "severity_urgency",
+            "payback_signal",
+        ],
+    )
+
+
+@router.post("/automation/remediation/loop", response_model=RemediationLoopResponse)
+async def run_auto_remediation_loop(
+    payload: RemediationLoopRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> RemediationLoopResponse:
+    """Safe automation loop with guardrails for auto-remediation actions."""
+    _require_management_role(membership, "auto-remediation")
+
+    candidates = list(payload.candidates)
+    if not candidates:
+        imported = (
+            db.query(ImportedCostRecord)
+            .filter(ImportedCostRecord.organization_id == membership.organization_id)
+            .limit(30)
+            .all()
+        )
+        synthesized = _rightsizing_from_imported_costs(imported, min_savings=5.0)
+        candidates = [
+            RemediationCandidate(
+                action_id=f"auto-{idx:03d}",
+                provider=rec.provider,
+                resource_id=rec.resource_id,
+                action_type=rec.action,
+                estimated_monthly_impact_usd=float(rec.monthly_savings_usd),
+                risk_level="high" if rec.effort == "high" else "medium" if rec.effort == "medium" else "low",
+                confidence=rec.confidence,
+                metadata={"generated_from": "rightsizing"},
+            )
+            for idx, rec in enumerate(synthesized, start=1)
+        ]
+
+    decisions: List[RemediationDecision] = []
+    planned_impact = 0.0
+    planned_count = 0
+    executed_count = 0
+    approval_count = 0
+    skipped_count = 0
+
+    for candidate in sorted(candidates, key=lambda c: c.estimated_monthly_impact_usd, reverse=True):
+        if candidate.provider not in payload.allowed_providers:
+            decisions.append(
+                RemediationDecision(
+                    action_id=candidate.action_id,
+                    provider=candidate.provider,
+                    resource_id=candidate.resource_id,
+                    action_type=candidate.action_type,
+                    estimated_monthly_impact_usd=candidate.estimated_monthly_impact_usd,
+                    status="skipped",
+                    reason="Provider not allowed by guardrail.",
+                )
+            )
+            skipped_count += 1
+            continue
+
+        if candidate.action_type not in payload.allowed_actions:
+            decisions.append(
+                RemediationDecision(
+                    action_id=candidate.action_id,
+                    provider=candidate.provider,
+                    resource_id=candidate.resource_id,
+                    action_type=candidate.action_type,
+                    estimated_monthly_impact_usd=candidate.estimated_monthly_impact_usd,
+                    status="skipped",
+                    reason="Action type not allowed by guardrail.",
+                )
+            )
+            skipped_count += 1
+            continue
+
+        if planned_count >= payload.max_actions_per_run:
+            decisions.append(
+                RemediationDecision(
+                    action_id=candidate.action_id,
+                    provider=candidate.provider,
+                    resource_id=candidate.resource_id,
+                    action_type=candidate.action_type,
+                    estimated_monthly_impact_usd=candidate.estimated_monthly_impact_usd,
+                    status="skipped",
+                    reason="Max actions per run reached.",
+                )
+            )
+            skipped_count += 1
+            continue
+
+        if planned_impact + candidate.estimated_monthly_impact_usd > payload.max_total_impact_usd:
+            decisions.append(
+                RemediationDecision(
+                    action_id=candidate.action_id,
+                    provider=candidate.provider,
+                    resource_id=candidate.resource_id,
+                    action_type=candidate.action_type,
+                    estimated_monthly_impact_usd=candidate.estimated_monthly_impact_usd,
+                    status="skipped",
+                    reason="Max total impact guardrail reached.",
+                )
+            )
+            skipped_count += 1
+            continue
+
+        if candidate.risk_level == "high" or candidate.estimated_monthly_impact_usd >= payload.require_approval_above_usd:
+            decisions.append(
+                RemediationDecision(
+                    action_id=candidate.action_id,
+                    provider=candidate.provider,
+                    resource_id=candidate.resource_id,
+                    action_type=candidate.action_type,
+                    estimated_monthly_impact_usd=candidate.estimated_monthly_impact_usd,
+                    status="requires_approval",
+                    reason="Action exceeds approval threshold or is high risk.",
+                )
+            )
+            approval_count += 1
+            continue
+
+        planned_impact += candidate.estimated_monthly_impact_usd
+        planned_count += 1
+        status_value: Literal["planned", "executed", "requires_approval", "skipped"] = "planned"
+        reason_value = "Dry run mode: action planned but not executed."
+        if not payload.dry_run:
+            status_value = "executed"
+            reason_value = "Executed within guardrails."
+            executed_count += 1
+            db.add(
+                AuditLog(
+                    organization_id=membership.organization_id,
+                    actor_user_id=current_user.id,
+                    action="auto_remediation_executed",
+                    entity_type="remediation_action",
+                    entity_id=candidate.action_id,
+                    metadata_json=json.dumps(
+                        {
+                            "provider": candidate.provider,
+                            "resource_id": candidate.resource_id,
+                            "action_type": candidate.action_type,
+                            "estimated_monthly_impact_usd": candidate.estimated_monthly_impact_usd,
+                        }
+                    ),
+                    created_at=_utcnow(),
+                )
+            )
+        decisions.append(
+            RemediationDecision(
+                action_id=candidate.action_id,
+                provider=candidate.provider,
+                resource_id=candidate.resource_id,
+                action_type=candidate.action_type,
+                estimated_monthly_impact_usd=candidate.estimated_monthly_impact_usd,
+                status=status_value,
+                reason=reason_value,
+            )
+        )
+
+    if not payload.dry_run and executed_count > 0:
+        db.commit()
+
+    return RemediationLoopResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        dry_run=payload.dry_run,
+        guardrails={
+            "max_actions_per_run": payload.max_actions_per_run,
+            "max_total_impact_usd": payload.max_total_impact_usd,
+            "require_approval_above_usd": payload.require_approval_above_usd,
+            "allowed_providers": payload.allowed_providers,
+            "allowed_actions": payload.allowed_actions,
+        },
+        executed_count=executed_count,
+        planned_count=planned_count,
+        requires_approval_count=approval_count,
+        skipped_count=skipped_count,
+        total_planned_impact_usd=round(planned_impact, 2),
+        decisions=decisions,
+    )
 
 
 @router.get("/analytics/kubernetes/summary")

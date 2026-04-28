@@ -51,17 +51,7 @@ Current backend coverage includes:
 - external GCP budget Pub/Sub ingestion into normalized alert events
 - public-mode info contract and dashboard data endpoints
 - forecast/analytics response contract checks for deeper FinOps fields (`forecast_summary`, `genai_context`, `provider_concentration_hhi`, `spend_at_risk_usd`, `optimization_capacity_usd`, `budget_utilization_percent`)
-- `/api/v1/info` contract checks for new feature flags (`forecast_sensitivity`, `optimization_portfolio`, `genai_forecast_sensitivity`, `genai_optimization_portfolio`, `genai_stakeholder_briefs`)
 - Alembic upgrade/downgrade roundtrip (`base` → `head` → `base` → `head`)
-
-**Deep FinOps analytics and GenAI** (`tests/test_deep_finops_analytics.py`):
-
-- forecast quality/downside risk contract on `GET /api/v1/forecast`
-- deterministic what-if timeline, payback, and net savings on `POST /api/v1/forecast/what-if`
-- forecast sensitivity stress testing contract on `GET /api/v1/forecast/sensitivity`
-- optimization portfolio sequencing/NPV contract on `GET /api/v1/analytics/optimization-portfolio`
-- GenAI analyze coverage for new types: `forecast_sensitivity`, `optimization_portfolio`, `stakeholder_brief`
-- GenAI copilot pack coverage for additional narratives (`forecast_sensitivity`, `optimization_portfolio`, stakeholder briefs)
 
 **Platform hardening** (`tests/test_platform_hardening.py`):
 

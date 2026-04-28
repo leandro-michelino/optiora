@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 
-TEST_DB = os.path.join(tempfile.gettempdir(), f"optiora_auth_flow_{os.getpid()}.db")
+TEST_DB = os.path.join(tempfile.gettempdir(), "optiora_auth_flow_test.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["ENABLE_AUTH"] = "true"
 os.environ["SECRET_KEY"] = "test-secret-key"
@@ -39,10 +39,6 @@ except ImportError as exc:  # pragma: no cover - local dependency guard
 class AuthFlowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        try:
-            os.remove(TEST_DB)
-        except FileNotFoundError:
-            pass
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
         cls.client = TestClient(app)
@@ -50,7 +46,10 @@ class AuthFlowTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         Base.metadata.drop_all(bind=engine)
-        engine.dispose()
+        try:
+            os.remove(TEST_DB)
+        except FileNotFoundError:
+            pass
 
     def test_auth_refresh_password_reset_and_orgs(self) -> None:
         register = self.client.post(
@@ -615,11 +614,6 @@ class AuthFlowTest(unittest.TestCase):
                 self.assertTrue(features["csv_import_templates"])
                 self.assertTrue(features["excel_exports"])
                 self.assertTrue(features["executive_reports"])
-                self.assertTrue(features["forecast_sensitivity"])
-                self.assertTrue(features["optimization_portfolio"])
-                self.assertTrue(features["genai_forecast_sensitivity"])
-                self.assertTrue(features["genai_optimization_portfolio"])
-                self.assertTrue(features["genai_stakeholder_briefs"])
 
                 template = public_client.get("/api/v1/imports/costs/template.csv")
                 self.assertEqual(template.status_code, 200)
