@@ -36,6 +36,9 @@
 - external GCP budget Pub/Sub ingestion with dedupe and audit trail
 - connector framework for CloudHealth, Spot, and OpenCost
 - Kubernetes namespace cost allocation and OpenCost sync MVP
+- Kubernetes workload/team/node-pool allocation with request and node-pool recommendations
+- MSP customer portfolio endpoint and white-label configuration response
+- forecast champion/challenger model diagnostics with data quality, drift flags, and GenAI model-risk prompts
 - unit economics, scorecards, virtual tags, decision-grade recommendations, and resource-level rightsizing endpoints
 - alert lifecycle states, routing-policy simulator, destination tests/toggles/status, data freshness observability, and channel delivery telemetry
 
@@ -304,10 +307,11 @@ Goal: move from visibility into guided cost action.
 
 Goal: become a differentiated and scalable multi-cloud FinOps platform.
 
-Status: **initial MVP implemented for Kubernetes depth, MSP portfolio, and white-label configuration; keep deepening operational workflows**.
+Status: **initial MVP implemented for Kubernetes depth, MSP portfolio, white-label configuration, and forecast model governance; keep deepening operational workflows**.
 
-- deepen Kubernetes cost allocation beyond namespace/OpenCost MVP into workload/team/node-pool/request-limit recommendations
+- deepen Kubernetes cost allocation with persisted OpenCost pod/workload history and allocation exports
 - deepen unit economics views with benchmark history and product/workload trends
+- deepen forecast governance with stored model diagnostics and approval snapshots
 - add stronger cross-provider governance
 - add advanced automation policies
 - add partner and MSP operational modes

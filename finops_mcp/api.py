@@ -1394,14 +1394,26 @@ def _historical_monthly_spend_from_snapshots(
         query = query.filter(CostSnapshot.provider == cloud_provider)
     rows = query.order_by(CostSnapshot.captured_at.desc()).limit(500).all()
 
-    month_totals: Dict[str, float] = {}
+    latest_by_month_provider: Dict[tuple[str, str], CostSnapshot] = {}
     for row in rows:
         anchor = row.period_end or row.period_start or row.captured_at
         if anchor is None:
             continue
         month_key = anchor.strftime("%Y-%m")
-        month_totals[month_key] = month_totals.get(month_key, 0.0) + float(row.total_cost_usd or 0.0)
+        provider_key = str(row.provider or "unknown").lower()
+        key = (month_key, provider_key)
+        existing = latest_by_month_provider.get(key)
+        existing_anchor = (
+            existing.period_end or existing.period_start or existing.captured_at
+            if existing is not None
+            else None
+        )
+        if existing is None or (existing_anchor is not None and anchor > existing_anchor):
+            latest_by_month_provider[key] = row
 
+    month_totals: Dict[str, float] = {}
+    for (month_key, _), row in latest_by_month_provider.items():
+        month_totals[month_key] = month_totals.get(month_key, 0.0) + float(row.total_cost_usd or 0.0)
     ordered = sorted(month_totals.items())
     return [round(value, 2) for _, value in ordered[-months:]]
 
@@ -4079,6 +4091,46 @@ async def dashboard_forecast_stress_test(
     return result
 
 
+@router.get("/forecast/model-diagnostics")
+async def dashboard_forecast_model_diagnostics(
+    months: int = Query(default=12, ge=1, le=24),
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Champion/challenger forecast model diagnostics and model-risk advisory context."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+        months=18,
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_forecast_model_diagnostics(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                "fallback_monthly_spend": 0,
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(result)
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/analytics")
 async def dashboard_analytics(
     cloud_provider: str = "all",
@@ -4248,7 +4300,7 @@ class GenAIAnalyzeRequest(BaseModel):
         "waste_insights", "optimization_roadmap", "executive_narrative", "commitment_strategy",
         "tagging_strategy", "sustainability_narrative", "chargeback_narrative",
         "cross_provider_comparison_brief", "alert_triage", "rightsizing_brief",
-        "vendor_negotiation_brief",
+        "vendor_negotiation_brief", "forecast_model_diagnostics",
     ] = "spend"
     context: Dict[str, Any] = Field(default_factory=dict)
     anomaly: Optional[Dict[str, Any]] = None
@@ -4264,6 +4316,12 @@ class GenAICopilotPackRequest(BaseModel):
             "optimization_roadmap",
             "executive_narrative",
             "commitment_strategy",
+            "tagging_strategy",
+            "sustainability_narrative",
+            "chargeback_narrative",
+            "rightsizing_brief",
+            "vendor_negotiation_brief",
+            "forecast_model_diagnostics",
         ]
     ] = Field(default_factory=lambda: ["spend", "optimization_roadmap", "executive_narrative"])
 
@@ -4507,6 +4565,8 @@ async def genai_analyze(
         narrative, prompt = genai_advisor.generate_rightsizing_brief(ctx)
     elif request.analysis_type == "vendor_negotiation_brief":
         narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(ctx)
+    elif request.analysis_type == "forecast_model_diagnostics":
+        narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(ctx)
 
     return {
         "analysis_type": request.analysis_type,
@@ -4605,6 +4665,27 @@ async def genai_copilot_pack(
             narrative, prompt = genai_advisor.generate_rightsizing_brief(base_context)
         elif item == "vendor_negotiation_brief":
             narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(base_context)
+        elif item == "forecast_model_diagnostics":
+            historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+                db=db,
+                customer_id=customer_id,
+                cloud_provider=request.cloud_provider,
+                months=18,
+            )
+            diagnostics_result = _safe_json_load(
+                await finops_analytics.get_forecast_model_diagnostics(
+                    {
+                        "months": 12,
+                        "cloud_provider": request.cloud_provider,
+                        "current_monthly_spend": context["total_cost"],
+                        "cost_breakdown": context["breakdown"],
+                        "historical_monthly_spend": historical_monthly_spend,
+                        "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                    }
+                ),
+                {},
+            )
+            narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(diagnostics_result)
         else:
             narrative, prompt = genai_advisor.generate_commitment_strategy(base_context)
 
@@ -4947,6 +5028,7 @@ async def api_info() -> Dict[str, Any]:
             "forecasting": True,
             "forecast_what_if": True,
             "forecast_stress_test": True,
+            "forecast_model_diagnostics": True,
             "cost_attribution": True,
             "commitment_optimization": True,
             "optimization_portfolio": True,
@@ -4962,6 +5044,7 @@ async def api_info() -> Dict[str, Any]:
             "genai_optimization_roadmap": True,
             "genai_executive_narrative": True,
             "genai_commitment_strategy": True,
+            "genai_forecast_model_diagnostics": True,
             "genai_copilot_pack": True,
             "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,

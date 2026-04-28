@@ -4,6 +4,12 @@ Reviewed in April 2026.
 
 ## What was cleaned up in this pass
 
+- Added forecast champion/challenger diagnostics and model-risk advisory prompts.
+- Fixed monthly cost snapshot history so repeated captures in the same month/provider do not inflate forecast history.
+- Updated the forecasting dashboard with model diagnostics.
+- Expanded GenAI copilot coverage for non-forecast FinOps use cases.
+- Converted the primary runtime architecture diagram to portable ASCII.
+- Updated Ruff configuration to the modern `[tool.ruff.lint]` layout.
 - Consolidated `ARCHITECTURE.md` into a single authoritative document.
 - Removed duplicated architecture sections that would drift over time.
 - Refreshed `README.md` so it matches the current architecture and feature intent more closely.
@@ -33,8 +39,8 @@ The forecasting and analytics implementation is already correctly oriented towar
 ### High priority
 
 - Add focused regression tests for GenAI advisor prompt builders and fallback mode.
-- Add endpoint-level tests for `/api/v1/advisor/hybrid`, `/api/v1/genai/analyze`, and `/api/v1/genai/copilot-pack`.
-- Add dedicated tests for forecasting guardrails, breach probability, and scenario timeline consistency.
+- Add more endpoint-level tests for `/api/v1/advisor/hybrid`, `/api/v1/genai/analyze`, and `/api/v1/genai/copilot-pack`.
+- Add dedicated tests for forecasting guardrails, breach probability, model diagnostics, and scenario timeline consistency.
 - Introduce a small validation suite to ensure README and API surface stay aligned.
 
 ### Medium priority
@@ -54,12 +60,13 @@ The forecasting and analytics implementation is already correctly oriented towar
 - Replace process-local rate limiting with Redis-backed distributed throttling for multi-replica deployments.
 - Add explicit provider timeout and retry policy configuration for external API calls.
 - Add stronger contract tests for imported CSV schemas and fallback behavior.
-- Add CI checks that fail on duplicated architecture sections or stale endpoint references.
+- Keep laptop-run release checks for duplicated architecture sections and stale endpoint references.
 
 ## Forecasting enhancement ideas for the next iteration
 
-- Forecast explainability layer for drivers: trend, seasonality, concentration, and volatility contribution.
-- Explicit forecast error decomposition per provider.
+- Store forecast diagnostics snapshots so model risk can be trended across releases.
+- Add forecast explainability by driver: trend, seasonality, concentration, and volatility contribution.
+- Add explicit forecast error decomposition per provider.
 - Budget corridor planning by owner, team, or cost-center.
 - Confidence downgrade logic when source data is synthetic or sparse.
 - Rolling benchmark comparisons against prior 3, 6, and 12 month windows.
@@ -74,4 +81,4 @@ The forecasting and analytics implementation is already correctly oriented towar
 
 ## Final recommendation
 
-The project direction is strong. The highest-value next step is not adding many more features at once, but tightening test coverage, modularizing the large API file, and making documentation accuracy part of CI so the repo stays clean as capabilities continue to expand.
+The project direction is strong. The highest-value next step is tightening test coverage, modularizing the large API file, and making documentation accuracy part of the laptop-run release gate so the repo stays clean as capabilities continue to expand.

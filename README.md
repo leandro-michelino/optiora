@@ -11,7 +11,7 @@ The dashboard is the main workspace for:
 - multi-cloud cost visibility across AWS, Azure, GCP, and OCI
 - provider onboarding, CSV billing upload, and scan readiness checks
 - anomaly detection and optimization recommendations
-- forecasting with deterministic scenarios, fan percentiles, downside risk, and budget guardrails
+- forecasting with deterministic scenarios, fan percentiles, downside risk, model diagnostics, and budget guardrails
 - deeper FinOps analytics such as unit economics, scorecards, tagging coverage, sustainability, cross-provider comparison, anomaly intelligence, and chargeback/showback
 - resource inventory, Kubernetes cost allocation, virtual tagging, and rightsizing workflows
 - OCI GenAI-assisted narratives, hybrid advisory flows, and copilot bundles
@@ -35,14 +35,19 @@ OptiOra keeps cost math deterministic and inspectable. Forecast values, savings 
 
 ```text
 Users
-  > Next.js dashboard
-    > FastAPI backend
-      > SQLite or PostgreSQL
-      > Cloud provider APIs
-      > OCI Generative AI
+  |
+  v
+Next.js dashboard
+  |
+  v
+FastAPI backend
+  |
+  +--> SQLite or PostgreSQL
+  +--> Cloud provider APIs
+  +--> OCI Generative AI
 ```
 
-## Textual Diagram – Final Architecture
+## Textual Diagram - Final Architecture
 
 The dashboard is the presentation layer. The FastAPI backend is the control plane and system of record for cost ingestion, forecasting, analytics, rightsizing, alerts, exports, and business mapping. Cost data arrives from live cloud-provider APIs or imported CSV files. Deterministic analytics in `finops_mcp/tools/finops_analytics.py` calculate spend, risk, savings, efficiency, and forecast outcomes. OCI Generative AI is then used for narratives such as executive summaries, anomaly explanations, roadmap generation, tagging strategy, sustainability commentary, chargeback summaries, and multi-cloud comparison briefs.
 
@@ -56,6 +61,7 @@ The dashboard is the presentation layer. The FastAPI backend is the control plan
 - budget guardrails and breach probability
 - what-if simulation with phased actions, ROI, and payback
 - deterministic stress testing for demand, price, and execution shocks
+- champion/challenger model diagnostics with data quality, drift flags, and wMAPE
 
 ### FinOps analytics
 
@@ -88,6 +94,8 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - cross-provider comparison briefs
 - rightsizing ROI briefs
 - vendor negotiation talking points
+- forecast model-risk explanations
+- MSP/customer portfolio summaries and next-best-action prompts
 
 ## Key Behavior
 
@@ -120,6 +128,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `GET /api/v1/forecast`
 - `POST /api/v1/forecast/what-if`
 - `POST /api/v1/forecast/stress-test`
+- `GET /api/v1/forecast/model-diagnostics`
 - `GET /api/v1/analytics`
 - `GET /api/v1/analytics/attribution`
 - `GET /api/v1/analytics/commitment-optimization`

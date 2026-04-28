@@ -51,12 +51,12 @@ Current backend coverage includes:
 - external GCP budget Pub/Sub ingestion into normalized alert events
 - public-mode info contract and dashboard data endpoints
 - forecast/analytics response contract checks for deeper FinOps fields (`forecast_summary`, `genai_context`, `provider_concentration_hhi`, `spend_at_risk_usd`, `optimization_capacity_usd`, `budget_utilization_percent`)
-- Alembic upgrade/downgrade roundtrip (`base` → `head` → `base` → `head`)
+- Alembic upgrade/downgrade roundtrip (`base` -> `head` -> `base` -> `head`)
 
 **Platform hardening** (`tests/test_platform_hardening.py`):
 
 - credential delete: success with list emptying, 404 for missing, role enforcement (readonly blocked)
-- scan pause/resume: state transitions `approved` → `paused` → `running`
+- scan pause/resume: state transitions `approved` -> `paused` -> `running`
 - scheduler run-now endpoint returns status payload
 - public-mode CSV upload: upload succeeds without auth, summary and costs reflect import
 - ORM column schema: `imported_cost_records` hierarchy columns, `provider_accounts` table, `audit_logs` columns
@@ -87,6 +87,19 @@ Current backend coverage includes:
 - deterministic stress envelope endpoint contract (`POST /api/v1/forecast/stress-test`)
 - optimization portfolio ranking endpoint contract (`GET /api/v1/analytics/optimization-portfolio`)
 - API feature flags include `forecast_stress_test` and `optimization_portfolio`
+
+**Deep FinOps analytics and GenAI** (`tests/test_deep_finops_analytics.py`):
+
+- forecast quality and downside-risk contract
+- what-if timeline simulation
+- champion/challenger model diagnostics (`GET /api/v1/forecast/model-diagnostics`)
+- GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, and vendor negotiation
+
+**Kubernetes and partner portfolio** (`tests/test_kubernetes.py`, `tests/test_partner_portfolio.py`):
+
+- Kubernetes namespace, workload, team, node pool, and recommendation contract
+- MSP/partner customer portfolio aggregation across accessible organizations
+- white-label response configuration
 
 Smoke endpoints:
 

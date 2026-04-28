@@ -334,6 +334,44 @@ export interface ForecastStressTestResponse {
   genai_prompt?: string
 }
 
+export interface ForecastModelDiagnosticRow {
+  model: string
+  holdout_months: number
+  mape_percent: number | null
+  wmape_percent: number | null
+  rmse_usd: number | null
+  bias_percent: number | null
+  actual_points: number[]
+  predicted_points: number[]
+}
+
+export interface ForecastModelDiagnosticsResponse {
+  generated_at: string
+  forecast_months: number
+  history_source: 'cost_snapshots' | 'synthetic' | string
+  history_points: number
+  data_quality_score: number
+  champion_model: string
+  champion_wmape_percent?: number | null
+  model_risk_level: 'low' | 'medium' | 'high' | string
+  challenger_models: ForecastModelDiagnosticRow[]
+  drift_signals: {
+    flags: string[]
+    cost_velocity_pct_mom?: number | null
+    trend_acceleration_usd?: number | null
+    residual_stddev_usd: number
+    seasonality_strength: number
+    provider_concentration_hhi: number
+    weighted_volatility: number
+    weighted_commitment: number
+  }
+  production_forecast_summary?: Record<string, unknown>
+  forecast_quality?: Record<string, unknown>
+  recommended_controls: string[]
+  genai_narrative?: string | null
+  genai_prompt?: string
+}
+
 export interface OptimizationPortfolioAction {
   id: string
   title: string

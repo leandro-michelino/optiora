@@ -22,6 +22,7 @@ import {
   SchedulerStatusResponse,
   ScanStartResponse,
   ForecastResponse,
+  ForecastModelDiagnosticsResponse,
   ForecastStressTestResponse,
   FinOpsAnalyticsResponse,
   CloudWasteResponse,
@@ -250,6 +251,13 @@ export async function fetchForecast(months = 12): Promise<ForecastResponse> {
   )
 }
 
+export async function fetchForecastModelDiagnostics(months = 12): Promise<ForecastModelDiagnosticsResponse> {
+  return requestJson<ForecastModelDiagnosticsResponse>(
+    `/api/v1/forecast/model-diagnostics?months=${encodeURIComponent(String(months))}`,
+    {},
+  )
+}
+
 export async function fetchForecastStressTest(payload: {
   months?: number
   cloud_provider?: string
@@ -321,6 +329,12 @@ export async function fetchGenAICopilotPack(payload: {
     | 'optimization_roadmap'
     | 'executive_narrative'
     | 'commitment_strategy'
+    | 'tagging_strategy'
+    | 'sustainability_narrative'
+    | 'chargeback_narrative'
+    | 'rightsizing_brief'
+    | 'vendor_negotiation_brief'
+    | 'forecast_model_diagnostics'
   >
 } = {}): Promise<GenAICopilotPackResponse> {
   return requestJson<GenAICopilotPackResponse>('/api/v1/genai/copilot-pack', {

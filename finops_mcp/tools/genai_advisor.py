@@ -799,3 +799,42 @@ def generate_vendor_negotiation_brief(context: dict[str, Any]) -> tuple[Optional
     if not _is_configured():
         return None, prompt
     return _sign_and_call(prompt), prompt
+
+
+def generate_forecast_model_diagnostics(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a model-risk narrative from deterministic forecast diagnostics.
+
+    This is intentionally advisory only. The diagnostics endpoint remains the
+    source of truth for model selection, accuracy, drift, and data quality.
+    """
+    champion = context.get("champion_model", "blended_regression")
+    model_risk = context.get("model_risk_level", "medium")
+    quality = context.get("data_quality_score", 0)
+    history_source = context.get("history_source", "synthetic")
+    history_points = context.get("history_points", 0)
+    drift = context.get("drift_signals", {})
+    challengers = context.get("challenger_models", [])
+    best_error = context.get("champion_wmape_percent")
+
+    challenger_summary = "; ".join(
+        f"{row.get('model')}: wMAPE {row.get('wmape_percent')}"
+        for row in challengers[:4]
+    ) or "no challenger backtest available"
+
+    prompt = (
+        "You are a FinOps forecasting reviewer. Write a concise model-risk note for finance "
+        "and engineering. Explain why the champion forecast model was selected, what data "
+        "quality limitations remain, and what operational action improves forecast confidence. "
+        "Do not change any numbers.\n\n"
+        f"Champion model: {champion}. "
+        f"Champion wMAPE: {best_error}. "
+        f"Model risk level: {model_risk}. "
+        f"Data quality score: {quality}/100. "
+        f"History source: {history_source}; history points: {history_points}. "
+        f"Drift signals: {drift}. "
+        f"Challenger models: {challenger_summary}."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt

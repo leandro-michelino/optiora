@@ -17,6 +17,7 @@ import {
   fetchApiHealth,
   fetchCostTrend,
   fetchForecast,
+  fetchForecastModelDiagnostics,
   fetchForecastStressTest,
   fetchGenAICopilotPack,
   fetchImportedCostSummary,
@@ -29,6 +30,7 @@ import {
   ApiHealth,
   CostTrendResponse,
   ForecastPoint,
+  ForecastModelDiagnosticsResponse,
   ForecastResponse,
   ForecastScenario,
   ForecastStressTestResponse,
@@ -99,6 +101,7 @@ export default function PredictiveAnalyticsPage() {
   const [health, setHealth] = useState<ApiHealth | null>(null)
   const [importedSummary, setImportedSummary] = useState<ImportedCostSummaryResponse | null>(null)
   const [diagnostics, setDiagnostics] = useState<ProviderDiagnostic[]>([])
+  const [modelDiagnostics, setModelDiagnostics] = useState<ForecastModelDiagnosticsResponse | null>(null)
   const [stressTest, setStressTest] = useState<ForecastStressTestResponse | null>(null)
   const [portfolio, setPortfolio] = useState<OptimizationPortfolioResponse | null>(null)
   const [copilotPack, setCopilotPack] = useState<GenAICopilotPackResponse | null>(null)
@@ -108,15 +111,16 @@ export default function PredictiveAnalyticsPage() {
 
   useEffect(() => {
     async function loadForecast() {
-      const [forecastResult, importedResult, healthResult, diagnosticsResult, trendResult, stressResult, portfolioResult, copilotResult] = await Promise.allSettled([
+      const [forecastResult, importedResult, healthResult, diagnosticsResult, trendResult, modelDiagnosticsResult, stressResult, portfolioResult, copilotResult] = await Promise.allSettled([
         fetchForecast(12),
         fetchImportedCostSummary(),
         fetchApiHealth(),
         fetchProviderDiagnostics(),
         fetchCostTrend('monthly', 6),
+        fetchForecastModelDiagnostics(12),
         fetchForecastStressTest({ months: 12, severity: 'medium' }),
         fetchOptimizationPortfolio(),
-        fetchGenAICopilotPack({ include: ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy'] }),
+        fetchGenAICopilotPack({ include: ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy', 'tagging_strategy', 'sustainability_narrative'] }),
       ])
 
       if (forecastResult.status === 'fulfilled') {
@@ -136,6 +140,7 @@ export default function PredictiveAnalyticsPage() {
       setHealth(healthResult.status === 'fulfilled' ? healthResult.value : null)
       setDiagnostics(diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [])
       setTrend(trendResult.status === 'fulfilled' ? trendResult.value : null)
+      setModelDiagnostics(modelDiagnosticsResult.status === 'fulfilled' ? modelDiagnosticsResult.value : null)
       setStressTest(stressResult.status === 'fulfilled' ? stressResult.value : null)
       setPortfolio(portfolioResult.status === 'fulfilled' ? portfolioResult.value : null)
       setCopilotPack(copilotResult.status === 'fulfilled' ? copilotResult.value : null)
@@ -488,6 +493,37 @@ export default function PredictiveAnalyticsPage() {
                   </div>
                 )}
               </div>
+
+              {modelDiagnostics && (
+                <div className="card bg-white dark:bg-slate-800">
+                  <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Model Diagnostics</h3>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md bg-slate-50 dark:bg-slate-900 p-2">
+                      <p className="text-slate-500">Champion</p>
+                      <p className="font-semibold text-slate-900 dark:text-white break-words">{modelDiagnostics.champion_model.replace(/_/g, ' ')}</p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 dark:bg-slate-900 p-2">
+                      <p className="text-slate-500">Risk</p>
+                      <p className="font-semibold capitalize text-slate-900 dark:text-white">{modelDiagnostics.model_risk_level}</p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 dark:bg-slate-900 p-2">
+                      <p className="text-slate-500">Data quality</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{modelDiagnostics.data_quality_score.toFixed(1)}/100</p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 dark:bg-slate-900 p-2">
+                      <p className="text-slate-500">wMAPE</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        {typeof modelDiagnostics.champion_wmape_percent === 'number' ? `${modelDiagnostics.champion_wmape_percent.toFixed(1)}%` : 'n/a'}
+                      </p>
+                    </div>
+                  </div>
+                  {modelDiagnostics.drift_signals.flags.length > 0 && (
+                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                      Drift: {modelDiagnostics.drift_signals.flags.join(', ').replace(/_/g, ' ')}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {stressTest && (
                 <div className="card bg-white dark:bg-slate-800">

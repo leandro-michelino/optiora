@@ -766,6 +766,207 @@ def build_forecast_stress_test(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _forecast_error_metrics(actual: list[float], predicted: list[float]) -> dict[str, Any]:
+    """Return compact backtest metrics for model comparison."""
+    pairs = [(max(a, 0.0), max(p, 0.0)) for a, p in zip(actual, predicted)]
+    if not pairs:
+        return {
+            "mape_percent": None,
+            "wmape_percent": None,
+            "rmse_usd": None,
+            "bias_percent": None,
+        }
+
+    abs_errors = [abs(a - p) for a, p in pairs]
+    squared_errors = [(a - p) ** 2 for a, p in pairs]
+    actual_sum = sum(a for a, _ in pairs)
+    predicted_sum = sum(p for _, p in pairs)
+    ape = [abs(a - p) / a for a, p in pairs if a > 0]
+    rmse = math.sqrt(sum(squared_errors) / len(squared_errors))
+    return {
+        "mape_percent": round(sum(ape) / len(ape) * 100, 2) if ape else None,
+        "wmape_percent": round(sum(abs_errors) / actual_sum * 100, 2) if actual_sum > 0 else None,
+        "rmse_usd": round(rmse, 2),
+        "bias_percent": round((predicted_sum - actual_sum) / actual_sum * 100, 2) if actual_sum > 0 else None,
+    }
+
+
+def _moving_average(values: list[float], window: int = 3) -> float:
+    sample = values[-window:] if len(values) >= window else values
+    return sum(sample) / max(len(sample), 1) if sample else 0.0
+
+
+def build_forecast_model_diagnostics(params: dict[str, Any]) -> dict[str, Any]:
+    """Champion/challenger forecast diagnostics for finance-grade model governance.
+
+    The production forecast remains deterministic. This diagnostic layer compares
+    simple challenger models against the blended model, reports backtest quality,
+    flags drift, and produces a GenAI-ready model-risk context.
+    """
+    months = max(1, min(int(params.get("months", 12) or 12), 24))
+    cost_breakdown = params.get("cost_breakdown") or {}
+    providers = _provider_inputs(cost_breakdown)
+    current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values()))
+    external_history = _normalized_history_points(params.get("historical_monthly_spend"))
+    if current_monthly <= 0:
+        current_monthly = sum(providers.values())
+    if current_monthly <= 0 and external_history:
+        current_monthly = external_history[-1]
+    if current_monthly <= 0:
+        current_monthly = _safe_float(params.get("fallback_monthly_spend"), 0.0)
+
+    weighted_growth, weighted_volatility, weighted_commitment, provider_concentration = (
+        _weighted_provider_metrics(providers, current_monthly)
+    )
+    history_source = "cost_snapshots" if len(external_history) >= 6 else "synthetic"
+    history = (
+        external_history[-18:]
+        if history_source == "cost_snapshots"
+        else _synthetic_history(current_monthly, 12, weighted_growth, weighted_volatility)
+    )
+
+    holdout = min(4, max(2, len(history) // 4)) if len(history) >= 8 else 0
+    challenger_rows: list[dict[str, Any]] = []
+    if holdout > 0:
+        train = history[:-holdout]
+        actual = history[-holdout:]
+        intercept, slope = _linear_regression(train)
+        blended_projection, _ = _project_baseline_series(
+            train, holdout, weighted_growth, weighted_volatility
+        )
+        model_predictions = {
+            "naive_last_value": [train[-1] for _ in range(holdout)],
+            "moving_average_3": [_moving_average(train, 3) for _ in range(holdout)],
+            "linear_trend": [
+                max(intercept + slope * (len(train) + idx), 0.0)
+                for idx in range(holdout)
+            ],
+            "provider_growth": [
+                max(train[-1] * ((1 + weighted_growth) ** (idx + 1)), 0.0)
+                for idx in range(holdout)
+            ],
+            "blended_regression_smoothing": [
+                row["baseline"] for row in blended_projection
+            ],
+        }
+
+        for model_name, predicted in model_predictions.items():
+            metrics = _forecast_error_metrics(actual, predicted)
+            challenger_rows.append(
+                {
+                    "model": model_name,
+                    "holdout_months": holdout,
+                    **metrics,
+                    "actual_points": [round(v, 2) for v in actual],
+                    "predicted_points": [round(v, 2) for v in predicted],
+                }
+            )
+        challenger_rows.sort(
+            key=lambda row: (
+                row["wmape_percent"] is None,
+                row["wmape_percent"] if row["wmape_percent"] is not None else 9999,
+                row["rmse_usd"] if row["rmse_usd"] is not None else 999999999,
+            )
+        )
+
+    champion = challenger_rows[0]["model"] if challenger_rows else "blended_regression_smoothing"
+    champion_wmape = challenger_rows[0].get("wmape_percent") if challenger_rows else None
+
+    velocity_pct = None
+    if len(history) >= 2 and history[-2] > 0:
+        velocity_pct = round((history[-1] - history[-2]) / history[-2] * 100, 2)
+    acceleration_usd = None
+    if len(history) >= 6:
+        slope_recent_3 = (history[-1] - history[-3]) / 3 if history[-3] > 0 else 0.0
+        slope_prior_3 = (history[-4] - history[-6]) / 3 if history[-6] > 0 else 0.0
+        acceleration_usd = round(slope_recent_3 - slope_prior_3, 2)
+
+    residual_stddev = 0.0
+    if len(history) >= 4:
+        intercept, slope = _linear_regression(history)
+        residuals = [value - (intercept + slope * idx) for idx, value in enumerate(history)]
+        residual_stddev = math.sqrt(sum(r * r for r in residuals) / max(len(residuals) - 1, 1))
+
+    history_points = len(history)
+    data_quality_score = 35.0
+    data_quality_score += min(history_points, 18) / 18 * 35
+    data_quality_score += 15 if history_source == "cost_snapshots" else 0
+    data_quality_score += 10 if len(providers) >= 2 else 4 if providers else 0
+    if champion_wmape is not None:
+        data_quality_score += 10 if champion_wmape <= 12 else 5 if champion_wmape <= 25 else 0
+    data_quality_score = round(min(data_quality_score, 100.0), 1)
+
+    drift_flags = []
+    if velocity_pct is not None and abs(velocity_pct) >= 12:
+        drift_flags.append("high_month_over_month_velocity")
+    if acceleration_usd is not None and current_monthly > 0 and abs(acceleration_usd) / current_monthly >= 0.04:
+        drift_flags.append("trend_acceleration")
+    if current_monthly > 0 and residual_stddev / current_monthly >= 0.20:
+        drift_flags.append("high_residual_volatility")
+    if provider_concentration >= 0.70:
+        drift_flags.append("provider_concentration")
+
+    if data_quality_score >= 80 and not drift_flags:
+        model_risk_level = "low"
+    elif data_quality_score >= 60 and len(drift_flags) <= 1:
+        model_risk_level = "medium"
+    else:
+        model_risk_level = "high"
+
+    production_forecast = build_forecast(
+        {
+            "months": months,
+            "current_monthly_spend": current_monthly,
+            "cost_breakdown": cost_breakdown,
+            "historical_monthly_spend": external_history,
+            "budget_monthly": params.get("budget_monthly", 0.0),
+            "fallback_monthly_spend": params.get("fallback_monthly_spend", 0.0),
+        }
+    )
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "forecast_months": months,
+        "history_source": history_source,
+        "history_points": history_points,
+        "data_quality_score": data_quality_score,
+        "champion_model": champion,
+        "champion_wmape_percent": champion_wmape,
+        "model_risk_level": model_risk_level,
+        "challenger_models": challenger_rows,
+        "drift_signals": {
+            "flags": drift_flags,
+            "cost_velocity_pct_mom": velocity_pct,
+            "trend_acceleration_usd": acceleration_usd,
+            "residual_stddev_usd": round(residual_stddev, 2),
+            "seasonality_strength": _seasonality_strength(history),
+            "provider_concentration_hhi": round(provider_concentration, 4),
+            "weighted_volatility": round(weighted_volatility, 4),
+            "weighted_commitment": round(weighted_commitment, 4),
+        },
+        "production_forecast_summary": production_forecast.get("forecast_summary", {}),
+        "forecast_quality": production_forecast.get("forecast_quality", {}),
+        "recommended_controls": [
+            "Persist monthly provider cost snapshots for at least 12 months before board-grade forecasts.",
+            "Review champion/challenger error monthly and pin forecast commentary to wMAPE and drift flags.",
+            "Use budget guardrails from p90/p95 forecast bands rather than a single baseline value.",
+        ],
+        "genai_context": {
+            "prompt": (
+                "Explain forecast model risk to finance and engineering. Lead with champion model, "
+                "data quality score, drift flags, and the control that most improves forecast confidence."
+            ),
+            "champion_model": champion,
+            "champion_wmape_percent": champion_wmape,
+            "model_risk_level": model_risk_level,
+            "data_quality_score": data_quality_score,
+            "history_source": history_source,
+            "history_points": history_points,
+            "drift_signals": drift_flags,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Public: Analytics
 # ---------------------------------------------------------------------------
@@ -1828,6 +2029,10 @@ async def get_forecast_what_if(params: dict[str, Any]) -> str:
 
 async def get_forecast_stress_test(params: dict[str, Any]) -> str:
     return json.dumps(build_forecast_stress_test(params))
+
+
+async def get_forecast_model_diagnostics(params: dict[str, Any]) -> str:
+    return json.dumps(build_forecast_model_diagnostics(params))
 
 
 # ---------------------------------------------------------------------------

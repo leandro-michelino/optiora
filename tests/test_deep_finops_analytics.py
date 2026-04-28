@@ -3,6 +3,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime
 
 TEST_DB = os.path.join(tempfile.gettempdir(), f"optiora_deep_finops_{os.getpid()}.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
@@ -14,7 +15,15 @@ try:
     from fastapi.testclient import TestClient
 
     from finops_mcp.app import app
-    from finops_mcp.orm_models import Base, engine
+    from finops_mcp.orm_models import (
+        Base,
+        CostSnapshot,
+        ScanRunRecord,
+        SessionLocal,
+        User,
+        UserOrganization,
+        engine,
+    )
 except ImportError as exc:  # pragma: no cover
     raise unittest.SkipTest(f"Backend dependencies not installed: {exc}") from exc
 
@@ -37,6 +46,57 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         cls.client = TestClient(app)
         cls.token = _register_and_login(cls.client)
         cls.headers = {"Authorization": f"Bearer {cls.token}"}
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == "deep.finops@example.com").first()
+            assert user is not None
+            membership = db.query(UserOrganization).filter(UserOrganization.user_id == user.id).first()
+            assert membership is not None
+            customer_id = f"org-{membership.organization_id}"
+            for idx, (month, aws_cost, oci_cost) in enumerate(
+                [
+                    ("2025-09", 980.0, 420.0),
+                    ("2025-10", 1010.0, 430.0),
+                    ("2025-11", 1080.0, 450.0),
+                    ("2025-12", 1120.0, 470.0),
+                    ("2026-01", 1190.0, 500.0),
+                    ("2026-02", 1230.0, 520.0),
+                    ("2026-03", 1300.0, 560.0),
+                    ("2026-04", 1320.0, 590.0),
+                ],
+                start=1,
+            ):
+                db.add(
+                    ScanRunRecord(
+                        scan_id=f"deep-forecast-{idx}",
+                        customer_id=customer_id,
+                        state="completed",
+                        providers_json='["aws","oci"]',
+                        started_at=datetime.fromisoformat(f"{month}-15T00:00:00"),
+                        completed_at=datetime.fromisoformat(f"{month}-15T00:05:00"),
+                    )
+                )
+                db.add_all(
+                    [
+                        CostSnapshot(
+                            scan_id=f"deep-forecast-{idx}",
+                            customer_id=customer_id,
+                            provider="aws",
+                            period_end=datetime.fromisoformat(f"{month}-28T00:00:00"),
+                            total_cost_usd=aws_cost,
+                        ),
+                        CostSnapshot(
+                            scan_id=f"deep-forecast-{idx}",
+                            customer_id=customer_id,
+                            provider="oci",
+                            period_end=datetime.fromisoformat(f"{month}-28T00:00:00"),
+                            total_cost_usd=oci_cost,
+                        ),
+                    ]
+                )
+            db.commit()
+        finally:
+            db.close()
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -97,6 +157,34 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         self.assertIn("deterministic_context", data)
         self.assertIn("commitment_strategy", data["narratives"])
         self.assertIn("prompt", data["narratives"]["commitment_strategy"])
+
+    def test_04_forecast_model_diagnostics_returns_champion_and_genai_prompt(self) -> None:
+        resp = self.client.get("/api/v1/forecast/model-diagnostics", headers=self.headers)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertEqual(data["history_source"], "cost_snapshots")
+        self.assertIn("champion_model", data)
+        self.assertIn("challenger_models", data)
+        self.assertGreaterEqual(len(data["challenger_models"]), 1)
+        self.assertIn("data_quality_score", data)
+        self.assertIn("genai_prompt", data)
+
+    def test_05_copilot_pack_can_include_non_forecast_genai_briefs(self) -> None:
+        payload = {
+            "cloud_provider": "all",
+            "include": [
+                "tagging_strategy",
+                "sustainability_narrative",
+                "vendor_negotiation_brief",
+                "forecast_model_diagnostics",
+            ],
+        }
+        resp = self.client.post("/api/v1/genai/copilot-pack", json=payload, headers=self.headers)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        for key in payload["include"]:
+            self.assertIn(key, data["narratives"])
+            self.assertIn("prompt", data["narratives"][key])
 
 
 if __name__ == "__main__":
