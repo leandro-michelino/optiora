@@ -9,6 +9,7 @@ Covers:
 import os
 import tempfile
 import unittest
+from uuid import uuid4
 
 TEST_DB = os.path.join(tempfile.gettempdir(), f"optiora_competitive_ops_{os.getpid()}.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
@@ -47,6 +48,7 @@ class CompetitiveOpsTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         Base.metadata.drop_all(bind=engine)
+        engine.dispose()
         try:
             os.remove(TEST_DB)
         except FileNotFoundError:
@@ -59,7 +61,7 @@ class CompetitiveOpsTest(unittest.TestCase):
                 "events": [
                     {
                         "detail": {
-                            "anomalyId": f"competitive-anomaly-{os.getpid()}",
+                            "anomalyId": f"competitive-anomaly-{os.getpid()}-{uuid4().hex}",
                             "monitorName": "competitive-monitor",
                             "impact": {"totalImpact": 123.45},
                         }
@@ -125,6 +127,34 @@ class CompetitiveOpsTest(unittest.TestCase):
         self.assertIn("scheduler_status", data)
         self.assertIsInstance(data["providers"], list)
         self.assertIsInstance(data["connectors"], list)
+
+    def test_04_notification_destination_delivery_outcomes(self) -> None:
+        alert_id = self._create_alert()
+        success = self.client.post(
+            f"/api/v1/alerts/{alert_id}/channel-delivery",
+            json={"alert_id": alert_id, "channel": "email", "status": "success"},
+            headers=self.headers,
+        )
+        self.assertEqual(success.status_code, 200, success.text)
+
+        error = self.client.post(
+            f"/api/v1/alerts/{alert_id}/channel-delivery",
+            json={
+                "alert_id": alert_id,
+                "channel": "slack",
+                "status": "error",
+                "error_message": "webhook rejected",
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(error.status_code, 200, error.text)
+
+        destinations = self.client.get("/api/v1/notifications/destinations", headers=self.headers)
+        self.assertEqual(destinations.status_code, 200, destinations.text)
+        by_channel = {item["channel"]: item for item in destinations.json()["destinations"]}
+        self.assertIsNotNone(by_channel["email"].get("last_success_at"))
+        self.assertIsNone(by_channel["email"].get("last_error_at"))
+        self.assertIsNotNone(by_channel["slack"].get("last_error_at"))
 
 
 if __name__ == "__main__":

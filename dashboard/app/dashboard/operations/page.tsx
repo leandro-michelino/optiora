@@ -120,6 +120,13 @@ function statusTone(ok: boolean): string {
     : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
 }
 
+function formatDateTime(value?: string | null): string {
+  if (!value) return 'none yet'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
 function formatEta(seconds?: number | null): string {
   if (!seconds || seconds <= 0) {
     return 'now'
@@ -374,7 +381,10 @@ export default function OperationsPage() {
                         <div>
                           <div className="font-medium text-slate-900 dark:text-white">{destination.channel.toUpperCase()}</div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Last delivery: {destination.last_delivery_at ? new Date(destination.last_delivery_at).toLocaleString() : 'none yet'}
+                            Last delivery: {formatDateTime(destination.last_delivery_at)}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            Success: {formatDateTime(destination.last_success_at)} · Error: {formatDateTime(destination.last_error_at)}
                           </div>
                         </div>
                         <Badge className={destination.configured && destination.enabled ? statusTone(true) : statusTone(false)}>
@@ -574,6 +584,12 @@ export default function OperationsPage() {
               {(state.dataFreshness?.providers || []).map((item) => (
                 <div key={item.provider} className="flex items-center justify-between">
                   <span className="uppercase">{item.provider}</span>
+                  <span>{formatAge(item.age_seconds)}</span>
+                </div>
+              ))}
+              {(state.dataFreshness?.connectors || []).map((item) => (
+                <div key={item.connector} className="flex items-center justify-between">
+                  <span>{item.connector.replace(/_/g, ' ')}</span>
                   <span>{formatAge(item.age_seconds)}</span>
                 </div>
               ))}

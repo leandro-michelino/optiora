@@ -29,6 +29,15 @@
 - region-level cost breakdown across providers and aggregated dashboard views
 - scheduled scan runner with approval-based cadence checks
 - external AWS anomaly ingestion into normalized alert events
+- enterprise hierarchy federation across AWS Organizations, Azure Management Groups, GCP folders/organizations, and OCI tenancies/compartments
+- consolidated account, subscription, project, compartment, region, and provider rollup views
+- business mapping, tag normalization, chargeback/showback, allocation coverage, and finance-ready exports
+- executive CSV/XLS/XLSX reports, finance workbooks, PDF digest download, tokenized report sharing, and FOCUS CSV/JSON exports
+- external GCP budget Pub/Sub ingestion with dedupe and audit trail
+- connector framework for CloudHealth, Spot, and OpenCost
+- Kubernetes namespace cost allocation and OpenCost sync MVP
+- unit economics, scorecards, virtual tags, decision-grade recommendations, and resource-level rightsizing endpoints
+- alert lifecycle states, routing-policy simulator, destination tests/toggles/status, data freshness observability, and channel delivery telemetry
 
 ## Current Deployment Stance
 
@@ -57,48 +66,58 @@ The next phase should not try to out-feature every competitor immediately. Inste
 
 ### 1. Validate deployment and customer workflow
 
+Status: **remaining live-environment gate**. Local code and automated coverage are in place, but a real OCI deployment still needs a dated evidence run.
+
 - deploy the current public-dashboard build onto OCI
-- validate CSV upload, imported dataset activation, and cost page correctness
+- validate CSV upload, imported dataset activation, and cost page correctness with real/customer-like data
 - validate credential add, scan approval, scan start, and live provider reads where live billing access is in scope
-- confirm scan history, diff, alerts, and CSV exports in the deployed environment
+- confirm scan history, diff, alerts, and CSV/XLSX/PDF/FOCUS exports in the deployed environment
 - verify dashboard pages are using live backend data paths rather than placeholders
-- finalize the operational runbook for repeatable redeploys
+- finalize the operational runbook with the exact deploy, rollback, migration, and smoke-test commands used
 
 ### 2. Expand automated regression coverage
 
-- add public-mode dashboard regression coverage
-- add API tests for role-based authorization boundaries
-- add integration tests for org-switch isolation across credentials, scans, imports, and analytics
-- add migration round-trip tests for Alembic upgrades and downgrades
-- add deeper CSV import validation cases for malformed headers, bad encodings, and multi-provider datasets
-- add endpoint contract tests for dashboard-critical APIs
+Status: **substantially complete locally; keep expanding in CI**.
+
+- public-mode API/data-path regression coverage exists
+- role-boundary and org-switch isolation tests exist for credentials, scans, imports, and analytics
+- Alembic upgrade/downgrade round-trip coverage exists
+- CSV import validation covers malformed and rejected rows; keep adding bad encoding/header edge cases as discovered
+- endpoint contract tests exist for dashboard-critical APIs; keep extending with new dashboard routes
 
 ### 3. Add enterprise account hierarchy support
 
 This closes one of the biggest gaps versus more mature FinOps platforms.
 
+Status: **implemented as MVP**.
+
 - AWS Organizations support with multi-account scan orchestration
 - Azure Management Groups support across multiple subscriptions
 - GCP folder and organization-level billing aggregation
-- OCI multi-compartment and multi-tenant aggregation where relevant
+- OCI multi-compartment and tenancy/compartment aggregation
 - consolidated account, subscription, project, and compartment views
 - region-level and account-level breakdown by provider
 
 ### 4. Improve reporting and operational visibility
 
+Status: **implemented as MVP; scheduled delivery remains**.
+
 - cost trend views by provider, region, service, and account
-- richer CSV import validation previews, mapping feedback, and reconciliation guidance
+- CSV import validation previews with mapping feedback
 - multi-sheet Excel workbooks for finance-friendly reporting
-- scheduled PDF digest for weekly and monthly summaries
+- PDF digest download for weekly and monthly summaries
 - tokenized read-only report sharing
+- remaining: scheduled email delivery of report digests
 
 ### 5. Add alerts and notifications
 
-- alert routing by organization and team
-- mute windows, escalation policies, and acknowledgement SLAs
-- cost spike alerts with configurable sensitivity
-- daily and weekly executive summaries
-- acknowledgement history and noise-reduction analytics
+Status: **core implemented; advanced alert operations remain**.
+
+- alert routing by organization and severity/channel matrix
+- destination toggles, test endpoint, delivery status, last-success/last-error telemetry
+- cost spike/budget alerts and external AWS/GCP anomaly ingestion
+- acknowledgement, dismissal, reactivation, and audit history
+- remaining: mute windows, escalation policies, acknowledgement SLAs, daily/weekly delivered executive summaries, and deeper noise-reduction analytics
 
 ## Competitive Gap Closure
 
@@ -259,6 +278,8 @@ Goal: make the product deployable, demoable, and operationally credible with dir
 
 Goal: deliver a competitive FinOps core for multi-cloud customers.
 
+Status: **feature-complete MVP; live OCI validation is the release gate**.
+
 - deliver multi-account and multi-subscription aggregation
 - deliver chargeback and showback foundations
 - add business mapping and tag normalization
@@ -272,19 +293,19 @@ Implementation detail for this release is tracked in `RELEASE_1_0_BACKLOG.md`.
 
 Goal: move from visibility into guided cost action.
 
-- add commitment analysis and recommendation workflows
-- add rightsizing workflow and recommendation tracking
-- add idle-resource remediation previews
-- add approval-based auto-remediation
-- add advanced anomaly workflows
+- add commitment purchase workflows beyond analysis
+- deepen rightsizing workflow with approval, execution history, realized savings, and real cloud utilization metrics
+- add idle-resource remediation previews tied to provider actions
+- deepen approval-based auto-remediation from guardrail simulation into operator-controlled execution
+- add advanced anomaly workflows, mute windows, escalation policies, and noise analytics
 - add first OCI-specific optimization packs
 
 ### Release 2.0 - Advanced FinOps Platform
 
 Goal: become a differentiated and scalable multi-cloud FinOps platform.
 
-- add Kubernetes cost allocation
-- add unit economics views
+- deepen Kubernetes cost allocation beyond namespace/OpenCost MVP into workload/team/node-pool/request-limit recommendations
+- deepen unit economics views with benchmark history and product/workload trends
 - add stronger cross-provider governance
 - add advanced automation policies
 - add partner and MSP operational modes

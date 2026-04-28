@@ -517,6 +517,8 @@ export interface NotificationDestinationStatus {
   configured: boolean
   enabled: boolean
   last_delivery_at?: string | null
+  last_success_at?: string | null
+  last_error_at?: string | null
 }
 
 export interface NotificationDestinationsResponse {
@@ -1322,4 +1324,3 @@ export interface ChargebackSummaryResponse {
   genai_prompt: string
   cost_context: Record<string, unknown>
 }
-

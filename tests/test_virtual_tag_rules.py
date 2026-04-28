@@ -42,6 +42,7 @@ class VirtualTagRulesTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         Base.metadata.drop_all(bind=engine)
+        engine.dispose()
         try:
             os.remove(TEST_DB)
         except FileNotFoundError:

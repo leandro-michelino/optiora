@@ -872,6 +872,9 @@ export default function SettingsPage() {
                         <div className="text-xs text-slate-600 dark:text-slate-400">
                           Configured: {destination.configured ? 'yes' : 'no'} · Last delivery: {formatDateTime(destination.last_delivery_at)}
                         </div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400">
+                          Success: {formatDateTime(destination.last_success_at)} · Error: {formatDateTime(destination.last_error_at)}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <input

@@ -34,16 +34,16 @@ This backlog captures competitor-proven capabilities that can be integrated into
 3. Hierarchical budgets on provider-account rollups
    - Status: **Concluded (MVP)** with rollup-level budget allocation, utilization, and status fields.
 4. Connector framework for external cost/usage tools (start with 1–2 connectors)
-   - Status: **Planned** (not yet implemented in the active backend route set).
+   - Status: **Concluded (MVP)** via the connector framework and active backend connector routes for `cloudhealth`, `spotio`, and `opencost`.
 
 ## P2 (Expansion)
 
 1. OpenCost/Kubernetes layer integration
-   - Status: **Planned** (depends on connector framework implementation).
+   - Status: **Concluded (MVP)** via Kubernetes allocation endpoints and OpenCost sync.
 2. Multi-destination alert routing policies (severity/channel matrix)
    - Status: **Concluded (MVP)** via `/api/v1/alerts/routing-policies` and policy-aware delivery filtering.
 3. Finance-ready report packs with business mapping dimensions
-   - Status: **Planned** (current reporting provides executive summary CSV/XLS exports).
+   - Status: **Concluded (MVP)** via chargeback CSV/XLSX, executive XLSX, finance workbook XLSX, PDF digest, share tokens, and FOCUS exports.
 
 ## Implementation Notes
 

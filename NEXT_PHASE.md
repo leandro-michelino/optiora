@@ -18,21 +18,22 @@ Release 1.0 FinOps features are fully implemented:
 
 Dashboard now has 17 pages across 3 nav sections — all routes verified in production build.
 
-## Validation Snapshot (19 Apr 2026)
+## Validation Snapshot (28 Apr 2026)
 
 Local validation has been re-run end to end:
 
-- `python3 -m py_compile $(find ./finops_mcp -maxdepth 1 -name '*.py')` ✅
-- `.venv/bin/python -m unittest discover -s tests -v` ✅ (154 passed)
-- `cd dashboard && npm run type-check && npm run lint && npm run build` ✅
-- `DATABASE_URL=sqlite:////tmp/optiora_fresh_alembic.db .venv/bin/alembic upgrade head` ✅ (0001 → 0011)
-- `terraform -chdir=terraform init -backend=false && terraform -chdir=terraform validate` ✅
-- `bash -n deploy/deploy-oci.sh` ✅
+- `.venv/bin/python -m unittest discover -s tests -v` ✅ (200 passed, 2 skipped when optional XLSX dependency is absent)
+- `tests.test_competitive_ops` covers alert lifecycle, routing simulation, freshness, and per-channel delivery telemetry ✅
+- `tests.test_epic2_multi_account` covers enterprise hierarchy/federation across AWS, Azure, GCP, and OCI ✅
+- `tests.test_auth_flow` covers public mode, org-scoped APIs, CSV import, exports, and Alembic upgrade/downgrade roundtrip through `0012` ✅
+- `cd dashboard && npm run type-check -- --pretty false && npm run lint && npm run build` ✅
+- `./scripts/check-animated-svg-routes.sh` ✅ and now wired into GitHub Actions
 
 Notes:
 
 - Virtual Tag CRUD roundtrip is covered in automated API tests (`tests/test_virtual_tag_rules.py`) and currently passing.
 - A real-data path was validated through the UTF-8 billing CSV import flow used by tests (import → summary/cost APIs).
+- Full live OCI deployment validation remains a go-live environment gate, not a local-code gate.
 
 ## Go-Live Exit Gate
 
@@ -148,14 +149,13 @@ Work should move into post-1.0 only after these are true:
 - at least one deployed environment has passed the full smoke test (including new analytics section 6)
 - at least one real customer data path has been validated end to end
 - deployment runbook is accurate enough for repeatable redeploys
-- all Alembic migrations (0001–0011) apply cleanly on a fresh database
+- all Alembic migrations (0001–0012) apply cleanly on a fresh database
 
 ## Post-1.0 Focus
 
 `post-1.0` should expand product depth and enterprise readiness:
 
 - Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`)
-- Alembic migration test coverage (upgrade/downgrade chain validated in CI)
 - SMTP notification integration with real email templates
 - SAML / OIDC / SSO authentication path
 - Vault-backed secret orchestration for credential storage

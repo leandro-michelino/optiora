@@ -68,7 +68,7 @@ Known gap to close for full parity (already tracked):
 1. Complete destination controls
 - [x] Add `POST /api/v1/notifications/test-destination`.
 - [x] Add destination toggles and status cards in Settings and Operations.
-- [ ] Add per-channel last-success/last-error timestamps.
+- [x] Add per-channel last-success/last-error timestamps.
 
 2. Alert lifecycle upgrades
 - [x] Extend alert status: `active`, `acknowledged`, `dismissed`, `reactivated`.
@@ -76,8 +76,7 @@ Known gap to close for full parity (already tracked):
 
 3. Mockup/demo consistency guardrail
 - [x] Keep animated SVG aligned to real routes and only existing API paths.
-- [ ] Add CI check that scans `dashboard/public/optiora-animated.svg` for non-existent internal API prefixes.
-  - Note: `scripts/check-animated-svg-routes.sh` is available as a release-gate check; CI wiring remains pending.
+- [x] Add CI check that scans `dashboard/public/optiora-animated.svg` for non-existent internal API prefixes.
 
 Exit criteria:
 
@@ -88,17 +87,17 @@ Exit criteria:
 ## Phase 1 (2-4 weeks): Reliability and Operations Superiority
 
 1. Ingestion reliability hardening
-- [ ] Add idempotency keys for external anomaly and connector ingestion.
-- [ ] Store source event IDs and dedupe result in audit logs.
-- [ ] Add replay endpoint for failed events with role checks.
+- [x] Add idempotency keys for external anomaly and connector ingestion.
+- [x] Store source event IDs and dedupe result in audit logs.
+- [x] Add replay endpoint for failed events with role checks.
 
 2. Freshness observability
 - [x] Add `/api/v1/operations/data-freshness` summary endpoint.
-- [ ] Show per-provider data age, connector lag, and scheduler lag in Operations page.
+- [x] Show per-provider data age, connector lag, and scheduler lag in Operations page.
 
 3. Routing policy simulator
 - [x] Add a dry-run API to evaluate sample alert payloads against routing matrix.
-- [ ] Surface expected channels before policy save.
+- [x] Surface expected channels before policy save.
 
 Exit criteria:
 

@@ -493,6 +493,8 @@ class NotificationDestinationStatus(BaseModel):
     configured: bool
     enabled: bool
     last_delivery_at: Optional[str] = None
+    last_success_at: Optional[str] = None
+    last_error_at: Optional[str] = None
 
 
 class NotificationDestinationsResponse(BaseModel):
@@ -2793,7 +2795,46 @@ def _channel_delivery_telemetry(
     
     return channel_status
 
-    return state_map
+
+def _channel_delivery_outcomes(
+    db: Session,
+    organization_id: int,
+) -> Dict[str, Dict[str, Optional[str]]]:
+    rows = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.organization_id == organization_id,
+            AuditLog.entity_type == "channel_delivery",
+            AuditLog.action.in_(
+                [
+                    "alert.channel_delivery_success",
+                    "alert.channel_delivery_error",
+                ]
+            ),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(500)
+        .all()
+    )
+
+    outcomes: Dict[str, Dict[str, Optional[str]]] = {
+        channel: {"last_success_at": None, "last_error_at": None}
+        for channel in SUPPORTED_NOTIFICATION_CHANNELS
+    }
+    for row in rows:
+        try:
+            metadata = json.loads(row.metadata_json or "{}")
+        except json.JSONDecodeError:
+            continue
+        channel = str(metadata.get("channel") or "").strip().lower()
+        if channel not in outcomes:
+            continue
+        if row.action == "alert.channel_delivery_success" and outcomes[channel]["last_success_at"] is None:
+            outcomes[channel]["last_success_at"] = row.created_at.isoformat() if row.created_at else None
+        elif row.action == "alert.channel_delivery_error" and outcomes[channel]["last_error_at"] is None:
+            outcomes[channel]["last_error_at"] = row.created_at.isoformat() if row.created_at else None
+
+    return outcomes
 
 
 @router.get("/alerts/routing-policies", response_model=List[AlertRoutingPolicyResponse])
@@ -2956,8 +2997,10 @@ async def list_notification_destinations(
         for row in policies:
             enabled_channels.update(_safe_json_load(row.channels_json, []))
 
+        delivery_outcomes = _channel_delivery_outcomes(db, organization_id)
         destinations = []
         for channel in SUPPORTED_NOTIFICATION_CHANNELS:
+            channel_outcomes = delivery_outcomes.get(channel, {})
             destinations.append(
                 NotificationDestinationStatus(
                     channel=channel,
@@ -2969,6 +3012,8 @@ async def list_notification_destinations(
                         customer_id=customer_id,
                         channel=channel,
                     ),
+                    last_success_at=channel_outcomes.get("last_success_at"),
+                    last_error_at=channel_outcomes.get("last_error_at"),
                 )
             )
         return NotificationDestinationsResponse(
@@ -3114,30 +3159,30 @@ async def list_alerts(
             organization_id=organization_id,
             alert_ids=[int(row.id) for row in rows],
         )
+        return [
+            {
+                "id": row.id,
+                "alert_type": row.alert_type,
+                "severity": row.severity,
+                "title": row.title,
+                "message": row.message,
+                "delivered_channels": json.loads(row.delivered_channels_json or "[]"),
+                "channel_telemetry": _channel_delivery_telemetry(
+                    db=db,
+                    organization_id=organization_id,
+                    alert_id=int(row.id),
+                ),
+                "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
+                "lifecycle_state": lifecycle_map.get(
+                    int(row.id),
+                    "acknowledged" if row.acknowledged_at else "active",
+                ),
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
+        ]
     finally:
         db.close()
-    return [
-        {
-            "id": row.id,
-            "alert_type": row.alert_type,
-            "severity": row.severity,
-            "title": row.title,
-            "message": row.message,
-            "delivered_channels": json.loads(row.delivered_channels_json or "[]"),
-            "channel_telemetry": _channel_delivery_telemetry(
-                db=SessionLocal(),
-                organization_id=organization_id,
-                alert_id=int(row.id),
-            ),
-            "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
-            "lifecycle_state": lifecycle_map.get(
-                int(row.id),
-                "acknowledged" if row.acknowledged_at else "active",
-            ),
-            "created_at": row.created_at.isoformat(),
-        }
-        for row in rows
-    ]
 
 
 @router.post("/alerts/{alert_id}/acknowledge", response_model=AlertLifecycleActionResponse)
