@@ -88,6 +88,19 @@ SUPPORTED_COST_IMPORT_PROVIDERS = {"aws", "azure", "gcp", "oci"}
 _SUPPORTED_TREND_VIEWS = {"provider", "region", "service", "account"}
 
 
+def _infer_parent_account_type(provider_key: str, child_account_type: str) -> str:
+    normalized_child = str(child_account_type or "").strip().lower().replace(" ", "_")
+    if provider_key == "aws":
+        return "organization"
+    if provider_key == "azure":
+        return "management_group"
+    if provider_key == "gcp":
+        return "folder" if normalized_child == "project" else "organization"
+    if provider_key == "oci":
+        return "tenancy" if normalized_child == "compartment" else "group"
+    return "group"
+
+
 def _share_hmac_secret() -> bytes:
     raw = os.getenv("SECRET_KEY", "optiora-dev-share-secret")
     return str(raw).encode("utf-8")
@@ -1035,13 +1048,20 @@ def _build_rollups_from_imported_rows(
             and account_type not in {"", "account", "group"}
         ):
             node["account_type"] = account_type
-        if parent_account_id is not None and node.get("parent_account_id") is None:
-            node["parent_account_id"] = parent_account_id
-            node["parent_account_identifier"] = (
-                nodes[parent_account_id]["account_identifier"]
-                if parent_account_id in nodes
-                else None
-            )
+        provider_root_id = provider_root_ids.get(provider_key)
+        if parent_account_id is not None and parent_account_id != node_id:
+            existing_parent = node.get("parent_account_id")
+            if existing_parent is None or (
+                provider_root_id is not None
+                and existing_parent == provider_root_id
+                and parent_account_id != provider_root_id
+            ):
+                node["parent_account_id"] = parent_account_id
+                node["parent_account_identifier"] = (
+                    nodes[parent_account_id]["account_identifier"]
+                    if parent_account_id in nodes
+                    else None
+                )
         return node_id
 
     for row in rows:
@@ -1076,11 +1096,15 @@ def _build_rollups_from_imported_rows(
         parent_identifier = str(row.parent_account_identifier or "").strip()
         parent_account_id: Optional[int] = root_id
         if parent_identifier:
+            inferred_parent_type = _infer_parent_account_type(
+                provider_key=provider_key,
+                child_account_type=_normalized_account_type(row.account_type, "account"),
+            )
             parent_account_id = _ensure_node(
                 provider_key=provider_key,
                 identifier=parent_identifier,
                 account_name=parent_identifier,
-                account_type="group",
+                account_type=inferred_parent_type,
                 parent_account_id=root_id,
             )
 
@@ -7668,6 +7692,9 @@ class FederatedAccountCostItem(BaseModel):
     parent_account_identifier: Optional[str] = None
     source: str
     direct_cost_usd: float
+    rolled_up_cost_usd: float = 0.0
+    depth: int = 0
+    child_count: int = 0
     regions: Dict[str, float] = Field(default_factory=dict)
 
 
@@ -7679,6 +7706,8 @@ class FederationCostResponse(BaseModel):
     total_accounts: int
     total_cost_usd: float
     provider_totals_usd: Dict[str, float]
+    account_type_totals_usd: Dict[str, float] = Field(default_factory=dict)
+    source_totals_usd: Dict[str, float] = Field(default_factory=dict)
     accounts: List[FederatedAccountCostItem]
 
 
@@ -7958,29 +7987,38 @@ async def get_federated_costs(
     org_id = membership.organization_id
     customer_id = _customer_id_for_org(membership)
 
-    accounts_q = db.query(ProviderAccount).filter(ProviderAccount.organization_id == org_id)
+    accounts_q = db.query(ProviderAccount).filter(
+        ProviderAccount.organization_id == org_id,
+        ProviderAccount.customer_id == customer_id,
+    )
     if provider != "all":
         accounts_q = accounts_q.filter(ProviderAccount.provider == provider)
     accounts = accounts_q.all()
     account_by_id = {a.id: a for a in accounts}
 
-    parent_lookup: Dict[int, str] = {}
+    parent_by_child: Dict[int, int] = {}
     if account_by_id:
         links = (
             db.query(ProviderAccountLink)
-            .filter(ProviderAccountLink.child_account_id.in_(list(account_by_id.keys())))
+            .filter(
+                ProviderAccountLink.organization_id == org_id,
+                ProviderAccountLink.child_account_id.in_(list(account_by_id.keys())),
+            )
             .all()
         )
         for link in links:
-            parent = account_by_id.get(link.parent_account_id)
-            if parent:
-                parent_lookup[link.child_account_id] = parent.account_identifier
+            if link.parent_account_id in account_by_id:
+                parent_by_child[link.child_account_id] = link.parent_account_id
 
     latest_by_account: Dict[int, ProviderAccountSnapshot] = {}
     if account_by_id:
         snaps = (
             db.query(ProviderAccountSnapshot)
-            .filter(ProviderAccountSnapshot.provider_account_id.in_(list(account_by_id.keys())))
+            .filter(
+                ProviderAccountSnapshot.organization_id == org_id,
+                ProviderAccountSnapshot.customer_id == customer_id,
+                ProviderAccountSnapshot.provider_account_id.in_(list(account_by_id.keys())),
+            )
             .order_by(ProviderAccountSnapshot.captured_at.desc())
             .all()
         )
@@ -7988,51 +8026,190 @@ async def get_federated_costs(
             if snap.provider_account_id not in latest_by_account:
                 latest_by_account[snap.provider_account_id] = snap
 
-    region_map: Dict[int, Dict[str, float]] = {}
+    region_map: Dict[int, List[AccountRegionRow]] = {}
     if include_regions and account_by_id:
         allocs = (
             db.query(CostAllocationSnapshot)
-            .filter(CostAllocationSnapshot.provider_account_id.in_(list(account_by_id.keys())))
+            .filter(
+                CostAllocationSnapshot.organization_id == org_id,
+                CostAllocationSnapshot.customer_id == customer_id,
+                CostAllocationSnapshot.provider_account_id.in_(list(account_by_id.keys())),
+            )
             .order_by(CostAllocationSnapshot.captured_at.desc())
             .all()
         )
-        seen_region_scan: set[tuple[int, str, str]] = set()
+        region_totals: Dict[int, Dict[str, float]] = {}
         for alloc in allocs:
-            key = (alloc.provider_account_id, alloc.scan_id, alloc.region)
-            if key in seen_region_scan:
+            latest = latest_by_account.get(alloc.provider_account_id)
+            if latest and alloc.scan_id != latest.scan_id:
                 continue
-            seen_region_scan.add(key)
-            region_map.setdefault(alloc.provider_account_id, {})
-            region_map[alloc.provider_account_id][alloc.region] = round(
-                region_map[alloc.provider_account_id].get(alloc.region, 0.0) + float(alloc.cost_usd or 0.0),
+            region_totals.setdefault(alloc.provider_account_id, {})
+            region_totals[alloc.provider_account_id][alloc.region] = round(
+                region_totals[alloc.provider_account_id].get(alloc.region, 0.0) + float(alloc.cost_usd or 0.0),
                 2,
             )
+        for account_id, totals in region_totals.items():
+            region_map[account_id] = [
+                AccountRegionRow(region=region_name, cost_usd=cost)
+                for region_name, cost in sorted(totals.items(), key=lambda item: item[1], reverse=True)[:5]
+            ]
 
-    rows: List[FederatedAccountCostItem] = []
-    provider_totals: Dict[str, float] = {}
-    seen_account_keys: set[str] = set()
+    nodes: Dict[int, Dict[str, Any]] = {}
+    provider_roots: Dict[str, int] = {}
+    node_id_by_identifier: Dict[tuple[str, str], int] = {}
+    next_synthetic_id = -1
+
+    def _synthetic_id() -> int:
+        nonlocal next_synthetic_id
+        current = next_synthetic_id
+        next_synthetic_id -= 1
+        return current
+
+    def _provider_root(provider_key: str) -> int:
+        provider_key = provider_key.lower()
+        root_id = provider_roots.get(provider_key)
+        if root_id is not None:
+            return root_id
+        root_id = _synthetic_id()
+        provider_roots[provider_key] = root_id
+        identifier = f"{provider_key}:provider"
+        node_id_by_identifier[(provider_key, identifier)] = root_id
+        nodes[root_id] = {
+            "provider": provider_key,
+            "account_identifier": identifier,
+            "account_name": provider_key.upper(),
+            "account_type": "provider",
+            "parent_account_id": None,
+            "parent_account_identifier": None,
+            "direct_cost_usd": 0.0,
+            "direct_savings_identified_usd": 0.0,
+            "direct_anomalies_count": 0,
+            "direct_service_count": 0,
+            "scan_id": None,
+            "captured_at": None,
+            "top_regions": [],
+            "source": "rollup",
+        }
+        return root_id
+
+    def _ensure_synthetic_node(
+        *,
+        provider_key: str,
+        identifier: str,
+        account_name: str,
+        account_type: str,
+        parent_account_id: Optional[int],
+        source: str,
+    ) -> int:
+        provider_key = provider_key.lower()
+        node_key = (provider_key, identifier)
+        existing_id = node_id_by_identifier.get(node_key)
+        if existing_id is not None:
+            node = nodes[existing_id]
+            if account_name and node.get("account_name") == node.get("account_identifier"):
+                node["account_name"] = account_name
+            if account_type and str(node.get("account_type") or "") in {"", "group", "imported"}:
+                node["account_type"] = account_type
+            if parent_account_id is not None and node.get("parent_account_id") is None:
+                node["parent_account_id"] = parent_account_id
+                node["parent_account_identifier"] = nodes[parent_account_id]["account_identifier"]
+            return existing_id
+
+        node_id = _synthetic_id()
+        node_id_by_identifier[node_key] = node_id
+        nodes[node_id] = {
+            "provider": provider_key,
+            "account_identifier": identifier,
+            "account_name": account_name or identifier,
+            "account_type": account_type or "group",
+            "parent_account_id": parent_account_id,
+            "parent_account_identifier": (
+                nodes[parent_account_id]["account_identifier"]
+                if parent_account_id in nodes
+                else None
+            ),
+            "direct_cost_usd": 0.0,
+            "direct_savings_identified_usd": 0.0,
+            "direct_anomalies_count": 0,
+            "direct_service_count": 0,
+            "scan_id": None,
+            "captured_at": None,
+            "top_regions": [],
+            "source": source,
+        }
+        return node_id
 
     for account_id, account in account_by_id.items():
+        provider_key = account.provider.lower()
+        _provider_root(provider_key)
         snap = latest_by_account.get(account_id)
         cost_usd = round(float(snap.direct_cost_usd or 0.0), 2) if snap else 0.0
-        provider_totals[account.provider] = round(provider_totals.get(account.provider, 0.0) + cost_usd, 2)
-        account_key = f"{account.provider}:{account.account_identifier}"
-        seen_account_keys.add(account_key)
-        rows.append(
-            FederatedAccountCostItem(
-                provider=account.provider,
-                account_identifier=account.account_identifier,
-                account_name=account.account_name,
-                account_type=account.account_type,
-                parent_account_identifier=parent_lookup.get(account_id),
-                source="snapshot" if snap else "account",
-                direct_cost_usd=cost_usd,
-                regions=region_map.get(account_id, {}) if include_regions else {},
-            )
-        )
+        parent_id = parent_by_child.get(account_id)
+        nodes[account_id] = {
+            "provider": provider_key,
+            "account_identifier": account.account_identifier,
+            "account_name": account.account_name,
+            "account_type": account.account_type,
+            "parent_account_id": parent_id,
+            "parent_account_identifier": (
+                account_by_id[parent_id].account_identifier
+                if parent_id in account_by_id
+                else None
+            ),
+            "direct_cost_usd": cost_usd,
+            "direct_savings_identified_usd": round(float(snap.savings_identified_usd or 0.0), 2) if snap else 0.0,
+            "direct_anomalies_count": int(snap.anomalies_count or 0) if snap else 0,
+            "direct_service_count": int(snap.service_count or 0) if snap else 0,
+            "scan_id": snap.scan_id if snap else None,
+            "captured_at": snap.captured_at.isoformat() if snap and snap.captured_at else None,
+            "top_regions": region_map.get(account_id, []),
+            "source": "snapshot" if snap else "account",
+        }
+        node_id_by_identifier[(provider_key, account.account_identifier)] = account_id
+
+    hierarchy_anchors: Dict[str, Dict[str, int]] = {}
+    for account_id, node in nodes.items():
+        if account_id < 0:
+            continue
+        provider_key = str(node.get("provider") or "")
+        account_type = str(node.get("account_type") or "")
+        if account_type in {"organization", "management_group", "folder", "tenancy"}:
+            hierarchy_anchors.setdefault(provider_key, {})[account_type] = account_id
+
+    for account_id, node in list(nodes.items()):
+        if str(node.get("account_type") or "") == "provider":
+            continue
+        parent_id = node.get("parent_account_id")
+        if parent_id in nodes and parent_id != account_id:
+            continue
+
+        provider_key = str(node.get("provider") or "").lower()
+        account_type = str(node.get("account_type") or "").lower()
+        root_id = _provider_root(provider_key)
+        anchors = hierarchy_anchors.get(provider_key, {})
+        inferred_parent_id = root_id
+        if provider_key == "aws" and account_type == "account":
+            inferred_parent_id = anchors.get("organization", root_id)
+        elif provider_key == "azure" and account_type in {"account", "subscription"}:
+            inferred_parent_id = anchors.get("management_group", root_id)
+        elif provider_key == "gcp" and account_type == "project":
+            inferred_parent_id = anchors.get("folder") or anchors.get("organization") or root_id
+        elif provider_key == "gcp" and account_type == "folder":
+            inferred_parent_id = anchors.get("organization", root_id)
+        elif provider_key == "oci" and account_type == "compartment":
+            inferred_parent_id = anchors.get("tenancy", root_id)
+
+        if inferred_parent_id != account_id:
+            node["parent_account_id"] = inferred_parent_id
+            node["parent_account_identifier"] = nodes[inferred_parent_id]["account_identifier"]
 
     imported = _get_imported_cost_rows(db, org_id, customer_id, provider)
     imported_agg: Dict[str, Dict[str, Any]] = {}
+    seen_account_keys = {
+        f"{account.provider.lower()}:{account.account_identifier}"
+        for account in account_by_id.values()
+    }
+    latest_imported_at = max((row.created_at for row in imported), default=None)
     for rec in imported:
         prov = (rec.provider or "unknown").lower()
         acct = rec.account_identifier or rec.account_name or f"imported-{rec.id}"
@@ -8045,9 +8222,14 @@ async def get_federated_costs(
                 "account_identifier": acct,
                 "account_name": rec.account_name or acct,
                 "account_type": rec.account_type or "imported",
+                "parent_account_identifier": rec.parent_account_identifier or None,
+                "parent_account_type": _infer_parent_account_type(prov, rec.account_type or "account"),
                 "direct_cost_usd": 0.0,
                 "regions": {},
             }
+        if rec.parent_account_identifier and not imported_agg[key].get("parent_account_identifier"):
+            imported_agg[key]["parent_account_identifier"] = rec.parent_account_identifier
+            imported_agg[key]["parent_account_type"] = _infer_parent_account_type(prov, rec.account_type or "account")
         imported_agg[key]["direct_cost_usd"] += float(rec.cost_usd or 0.0)
         region_key = rec.region or "global"
         imported_agg[key]["regions"][region_key] = round(
@@ -8056,21 +8238,91 @@ async def get_federated_costs(
         )
 
     for row in imported_agg.values():
-        provider_totals[row["provider"]] = round(provider_totals.get(row["provider"], 0.0) + row["direct_cost_usd"], 2)
+        provider_key = row["provider"]
+        root_id = _provider_root(provider_key)
+        parent_id = root_id
+        parent_identifier = row.get("parent_account_identifier")
+        if parent_identifier:
+            parent_id = _ensure_synthetic_node(
+                provider_key=provider_key,
+                identifier=parent_identifier,
+                account_name=parent_identifier,
+                account_type=row.get("parent_account_type") or "group",
+                parent_account_id=root_id,
+                source="imported_parent",
+            )
+        child_id = _ensure_synthetic_node(
+            provider_key=provider_key,
+            identifier=row["account_identifier"],
+            account_name=row["account_name"],
+            account_type=row["account_type"],
+            parent_account_id=parent_id,
+            source="imported",
+        )
+        nodes[child_id]["direct_cost_usd"] = round(
+            float(nodes[child_id].get("direct_cost_usd") or 0.0) + float(row["direct_cost_usd"] or 0.0),
+            2,
+        )
+        nodes[child_id]["captured_at"] = latest_imported_at.isoformat() if latest_imported_at else None
+        nodes[child_id]["top_regions"] = [
+            AccountRegionRow(region=region_name, cost_usd=cost)
+            for region_name, cost in sorted(row["regions"].items(), key=lambda item: item[1], reverse=True)[:5]
+        ]
+
+    items = _materialize_rollup_items(nodes)
+    filtered_items = [item for item in items if provider == "all" or item.provider == provider]
+
+    rows: List[FederatedAccountCostItem] = []
+    provider_totals: Dict[str, float] = {}
+    account_type_totals: Dict[str, float] = {}
+    source_totals: Dict[str, float] = {}
+
+    for item in filtered_items:
+        node = nodes.get(item.account_id, {})
+        source = str(node.get("source") or "account")
+        regions = {
+            region_row.region: region_row.cost_usd
+            for region_row in item.top_regions
+        } if include_regions else {}
         rows.append(
             FederatedAccountCostItem(
-                provider=row["provider"],
-                account_identifier=row["account_identifier"],
-                account_name=row["account_name"],
-                account_type=row["account_type"],
-                source="imported",
-                direct_cost_usd=round(row["direct_cost_usd"], 2),
-                regions=row["regions"] if include_regions else {},
+                provider=item.provider,
+                account_identifier=item.account_identifier,
+                account_name=item.account_name,
+                account_type=item.account_type,
+                parent_account_identifier=item.parent_account_identifier,
+                source=source,
+                direct_cost_usd=item.direct_cost_usd,
+                rolled_up_cost_usd=item.rolled_up_cost_usd,
+                depth=item.depth,
+                child_count=item.child_count,
+                regions=regions,
             )
         )
+        account_type_totals[item.account_type] = round(
+            account_type_totals.get(item.account_type, 0.0) + item.rolled_up_cost_usd,
+            2,
+        )
+        if item.direct_cost_usd:
+            source_totals[source] = round(source_totals.get(source, 0.0) + item.direct_cost_usd, 2)
 
-    rows.sort(key=lambda x: x.direct_cost_usd, reverse=True)
-    total_cost = round(sum(r.direct_cost_usd for r in rows), 2)
+    root_items = [item for item in filtered_items if item.depth == 0]
+    for item in root_items:
+        provider_totals[item.provider] = round(
+            provider_totals.get(item.provider, 0.0) + item.rolled_up_cost_usd,
+            2,
+        )
+
+    if not root_items:
+        for item in filtered_items:
+            provider_totals[item.provider] = round(provider_totals.get(item.provider, 0.0) + item.direct_cost_usd, 2)
+
+    total_cost = round(
+        sum(item.rolled_up_cost_usd for item in root_items)
+        if root_items
+        else sum(item.direct_cost_usd for item in filtered_items),
+        2,
+    )
     return FederationCostResponse(
         generated_at=_utcnow().isoformat() + "Z",
         organization_id=org_id,
@@ -8079,6 +8331,8 @@ async def get_federated_costs(
         total_accounts=len(rows),
         total_cost_usd=total_cost,
         provider_totals_usd=provider_totals,
+        account_type_totals_usd=account_type_totals,
+        source_totals_usd=source_totals,
         accounts=rows,
     )
 

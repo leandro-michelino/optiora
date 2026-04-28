@@ -1026,6 +1026,9 @@ export interface FederatedAccountCostItem {
   parent_account_identifier?: string | null
   source: string
   direct_cost_usd: number
+  rolled_up_cost_usd: number
+  depth: number
+  child_count: number
   regions: Record<string, number>
 }
 
@@ -1037,6 +1040,8 @@ export interface FederationCostResponse {
   total_accounts: number
   total_cost_usd: number
   provider_totals_usd: Record<string, number>
+  account_type_totals_usd: Record<string, number>
+  source_totals_usd: Record<string, number>
   accounts: FederatedAccountCostItem[]
 }
 
@@ -1317,5 +1322,4 @@ export interface ChargebackSummaryResponse {
   genai_prompt: string
   cost_context: Record<string, unknown>
 }
-
 

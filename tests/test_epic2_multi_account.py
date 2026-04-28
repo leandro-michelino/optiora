@@ -8,6 +8,7 @@ Covers:
 - account inventory is org-scoped
 """
 
+import asyncio
 import io
 import os
 import tempfile
@@ -361,6 +362,95 @@ class RollupTopRegionsFromCsvTest(unittest.TestCase):
         self.assertIn("budget_status", row)
 
 
+class EnterpriseHierarchyFederationFromCsvTest(unittest.TestCase):
+    """Verify imported enterprise hierarchy shapes roll up across all supported providers."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _setup_db()
+        prev_auth = os.environ.get("ENABLE_AUTH")
+        os.environ["ENABLE_AUTH"] = "false"
+        try:
+            ensure_public_workspace()
+            cls.client = TestClient(app)
+            csv_content = (
+                "provider,cost_usd,service_name,region,account_identifier,account_name,account_type,parent_account_identifier\n"
+                "aws,100.00,EC2,us-east-1,111111111111,AWS Prod Account,account,aws-org-root\n"
+                "azure,200.00,Virtual Machines,westeurope,sub-prod-001,Azure Prod Subscription,subscription,mg-root\n"
+                "gcp,300.00,Compute Engine,europe-west1,project-prod-001,GCP Prod Project,project,folder-root\n"
+                "oci,400.00,Compute,uk-london-1,compartment-prod-001,OCI Prod Compartment,compartment,tenancy-root\n"
+            )
+            upload = cls.client.post(
+                "/api/v1/imports/costs/csv",
+                files={"file": ("enterprise-hierarchy.csv", csv_content.encode("utf-8"), "text/csv")},
+            )
+            cls.upload_ok = upload.status_code == 200
+            cls.upload_text = upload.text
+        finally:
+            if prev_auth is None:
+                os.environ.pop("ENABLE_AUTH", None)
+            else:
+                os.environ["ENABLE_AUTH"] = prev_auth
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        _teardown_db()
+
+    def setUp(self) -> None:
+        if not self.upload_ok:
+            self.skipTest(f"CSV upload failed in setUpClass: {self.upload_text}")
+        self._prev_auth = os.environ.get("ENABLE_AUTH")
+        os.environ["ENABLE_AUTH"] = "false"
+        self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        if self._prev_auth is None:
+            os.environ.pop("ENABLE_AUTH", None)
+        else:
+            os.environ["ENABLE_AUTH"] = self._prev_auth
+
+    def test_federation_contains_provider_native_parent_types(self) -> None:
+        resp = self.client.get("/api/v1/federation/costs")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        accounts = resp.json()["accounts"]
+        by_identifier = {row["account_identifier"]: row for row in accounts}
+
+        expected_parent_types = {
+            "aws-org-root": "organization",
+            "mg-root": "management_group",
+            "folder-root": "folder",
+            "tenancy-root": "tenancy",
+        }
+        for identifier, account_type in expected_parent_types.items():
+            self.assertIn(identifier, by_identifier)
+            self.assertEqual(by_identifier[identifier]["account_type"], account_type)
+            self.assertGreater(by_identifier[identifier]["rolled_up_cost_usd"], 0)
+
+        self.assertEqual(by_identifier["111111111111"]["parent_account_identifier"], "aws-org-root")
+        self.assertEqual(by_identifier["sub-prod-001"]["parent_account_identifier"], "mg-root")
+        self.assertEqual(by_identifier["project-prod-001"]["parent_account_identifier"], "folder-root")
+        self.assertEqual(by_identifier["compartment-prod-001"]["parent_account_identifier"], "tenancy-root")
+
+    def test_federation_totals_are_consolidated_without_double_counting_parent_nodes(self) -> None:
+        resp = self.client.get("/api/v1/federation/costs")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+
+        self.assertAlmostEqual(data["total_cost_usd"], 1000.0, places=2)
+        self.assertEqual(data["provider_totals_usd"], {"aws": 100.0, "azure": 200.0, "gcp": 300.0, "oci": 400.0})
+        self.assertAlmostEqual(data["source_totals_usd"]["imported"], 1000.0, places=2)
+        for account_type in ("organization", "management_group", "folder", "tenancy"):
+            self.assertIn(account_type, data["account_type_totals_usd"])
+
+    def test_provider_filter_keeps_single_provider_tree(self) -> None:
+        resp = self.client.get("/api/v1/federation/costs?provider=azure")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertAlmostEqual(data["total_cost_usd"], 200.0, places=2)
+        self.assertEqual(set(data["provider_totals_usd"].keys()), {"azure"})
+        self.assertTrue(all(row["provider"] == "azure" for row in data["accounts"]))
+
+
 class AccountInventoryOrgScopeTest(unittest.TestCase):
     """Verify that account inventory endpoint is scoped to the active organization."""
 
@@ -556,6 +646,101 @@ class OciCompartmentListTest(unittest.TestCase):
             self.assertEqual(len(result), 2)
         finally:
             os.environ.pop("OCI_COMPARTMENT_IDS", None)
+
+
+class HierarchyPersistenceFromScopeMetadataTest(unittest.TestCase):
+    """Verify parent scope metadata is persisted and exposed in hierarchy endpoints."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        _setup_db()
+        cls.client = TestClient(app)
+        cls.client.post(
+            "/auth/register",
+            json={"email": "hier-persist@example.com", "password": "StrongPass1!", "full_name": "Hierarchy Persist"},
+        )
+        login = cls.client.post(
+            "/auth/login",
+            json={"email": "hier-persist@example.com", "password": "StrongPass1!"},
+        )
+        cls.token = login.json()["access_token"]
+        cls.headers = {"Authorization": f"Bearer {cls.token}"}
+        org = cls.client.get("/auth/organization", headers=cls.headers)
+        cls.org_id = org.json()["id"]
+        cls.customer_id = f"org-{cls.org_id}"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        _teardown_db()
+
+    def test_oci_scope_parent_relationship_surfaces_in_rollups_and_federation(self) -> None:
+        import finops_mcp.api as api_module
+
+        async def _fake_cost_summary(provider: str, period: str = "month") -> dict:
+            _ = period
+            if provider != "oci":
+                return {"error": "unsupported in test"}
+            tenancy_id = "ocid1.tenancy.oc1..root"
+            compartment_id = "ocid1.compartment.oc1..compA"
+            return {
+                "period": "month",
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "total_cost_usd": 150.0,
+                "top_services": [{"service": "Compute", "cost_usd": 150.0}],
+                "region_breakdown": [{"region": "uk-london-1", "cost_usd": 150.0}],
+                "account_breakdown": [
+                    {
+                        "scope_type": "tenancy",
+                        "scope_id": tenancy_id,
+                        "scope_name": "Root Tenancy",
+                        "total_cost_usd": 150.0,
+                    },
+                    {
+                        "scope_type": "compartment",
+                        "scope_id": compartment_id,
+                        "scope_name": "Application Compartment",
+                        "parent_scope_id": tenancy_id,
+                        "parent_scope_type": "tenancy",
+                        "total_cost_usd": 150.0,
+                        "region_breakdown": [{"region": "uk-london-1", "cost_usd": 150.0}],
+                    },
+                ],
+            }
+
+        original_cost_summary = api_module._cost_summary_for_provider
+        try:
+            api_module._cost_summary_for_provider = _fake_cost_summary
+            asyncio.run(
+                api_module._run_cost_analysis(
+                    scan_id="scan_hierarchy_scope_meta",
+                    customer_id=self.customer_id,
+                    providers=["oci"],
+                )
+            )
+        finally:
+            api_module._cost_summary_for_provider = original_cost_summary
+
+        rollups_resp = self.client.get("/api/v1/provider-accounts/rollups?provider=oci", headers=self.headers)
+        self.assertEqual(rollups_resp.status_code, 200, rollups_resp.text)
+        rollup_items = rollups_resp.json().get("items", [])
+        tenancy = next((item for item in rollup_items if item.get("account_type") == "tenancy"), None)
+        compartment = next((item for item in rollup_items if item.get("account_type") == "compartment"), None)
+        self.assertIsNotNone(tenancy, "tenancy node missing from OCI rollup")
+        self.assertIsNotNone(compartment, "compartment node missing from OCI rollup")
+        self.assertEqual(compartment["parent_account_identifier"], tenancy["account_identifier"])
+
+        federation_resp = self.client.get("/api/v1/federation/costs?provider=oci", headers=self.headers)
+        self.assertEqual(federation_resp.status_code, 200, federation_resp.text)
+        accounts = federation_resp.json().get("accounts", [])
+        fed_compartment = next((a for a in accounts if a.get("account_type") == "compartment"), None)
+        self.assertIsNotNone(fed_compartment, "compartment missing from federation output")
+        self.assertEqual(fed_compartment.get("parent_account_identifier"), tenancy["account_identifier"])
+        self.assertAlmostEqual(fed_compartment.get("direct_cost_usd"), 150.0, places=2)
+        self.assertAlmostEqual(fed_compartment.get("rolled_up_cost_usd"), 150.0, places=2)
+        federation_data = federation_resp.json()
+        self.assertAlmostEqual(federation_data["provider_totals_usd"]["oci"], 150.0, places=2)
+        self.assertIn("tenancy", federation_data["account_type_totals_usd"])
 
 
 if __name__ == "__main__":

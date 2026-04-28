@@ -117,6 +117,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     {
                         "scope_type": scope_type,
                         "scope_id": compartment_id,
+                        "scope_name": compartment_id,
+                        "parent_scope_id": tenancy_id if scope_type == "compartment" else None,
+                        "parent_scope_type": "tenancy" if scope_type == "compartment" else None,
                         "total_cost_usd": round(compartment_total, 2),
                         "region_breakdown": [
                             {"region": r, "cost_usd": round(c, 2)}
@@ -130,6 +133,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     {
                         "scope_type": scope_type,
                         "scope_id": compartment_id,
+                        "scope_name": compartment_id,
+                        "parent_scope_id": tenancy_id if scope_type == "compartment" else None,
+                        "parent_scope_type": "tenancy" if scope_type == "compartment" else None,
                         "total_cost_usd": 0.0,
                         "error": str(compartment_exc),
                     }

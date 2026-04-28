@@ -827,7 +827,7 @@ export async function fetchFederatedCosts(params?: {
   return requestJson<FederationCostResponse>(
     `/api/v1/federation/costs${toQueryString({
       provider: params?.provider,
-      include_regions: params?.include_regions ? 'true' : undefined,
+      include_regions: params?.include_regions === undefined ? undefined : String(params.include_regions),
     })}`,
   )
 }

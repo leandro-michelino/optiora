@@ -137,39 +137,6 @@ export default function AdvancedFinOpsPage() {
     setLoading(false)
   }
 
-    if (tagRes.status === 'fulfilled') {
-      setTagQuality(tagRes.value)
-      pushToast('Tag quality loaded', `Completeness ${tagRes.value.completeness_score.toFixed(1)}%`, 'success')
-    } else {
-      setTagQualityError('Failed to load tag quality section.')
-      pushToast('Tag quality failed', 'Could not load tag quality section.', 'error')
-    }
-    setLoadingTagQuality(false)
-
-    if (decRes.status === 'fulfilled') {
-      setDecision(decRes.value)
-      pushToast('Decision-grade loaded', `${decRes.value.total_candidates} candidates`, 'success')
-    } else {
-      setDecisionError('Failed to load decision-grade recommendations.')
-      pushToast('Decision-grade failed', 'Could not load recommendation section.', 'error')
-    }
-    setLoadingDecision(false)
-
-    if (fedRes.status === 'fulfilled') {
-      setFederation(fedRes.value)
-      pushToast('Federation loaded', `${fedRes.value.total_accounts} accounts`, 'success')
-    } else {
-      setFederationError('Failed to load federation cost section.')
-      pushToast('Federation failed', 'Could not load federation section.', 'error')
-    }
-    setLoadingFederation(false)
-
-    if (tagRes.status === 'rejected' && decRes.status === 'rejected' && fedRes.status === 'rejected') {
-      setError('Failed to load advanced FinOps data.')
-    }
-    setLoading(false)
-  }
-
   async function runDryRunLoop() {
     setRunningLoop(true)
     setLoopError(null)
@@ -192,7 +159,7 @@ export default function AdvancedFinOpsPage() {
 
   useEffect(() => {
     void load()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-8">
@@ -323,14 +290,44 @@ export default function AdvancedFinOpsPage() {
                   </div>
                 )}
                 {loadingFederation && <p className="mb-3 text-xs text-slate-500">Loading federation section...</p>}
+                <div className="mb-4 grid gap-2 sm:grid-cols-2">
+                  {Object.entries(federation?.provider_totals_usd ?? {}).map(([providerName, total]) => (
+                    <div key={providerName} className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
+                      <p className="text-xs font-medium uppercase text-slate-500">{providerName}</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{fmt(total)}</p>
+                    </div>
+                  ))}
+                </div>
+                {Object.keys(federation?.source_totals_usd ?? {}).length > 0 && (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {Object.entries(federation?.source_totals_usd ?? {}).map(([sourceName, total]) => (
+                      <Badge key={sourceName} variant="outline" className="rounded-md">
+                        {sourceName}: {fmt(total)}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
                 <div className="space-y-2">
                   {(federation?.accounts || []).slice(0, 12).map((row) => (
-                    <div key={`${row.provider}-${row.account_identifier}`} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
-                      <div>
-                        <p className="font-medium text-slate-900 dark:text-white">{row.account_name}</p>
+                    <div
+                      key={`${row.provider}-${row.account_identifier}`}
+                      className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+                      style={{ marginLeft: String(Math.min(row.depth, 4) * 12) + 'px' }}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-slate-900 dark:text-white">{row.account_name}</p>
+                          <Badge variant="outline" className="rounded-md">{row.account_type}</Badge>
+                          {row.child_count > 0 && <span className="text-xs text-slate-500">{row.child_count} child(ren)</span>}
+                        </div>
                         <p className="font-mono text-xs text-slate-500">{row.provider}:{row.account_identifier}</p>
                       </div>
-                      <p className="font-semibold text-slate-900 dark:text-white">{fmt(row.direct_cost_usd)}</p>
+                      <div className="text-right">
+                        <p className="font-semibold text-slate-900 dark:text-white">{fmt(row.rolled_up_cost_usd)}</p>
+                        {row.direct_cost_usd !== row.rolled_up_cost_usd && (
+                          <p className="text-xs text-slate-500">{fmt(row.direct_cost_usd)} direct</p>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
