@@ -102,3 +102,55 @@ variable "extra_block_volume_device" {
   type        = string
   default     = "/dev/oracleoci/oraclevdb"
 }
+
+variable "resource_scheduler_enabled" {
+  description = "Create OCI Resource Scheduler schedules to start and stop selected resources during weekday business hours."
+  type        = bool
+  default     = false
+}
+
+variable "resource_scheduler_resource_ids" {
+  description = "OCIDs of resources controlled by Resource Scheduler. Use the deployed compute instance OCID for OptiOra."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = length(var.resource_scheduler_resource_ids) <= 200
+    error_message = "Resource Scheduler supports up to 200 explicitly selected resources per schedule."
+  }
+
+  validation {
+    condition     = alltrue([for resource_id in var.resource_scheduler_resource_ids : can(regex("^ocid1\\.", resource_id))])
+    error_message = "Each Resource Scheduler resource ID must be an OCI OCID."
+  }
+}
+
+variable "resource_scheduler_start_cron" {
+  description = "UTC cron expression for the weekday start schedule. Default is 09:00 Europe/Madrid during CEST, Monday-Friday."
+  type        = string
+  default     = "0 7 * * 1-5"
+}
+
+variable "resource_scheduler_stop_cron" {
+  description = "UTC cron expression for the weekday stop schedule. Default is 20:00 Europe/Madrid during CEST, Monday-Friday."
+  type        = string
+  default     = "0 18 * * 1-5"
+}
+
+variable "resource_scheduler_time_starts" {
+  description = "Optional UTC RFC3339 timestamp when the Resource Scheduler schedules become active."
+  type        = string
+  default     = null
+}
+
+variable "resource_scheduler_time_ends" {
+  description = "Optional UTC RFC3339 timestamp when the Resource Scheduler schedules expire."
+  type        = string
+  default     = null
+}
+
+variable "resource_scheduler_manage_instance_policy" {
+  description = "Create an IAM policy that lets the Resource Scheduler schedules manage compute instances in the target compartment."
+  type        = bool
+  default     = true
+}

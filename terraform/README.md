@@ -33,6 +33,11 @@ That flow manages Terraform variables and optional apply, then hands off to the 
 - `extra_block_volume_size_gbs`: recommended default `200`
 - `extra_block_volume_vpus_per_gb`: recommended default `10` (balanced)
 - `extra_block_volume_device`: expected device path on the VM, default `/dev/oracleoci/oraclevdb`
+- `resource_scheduler_enabled`: creates OCI Resource Scheduler schedules for selected resources
+- `resource_scheduler_resource_ids`: resource OCIDs controlled by the schedules, normally the OptiOra compute instance OCID
+- `resource_scheduler_start_cron`: UTC cron for weekday startup, default `0 7 * * 1-5`
+- `resource_scheduler_stop_cron`: UTC cron for weekday shutdown, default `0 18 * * 1-5`
+- `resource_scheduler_manage_instance_policy`: creates the IAM policy that lets the schedules manage compute instances
 
 That default keeps the subnet usable for:
 
@@ -68,6 +73,40 @@ terraform plan \
   -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32" \
   -var="egress_cidr=<trusted-egress-cidr>"
+```
+
+## OCI Resource Scheduler
+
+The optional Resource Scheduler setup creates two active schedules:
+
+- `START_RESOURCE` on Monday-Friday at `resource_scheduler_start_cron`
+- `STOP_RESOURCE` on Monday-Friday at `resource_scheduler_stop_cron`
+
+OCI evaluates Resource Scheduler cron expressions in UTC. The example defaults
+use `0 7 * * 1-5` and `0 18 * * 1-5`, which map to 09:00 and 20:00 in
+Europe/Madrid during CEST (UTC+2). During CET (UTC+1), use `0 8 * * 1-5`
+and `0 19 * * 1-5` if exact local winter hours are required.
+
+After the compute instance exists, get its OCID:
+
+```bash
+./deploy/deploy-oci.sh status
+```
+
+Then enable scheduling in `terraform/terraform.tfvars`:
+
+```hcl
+resource_scheduler_enabled = true
+resource_scheduler_resource_ids = [
+  "ocid1.instance.oc1..your_optiora_compute_instance_ocid",
+]
+```
+
+Apply the scheduler resources:
+
+```bash
+terraform -chdir=terraform plan
+terraform -chdir=terraform apply
 ```
 
 `terraform apply` is intentionally not part of the default workflow unless explicitly requested. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning on either Debian-family or Oracle Linux / RHEL images. The Terraform apply output now ends with a next-step banner that points operators to the Ansible command, dashboard URL pattern, API URLs, and OCI GenAI endpoint for the chosen region.

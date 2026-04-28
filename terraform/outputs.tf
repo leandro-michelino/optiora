@@ -58,8 +58,33 @@ output "extra_block_volume_device" {
   description = "Expected device path for the extra OCI block volume on the VM."
 }
 
+output "resource_scheduler_enabled" {
+  value       = var.resource_scheduler_enabled
+  description = "Whether OCI Resource Scheduler start/stop schedules are enabled."
+}
+
+output "resource_scheduler_target_resource_ids" {
+  value       = var.resource_scheduler_resource_ids
+  description = "Resource OCIDs targeted by OCI Resource Scheduler."
+}
+
+output "resource_scheduler_weekday_start_schedule_id" {
+  value       = try(oci_resource_scheduler_schedule.weekday_start[0].id, null)
+  description = "OCID of the weekday Resource Scheduler start schedule."
+}
+
+output "resource_scheduler_weekday_stop_schedule_id" {
+  value       = try(oci_resource_scheduler_schedule.weekday_stop[0].id, null)
+  description = "OCID of the weekday Resource Scheduler stop schedule."
+}
+
+output "resource_scheduler_instance_policy_id" {
+  value       = try(oci_identity_policy.resource_scheduler_instance_control[0].id, null)
+  description = "OCID of the IAM policy allowing Resource Scheduler to manage compute instances."
+}
+
 output "next_step_banner" {
-  value = <<-EOT
+  value       = <<-EOT
 
     ============================================================
     OptiOra OCI network baseline is ready
@@ -72,6 +97,7 @@ output "next_step_banner" {
     Direct app ports:  ${var.allow_direct_app_ingress}
     Web ports 80/443:  ${var.allow_web_ingress}
     Extra data volume: ${var.extra_block_volume_enabled} (${var.extra_block_volume_size_gbs} GiB @ ${var.extra_block_volume_device})
+    Resource schedule: ${var.resource_scheduler_enabled ? "enabled for ${length(var.resource_scheduler_resource_ids)} resource(s)" : "disabled"}
     Egress:            ${var.egress_cidr}
 
     Next:

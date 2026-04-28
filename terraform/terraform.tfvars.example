@@ -10,6 +10,18 @@ extra_block_volume_size_gbs = 200
 extra_block_volume_vpus_per_gb = 10
 extra_block_volume_device = "/dev/oracleoci/oraclevdb"
 
+# OCI Resource Scheduler. OCI evaluates cron schedules in UTC.
+# Defaults below represent 09:00 start and 20:00 stop in Europe/Madrid during
+# CEST (UTC+2), Monday-Friday. Adjust to 08:00/19:00 UTC during CET if you need
+# exact local winter hours.
+resource_scheduler_enabled = false
+resource_scheduler_resource_ids = [
+  # "ocid1.instance.oc1..your_optiora_compute_instance_ocid",
+]
+resource_scheduler_start_cron = "0 7 * * 1-5"
+resource_scheduler_stop_cron  = "0 18 * * 1-5"
+resource_scheduler_manage_instance_policy = true
+
 # Restrict ingress to your laptop public IP only.
 laptop_cidr = "<your_laptop_public_ip>/32"
 # Optional extra public CIDRs (office/VPN egress) allowed by security list.

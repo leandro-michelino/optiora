@@ -1,6 +1,6 @@
 locals {
-  name_prefix              = "${var.project_code}-${var.environment}-${var.region_code}-${var.name_suffix}"
-  allowed_ingress_sources  = distinct(concat([var.laptop_cidr], var.allowed_public_ingress_cidrs))
+  name_prefix             = "${var.project_code}-${var.environment}-${var.region_code}-${var.name_suffix}"
+  allowed_ingress_sources = distinct(concat([var.laptop_cidr], var.allowed_public_ingress_cidrs))
 }
 
 # ---------------------------------------------------------------------------
