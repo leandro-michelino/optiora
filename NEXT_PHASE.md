@@ -27,7 +27,7 @@ Local validation has been re-run end to end:
 - `tests.test_epic2_multi_account` covers enterprise hierarchy/federation across AWS, Azure, GCP, and OCI ✅
 - `tests.test_auth_flow` covers public mode, org-scoped APIs, CSV import, exports, and Alembic upgrade/downgrade roundtrip through `0012` ✅
 - `cd dashboard && npm run type-check -- --pretty false && npm run lint && npm run build` ✅
-- `./scripts/check-animated-svg-routes.sh` ✅ and now wired into GitHub Actions
+- `./scripts/check-animated-svg-routes.sh` ✅ as a laptop-run release gate
 
 Notes:
 

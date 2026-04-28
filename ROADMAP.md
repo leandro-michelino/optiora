@@ -77,7 +77,7 @@ Status: **remaining live-environment gate**. Local code and automated coverage a
 
 ### 2. Expand automated regression coverage
 
-Status: **substantially complete locally; keep expanding in CI**.
+Status: **substantially complete locally; keep expanding through laptop-run regressions**.
 
 - public-mode API/data-path regression coverage exists
 - role-boundary and org-switch isolation tests exist for credentials, scans, imports, and analytics

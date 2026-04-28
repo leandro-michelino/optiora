@@ -76,7 +76,7 @@ Known gap to close for full parity (already tracked):
 
 3. Mockup/demo consistency guardrail
 - [x] Keep animated SVG aligned to real routes and only existing API paths.
-- [x] Add CI check that scans `dashboard/public/optiora-animated.svg` for non-existent internal API prefixes.
+- [x] Add laptop-run release-gate check that scans `dashboard/public/optiora-animated.svg` for non-existent internal API prefixes.
 
 Exit criteria:
 
