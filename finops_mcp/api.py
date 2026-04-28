@@ -58,6 +58,7 @@ from .orm_models import (
     ExportJobRun,
     ImportedCostRecord,
     NormalizedCostDimension,
+    Organization,
     ProviderAccount,
     ProviderAccountLink,
     ProviderAccountSnapshot,
@@ -7596,6 +7597,30 @@ class KubernetesClusterInput(BaseModel):
     opencost_enabled: bool = False
     opencost_url: Optional[str] = None
     opencost_window_days: int = Field(default=7, ge=1, le=30)
+    workloads: List["KubernetesWorkloadInput"] = Field(default_factory=list)
+    node_pools: List["KubernetesNodePoolInput"] = Field(default_factory=list)
+
+
+class KubernetesWorkloadInput(BaseModel):
+    namespace: str
+    workload_name: str
+    team: Optional[str] = None
+    node_pool: Optional[str] = None
+    replicas: int = Field(default=1, ge=1)
+    cpu_request_cores: float = Field(default=0.5, ge=0)
+    cpu_limit_cores: float = Field(default=1.0, ge=0)
+    memory_request_gib: float = Field(default=1.0, ge=0)
+    memory_limit_gib: float = Field(default=2.0, ge=0)
+    cpu_usage_cores: float = Field(default=0.25, ge=0)
+    memory_usage_gib: float = Field(default=0.5, ge=0)
+
+
+class KubernetesNodePoolInput(BaseModel):
+    name: str
+    node_count: int = Field(default=1, ge=1)
+    monthly_node_cost_usd: float = Field(default=150.0, ge=0)
+    cpu_capacity_cores: float = Field(default=4.0, ge=0)
+    memory_capacity_gib: float = Field(default=16.0, ge=0)
 
 
 class KubernetesNamespaceCost(BaseModel):
@@ -7604,6 +7629,46 @@ class KubernetesNamespaceCost(BaseModel):
     share_percent: float
     cpu_share_percent: float
     memory_share_percent: float
+
+
+class KubernetesWorkloadCost(BaseModel):
+    namespace: str
+    workload_name: str
+    team: str
+    node_pool: str
+    estimated_cost_usd: float
+    share_percent: float
+    cpu_request_cores: float
+    cpu_usage_cores: float
+    memory_request_gib: float
+    memory_usage_gib: float
+    request_efficiency_percent: float
+
+
+class KubernetesTeamCost(BaseModel):
+    team: str
+    estimated_cost_usd: float
+    share_percent: float
+    namespaces: List[str]
+    workload_count: int
+
+
+class KubernetesNodePoolCost(BaseModel):
+    node_pool: str
+    node_count: int
+    estimated_cost_usd: float
+    utilization_percent: float
+    idle_cost_usd: float
+
+
+class KubernetesOptimizationRecommendation(BaseModel):
+    recommendation_id: str
+    category: Literal["workload", "node_pool", "request_limit"]
+    target: str
+    severity: Literal["low", "medium", "high"]
+    estimated_monthly_savings_usd: float
+    rationale: str
+    action: str
 
 
 class KubernetesClusterCostResponse(BaseModel):
@@ -7616,6 +7681,10 @@ class KubernetesClusterCostResponse(BaseModel):
     total_cluster_cost_usd: float
     cost_per_node_usd: float
     namespace_breakdown: List[KubernetesNamespaceCost]
+    workload_breakdown: List[KubernetesWorkloadCost] = Field(default_factory=list)
+    team_breakdown: List[KubernetesTeamCost] = Field(default_factory=list)
+    node_pool_breakdown: List[KubernetesNodePoolCost] = Field(default_factory=list)
+    recommendations: List[KubernetesOptimizationRecommendation] = Field(default_factory=list)
     efficiency_note: str
     opencost_integration: str
 
@@ -7640,6 +7709,192 @@ class OpenCostSyncResponse(BaseModel):
     total_cost_usd: float
     namespace_count: int
     namespaces: List[OpenCostNamespaceCost]
+
+
+def _default_kubernetes_workloads(namespaces: List[str]) -> List[KubernetesWorkloadInput]:
+    workloads: list[KubernetesWorkloadInput] = []
+    for namespace in namespaces:
+        if namespace == "kube-system":
+            workloads.append(
+                KubernetesWorkloadInput(
+                    namespace=namespace,
+                    workload_name="system-daemons",
+                    team="platform",
+                    node_pool="system",
+                    replicas=3,
+                    cpu_request_cores=0.6,
+                    cpu_limit_cores=1.2,
+                    memory_request_gib=1.5,
+                    memory_limit_gib=3.0,
+                    cpu_usage_cores=0.35,
+                    memory_usage_gib=1.0,
+                )
+            )
+        elif namespace in {"monitoring", "prometheus", "observability"}:
+            workloads.append(
+                KubernetesWorkloadInput(
+                    namespace=namespace,
+                    workload_name="observability-stack",
+                    team="platform",
+                    node_pool="general",
+                    replicas=2,
+                    cpu_request_cores=1.5,
+                    cpu_limit_cores=3.0,
+                    memory_request_gib=3.0,
+                    memory_limit_gib=6.0,
+                    cpu_usage_cores=0.9,
+                    memory_usage_gib=2.0,
+                )
+            )
+        else:
+            workloads.append(
+                KubernetesWorkloadInput(
+                    namespace=namespace,
+                    workload_name=f"{namespace}-app",
+                    team=namespace if namespace not in {"default", "app"} else "application",
+                    node_pool="general",
+                    replicas=3,
+                    cpu_request_cores=2.0,
+                    cpu_limit_cores=4.0,
+                    memory_request_gib=4.0,
+                    memory_limit_gib=8.0,
+                    cpu_usage_cores=0.8,
+                    memory_usage_gib=1.8,
+                )
+            )
+    return workloads
+
+
+def _build_kubernetes_deep_breakdowns(
+    payload: KubernetesClusterInput,
+    total_cost: float,
+    namespace_breakdown: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    namespace_costs = {
+        row["namespace"]: float(row.get("estimated_cost_usd") or 0.0)
+        for row in namespace_breakdown
+    }
+    workloads = payload.workloads or _default_kubernetes_workloads(list(namespace_costs.keys()))
+    workload_groups: Dict[str, List[KubernetesWorkloadInput]] = {}
+    for workload in workloads:
+        workload_groups.setdefault(workload.namespace, []).append(workload)
+
+    workload_rows: list[dict[str, Any]] = []
+    for namespace, rows in workload_groups.items():
+        ns_cost = namespace_costs.get(namespace, 0.0)
+        weights: list[float] = []
+        for row in rows:
+            cpu_weight = max(row.cpu_request_cores, row.cpu_usage_cores, 0.1)
+            mem_weight = max(row.memory_request_gib / 4.0, row.memory_usage_gib / 4.0, 0.1)
+            weights.append((cpu_weight + mem_weight) * max(row.replicas, 1))
+        total_weight = sum(weights) or float(len(rows) or 1)
+        for row, weight in zip(rows, weights):
+            cost = round(ns_cost * (weight / total_weight), 2) if total_weight else 0.0
+            requested = row.cpu_request_cores + (row.memory_request_gib / 4.0)
+            used = row.cpu_usage_cores + (row.memory_usage_gib / 4.0)
+            efficiency = round(min(100.0, (used / requested) * 100), 2) if requested > 0 else 0.0
+            workload_rows.append(
+                {
+                    "namespace": row.namespace,
+                    "workload_name": row.workload_name,
+                    "team": row.team or row.namespace or "unassigned",
+                    "node_pool": row.node_pool or "general",
+                    "estimated_cost_usd": cost,
+                    "share_percent": round((cost / total_cost) * 100, 2) if total_cost > 0 else 0.0,
+                    "cpu_request_cores": round(row.cpu_request_cores, 3),
+                    "cpu_usage_cores": round(row.cpu_usage_cores, 3),
+                    "memory_request_gib": round(row.memory_request_gib, 3),
+                    "memory_usage_gib": round(row.memory_usage_gib, 3),
+                    "request_efficiency_percent": efficiency,
+                }
+            )
+
+    team_totals: Dict[str, Dict[str, Any]] = {}
+    for row in workload_rows:
+        team = row["team"]
+        entry = team_totals.setdefault(team, {"cost": 0.0, "namespaces": set(), "workloads": 0})
+        entry["cost"] += float(row["estimated_cost_usd"])
+        entry["namespaces"].add(row["namespace"])
+        entry["workloads"] += 1
+    team_rows = [
+        {
+            "team": team,
+            "estimated_cost_usd": round(values["cost"], 2),
+            "share_percent": round((values["cost"] / total_cost) * 100, 2) if total_cost > 0 else 0.0,
+            "namespaces": sorted(values["namespaces"]),
+            "workload_count": int(values["workloads"]),
+        }
+        for team, values in sorted(team_totals.items(), key=lambda item: item[1]["cost"], reverse=True)
+    ]
+
+    node_pools = payload.node_pools or [
+        KubernetesNodePoolInput(
+            name="general",
+            node_count=payload.node_count,
+            monthly_node_cost_usd=payload.monthly_node_cost_usd,
+        )
+    ]
+    node_pool_costs = {
+        pool.name: pool.node_count * pool.monthly_node_cost_usd
+        for pool in node_pools
+    }
+    workload_cost_by_pool: Dict[str, float] = {}
+    for row in workload_rows:
+        workload_cost_by_pool[row["node_pool"]] = workload_cost_by_pool.get(row["node_pool"], 0.0) + float(row["estimated_cost_usd"])
+
+    node_pool_rows: list[dict[str, Any]] = []
+    for pool in node_pools:
+        pool_cost = float(node_pool_costs.get(pool.name, 0.0))
+        allocated = workload_cost_by_pool.get(pool.name, 0.0)
+        utilization = round(min(100.0, (allocated / pool_cost) * 100), 2) if pool_cost > 0 else 0.0
+        node_pool_rows.append(
+            {
+                "node_pool": pool.name,
+                "node_count": pool.node_count,
+                "estimated_cost_usd": round(pool_cost, 2),
+                "utilization_percent": utilization,
+                "idle_cost_usd": round(max(pool_cost - allocated, 0.0), 2),
+            }
+        )
+
+    recommendations: list[dict[str, Any]] = []
+    for row in workload_rows:
+        if row["request_efficiency_percent"] < 55.0 and row["estimated_cost_usd"] > 0:
+            recommendations.append(
+                {
+                    "recommendation_id": f"k8s-requests-{row['namespace']}-{row['workload_name']}",
+                    "category": "request_limit",
+                    "target": f"{row['namespace']}/{row['workload_name']}",
+                    "severity": "medium" if row["request_efficiency_percent"] >= 30.0 else "high",
+                    "estimated_monthly_savings_usd": round(row["estimated_cost_usd"] * 0.2, 2),
+                    "rationale": "CPU/memory requests are materially higher than observed usage.",
+                    "action": "Reduce requests and review limits after one full business cycle of metrics.",
+                }
+            )
+    for row in node_pool_rows:
+        if row["utilization_percent"] < 65.0 and row["idle_cost_usd"] > 0:
+            recommendations.append(
+                {
+                    "recommendation_id": f"k8s-nodepool-{row['node_pool']}",
+                    "category": "node_pool",
+                    "target": row["node_pool"],
+                    "severity": "medium" if row["utilization_percent"] >= 35.0 else "high",
+                    "estimated_monthly_savings_usd": round(row["idle_cost_usd"] * 0.5, 2),
+                    "rationale": "Node pool has low allocated workload cost versus monthly capacity cost.",
+                    "action": "Evaluate cluster autoscaler bounds, smaller nodes, or moving workloads to shared pools.",
+                }
+            )
+
+    return {
+        "workload_breakdown": sorted(workload_rows, key=lambda item: item["estimated_cost_usd"], reverse=True),
+        "team_breakdown": team_rows,
+        "node_pool_breakdown": sorted(node_pool_rows, key=lambda item: item["estimated_cost_usd"], reverse=True),
+        "recommendations": sorted(
+            recommendations,
+            key=lambda item: item["estimated_monthly_savings_usd"],
+            reverse=True,
+        )[:10],
+    }
 
 
 class RemediationCandidate(BaseModel):
@@ -7756,6 +8011,188 @@ class FederationCostResponse(BaseModel):
     accounts: List[FederatedAccountCostItem]
 
 
+class WhiteLabelConfigResponse(BaseModel):
+    brand_name: str
+    logo_url: Optional[str] = None
+    primary_color: str = "#2563eb"
+    show_powered_by: bool = True
+
+
+class PartnerCustomerPortfolioItem(BaseModel):
+    organization_id: int
+    customer_id: str
+    customer_name: str
+    plan: str
+    role: str
+    total_cost_usd: float
+    savings_identified_usd: float
+    providers: List[str]
+    account_count: int
+    scan_count: int
+    open_alert_count: int
+    last_activity_at: Optional[str] = None
+    health_status: Literal["healthy", "attention", "no_data"]
+
+
+class PartnerCustomerPortfolioResponse(BaseModel):
+    generated_at: str
+    partner_mode_enabled: bool
+    white_label: WhiteLabelConfigResponse
+    customer_count: int
+    total_cost_usd: float
+    savings_identified_usd: float
+    open_alert_count: int
+    customers: List[PartnerCustomerPortfolioItem]
+
+
+def _white_label_config() -> WhiteLabelConfigResponse:
+    return WhiteLabelConfigResponse(
+        brand_name=os.getenv("WHITE_LABEL_BRAND_NAME", "OptiOra"),
+        logo_url=os.getenv("WHITE_LABEL_LOGO_URL", "").strip() or None,
+        primary_color=os.getenv("WHITE_LABEL_PRIMARY_COLOR", "#2563eb"),
+        show_powered_by=os.getenv("WHITE_LABEL_SHOW_POWERED_BY", "true").strip().lower()
+        in {"1", "true", "yes"},
+    )
+
+
+@router.get("/partner/customer-portfolio", response_model=PartnerCustomerPortfolioResponse)
+async def get_partner_customer_portfolio(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> PartnerCustomerPortfolioResponse:
+    """Portfolio view across all organizations the current user can access."""
+    _ = membership
+    now = _utcnow()
+    db = SessionLocal()
+    try:
+        memberships = (
+            db.query(UserOrganization, Organization)
+            .join(Organization, Organization.id == UserOrganization.organization_id)
+            .filter(
+                UserOrganization.user_id == current_user.id,
+                Organization.is_active == True,  # noqa: E712
+            )
+            .order_by(Organization.name.asc())
+            .all()
+        )
+        if not memberships:
+            return PartnerCustomerPortfolioResponse(
+                generated_at=now.isoformat() + "Z",
+                partner_mode_enabled=os.getenv("PARTNER_MODE_ENABLED", "false").strip().lower()
+                in {"1", "true", "yes"},
+                white_label=_white_label_config(),
+                customer_count=0,
+                total_cost_usd=0.0,
+                savings_identified_usd=0.0,
+                open_alert_count=0,
+                customers=[],
+            )
+
+        customers: list[PartnerCustomerPortfolioItem] = []
+        for user_org, org in memberships:
+            customer_id = f"org-{org.id}"
+            imported_rows = (
+                db.query(ImportedCostRecord)
+                .filter(ImportedCostRecord.organization_id == org.id)
+                .limit(20000)
+                .all()
+            )
+            snapshots = (
+                db.query(CostSnapshot)
+                .filter(CostSnapshot.customer_id == customer_id)
+                .order_by(CostSnapshot.captured_at.desc())
+                .limit(200)
+                .all()
+            )
+            providers = {
+                str(row.provider or "").lower()
+                for row in imported_rows
+                if str(row.provider or "").strip()
+            }
+            providers.update(
+                str(row.provider or "").lower()
+                for row in snapshots
+                if str(row.provider or "").strip()
+            )
+
+            imported_total = sum(float(row.cost_usd or 0.0) for row in imported_rows)
+            latest_snapshot_by_provider: dict[str, CostSnapshot] = {}
+            for snapshot in snapshots:
+                provider_key = str(snapshot.provider or "").lower()
+                if provider_key and provider_key not in latest_snapshot_by_provider:
+                    latest_snapshot_by_provider[provider_key] = snapshot
+            snapshot_total = sum(float(row.total_cost_usd or 0.0) for row in latest_snapshot_by_provider.values())
+            snapshot_savings = sum(float(row.savings_identified_usd or 0.0) for row in latest_snapshot_by_provider.values())
+            total_cost = imported_total if imported_rows else snapshot_total
+
+            account_count = (
+                db.query(ProviderAccount)
+                .filter(ProviderAccount.organization_id == org.id)
+                .count()
+            )
+            scan_count = (
+                db.query(ScanRunRecord)
+                .filter(ScanRunRecord.customer_id == customer_id)
+                .count()
+            )
+            open_alert_count = (
+                db.query(AlertEvent)
+                .filter(
+                    AlertEvent.organization_id == org.id,
+                    AlertEvent.acknowledged_at.is_(None),
+                )
+                .count()
+            )
+            last_candidates = [
+                *(row.created_at for row in imported_rows if row.created_at),
+                *(row.captured_at for row in snapshots if row.captured_at),
+                org.updated_at,
+                org.created_at,
+            ]
+            last_activity = max([value for value in last_candidates if value], default=None)
+            if total_cost <= 0 and not providers:
+                health = "no_data"
+            elif open_alert_count > 0:
+                health = "attention"
+            else:
+                health = "healthy"
+
+            customers.append(
+                PartnerCustomerPortfolioItem(
+                    organization_id=int(org.id),
+                    customer_id=customer_id,
+                    customer_name=org.name,
+                    plan=str(getattr(org.plan, "value", org.plan)),
+                    role=str(getattr(user_org.role, "value", user_org.role)),
+                    total_cost_usd=round(total_cost, 2),
+                    savings_identified_usd=round(snapshot_savings, 2),
+                    providers=sorted(providers),
+                    account_count=int(account_count),
+                    scan_count=int(scan_count),
+                    open_alert_count=int(open_alert_count),
+                    last_activity_at=last_activity.isoformat() if last_activity else None,
+                    health_status=health,
+                )
+            )
+
+        total_cost = round(sum(item.total_cost_usd for item in customers), 2)
+        savings = round(sum(item.savings_identified_usd for item in customers), 2)
+        alerts = sum(item.open_alert_count for item in customers)
+        return PartnerCustomerPortfolioResponse(
+            generated_at=now.isoformat() + "Z",
+            partner_mode_enabled=os.getenv("PARTNER_MODE_ENABLED", "false").strip().lower()
+            in {"1", "true", "yes"},
+            white_label=_white_label_config(),
+            customer_count=len(customers),
+            total_cost_usd=total_cost,
+            savings_identified_usd=savings,
+            open_alert_count=alerts,
+            customers=sorted(customers, key=lambda item: item.total_cost_usd, reverse=True),
+        )
+    finally:
+        db.close()
+
+
 @router.post("/analytics/kubernetes/cluster-cost", response_model=KubernetesClusterCostResponse)
 async def calculate_kubernetes_cluster_cost(
     payload: KubernetesClusterInput,
@@ -7798,6 +8235,11 @@ async def calculate_kubernetes_cluster_cost(
                         }
                     )
 
+                deep = _build_kubernetes_deep_breakdowns(
+                    payload=payload,
+                    total_cost=total_live_cost,
+                    namespace_breakdown=namespace_breakdown,
+                )
                 return {
                     "generated_at": _utcnow().isoformat() + "Z",
                     "cluster_name": payload.cluster_name,
@@ -7808,6 +8250,7 @@ async def calculate_kubernetes_cluster_cost(
                     "total_cluster_cost_usd": total_live_cost,
                     "cost_per_node_usd": round(total_live_cost / max(payload.node_count, 1), 2),
                     "namespace_breakdown": namespace_breakdown,
+                    **deep,
                     "efficiency_note": "Using real OpenCost namespace allocation data.",
                     "opencost_integration": f"live:{payload.opencost_url}",
                 }
@@ -7839,6 +8282,11 @@ async def calculate_kubernetes_cluster_cost(
             "memory_share_percent": share,
         })
 
+    deep = _build_kubernetes_deep_breakdowns(
+        payload=payload,
+        total_cost=total_cost,
+        namespace_breakdown=namespace_breakdown,
+    )
     return {
         "generated_at": _utcnow().isoformat() + "Z",
         "cluster_name": payload.cluster_name,
@@ -7849,6 +8297,7 @@ async def calculate_kubernetes_cluster_cost(
         "total_cluster_cost_usd": total_cost,
         "cost_per_node_usd": cost_per_node,
         "namespace_breakdown": namespace_breakdown,
+        **deep,
         "efficiency_note": (
             "Namespace breakdown uses proportional allocation. Connect OpenCost or Prometheus "
             "metrics to enable pod-level CPU/memory-weighted allocation."

@@ -312,6 +312,92 @@ export default function KubernetesPage() {
                 </div>
               </div>
 
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Team Allocation</p>
+                  <div className="space-y-2">
+                    {calcResult.team_breakdown.slice(0, 6).map(team => (
+                      <div key={team.team} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900 dark:text-white">{team.team}</p>
+                            <p className="text-xs text-slate-500">{team.workload_count} workload(s) · {team.namespaces.join(', ')}</p>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{fmt(team.estimated_cost_usd)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Node Pools</p>
+                  <div className="space-y-2">
+                    {calcResult.node_pool_breakdown.map(pool => (
+                      <div key={pool.node_pool} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="font-medium text-slate-900 dark:text-white">{pool.node_pool}</span>
+                          <span className="text-slate-600 dark:text-slate-300">{pool.utilization_percent.toFixed(1)}% utilized</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {pool.node_count} node(s) · {fmt(pool.estimated_cost_usd)} capacity · {fmt(pool.idle_cost_usd)} idle
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {calcResult.workload_breakdown.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Top Workloads</p>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                    <table className="w-full min-w-[680px] text-xs">
+                      <thead className="bg-slate-50 dark:bg-slate-800/60">
+                        <tr className="text-left text-slate-500">
+                          <th className="px-3 py-2 font-medium">Workload</th>
+                          <th className="px-3 py-2 font-medium">Team</th>
+                          <th className="px-3 py-2 font-medium">Pool</th>
+                          <th className="px-3 py-2 font-medium text-right">Cost</th>
+                          <th className="px-3 py-2 font-medium text-right">Req Efficiency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {calcResult.workload_breakdown.slice(0, 8).map(row => (
+                          <tr key={`${row.namespace}-${row.workload_name}`} className="border-t border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">{row.namespace}/{row.workload_name}</td>
+                            <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{row.team}</td>
+                            <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{row.node_pool}</td>
+                            <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">{fmt(row.estimated_cost_usd)}</td>
+                            <td className="px-3 py-2 text-right text-slate-500">{row.request_efficiency_percent.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {calcResult.recommendations.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Request & Node Pool Recommendations</p>
+                  <div className="space-y-2">
+                    {calcResult.recommendations.slice(0, 5).map(rec => (
+                      <div key={rec.recommendation_id} className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">{rec.target}</p>
+                            <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{rec.rationale}</p>
+                            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{rec.action}</p>
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold text-amber-900 dark:text-amber-100">{fmt(rec.estimated_monthly_savings_usd)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-950/30">
                 <p className="text-xs text-purple-800 dark:text-purple-200">{calcResult.efficiency_note}</p>
                 <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">{calcResult.opencost_integration}</p>

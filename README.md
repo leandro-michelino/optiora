@@ -140,6 +140,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `GET /api/v1/inventory/resources`
 - `GET /api/v1/analytics/kubernetes/summary`
 - `POST /api/v1/analytics/kubernetes/cluster-cost`
+- `POST /api/v1/analytics/kubernetes/opencost/sync`
 - `GET /api/v1/virtual-tags/rules`
 - `POST /api/v1/virtual-tags/rules`
 - `PUT /api/v1/virtual-tags/rules/{rule_id}`
@@ -155,6 +156,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `GET /api/v1/provider-accounts/rollups`
 - `GET /api/v1/provider-accounts`
 - `GET /api/v1/provider-accounts/{id}/region-breakdown`
+- `GET /api/v1/partner/customer-portfolio`
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/{alert_id}/acknowledge`
 - `POST /api/v1/alerts/{alert_id}/dismiss`

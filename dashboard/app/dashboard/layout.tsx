@@ -20,6 +20,7 @@ function DashboardLayoutContent({
     { href: '/dashboard/my-dashboards', label: 'My Dashboards', icon: Grid },
     { href: '/dashboard/costs', label: 'Cloud Costs', icon: Cloud },
     { href: '/dashboard/accounts', label: 'Account Hierarchy', icon: Building2 },
+    { href: '/dashboard/portfolio', label: 'Customer Portfolio', icon: Grid },
   ]
 
   const aiNavItems = [

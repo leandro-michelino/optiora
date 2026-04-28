@@ -304,6 +304,8 @@ Goal: move from visibility into guided cost action.
 
 Goal: become a differentiated and scalable multi-cloud FinOps platform.
 
+Status: **initial MVP implemented for Kubernetes depth, MSP portfolio, and white-label configuration; keep deepening operational workflows**.
+
 - deepen Kubernetes cost allocation beyond namespace/OpenCost MVP into workload/team/node-pool/request-limit recommendations
 - deepen unit economics views with benchmark history and product/workload trends
 - add stronger cross-provider governance

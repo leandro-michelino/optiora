@@ -108,7 +108,8 @@ class KubernetesTest(unittest.TestCase):
         for field in (
             "generated_at", "cluster_name", "provider", "region",
             "node_count", "node_type", "total_cluster_cost_usd",
-            "cost_per_node_usd", "namespace_breakdown",
+            "cost_per_node_usd", "namespace_breakdown", "workload_breakdown",
+            "team_breakdown", "node_pool_breakdown", "recommendations",
             "efficiency_note", "opencost_integration",
         ):
             self.assertIn(field, data, f"cluster-cost missing field: {field}")
@@ -184,9 +185,55 @@ class KubernetesTest(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 422)
 
+    def test_13_deep_allocation_accepts_workloads_and_node_pools(self) -> None:
+        payload = {
+            **_CLUSTER_PAYLOAD,
+            "workloads": [
+                {
+                    "namespace": "app",
+                    "workload_name": "checkout-api",
+                    "team": "commerce",
+                    "node_pool": "apps",
+                    "replicas": 4,
+                    "cpu_request_cores": 4.0,
+                    "cpu_usage_cores": 0.8,
+                    "memory_request_gib": 8.0,
+                    "memory_usage_gib": 2.0,
+                },
+                {
+                    "namespace": "monitoring",
+                    "workload_name": "prometheus",
+                    "team": "platform",
+                    "node_pool": "platform",
+                    "replicas": 2,
+                    "cpu_request_cores": 2.0,
+                    "cpu_usage_cores": 1.3,
+                    "memory_request_gib": 6.0,
+                    "memory_usage_gib": 4.0,
+                },
+            ],
+            "node_pools": [
+                {"name": "apps", "node_count": 3, "monthly_node_cost_usd": 180.0},
+                {"name": "platform", "node_count": 2, "monthly_node_cost_usd": 120.0},
+            ],
+        }
+        resp = self.client.post(
+            "/api/v1/analytics/kubernetes/cluster-cost",
+            json=payload,
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertGreaterEqual(len(data["workload_breakdown"]), 2)
+        self.assertIn("commerce", {row["team"] for row in data["team_breakdown"]})
+        self.assertIn("apps", {row["node_pool"] for row in data["node_pool_breakdown"]})
+        self.assertTrue(
+            any(rec["category"] in {"request_limit", "node_pool"} for rec in data["recommendations"])
+        )
+
     # ── Auth enforcement ──────────────────────────────────────────────────────
 
-    def test_13_unauthenticated_rejected(self) -> None:
+    def test_14_unauthenticated_rejected(self) -> None:
         fresh = TestClient(app)
         resp = fresh.get("/api/v1/analytics/kubernetes/summary")
         self.assertIn(resp.status_code, (401, 403))

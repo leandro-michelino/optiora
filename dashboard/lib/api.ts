@@ -49,6 +49,7 @@ import {
   ResourceInventoryResponse,
   KubernetesClusterCostResponse,
   KubernetesSummaryResponse,
+  PartnerCustomerPortfolioResponse,
   OpenCostSyncResponse,
   VirtualTagRulesResponse,
   VirtualTagRuleOut,
@@ -780,6 +781,26 @@ export async function calculateKubernetesClusterCost(payload: {
   opencost_enabled?: boolean
   opencost_url?: string
   opencost_window_days?: number
+  workloads?: Array<{
+    namespace: string
+    workload_name: string
+    team?: string
+    node_pool?: string
+    replicas?: number
+    cpu_request_cores?: number
+    cpu_limit_cores?: number
+    memory_request_gib?: number
+    memory_limit_gib?: number
+    cpu_usage_cores?: number
+    memory_usage_gib?: number
+  }>
+  node_pools?: Array<{
+    name: string
+    node_count?: number
+    monthly_node_cost_usd?: number
+    cpu_capacity_cores?: number
+    memory_capacity_gib?: number
+  }>
 }): Promise<KubernetesClusterCostResponse> {
   return requestJson<KubernetesClusterCostResponse>('/api/v1/analytics/kubernetes/cluster-cost', {
     method: 'POST',
@@ -796,6 +817,10 @@ export async function syncOpenCostCosts(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export async function fetchPartnerCustomerPortfolio(): Promise<PartnerCustomerPortfolioResponse> {
+  return requestJson<PartnerCustomerPortfolioResponse>('/api/v1/partner/customer-portfolio')
 }
 
 // ── Advanced FinOps endpoints ───────────────────────────────────────────────

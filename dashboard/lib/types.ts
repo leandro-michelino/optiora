@@ -923,6 +923,46 @@ export interface KubernetesNamespaceCost {
   memory_share_percent: number
 }
 
+export interface KubernetesWorkloadCost {
+  namespace: string
+  workload_name: string
+  team: string
+  node_pool: string
+  estimated_cost_usd: number
+  share_percent: number
+  cpu_request_cores: number
+  cpu_usage_cores: number
+  memory_request_gib: number
+  memory_usage_gib: number
+  request_efficiency_percent: number
+}
+
+export interface KubernetesTeamCost {
+  team: string
+  estimated_cost_usd: number
+  share_percent: number
+  namespaces: string[]
+  workload_count: number
+}
+
+export interface KubernetesNodePoolCost {
+  node_pool: string
+  node_count: number
+  estimated_cost_usd: number
+  utilization_percent: number
+  idle_cost_usd: number
+}
+
+export interface KubernetesOptimizationRecommendation {
+  recommendation_id: string
+  category: 'workload' | 'node_pool' | 'request_limit' | string
+  target: string
+  severity: 'low' | 'medium' | 'high' | string
+  estimated_monthly_savings_usd: number
+  rationale: string
+  action: string
+}
+
 export interface KubernetesClusterCostResponse {
   generated_at: string
   cluster_name: string
@@ -933,6 +973,10 @@ export interface KubernetesClusterCostResponse {
   total_cluster_cost_usd: number
   cost_per_node_usd: number
   namespace_breakdown: KubernetesNamespaceCost[]
+  workload_breakdown: KubernetesWorkloadCost[]
+  team_breakdown: KubernetesTeamCost[]
+  node_pool_breakdown: KubernetesNodePoolCost[]
+  recommendations: KubernetesOptimizationRecommendation[]
   efficiency_note: string
   opencost_integration: string
 }
@@ -970,6 +1014,40 @@ export interface OpenCostSyncResponse {
   namespace_count: number
   namespaces: OpenCostNamespaceCost[]
   pods?: OpenCostPodCost[]
+}
+
+export interface WhiteLabelConfigResponse {
+  brand_name: string
+  logo_url?: string | null
+  primary_color: string
+  show_powered_by: boolean
+}
+
+export interface PartnerCustomerPortfolioItem {
+  organization_id: number
+  customer_id: string
+  customer_name: string
+  plan: string
+  role: string
+  total_cost_usd: number
+  savings_identified_usd: number
+  providers: string[]
+  account_count: number
+  scan_count: number
+  open_alert_count: number
+  last_activity_at?: string | null
+  health_status: 'healthy' | 'attention' | 'no_data' | string
+}
+
+export interface PartnerCustomerPortfolioResponse {
+  generated_at: string
+  partner_mode_enabled: boolean
+  white_label: WhiteLabelConfigResponse
+  customer_count: number
+  total_cost_usd: number
+  savings_identified_usd: number
+  open_alert_count: number
+  customers: PartnerCustomerPortfolioItem[]
 }
 
 // ---------------------------------------------------------------------------
