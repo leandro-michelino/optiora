@@ -535,7 +535,7 @@ class AuthFlowTest(unittest.TestCase):
             item for item in payload["items"]
             if item["provider"] == "aws" and item["account_identifier"] == "aws-org-root"
         )
-        self.assertEqual(aws_group["account_type"], "group")
+        self.assertEqual(aws_group["account_type"], "organization")
         self.assertEqual(aws_group["rolled_up_cost_usd"], 150.0)
         self.assertEqual(aws_group["child_count"], 2)
         self.assertEqual(aws_group["depth"], 1)
