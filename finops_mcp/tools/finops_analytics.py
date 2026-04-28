@@ -276,6 +276,13 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
     weighted_growth, weighted_volatility, weighted_commitment, provider_concentration = (
         _weighted_provider_metrics(providers, current_monthly)
     )
+    growth_adjustment_pct = _safe_float(params.get("growth_adjustment_pct"), 0.0)
+    volatility_adjustment_pct = _safe_float(params.get("volatility_adjustment_pct"), 0.0)
+    weighted_growth = max(-0.25, min(0.35, weighted_growth + (growth_adjustment_pct / 100.0)))
+    weighted_volatility = max(
+        0.02,
+        min(0.45, weighted_volatility + (volatility_adjustment_pct / 100.0)),
+    )
 
     history_source = "cost_snapshots" if len(external_history) >= 6 else "synthetic"
     history = (
@@ -512,6 +519,8 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
             "focus_areas": ["budget-risk", "commitment-coverage", "provider-concentration", "cost-velocity"],
             "cost_velocity_pct": velocity_pct,
             "trend_acceleration": trend_acceleration,
+            "growth_adjustment_pct": growth_adjustment_pct,
+            "volatility_adjustment_pct": volatility_adjustment_pct,
         },
         "scenarios": scenarios,
     }
@@ -621,147 +630,6 @@ def build_forecast_what_if(params: dict[str, Any]) -> dict[str, Any]:
             "gross_savings_usd": round(annualized_savings, 2),
             "net_savings_usd": round(net_savings, 2),
             "payback_month": payback_month,
-        },
-    }
-
-
-def build_forecast_stress_test(params: dict[str, Any]) -> dict[str, Any]:
-    """Deterministic stress-testing around baseline forecast trajectories.
-
-    Produces scenario envelopes for finance risk reviews without random sampling.
-    """
-    months = max(1, min(int(params.get("months", 12) or 12), 24))
-    severity = str(params.get("severity", "medium") or "medium").lower()
-    severity_factor = {
-        "low": 0.75,
-        "medium": 1.0,
-        "high": 1.3,
-    }.get(severity, 1.0)
-
-    baseline = build_forecast({
-        "months": months,
-        "cloud_provider": params.get("cloud_provider", "all"),
-        "current_monthly_spend": params.get("current_monthly_spend", 0.0),
-        "cost_breakdown": params.get("cost_breakdown", {}),
-        "historical_monthly_spend": params.get("historical_monthly_spend", []),
-        "budget_monthly": params.get("budget_monthly", 0.0),
-        "fallback_monthly_spend": params.get("fallback_monthly_spend", 0.0),
-    })
-
-    forecast_rows = baseline.get("forecast", [])
-    budget_monthly = _safe_float(params.get("budget_monthly"), 0.0)
-
-    scenario_profiles = [
-        {
-            "name": "demand_spike",
-            "description": "Unexpected workload demand increase and autoscaling pressure.",
-            "demand_mult": 1 + (0.08 * severity_factor),
-            "price_mult": 1.0,
-            "efficiency_drag": 0.03 * severity_factor,
-            "starts_month": 2,
-        },
-        {
-            "name": "price_shock",
-            "description": "Provider price mix deterioration and commitment under-utilization.",
-            "demand_mult": 1.0,
-            "price_mult": 1 + (0.06 * severity_factor),
-            "efficiency_drag": 0.02 * severity_factor,
-            "starts_month": 1,
-        },
-        {
-            "name": "execution_delay",
-            "description": "Optimization actions delayed while spend keeps growing.",
-            "demand_mult": 1 + (0.04 * severity_factor),
-            "price_mult": 1 + (0.03 * severity_factor),
-            "efficiency_drag": 0.06 * severity_factor,
-            "starts_month": 4,
-        },
-        {
-            "name": "compound_risk",
-            "description": "Demand spike and price pressure combined with slower remediation.",
-            "demand_mult": 1 + (0.10 * severity_factor),
-            "price_mult": 1 + (0.07 * severity_factor),
-            "efficiency_drag": 0.08 * severity_factor,
-            "starts_month": 2,
-        },
-    ]
-
-    scenarios: list[dict[str, Any]] = []
-    for profile in scenario_profiles:
-        timeline: list[dict[str, Any]] = []
-        stressed_total = 0.0
-        peak_monthly = 0.0
-        breach_count = 0
-
-        for month_index, row in enumerate(forecast_rows, start=1):
-            baseline_value = _safe_float(row.get("baseline"), 0.0)
-            stress_active = month_index >= int(profile["starts_month"])
-            demand_mult = profile["demand_mult"] if stress_active else 1.0
-            price_mult = profile["price_mult"] if stress_active else 1.0
-            drag = profile["efficiency_drag"] if stress_active else 0.0
-
-            stressed = baseline_value * demand_mult * price_mult * (1 + drag)
-            stressed = max(stressed, 0.0)
-            stressed_total += stressed
-            peak_monthly = max(peak_monthly, stressed)
-
-            breach = budget_monthly > 0 and stressed > budget_monthly
-            if breach:
-                breach_count += 1
-
-            timeline.append({
-                "month": row.get("month", f"M{month_index}"),
-                "baseline_usd": round(baseline_value, 2),
-                "stressed_usd": round(stressed, 2),
-                "delta_usd": round(stressed - baseline_value, 2),
-                "budget_breach": breach,
-            })
-
-        baseline_total = sum(_safe_float(r.get("baseline"), 0.0) for r in forecast_rows)
-        scenarios.append({
-            "name": profile["name"],
-            "description": profile["description"],
-            "starts_month": profile["starts_month"],
-            "stressed_total_usd": round(stressed_total, 2),
-            "incremental_risk_usd": round(max(stressed_total - baseline_total, 0.0), 2),
-            "peak_monthly_usd": round(peak_monthly, 2),
-            "breach_months": breach_count,
-            "timeline": timeline,
-        })
-
-    scenarios.sort(key=lambda s: s["incremental_risk_usd"], reverse=True)
-    worst_case = scenarios[0] if scenarios else None
-
-    return {
-        "generated_at": _utcnow().isoformat(),
-        "forecast_months": months,
-        "severity": severity,
-        "baseline_summary": {
-            "projected_total_usd": round(sum(_safe_float(r.get("baseline"), 0.0) for r in forecast_rows), 2),
-            "average_monthly_usd": round(
-                sum(_safe_float(r.get("baseline"), 0.0) for r in forecast_rows) / max(len(forecast_rows), 1),
-                2,
-            ),
-            "budget_monthly_usd": round(budget_monthly, 2) if budget_monthly > 0 else None,
-        },
-        "scenarios": scenarios,
-        "worst_case": {
-            "name": worst_case.get("name") if worst_case else None,
-            "incremental_risk_usd": worst_case.get("incremental_risk_usd") if worst_case else 0.0,
-            "breach_months": worst_case.get("breach_months") if worst_case else 0,
-        },
-        "hedging_playbook": [
-            "Increase commitment coverage for predictable baseline workloads before peak months.",
-            "Prioritize rightsizing in high-volatility providers and enforce schedule-based shutdowns.",
-            "Apply budget guardrails with owner approval when stress scenario breach count rises.",
-        ],
-        "genai_context": {
-            "prompt": (
-                "Explain stress-test outcomes to finance and engineering audiences. Compare baseline vs. "
-                "worst case, call out breach months, and propose a phased mitigation plan with quick wins."
-            ),
-            "severity": severity,
-            "worst_case": worst_case,
         },
     }
 
@@ -1712,64 +1580,292 @@ def build_commitment_gap_analysis(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_optimization_portfolio(params: dict[str, Any]) -> dict[str, Any]:
-    """Build a prioritized optimization portfolio balancing savings, ROI, and execution risk."""
-    recommendation_rows = params.get("recommendations") or []
-    current_monthly = _safe_float(params.get("current_monthly_spend"), 0.0)
+def build_forecast_sensitivity(params: dict[str, Any]) -> dict[str, Any]:
+    """Stress-test forecast sensitivity against growth and volatility shocks."""
+    months = max(1, min(int(params.get("months", 12) or 12), 24))
+    baseline = build_forecast(
+        {
+            "months": months,
+            "current_monthly_spend": params.get("current_monthly_spend"),
+            "cost_breakdown": params.get("cost_breakdown"),
+            "historical_monthly_spend": params.get("historical_monthly_spend"),
+            "budget_monthly": params.get("budget_monthly"),
+        }
+    )
+    baseline_total = _safe_float(
+        (baseline.get("forecast_summary") or {}).get("projected_12m_baseline_usd"),
+        sum(_safe_float(row.get("baseline"), 0.0) for row in baseline.get("forecast", [])),
+    )
 
-    portfolio_items: list[dict[str, Any]] = []
-    for row in recommendation_rows:
-        if not isinstance(row, dict):
-            continue
-        monthly_savings = _safe_float(row.get("savings_monthly_usd"), 0.0)
-        roi_percent = _safe_float(row.get("roi_percent"), 0.0)
-        payback = _safe_float(row.get("payback_months"), 12.0)
-        effort = str(row.get("effort", "medium") or "medium").lower()
-        confidence = str(row.get("confidence", "medium") or "medium").lower()
-        effort_penalty = {"low": 0.0, "medium": 8.0, "high": 15.0}.get(effort, 8.0)
-        confidence_bonus = {"high": 10.0, "medium": 4.0, "low": -4.0}.get(confidence, 0.0)
+    perturbations = [
+        {
+            "name": "growth_up_1pct",
+            "growth_adjustment_pct": 1.0,
+            "volatility_adjustment_pct": 0.0,
+        },
+        {
+            "name": "growth_down_1pct",
+            "growth_adjustment_pct": -1.0,
+            "volatility_adjustment_pct": 0.0,
+        },
+        {
+            "name": "volatility_up_2pct",
+            "growth_adjustment_pct": 0.0,
+            "volatility_adjustment_pct": 2.0,
+        },
+        {
+            "name": "volatility_down_2pct",
+            "growth_adjustment_pct": 0.0,
+            "volatility_adjustment_pct": -2.0,
+        },
+        {
+            "name": "stress_growth_up_2pct_vol_up_3pct",
+            "growth_adjustment_pct": 2.0,
+            "volatility_adjustment_pct": 3.0,
+        },
+    ]
 
-        score = (
-            (monthly_savings / max(current_monthly, 1.0) * 1000)
-            + (roi_percent * 0.18)
-            - (payback * 2.0)
-            - effort_penalty
-            + confidence_bonus
+    tests: list[dict[str, Any]] = []
+    for perturbation in perturbations:
+        result = build_forecast(
+            {
+                "months": months,
+                "current_monthly_spend": params.get("current_monthly_spend"),
+                "cost_breakdown": params.get("cost_breakdown"),
+                "historical_monthly_spend": params.get("historical_monthly_spend"),
+                "budget_monthly": params.get("budget_monthly"),
+                "growth_adjustment_pct": perturbation["growth_adjustment_pct"],
+                "volatility_adjustment_pct": perturbation["volatility_adjustment_pct"],
+            }
+        )
+        projected_total = _safe_float(
+            (result.get("forecast_summary") or {}).get("projected_12m_baseline_usd"),
+            sum(_safe_float(row.get("baseline"), 0.0) for row in result.get("forecast", [])),
+        )
+        avg_breach_probability = _safe_float(
+            ((result.get("budget_guardrails") or {}).get("average_breach_probability")),
+            0.0,
+        )
+        tests.append(
+            {
+                "scenario": perturbation["name"],
+                "growth_adjustment_pct": perturbation["growth_adjustment_pct"],
+                "volatility_adjustment_pct": perturbation["volatility_adjustment_pct"],
+                "projected_total_usd": round(projected_total, 2),
+                "delta_vs_baseline_usd": round(projected_total - baseline_total, 2),
+                "delta_vs_baseline_percent": round(
+                    ((projected_total - baseline_total) / baseline_total * 100) if baseline_total > 0 else 0.0,
+                    2,
+                ),
+                "average_breach_probability": round(avg_breach_probability, 4),
+            }
         )
 
-        portfolio_items.append({
-            "id": row.get("id") or row.get("recommendation_id") or "unknown",
-            "title": row.get("title") or row.get("description") or "Optimization action",
-            "service": row.get("service") or row.get("provider") or "unknown",
-            "monthly_savings_usd": round(monthly_savings, 2),
-            "annual_savings_usd": round(monthly_savings * 12, 2),
-            "roi_percent": round(roi_percent, 1),
-            "payback_months": round(payback, 1),
-            "effort": effort,
-            "confidence": confidence,
-            "portfolio_score": round(score, 2),
-        })
+    by_name = {row["scenario"]: row for row in tests}
+    growth_elasticity = (
+        _safe_float(by_name.get("growth_up_1pct", {}).get("delta_vs_baseline_usd"))
+        - _safe_float(by_name.get("growth_down_1pct", {}).get("delta_vs_baseline_usd"))
+    ) / 2.0
+    volatility_elasticity = (
+        _safe_float(by_name.get("volatility_up_2pct", {}).get("delta_vs_baseline_usd"))
+        - _safe_float(by_name.get("volatility_down_2pct", {}).get("delta_vs_baseline_usd"))
+    ) / 4.0
 
-    portfolio_items.sort(key=lambda item: item["portfolio_score"], reverse=True)
-    top_quick_wins = [i for i in portfolio_items if i["effort"] == "low"][:5]
-    top_strategic = [i for i in portfolio_items if i["effort"] in {"medium", "high"}][:5]
-    total_monthly_savings = sum(i["monthly_savings_usd"] for i in portfolio_items)
+    total_values = [baseline_total] + [row["projected_total_usd"] for row in tests]
+    best_case = min(total_values) if total_values else 0.0
+    worst_case = max(total_values) if total_values else 0.0
 
     return {
         "generated_at": _utcnow().isoformat(),
-        "portfolio_count": len(portfolio_items),
-        "total_monthly_savings_usd": round(total_monthly_savings, 2),
-        "total_annual_savings_usd": round(total_monthly_savings * 12, 2),
-        "ranked_actions": portfolio_items[:15],
-        "quick_wins": top_quick_wins,
-        "strategic_bets": top_strategic,
+        "forecast_months": months,
+        "baseline_projected_total_usd": round(baseline_total, 2),
+        "sensitivity_tests": tests,
+        "elasticity": {
+            "growth_1pct_usd": round(growth_elasticity, 2),
+            "volatility_1pct_usd": round(volatility_elasticity, 2),
+        },
+        "risk_window": {
+            "best_case_usd": round(best_case, 2),
+            "baseline_case_usd": round(baseline_total, 2),
+            "worst_case_usd": round(worst_case, 2),
+            "stress_gap_usd": round(worst_case - best_case, 2),
+        },
         "genai_context": {
             "prompt": (
-                "Create an execution plan from this optimization portfolio. Separate immediate quick wins "
-                "from strategic initiatives, include expected savings impact, and sequence by portfolio_score."
+                "Explain forecast sensitivity in plain language. Compare baseline with growth/volatility "
+                "stress scenarios, quantify elasticity, and recommend the top 2 mitigations to reduce "
+                "downside budget risk without changing core assumptions."
             ),
-            "portfolio_count": len(portfolio_items),
+            "baseline_projected_total_usd": round(baseline_total, 2),
+            "stress_gap_usd": round(worst_case - best_case, 2),
+            "growth_1pct_usd": round(growth_elasticity, 2),
+            "volatility_1pct_usd": round(volatility_elasticity, 2),
+        },
+    }
+
+
+def build_optimization_portfolio(params: dict[str, Any]) -> dict[str, Any]:
+    """Construct a risk-adjusted optimization portfolio with payback and NPV.
+
+    This acts as a deterministic decision layer for sequencing FinOps initiatives.
+    """
+    current_monthly = _safe_float(params.get("current_monthly_spend"), 0.0)
+    cost_breakdown = params.get("cost_breakdown") or {}
+    providers = _provider_inputs(cost_breakdown)
+    if current_monthly <= 0:
+        current_monthly = sum(providers.values())
+
+    waste = build_cloud_waste_analysis(
+        {
+            "current_monthly_spend": current_monthly,
+            "cost_breakdown": cost_breakdown,
+        }
+    )
+    commitment_gap = build_commitment_gap_analysis(
+        {
+            "current_monthly_spend": current_monthly,
+            "cost_breakdown": cost_breakdown,
+        }
+    )
+
+    discount_rate = max(0.0, min(_safe_float(params.get("discount_rate_monthly"), 0.01), 0.2))
+    risk_factors = {"low": 0.95, "medium": 0.80, "high": 0.65}
+    effort_weeks = {"low": 2, "medium": 4, "high": 8}
+
+    initiatives_raw: list[dict[str, Any]] = [
+        {
+            "initiative": "Compute rightsizing wave",
+            "category": "waste-reduction",
+            "monthly_savings_usd": current_monthly * 0.09,
+            "implementation_cost_usd": current_monthly * 0.04,
+            "risk": "low",
+            "owner": "platform-engineering",
+        },
+        {
+            "initiative": "Commitment coverage uplift",
+            "category": "commitment",
+            "monthly_savings_usd": _safe_float(
+                commitment_gap.get("total_gap_savings_monthly_usd"),
+                current_monthly * 0.05,
+            ),
+            "implementation_cost_usd": current_monthly * 0.03,
+            "risk": "medium",
+            "owner": "finops-finance",
+        },
+        {
+            "initiative": "Storage lifecycle + deletion campaign",
+            "category": "waste-reduction",
+            "monthly_savings_usd": current_monthly * 0.03,
+            "implementation_cost_usd": current_monthly * 0.015,
+            "risk": "low",
+            "owner": "cloud-operations",
+        },
+        {
+            "initiative": "Non-prod schedule automation",
+            "category": "automation",
+            "monthly_savings_usd": current_monthly * 0.025,
+            "implementation_cost_usd": current_monthly * 0.02,
+            "risk": "low",
+            "owner": "platform-engineering",
+        },
+        {
+            "initiative": "Data-transfer architecture optimization",
+            "category": "architecture",
+            "monthly_savings_usd": current_monthly * 0.018,
+            "implementation_cost_usd": current_monthly * 0.05,
+            "risk": "high",
+            "owner": "architecture",
+        },
+    ]
+
+    initiatives: list[dict[str, Any]] = []
+    for row in initiatives_raw:
+        monthly_savings = max(_safe_float(row.get("monthly_savings_usd")), 0.0)
+        implementation_cost = max(_safe_float(row.get("implementation_cost_usd")), 0.0)
+        risk = str(row.get("risk") or "medium").lower()
+        risk_factor = risk_factors.get(risk, 0.80)
+        discounted_savings_12m = 0.0
+        for month in range(1, 13):
+            discounted_savings_12m += monthly_savings / ((1 + discount_rate) ** month)
+        risk_adjusted_npv = (discounted_savings_12m * risk_factor) - implementation_cost
+        payback_month = None
+        cumulative = -implementation_cost
+        for month in range(1, 25):
+            cumulative += monthly_savings * risk_factor
+            if cumulative >= 0:
+                payback_month = month
+                break
+        roi_percent = (
+            ((monthly_savings * 12 * risk_factor - implementation_cost) / implementation_cost) * 100
+            if implementation_cost > 0
+            else None
+        )
+
+        initiatives.append(
+            {
+                "initiative": row["initiative"],
+                "category": row["category"],
+                "owner": row["owner"],
+                "risk": risk,
+                "implementation_weeks": effort_weeks.get(risk, 4),
+                "implementation_cost_usd": round(implementation_cost, 2),
+                "monthly_savings_usd": round(monthly_savings, 2),
+                "annual_savings_usd": round(monthly_savings * 12, 2),
+                "risk_adjustment_factor": round(risk_factor, 2),
+                "risk_adjusted_npv_12m_usd": round(risk_adjusted_npv, 2),
+                "payback_month": payback_month,
+                "roi_percent": round(roi_percent, 2) if roi_percent is not None else None,
+            }
+        )
+
+    initiatives.sort(
+        key=lambda row: (row["risk_adjusted_npv_12m_usd"], row["monthly_savings_usd"]),
+        reverse=True,
+    )
+
+    top_three = initiatives[:3]
+    total_monthly_savings = sum(row["monthly_savings_usd"] for row in initiatives)
+    total_implementation = sum(row["implementation_cost_usd"] for row in initiatives)
+    total_risk_adjusted_npv = sum(row["risk_adjusted_npv_12m_usd"] for row in initiatives)
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "current_monthly_spend_usd": round(current_monthly, 2),
+        "portfolio": initiatives,
+        "portfolio_summary": {
+            "initiatives": len(initiatives),
+            "top_3_monthly_savings_usd": round(
+                sum(row["monthly_savings_usd"] for row in top_three),
+                2,
+            ),
+            "total_monthly_savings_usd": round(total_monthly_savings, 2),
             "total_annual_savings_usd": round(total_monthly_savings * 12, 2),
+            "total_implementation_cost_usd": round(total_implementation, 2),
+            "risk_adjusted_npv_12m_usd": round(total_risk_adjusted_npv, 2),
+        },
+        "sequencing": {
+            "phase_30_days": [row["initiative"] for row in initiatives if row["risk"] == "low"][:2],
+            "phase_60_days": [row["initiative"] for row in initiatives if row["risk"] == "medium"][:2],
+            "phase_90_days": [row["initiative"] for row in initiatives if row["risk"] == "high"][:2],
+        },
+        "waste_context": {
+            "total_estimated_waste_usd": waste.get("total_estimated_waste_usd", 0.0),
+            "waste_grade": waste.get("waste_grade", "C"),
+            "top_categories": [row.get("category") for row in (waste.get("categories") or [])[:3]],
+        },
+        "commitment_context": {
+            "total_annual_opportunity_usd": commitment_gap.get("total_annual_opportunity_usd", 0.0),
+            "priority_provider": commitment_gap.get("priority_provider"),
+        },
+        "genai_context": {
+            "prompt": (
+                "Create a CFO-ready optimization portfolio narrative. Prioritize initiatives by "
+                "risk-adjusted NPV and payback, explain why the first 30 days focus on quick wins, "
+                "and include governance guardrails for execution risk."
+            ),
+            "risk_adjusted_npv_12m_usd": round(total_risk_adjusted_npv, 2),
+            "top_initiatives": [row["initiative"] for row in top_three],
+            "total_monthly_savings_usd": round(total_monthly_savings, 2),
         },
     }
 
@@ -1818,550 +1914,13 @@ async def get_commitment_gap_analysis(params: dict[str, Any]) -> str:
     return json.dumps(build_commitment_gap_analysis(params))
 
 
-async def get_optimization_portfolio(params: dict[str, Any]) -> str:
-    return json.dumps(build_optimization_portfolio(params))
-
-
 async def get_forecast_what_if(params: dict[str, Any]) -> str:
     return json.dumps(build_forecast_what_if(params))
 
 
-async def get_forecast_stress_test(params: dict[str, Any]) -> str:
-    return json.dumps(build_forecast_stress_test(params))
+async def get_forecast_sensitivity(params: dict[str, Any]) -> str:
+    return json.dumps(build_forecast_sensitivity(params))
 
 
-# ---------------------------------------------------------------------------
-# Public: Tagging Coverage Analytics
-# ---------------------------------------------------------------------------
-
-# Tagging compliance benchmark by maturity level (min coverage %)
-_TAGGING_MATURITY_BENCHMARKS = {"crawl": 40, "walk": 70, "run": 90, "optimize": 98}
-
-# Critical tag keys every resource should carry
-_CRITICAL_TAGS = ["environment", "owner", "cost-center", "project", "team"]
-_RECOMMENDED_TAGS = ["application", "tier", "managed-by", "created-by", "expiry"]
-
-
-def build_tagging_coverage_analytics(params: dict[str, Any]) -> dict[str, Any]:
-    """Deep tagging compliance and allocation-readiness analysis.
-
-    Accepts:
-      coverage_percent (float): Overall current tagging coverage (0-100)
-      critical_tag_coverage (dict): per-tag coverage pct, e.g. {"environment": 85, "owner": 62}
-      cost_breakdown (dict): provider → cost for provider-weighted coverage
-      untagged_spend_usd (float): monthly spend on untagged resources
-      resource_count (int): total scanned resources
-      untagged_resource_count (int): resources missing >=1 critical tag
-    """
-    coverage_pct = _safe_float(params.get("coverage_percent"), 55.0)
-    critical_tag_cov = params.get("critical_tag_coverage") or {}
-    untagged_spend = _safe_float(params.get("untagged_spend_usd"), 0.0)
-    resource_count = int(params.get("resource_count", 0) or 0)
-    untagged_count = int(params.get("untagged_resource_count", 0) or 0)
-    cost_breakdown = params.get("cost_breakdown") or {}
-    providers = _provider_inputs(cost_breakdown)
-    current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values())) or 1.0
-
-    # Infer untagged spend from coverage gap if not provided
-    if untagged_spend <= 0 and current_monthly > 0:
-        untagged_spend = current_monthly * max(0.0, (100.0 - coverage_pct) / 100.0)
-
-    # Determine maturity-based benchmark
-    maturity = str(params.get("maturity_level", "walk") or "walk").lower()
-    benchmark_pct = _TAGGING_MATURITY_BENCHMARKS.get(maturity, 70)
-    coverage_gap = max(0.0, benchmark_pct - coverage_pct)
-
-    # Per-tag compliance analysis
-    tag_analysis = []
-    for tag in _CRITICAL_TAGS:
-        tag_cov = _safe_float(critical_tag_cov.get(tag), coverage_pct * 0.9)
-        tag_analysis.append({
-            "tag": tag,
-            "coverage_percent": round(tag_cov, 1),
-            "compliant": tag_cov >= 80.0,
-            "priority": "critical",
-            "allocation_impact": "high" if tag in ("cost-center", "project", "owner") else "medium",
-        })
-    for tag in _RECOMMENDED_TAGS:
-        tag_cov = _safe_float(critical_tag_cov.get(tag), coverage_pct * 0.65)
-        tag_analysis.append({
-            "tag": tag,
-            "coverage_percent": round(tag_cov, 1),
-            "compliant": tag_cov >= 70.0,
-            "priority": "recommended",
-            "allocation_impact": "low",
-        })
-
-    critical_gaps = [t for t in tag_analysis if t["priority"] == "critical" and not t["compliant"]]
-
-    # Allocation-readiness score (how well can spend be attributed to teams/projects)
-    allocation_score = round(
-        min(100.0, coverage_pct * 0.6 + (100 - len(critical_gaps) * 12) * 0.4), 1
-    )
-
-    # Grade
-    grade = (
-        "A" if coverage_pct >= 95 else
-        "B" if coverage_pct >= 80 else
-        "C" if coverage_pct >= 60 else "D"
-    )
-
-    # Financial risk from untagged spend
-    chargeback_risk_usd = round(untagged_spend, 2)
-    annual_chargeback_risk_usd = round(untagged_spend * 12, 2)
-
-    return {
-        "generated_at": _utcnow().isoformat(),
-        "coverage_percent": round(coverage_pct, 1),
-        "benchmark_percent": benchmark_pct,
-        "coverage_gap_percent": round(coverage_gap, 1),
-        "grade": grade,
-        "allocation_readiness_score": allocation_score,
-        "untagged_spend_monthly_usd": chargeback_risk_usd,
-        "untagged_spend_annual_usd": annual_chargeback_risk_usd,
-        "resource_count": resource_count,
-        "untagged_resource_count": untagged_count,
-        "critical_tag_gaps": [t["tag"] for t in critical_gaps],
-        "tag_analysis": tag_analysis,
-        "enforcement_recommendations": [
-            "Enable AWS Config / Azure Policy / GCP OrgPolicy tag enforcement rules.",
-            f"Prioritise tagging {', '.join(t['tag'] for t in critical_gaps[:3])} — highest allocation impact.",
-            "Integrate tag validation in IaC pipelines (Terraform, Pulumi) before apply.",
-            "Use OptiOra virtual tag rules to backfill missing tags from resource metadata.",
-        ],
-        "genai_context": {
-            "prompt": (
-                "Explain the tagging coverage analysis to a FinOps engineer. Lead with the allocation "
-                "readiness score and grade, identify the critical tag gaps, and recommend a 2-step "
-                "enforcement plan. Under 130 words."
-            ),
-            "coverage_percent": round(coverage_pct, 1),
-            "grade": grade,
-            "critical_gaps": [t["tag"] for t in critical_gaps],
-            "untagged_annual_risk_usd": annual_chargeback_risk_usd,
-        },
-    }
-
-
-# ---------------------------------------------------------------------------
-# Public: Sustainability / Carbon Footprint Metrics
-# ---------------------------------------------------------------------------
-
-# Approximate kg CO2e per USD of cloud spend by provider (industry estimates, 2024)
-_CARBON_INTENSITY: dict[str, float] = {
-    "aws":   0.18,   # AWS has highest renewable % in US regions; ~0.18 kg CO2e per $
-    "azure": 0.20,
-    "gcp":   0.14,   # GCP leads on carbon neutrality
-    "oci":   0.22,
-}
-
-# Regional modifiers — carbon intensity varies by datacenter location
-_REGION_CARBON_MODIFIERS: dict[str, float] = {
-    "us-east-1":       1.00,  "us-west-2":      0.80,
-    "eu-west-1":       0.85,  "eu-central-1":   0.90,
-    "ap-southeast-1":  1.15,  "ap-northeast-1": 1.10,
-    "uk-london-1":     0.88,  "us-ashburn-1":   0.95,
-}
-
-
-def build_sustainability_metrics(params: dict[str, Any]) -> dict[str, Any]:
-    """Carbon footprint estimate and sustainability scoring for cloud workloads.
-
-    Accepts:
-      cost_breakdown (dict): provider → cost
-      current_monthly_spend (float)
-      regions (list[str]): primary regions in use
-      renewable_energy_percent (float): provider-reported renewable %
-      rightsizing_savings_percent (float): potential efficiency gain from rightsizing
-    """
-    cost_breakdown = params.get("cost_breakdown") or {}
-    providers = _provider_inputs(cost_breakdown)
-    current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values())) or 1.0
-    regions = list(params.get("regions") or [])
-    renewable_pct = _safe_float(params.get("renewable_energy_percent"), 35.0)
-    rightsizing_pct = _safe_float(params.get("rightsizing_savings_percent"), 15.0)
-
-    # Compute regional multiplier (average across stated regions)
-    region_mod = 1.0
-    if regions:
-        mods = [_REGION_CARBON_MODIFIERS.get(r, 1.0) for r in regions]
-        region_mod = sum(mods) / len(mods)
-
-    # Per-provider carbon footprint
-    provider_emissions = []
-    total_kg_co2e_monthly = 0.0
-    for provider, cost in providers.items():
-        intensity = _CARBON_INTENSITY.get(provider, 0.20) * region_mod
-        kg_co2e = cost * intensity * max(0.0, 1.0 - renewable_pct / 100.0)
-        total_kg_co2e_monthly += kg_co2e
-        provider_emissions.append({
-            "provider": provider,
-            "monthly_cost_usd": round(cost, 2),
-            "kg_co2e_monthly": round(kg_co2e, 2),
-            "tonnes_co2e_annual": round(kg_co2e * 12 / 1000, 3),
-            "carbon_intensity_kg_per_usd": round(intensity, 4),
-        })
-
-    # Rightsizing carbon reduction opportunity
-    rightsizing_co2e_reduction = total_kg_co2e_monthly * (rightsizing_pct / 100.0)
-    renewable_co2e_reduction = (
-        sum(_CARBON_INTENSITY.get(p, 0.20) * c * region_mod for p, c in providers.items())
-        * 0.30  # incremental 30% renewable adoption
-    )
-
-    # Sustainability score (0-100)
-    renewable_score = min(100.0, renewable_pct / 80.0 * 100.0)
-    rightsizing_score = min(100.0, (1.0 - rightsizing_pct / 100.0) * 100.0)
-    region_score = max(0.0, (1.0 - (region_mod - 0.8) / 0.4) * 100.0)
-    sustainability_score = round(
-        renewable_score * 0.45 + rightsizing_score * 0.35 + region_score * 0.20, 1
-    )
-    grade = (
-        "A" if sustainability_score >= 80 else
-        "B" if sustainability_score >= 65 else
-        "C" if sustainability_score >= 50 else "D"
-    )
-
-    return {
-        "generated_at": _utcnow().isoformat(),
-        "total_kg_co2e_monthly": round(total_kg_co2e_monthly, 2),
-        "total_tonnes_co2e_annual": round(total_kg_co2e_monthly * 12 / 1000, 3),
-        "current_renewable_energy_percent": round(renewable_pct, 1),
-        "sustainability_score": sustainability_score,
-        "sustainability_grade": grade,
-        "provider_emissions": provider_emissions,
-        "reduction_opportunities": {
-            "rightsizing_co2e_kg_monthly": round(rightsizing_co2e_reduction, 2),
-            "incremental_renewable_co2e_kg_monthly": round(renewable_co2e_reduction, 2),
-            "total_reduction_potential_kg_monthly": round(
-                rightsizing_co2e_reduction + renewable_co2e_reduction, 2
-            ),
-            "total_reduction_potential_percent": round(
-                (rightsizing_co2e_reduction + renewable_co2e_reduction)
-                / max(total_kg_co2e_monthly, 1.0) * 100.0, 1
-            ),
-        },
-        "recommendations": [
-            f"Migrate steady-state workloads to {min(provider_emissions, key=lambda x: x['carbon_intensity_kg_per_usd'])['provider'].upper()} — lowest carbon intensity.",
-            "Select us-west-2 / eu-west-1 / gcp regions where higher renewable energy is available.",
-            "Adopt spot/preemptible instances for batch jobs to reduce idle carbon footprint.",
-            f"Rightsize oversized instances — {rightsizing_pct:.0f}% efficiency gain yields "
-            f"~{rightsizing_co2e_reduction:.0f} kg CO2e/month reduction.",
-        ],
-        "genai_context": {
-            "prompt": (
-                "Explain the cloud carbon footprint analysis to a sustainability-conscious CTO. "
-                "Mention total annual CO2e, grade, and the top two concrete actions to reduce emissions. "
-                "Avoid alarm; be constructive and specific. Under 140 words."
-            ),
-            "total_annual_tonnes": round(total_kg_co2e_monthly * 12 / 1000, 3),
-            "grade": grade,
-            "top_provider": max(provider_emissions, key=lambda x: x["kg_co2e_monthly"])["provider"] if provider_emissions else "aws",
-        },
-    }
-
-
-# ---------------------------------------------------------------------------
-# Public: Cross-Provider Comparison & Arbitrage
-# ---------------------------------------------------------------------------
-
-def build_cross_provider_comparison(params: dict[str, Any]) -> dict[str, Any]:
-    """Multi-cloud comparative efficiency analysis and workload migration arbitrage.
-
-    Evaluates cost, waste, commitment maturity, and risk profile across providers
-    to surface where spend is best optimised and where migration opportunities exist.
-    """
-    cost_breakdown = params.get("cost_breakdown") or {}
-    providers = _provider_inputs(cost_breakdown)
-    current_monthly = _safe_float(params.get("current_monthly_spend"), sum(providers.values())) or 1.0
-
-    comparisons = []
-    for provider, cost in providers.items():
-        profile = PROVIDER_PROFILES.get(provider, PROVIDER_PROFILES["aws"])
-        share_pct = cost / current_monthly * 100
-        waste_usd = cost * profile["waste"]
-        commitment_gap = max(0.0, 0.70 - profile["commitment"])
-        commitment_opportunity = cost * commitment_gap * 0.32
-
-        # Composite provider health score (0-100)
-        health_score = round(
-            (profile["commitment"] / 0.70 * 40)
-            + ((1 - profile["waste"] / 0.25) * 35)
-            + ((1 - profile["volatility"] / 0.15) * 25),
-            1,
-        )
-
-        comparisons.append({
-            "provider": provider,
-            "monthly_cost_usd": round(cost, 2),
-            "share_percent": round(share_pct, 1),
-            "estimated_waste_usd": round(waste_usd, 2),
-            "waste_rate_percent": round(profile["waste"] * 100, 1),
-            "commitment_coverage_percent": round(profile["commitment"] * 100, 1),
-            "volatility_score": round(profile["volatility"] * 100, 1),
-            "growth_rate_percent": round(profile["growth"] * 100, 2),
-            "commitment_opportunity_usd": round(commitment_opportunity, 2),
-            "health_score": health_score,
-            "health_grade": "A" if health_score >= 75 else "B" if health_score >= 55 else "C",
-        })
-
-    comparisons.sort(key=lambda x: x["health_score"], reverse=True)
-    best_provider = comparisons[0] if comparisons else None
-    worst_provider = comparisons[-1] if comparisons else None
-
-    # Concentration risk (HHI: 1.0 = single provider, <0.25 = well-diversified)
-    hhi = sum((c["share_percent"] / 100) ** 2 for c in comparisons)
-    concentration_risk = "high" if hhi > 0.60 else "medium" if hhi > 0.35 else "low"
-
-    # Arbitrage opportunities: workloads in worst-provider that could move to best
-    arbitrage_opportunities = []
-    if best_provider and worst_provider and best_provider["provider"] != worst_provider["provider"]:
-        moveable_spend = worst_provider["monthly_cost_usd"] * 0.30
-        estimated_savings = moveable_spend * (
-            (worst_provider["waste_rate_percent"] - best_provider["waste_rate_percent"]) / 100
-        )
-        if estimated_savings > 0:
-            arbitrage_opportunities.append({
-                "from_provider": worst_provider["provider"],
-                "to_provider": best_provider["provider"],
-                "moveable_spend_usd": round(moveable_spend, 2),
-                "estimated_annual_savings_usd": round(max(estimated_savings * 12, 0.0), 2),
-                "rationale": (
-                    f"Move stateless workloads from {worst_provider['provider'].upper()} "
-                    f"(waste: {worst_provider['waste_rate_percent']:.1f}%) to "
-                    f"{best_provider['provider'].upper()} "
-                    f"(waste: {best_provider['waste_rate_percent']:.1f}%) for lower TCO."
-                ),
-            })
-
-    return {
-        "generated_at": _utcnow().isoformat(),
-        "total_monthly_spend_usd": round(current_monthly, 2),
-        "provider_count": len(comparisons),
-        "concentration_risk": concentration_risk,
-        "concentration_hhi": round(hhi, 4),
-        "providers": comparisons,
-        "best_performing_provider": best_provider["provider"] if best_provider else None,
-        "lowest_health_provider": worst_provider["provider"] if worst_provider else None,
-        "arbitrage_opportunities": arbitrage_opportunities,
-        "genai_context": {
-            "prompt": (
-                "Compare cloud provider efficiency in plain language. Identify the best and worst "
-                "performing providers by health score, explain the concentration risk, and describe "
-                "the top arbitrage opportunity if any. Under 150 words."
-            ),
-            "concentration_risk": concentration_risk,
-            "best": best_provider["provider"] if best_provider else None,
-            "worst": worst_provider["provider"] if worst_provider else None,
-        },
-    }
-
-
-# ---------------------------------------------------------------------------
-# Public: Cost Anomaly Intelligence (root-cause pattern classification)
-# ---------------------------------------------------------------------------
-
-# Root-cause pattern signatures keyed by (provider, service_pattern)
-_ANOMALY_ROOT_CAUSE_PATTERNS: list[dict[str, Any]] = [
-    {"pattern": "lambda",        "provider": "aws",   "likely_cause": "Lambda invocation spike or timeout loop",   "action": "Check Lambda concurrency limits and DLQ for runaway invocations"},
-    {"pattern": "ec2",           "provider": "aws",   "likely_cause": "EC2 autoscaling overshoot or forgotten dev instance", "action": "Review autoscaling policies and compare running instances to IaC state"},
-    {"pattern": "s3",            "provider": "aws",   "likely_cause": "Large data transfer, replication, or S3 Select cost spike", "action": "Audit S3 request metrics and check for new replication rules"},
-    {"pattern": "rds",           "provider": "aws",   "likely_cause": "RDS storage autoscale, backup increase, or multi-AZ failover", "action": "Review RDS storage growth chart and backup retention settings"},
-    {"pattern": "nat gateway",   "provider": "aws",   "likely_cause": "NAT Gateway data processing spike from new egress path", "action": "Check VPC Flow Logs for unexpected cross-AZ or internet traffic"},
-    {"pattern": "virtual machine","provider": "azure", "likely_cause": "VM scale set scale-out not retracting or zombie VMs", "action": "Audit VMSS autoscale history and spot unmanaged VM instances"},
-    {"pattern": "storage",       "provider": "azure", "likely_cause": "Azure Storage transaction spike or premium tier migration", "action": "Review storage transaction logs and check tier assignments"},
-    {"pattern": "bigquery",      "provider": "gcp",   "likely_cause": "Expensive unoptimized BigQuery query or new scheduled scan", "action": "Review BigQuery slot usage and query history; add partitioning filters"},
-    {"pattern": "gke",           "provider": "gcp",   "likely_cause": "GKE cluster scale-out or node pool change", "action": "Check GKE cluster autoscaler events and node pool configuration"},
-    {"pattern": "compute",       "provider": "oci",   "likely_cause": "OCI Compute shape change or untracked autonomous DB", "action": "Compare OCI Cost Report to recent provisioning events"},
-]
-
-
-def build_cost_anomaly_intelligence(params: dict[str, Any]) -> dict[str, Any]:
-    """Advanced anomaly root-cause classification with investigation playbooks.
-
-    Extends basic z-score anomaly scoring with pattern-matched root-cause hypotheses
-    and a structured investigation playbook for each critical anomaly.
-    """
-    raw_anomalies = params.get("anomalies") or []
-    current_monthly = _safe_float(params.get("current_monthly_spend"), 1.0)
-
-    # First run base scoring
-    scored_base = build_anomaly_scores(params)
-    anomalies = scored_base.get("anomalies", [])
-
-    enriched = []
-    for anomaly in anomalies:
-        service = str(anomaly.get("service", "")).lower()
-        provider = str(anomaly.get("provider", "")).lower()
-        change_usd = _safe_float(anomaly.get("change_usd"), 0.0)
-        severity = anomaly.get("severity", "low")
-
-        # Pattern-match root-cause
-        root_cause = None
-        for pattern_def in _ANOMALY_ROOT_CAUSE_PATTERNS:
-            if (
-                pattern_def["pattern"] in service
-                and (pattern_def["provider"] == provider or pattern_def["provider"] == "all")
-            ):
-                root_cause = {
-                    "hypothesis": pattern_def["likely_cause"],
-                    "investigation_action": pattern_def["action"],
-                }
-                break
-
-        if root_cause is None:
-            root_cause = {
-                "hypothesis": "Unexpected usage increase — no specific pattern matched",
-                "investigation_action": (
-                    f"Check {provider.upper()} Cost Explorer / Usage API for "
-                    f"'{service}' usage type breakdown in the affected period."
-                ),
-            }
-
-        # Escalation recommendation
-        if severity == "critical":
-            escalation = "Escalate immediately to cloud ops team — review within 2 hours"
-        elif severity == "high":
-            escalation = "Assign owner and review within 24 hours"
-        elif change_usd > 0:
-            escalation = "Monitor over next 48 hours; auto-resolve if one-time"
-        else:
-            escalation = "Log for trend review; no immediate action required"
-
-        enriched.append({
-            **anomaly,
-            "root_cause": root_cause,
-            "escalation": escalation,
-            "financial_context": {
-                "change_as_percent_of_monthly": round(
-                    abs(change_usd) / max(current_monthly, 1.0) * 100, 2
-                ),
-                "annualized_if_persistent_usd": round(abs(change_usd) * 12, 2),
-            },
-        })
-
-    # Aggregate intelligence signals
-    critical_usd = sum(
-        abs(a["change_usd"]) for a in enriched if a["severity"] == "critical"
-    )
-    unresolved_risk_annual = round(critical_usd * 12, 2)
-
-    return {
-        "generated_at": _utcnow().isoformat(),
-        "anomaly_count": len(enriched),
-        "total_financial_impact_usd": scored_base.get("total_financial_impact_usd", 0.0),
-        "critical_count": scored_base.get("critical_count", 0),
-        "high_count": scored_base.get("high_count", 0),
-        "unresolved_critical_annual_risk_usd": unresolved_risk_annual,
-        "anomalies": enriched,
-        "triage_summary": {
-            "immediate_action": [a["service"] for a in enriched if a["severity"] == "critical"][:5],
-            "watch_list": [a["service"] for a in enriched if a["severity"] == "high"][:5],
-        },
-        "genai_context": {
-            "prompt": (
-                "Triage the top 3 cost anomalies in plain language for an on-call engineer. "
-                "For each: state the service, likely root cause, and immediate investigation step. "
-                "Lead with financial impact. Under 180 words."
-            ),
-        },
-    }
-
-
-# ---------------------------------------------------------------------------
-# Public: Chargeback / Showback Summary
-# ---------------------------------------------------------------------------
-
-def build_chargeback_summary(params: dict[str, Any]) -> dict[str, Any]:
-    """Generate a chargeback/showback cost allocation summary by team or cost-center.
-
-    Accepts:
-      allocations (list[dict]): each with keys: team/cost_center, allocated_spend_usd,
-                                 provider, tags (optional dict)
-      current_monthly_spend (float): total monthly spend for unallocated share calc
-      model (str): 'chargeback' or 'showback'
-    """
-    allocations = params.get("allocations") or []
-    current_monthly = _safe_float(params.get("current_monthly_spend"), 0.0)
-    model = str(params.get("model", "showback") or "showback").lower()
-
-    if current_monthly <= 0:
-        current_monthly = sum(
-            _safe_float(a.get("allocated_spend_usd"), 0.0) for a in allocations
-        ) or 1.0
-
-    rows = []
-    total_allocated = 0.0
-    for alloc in allocations:
-        spend = _safe_float(alloc.get("allocated_spend_usd"), 0.0)
-        team = str(alloc.get("team") or alloc.get("cost_center") or "unknown")
-        provider = str(alloc.get("provider", "all") or "all")
-        total_allocated += spend
-        share = spend / current_monthly * 100
-        rows.append({
-            "team": team,
-            "provider": provider,
-            "allocated_spend_usd": round(spend, 2),
-            "share_percent": round(share, 1),
-            "monthly_budget_usd": _safe_float(alloc.get("monthly_budget_usd"), 0.0),
-            "budget_utilization_percent": round(
-                spend / _safe_float(alloc.get("monthly_budget_usd"), spend or 1.0) * 100, 1
-            ) if _safe_float(alloc.get("monthly_budget_usd"), 0.0) > 0 else None,
-            "tags": alloc.get("tags") or {},
-        })
-
-    rows.sort(key=lambda x: -x["allocated_spend_usd"])
-    unallocated_usd = max(current_monthly - total_allocated, 0.0)
-    unallocated_pct = unallocated_usd / current_monthly * 100
-
-    return {
-        "generated_at": _utcnow().isoformat(),
-        "model": model,
-        "total_monthly_spend_usd": round(current_monthly, 2),
-        "total_allocated_usd": round(total_allocated, 2),
-        "unallocated_usd": round(unallocated_usd, 2),
-        "unallocated_percent": round(unallocated_pct, 1),
-        "allocation_coverage_percent": round(total_allocated / current_monthly * 100, 1),
-        "team_count": len(rows),
-        "allocations": rows,
-        "top_spenders": rows[:5],
-        "action": (
-            "Investigate unallocated spend and assign cost-center tags."
-            if unallocated_pct > 15
-            else "Allocation coverage is healthy — review top-spender budgets quarterly."
-        ),
-        "genai_context": {
-            "prompt": (
-                f"Summarise the {model} report for a finance audience. Name the top 3 spending teams, "
-                f"highlight unallocated spend risk (${unallocated_usd:,.0f}/month = "
-                f"{unallocated_pct:.0f}%), and recommend one governance action. Under 120 words."
-            ),
-            "model": model,
-            "top_team": rows[0]["team"] if rows else "unknown",
-            "unallocated_pct": round(unallocated_pct, 1),
-        },
-    }
-
-
-# ---------------------------------------------------------------------------
-# Async wrappers for new analytics functions
-# ---------------------------------------------------------------------------
-
-async def get_tagging_coverage_analytics(params: dict[str, Any]) -> str:
-    return json.dumps(build_tagging_coverage_analytics(params))
-
-
-async def get_sustainability_metrics(params: dict[str, Any]) -> str:
-    return json.dumps(build_sustainability_metrics(params))
-
-
-async def get_cross_provider_comparison(params: dict[str, Any]) -> str:
-    return json.dumps(build_cross_provider_comparison(params))
-
-
-async def get_cost_anomaly_intelligence(params: dict[str, Any]) -> str:
-    return json.dumps(build_cost_anomaly_intelligence(params))
-
-
-async def get_chargeback_summary(params: dict[str, Any]) -> str:
-    return json.dumps(build_chargeback_summary(params))
+async def get_optimization_portfolio(params: dict[str, Any]) -> str:
+    return json.dumps(build_optimization_portfolio(params))
