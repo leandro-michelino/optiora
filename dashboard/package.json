@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "type-check": "tsc --noEmit",
+    "generate-api-client": "python3 ../scripts/generate_openapi_client.py",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },

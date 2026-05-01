@@ -279,6 +279,11 @@ class ScanningPermissionRecord(Base):
     warning_threshold_percent = Column(Float, nullable=False, default=80.0)
     critical_threshold_percent = Column(Float, nullable=False, default=100.0)
     notifications_enabled = Column(Boolean, default=True)
+    scheduler_override_enabled = Column(Boolean, default=False)
+    scheduler_override_frequency = Column(String(20), nullable=True)
+    scheduler_retry_max_attempts = Column(Integer, nullable=False, default=2)
+    scheduler_retry_backoff_seconds = Column(Integer, nullable=False, default=120)
+    scheduler_overdue_alert_hours = Column(Integer, nullable=False, default=24)
     created_at = Column(DateTime, default=_utcnow, nullable=False)
     approved_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -606,6 +611,44 @@ class AlertRoutingPolicy(Base):
         return (
             f"<AlertRoutingPolicy(org_id={self.organization_id}, severity={self.severity}, "
             f"active={self.is_active})>"
+        )
+
+
+class AlertOpsPolicy(Base):
+    """Advanced alert operations policy per organization."""
+
+    __tablename__ = "alert_ops_policies"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_alert_ops_policy_org"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+
+    mute_window_enabled = Column(Boolean, default=False)
+    mute_start_hour_utc = Column(Integer, nullable=False, default=0)
+    mute_end_hour_utc = Column(Integer, nullable=False, default=0)
+    mute_weekends = Column(Boolean, default=False)
+    timezone = Column(String(64), nullable=False, default="UTC")
+
+    escalation_enabled = Column(Boolean, default=False)
+    escalation_after_minutes = Column(Integer, nullable=False, default=60)
+    escalation_channels_json = Column(Text, nullable=False, default="[]")
+    escalation_severity = Column(String(30), nullable=False, default="critical")
+
+    ack_sla_minutes = Column(Integer, nullable=False, default=60)
+    dedupe_window_minutes = Column(Integer, nullable=False, default=30)
+    min_severity = Column(String(30), nullable=False, default="low")
+    daily_summary_enabled = Column(Boolean, default=True)
+    weekly_summary_enabled = Column(Boolean, default=True)
+
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self):
+        return (
+            f"<AlertOpsPolicy(org_id={self.organization_id}, "
+            f"mute={self.mute_window_enabled}, escalation={self.escalation_enabled})>"
         )
 
 

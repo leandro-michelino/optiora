@@ -156,6 +156,151 @@ class CompetitiveOpsTest(unittest.TestCase):
         self.assertIsNone(by_channel["email"].get("last_error_at"))
         self.assertIsNotNone(by_channel["slack"].get("last_error_at"))
 
+    def test_05_alert_ops_policy_and_executive_summary(self) -> None:
+        update = self.client.put(
+            "/api/v1/alerts/ops-policy",
+            json={
+                "mute_window_enabled": False,
+                "mute_start_hour_utc": 0,
+                "mute_end_hour_utc": 0,
+                "mute_weekends": False,
+                "timezone": "UTC",
+                "escalation_enabled": True,
+                "escalation_after_minutes": 30,
+                "escalation_channels": ["email", "slack"],
+                "escalation_severity": "warning",
+                "ack_sla_minutes": 15,
+                "dedupe_window_minutes": 0,
+                "min_severity": "low",
+                "daily_summary_enabled": True,
+                "weekly_summary_enabled": True,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(update.status_code, 200, update.text)
+        payload = update.json()
+        self.assertEqual(payload["ack_sla_minutes"], 15)
+        self.assertTrue(payload["escalation_enabled"])
+
+        self._create_alert()
+        summary = self.client.get(
+            "/api/v1/alerts/executive-summary?period=daily",
+            headers=self.headers,
+        )
+        self.assertEqual(summary.status_code, 200, summary.text)
+        summary_payload = summary.json()
+        self.assertIn("total_alerts", summary_payload)
+        self.assertIn("by_severity", summary_payload)
+        self.assertGreaterEqual(summary_payload["total_alerts"], 1)
+
+    def test_06_alert_policy_min_severity_suppresses_low_signal_external_event(self) -> None:
+        update = self.client.put(
+            "/api/v1/alerts/ops-policy",
+            json={
+                "mute_window_enabled": False,
+                "mute_start_hour_utc": 0,
+                "mute_end_hour_utc": 0,
+                "mute_weekends": False,
+                "timezone": "UTC",
+                "escalation_enabled": False,
+                "escalation_after_minutes": 60,
+                "escalation_channels": ["email"],
+                "escalation_severity": "critical",
+                "ack_sla_minutes": 60,
+                "dedupe_window_minutes": 0,
+                "min_severity": "critical",
+                "daily_summary_enabled": True,
+                "weekly_summary_enabled": True,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(update.status_code, 200, update.text)
+
+        ingest = self.client.post(
+            "/api/v1/anomalies/external/aws",
+            json={
+                "events": [
+                    {
+                        "detail": {
+                            "anomalyId": f"competitive-suppress-{os.getpid()}-{uuid4().hex}",
+                            "monitorName": "low-impact-monitor",
+                            "impact": {"totalImpact": 5.0},
+                        }
+                    }
+                ]
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(ingest.status_code, 200, ingest.text)
+        ingest_payload = ingest.json()
+        self.assertEqual(ingest_payload["ingested"], 0)
+        self.assertGreaterEqual(ingest_payload.get("suppressed", 0), 1)
+
+    def test_07_scheduler_policy_update_and_status_exposure(self) -> None:
+        update = self.client.patch(
+            "/api/v1/scanning/scheduler/policy",
+            json={
+                "scheduler_override_enabled": True,
+                "scheduler_override_frequency": "hourly",
+                "scheduler_retry_max_attempts": 3,
+                "scheduler_retry_backoff_seconds": 45,
+                "scheduler_overdue_alert_hours": 12,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(update.status_code, 200, update.text)
+        permission = update.json()
+        self.assertTrue(permission["scheduler_override_enabled"])
+        self.assertEqual(permission["scheduler_override_frequency"], "hourly")
+        self.assertEqual(permission["scheduler_retry_max_attempts"], 3)
+        self.assertEqual(permission["scheduler_retry_backoff_seconds"], 45)
+        self.assertEqual(permission["scheduler_overdue_alert_hours"], 12)
+
+        scheduler = self.client.get("/api/v1/scanning/scheduler/status", headers=self.headers)
+        self.assertEqual(scheduler.status_code, 200, scheduler.text)
+        scheduler_payload = scheduler.json()
+        self.assertIn("effective_scan_frequency", scheduler_payload)
+        self.assertIn("retry_max_attempts", scheduler_payload)
+        self.assertIn("retry_backoff_seconds", scheduler_payload)
+
+    def test_08_pagination_support_on_alerts_and_audit_logs(self) -> None:
+        reset_policy = self.client.put(
+            "/api/v1/alerts/ops-policy",
+            json={
+                "mute_window_enabled": False,
+                "mute_start_hour_utc": 0,
+                "mute_end_hour_utc": 0,
+                "mute_weekends": False,
+                "timezone": "UTC",
+                "escalation_enabled": False,
+                "escalation_after_minutes": 60,
+                "escalation_channels": ["email"],
+                "escalation_severity": "critical",
+                "ack_sla_minutes": 60,
+                "dedupe_window_minutes": 0,
+                "min_severity": "low",
+                "daily_summary_enabled": True,
+                "weekly_summary_enabled": True,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(reset_policy.status_code, 200, reset_policy.text)
+        self._create_alert()
+        self._create_alert()
+        self._create_alert()
+
+        first_page = self.client.get("/api/v1/alerts?limit=1&offset=0", headers=self.headers)
+        second_page = self.client.get("/api/v1/alerts?limit=1&offset=1", headers=self.headers)
+        self.assertEqual(first_page.status_code, 200, first_page.text)
+        self.assertEqual(second_page.status_code, 200, second_page.text)
+        self.assertEqual(len(first_page.json()), 1)
+        self.assertEqual(len(second_page.json()), 1)
+        self.assertNotEqual(first_page.json()[0]["id"], second_page.json()[0]["id"])
+
+        logs_page = self.client.get("/api/v1/audit-logs?limit=1&offset=1", headers=self.headers)
+        self.assertEqual(logs_page.status_code, 200, logs_page.text)
+        self.assertLessEqual(len(logs_page.json()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

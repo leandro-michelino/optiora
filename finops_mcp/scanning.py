@@ -101,6 +101,11 @@ class ScanningManager:
         warning_threshold_percent: float = 80.0,
         critical_threshold_percent: float = 100.0,
         notifications_enabled: bool = True,
+        scheduler_override_enabled: bool = False,
+        scheduler_override_frequency: Optional[str] = None,
+        scheduler_retry_max_attempts: int = 2,
+        scheduler_retry_backoff_seconds: int = 120,
+        scheduler_overdue_alert_hours: int = 24,
         legacy_customer_ids: Optional[Iterable[str]] = None,
     ) -> dict:
         record = self._permission_record(customer_id, legacy_customer_ids)
@@ -116,6 +121,13 @@ class ScanningManager:
                 warning_threshold_percent=float(warning_threshold_percent or 80.0),
                 critical_threshold_percent=float(critical_threshold_percent or 100.0),
                 notifications_enabled=bool(notifications_enabled),
+                scheduler_override_enabled=bool(scheduler_override_enabled),
+                scheduler_override_frequency=(
+                    str(scheduler_override_frequency or "").strip().lower() or None
+                ),
+                scheduler_retry_max_attempts=max(1, int(scheduler_retry_max_attempts or 1)),
+                scheduler_retry_backoff_seconds=max(15, int(scheduler_retry_backoff_seconds or 15)),
+                scheduler_overdue_alert_hours=max(1, int(scheduler_overdue_alert_hours or 1)),
                 approved_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             self.db.add(record)
@@ -128,6 +140,13 @@ class ScanningManager:
             record.warning_threshold_percent = float(warning_threshold_percent or 80.0)
             record.critical_threshold_percent = float(critical_threshold_percent or 100.0)
             record.notifications_enabled = bool(notifications_enabled)
+            record.scheduler_override_enabled = bool(scheduler_override_enabled)
+            record.scheduler_override_frequency = (
+                str(scheduler_override_frequency or "").strip().lower() or None
+            )
+            record.scheduler_retry_max_attempts = max(1, int(scheduler_retry_max_attempts or 1))
+            record.scheduler_retry_backoff_seconds = max(15, int(scheduler_retry_backoff_seconds or 15))
+            record.scheduler_overdue_alert_hours = max(1, int(scheduler_overdue_alert_hours or 1))
             record.approved_at = datetime.now(timezone.utc).replace(tzinfo=None)
             record.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -174,6 +193,11 @@ class ScanningManager:
                 "warning_threshold_percent": 80.0,
                 "critical_threshold_percent": 100.0,
                 "notifications_enabled": True,
+                "scheduler_override_enabled": False,
+                "scheduler_override_frequency": None,
+                "scheduler_retry_max_attempts": 2,
+                "scheduler_retry_backoff_seconds": 120,
+                "scheduler_overdue_alert_hours": 24,
                 "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
                 "approved_at": None,
             }
@@ -189,6 +213,13 @@ class ScanningManager:
             "warning_threshold_percent": float(record.warning_threshold_percent or 80.0),
             "critical_threshold_percent": float(record.critical_threshold_percent or 100.0),
             "notifications_enabled": bool(record.notifications_enabled),
+            "scheduler_override_enabled": bool(record.scheduler_override_enabled),
+            "scheduler_override_frequency": (
+                str(record.scheduler_override_frequency or "").strip().lower() or None
+            ),
+            "scheduler_retry_max_attempts": max(1, int(record.scheduler_retry_max_attempts or 1)),
+            "scheduler_retry_backoff_seconds": max(15, int(record.scheduler_retry_backoff_seconds or 15)),
+            "scheduler_overdue_alert_hours": max(1, int(record.scheduler_overdue_alert_hours or 1)),
             "created_at": record.created_at.isoformat(),
             "approved_at": record.approved_at.isoformat() if record.approved_at else None,
         }

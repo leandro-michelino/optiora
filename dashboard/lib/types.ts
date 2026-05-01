@@ -206,6 +206,11 @@ export interface ScanningPermission {
   warning_threshold_percent: number
   critical_threshold_percent: number
   notifications_enabled: boolean
+  scheduler_override_enabled?: boolean
+  scheduler_override_frequency?: 'hourly' | 'daily' | 'weekly' | string | null
+  scheduler_retry_max_attempts?: number
+  scheduler_retry_backoff_seconds?: number
+  scheduler_overdue_alert_hours?: number
   created_at: string
   approved_at?: string | null
 }
@@ -468,10 +473,16 @@ export interface SchedulerStatusResponse {
   scheduler_running: boolean
   permission_state: string
   scan_frequency: string
+  effective_scan_frequency?: string | null
+  scheduler_override_enabled?: boolean
   next_run_at?: string | null
   next_run_eta_seconds?: number | null
   last_success_at?: string | null
   last_failure_at?: string | null
+  retry_max_attempts?: number
+  retry_backoff_seconds?: number
+  overdue_alert_hours?: number
+  overdue?: boolean
   counters: {
     total: number
     success: number
@@ -499,7 +510,55 @@ export interface AlertEvent {
   delivered_channels: string[]
   lifecycle_state?: 'active' | 'acknowledged' | 'dismissed' | 'reactivated' | string
   acknowledged_at?: string | null
+  ack_sla_minutes?: number
+  ack_sla_breached?: boolean
+  escalation_due?: boolean
+  escalation_channels?: string[]
   created_at: string
+}
+
+export interface AlertOpsPolicy {
+  organization_id: number
+  mute_window_enabled: boolean
+  mute_start_hour_utc: number
+  mute_end_hour_utc: number
+  mute_weekends: boolean
+  timezone: string
+  escalation_enabled: boolean
+  escalation_after_minutes: number
+  escalation_channels: string[]
+  escalation_severity: 'warning' | 'critical' | string
+  ack_sla_minutes: number
+  dedupe_window_minutes: number
+  min_severity: 'low' | 'medium' | 'high' | 'warning' | 'critical' | string
+  daily_summary_enabled: boolean
+  weekly_summary_enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AlertExecutiveSummary {
+  organization_id: number
+  period: 'daily' | 'weekly'
+  generated_at: string
+  window_start: string
+  total_alerts: number
+  acknowledged: number
+  unacknowledged: number
+  dismissed: number
+  by_severity: Record<string, number>
+}
+
+export interface AdminDiagnosticsSnapshot {
+  generated_at: string
+  organization_id: number
+  api_health: ApiHealth
+  api_info: ApiInfo
+  provider_diagnostics: ProviderDiagnostic[]
+  scanning_permission: ScanningPermission
+  scheduler: SchedulerStatusResponse
+  data_freshness: DataFreshnessResponse
+  notification_destinations: NotificationDestinationsResponse
 }
 
 export interface DataFreshnessProviderItem {

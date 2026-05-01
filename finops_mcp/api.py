@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape as xml_escape
 
 try:
@@ -47,6 +48,7 @@ from .access_control import require_role
 from .connectors import ConnectorManager, ConnectorType, BaseConnector, ConnectorStatus
 from .orm_models import (
     AlertEvent,
+    AlertOpsPolicy,
     AlertRoutingPolicy,
     AuditLog,
     BusinessMappingRule,
@@ -202,6 +204,11 @@ class ScanningApprovalRequest(BaseModel):
     warning_threshold_percent: float = 80.0
     critical_threshold_percent: float = 100.0
     notifications_enabled: bool = True
+    scheduler_override_enabled: bool = False
+    scheduler_override_frequency: Optional[Literal["hourly", "daily", "weekly"]] = None
+    scheduler_retry_max_attempts: int = 2
+    scheduler_retry_backoff_seconds: int = 120
+    scheduler_overdue_alert_hours: int = 24
 
 
 class ScanningPermissionResponse(BaseModel):
@@ -216,6 +223,11 @@ class ScanningPermissionResponse(BaseModel):
     warning_threshold_percent: float = 80.0
     critical_threshold_percent: float = 100.0
     notifications_enabled: bool = True
+    scheduler_override_enabled: bool = False
+    scheduler_override_frequency: Optional[str] = None
+    scheduler_retry_max_attempts: int = 2
+    scheduler_retry_backoff_seconds: int = 120
+    scheduler_overdue_alert_hours: int = 24
     created_at: str
     approved_at: Optional[str] = None
 
@@ -540,6 +552,55 @@ class AlertLifecycleActionResponse(BaseModel):
     lifecycle_state: Literal["active", "acknowledged", "dismissed", "reactivated"]
 
 
+class AlertOpsPolicyRequest(BaseModel):
+    mute_window_enabled: bool = False
+    mute_start_hour_utc: int = Field(default=0, ge=0, le=23)
+    mute_end_hour_utc: int = Field(default=0, ge=0, le=23)
+    mute_weekends: bool = False
+    timezone: str = "UTC"
+    escalation_enabled: bool = False
+    escalation_after_minutes: int = Field(default=60, ge=5, le=10080)
+    escalation_channels: List[str] = Field(default_factory=list)
+    escalation_severity: Literal["warning", "critical"] = "critical"
+    ack_sla_minutes: int = Field(default=60, ge=5, le=10080)
+    dedupe_window_minutes: int = Field(default=30, ge=0, le=1440)
+    min_severity: Literal["low", "medium", "high", "warning", "critical"] = "low"
+    daily_summary_enabled: bool = True
+    weekly_summary_enabled: bool = True
+
+
+class AlertOpsPolicyResponse(BaseModel):
+    organization_id: int
+    mute_window_enabled: bool
+    mute_start_hour_utc: int
+    mute_end_hour_utc: int
+    mute_weekends: bool
+    timezone: str
+    escalation_enabled: bool
+    escalation_after_minutes: int
+    escalation_channels: List[str]
+    escalation_severity: str
+    ack_sla_minutes: int
+    dedupe_window_minutes: int
+    min_severity: str
+    daily_summary_enabled: bool
+    weekly_summary_enabled: bool
+    created_at: str
+    updated_at: str
+
+
+class AlertExecutiveSummaryResponse(BaseModel):
+    organization_id: int
+    period: Literal["daily", "weekly"]
+    generated_at: str
+    window_start: str
+    total_alerts: int
+    acknowledged: int
+    unacknowledged: int
+    dismissed: int
+    by_severity: Dict[str, int]
+
+
 class ConnectorTestRequest(BaseModel):
     connector_type: str
     config: Dict[str, Any]
@@ -581,10 +642,24 @@ class SchedulerStatusResponse(BaseModel):
     scan_frequency: str
     next_run_at: Optional[str] = None
     next_run_eta_seconds: Optional[int] = None
+    effective_scan_frequency: Optional[str] = None
+    scheduler_override_enabled: bool = False
     last_success_at: Optional[str] = None
     last_failure_at: Optional[str] = None
+    retry_max_attempts: int = 1
+    retry_backoff_seconds: int = 15
+    overdue_alert_hours: int = 24
+    overdue: bool = False
     counters: SchedulerCounters
     timeline: List[SchedulerTimelineItem]
+
+
+class SchedulerPolicyUpdateRequest(BaseModel):
+    scheduler_override_enabled: bool = False
+    scheduler_override_frequency: Optional[Literal["hourly", "daily", "weekly"]] = None
+    scheduler_retry_max_attempts: int = Field(default=2, ge=1, le=8)
+    scheduler_retry_backoff_seconds: int = Field(default=120, ge=15, le=3600)
+    scheduler_overdue_alert_hours: int = Field(default=24, ge=1, le=168)
 
 
 class DataFreshnessProviderItem(BaseModel):
@@ -1647,6 +1722,11 @@ async def approve_scanning(
             warning_threshold_percent=approval.warning_threshold_percent,
             critical_threshold_percent=approval.critical_threshold_percent,
             notifications_enabled=approval.notifications_enabled,
+            scheduler_override_enabled=approval.scheduler_override_enabled,
+            scheduler_override_frequency=approval.scheduler_override_frequency,
+            scheduler_retry_max_attempts=approval.scheduler_retry_max_attempts,
+            scheduler_retry_backoff_seconds=approval.scheduler_retry_backoff_seconds,
+            scheduler_overdue_alert_hours=approval.scheduler_overdue_alert_hours,
         )
         return ScanningPermissionResponse(
             customer_id=approved["customer_id"],
@@ -1660,6 +1740,11 @@ async def approve_scanning(
             warning_threshold_percent=float(approved.get("warning_threshold_percent", 80.0) or 80.0),
             critical_threshold_percent=float(approved.get("critical_threshold_percent", 100.0) or 100.0),
             notifications_enabled=bool(approved.get("notifications_enabled", True)),
+            scheduler_override_enabled=bool(approved.get("scheduler_override_enabled", False)),
+            scheduler_override_frequency=approved.get("scheduler_override_frequency"),
+            scheduler_retry_max_attempts=max(1, int(approved.get("scheduler_retry_max_attempts", 1) or 1)),
+            scheduler_retry_backoff_seconds=max(15, int(approved.get("scheduler_retry_backoff_seconds", 15) or 15)),
+            scheduler_overdue_alert_hours=max(1, int(approved.get("scheduler_overdue_alert_hours", 24) or 24)),
             created_at=approved["created_at"],
             approved_at=approved["approved_at"],
         )
@@ -1788,6 +1873,81 @@ async def run_scheduler_now(
     )
 
 
+@router.patch("/scanning/scheduler/policy", response_model=ScanningPermissionResponse)
+async def update_scheduler_policy(
+    payload: SchedulerPolicyUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> ScanningPermissionResponse:
+    _require_management_role(membership, "scheduler policy updates")
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    now = _utcnow()
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        if row is None:
+            row = ScanningPermissionRecord(
+                customer_id=customer_id,
+                state=ScanningState.INITIALIZED.value,
+                providers_json="[]",
+                scan_frequency="daily",
+                auto_remediate=False,
+                monthly_budget_usd=0.0,
+                warning_threshold_percent=80.0,
+                critical_threshold_percent=100.0,
+                notifications_enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+        row.scheduler_override_enabled = bool(payload.scheduler_override_enabled)
+        row.scheduler_override_frequency = (
+            str(payload.scheduler_override_frequency or "").strip().lower() or None
+        )
+        row.scheduler_retry_max_attempts = int(payload.scheduler_retry_max_attempts)
+        row.scheduler_retry_backoff_seconds = int(payload.scheduler_retry_backoff_seconds)
+        row.scheduler_overdue_alert_hours = int(payload.scheduler_overdue_alert_hours)
+        row.updated_at = now
+        db.add(row)
+        db.flush()
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="scan.scheduler.policy.update",
+                entity_type="scanning_permission",
+                entity_id=str(row.id),
+                metadata_json=json.dumps(
+                    {
+                        "scheduler_override_enabled": bool(row.scheduler_override_enabled),
+                        "scheduler_override_frequency": row.scheduler_override_frequency,
+                        "scheduler_retry_max_attempts": int(row.scheduler_retry_max_attempts or 1),
+                        "scheduler_retry_backoff_seconds": int(row.scheduler_retry_backoff_seconds or 15),
+                        "scheduler_overdue_alert_hours": int(row.scheduler_overdue_alert_hours or 24),
+                    }
+                ),
+                created_at=now,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    db_read = SessionLocal()
+    try:
+        permission = ScanningManager(db_read).get_permission_status(customer_id)
+    finally:
+        db_read.close()
+    return ScanningPermissionResponse(
+        organization_id=organization_id,
+        **permission,
+    )
+
+
 @router.get("/scanning/{scan_id}/progress", response_model=ScanProgressResponse)
 async def get_scan_progress(
     scan_id: str,
@@ -1818,6 +1978,7 @@ async def get_scan_progress(
 @router.get("/scanning/history", response_model=List[ScanHistoryItem])
 async def get_scan_history(
     limit: int = 20,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> List[ScanHistoryItem]:
@@ -1828,6 +1989,7 @@ async def get_scan_history(
             db.query(ScanRunRecord)
             .filter(ScanRunRecord.customer_id == customer_id)
             .order_by(ScanRunRecord.started_at.desc())
+            .offset(max(0, min(offset, 50000)))
             .limit(max(1, min(limit, 100)))
             .all()
         )
@@ -1951,10 +2113,16 @@ async def get_scan_diff(
 @router.get("/scanning/history.csv")
 async def download_scan_history_csv(
     limit: int = 100,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Response:
-    rows = await get_scan_history(limit=limit, current_user=current_user, membership=membership)
+    rows = await get_scan_history(
+        limit=limit,
+        offset=offset,
+        current_user=current_user,
+        membership=membership,
+    )
     lines = ["scan_id,state,providers,started_at,completed_at,total_resources,anomalies_found,savings_identified"]
     for row in rows:
         providers = "|".join(row.providers)
@@ -2710,6 +2878,162 @@ def _normalize_channels(channels: List[str]) -> List[str]:
     return normalized
 
 
+def _severity_rank(value: str) -> int:
+    normalized = str(value or "").strip().lower()
+    rank = {
+        "low": 1,
+        "medium": 2,
+        "warning": 2,
+        "high": 3,
+        "critical": 4,
+    }
+    return rank.get(normalized, 1)
+
+
+def _effective_alert_ops_policy(
+    db: Session,
+    organization_id: int,
+) -> Dict[str, Any]:
+    row = (
+        db.query(AlertOpsPolicy)
+        .filter(AlertOpsPolicy.organization_id == organization_id)
+        .first()
+    )
+    defaults: Dict[str, Any] = {
+        "mute_window_enabled": False,
+        "mute_start_hour_utc": 0,
+        "mute_end_hour_utc": 0,
+        "mute_weekends": False,
+        "timezone": "UTC",
+        "escalation_enabled": False,
+        "escalation_after_minutes": 60,
+        "escalation_channels": [],
+        "escalation_severity": "critical",
+        "ack_sla_minutes": 60,
+        "dedupe_window_minutes": 30,
+        "min_severity": "low",
+        "daily_summary_enabled": True,
+        "weekly_summary_enabled": True,
+    }
+    if row is None:
+        return defaults
+
+    try:
+        channels = json.loads(row.escalation_channels_json or "[]")
+    except json.JSONDecodeError:
+        channels = []
+    defaults.update(
+        {
+            "mute_window_enabled": bool(row.mute_window_enabled),
+            "mute_start_hour_utc": int(row.mute_start_hour_utc or 0),
+            "mute_end_hour_utc": int(row.mute_end_hour_utc or 0),
+            "mute_weekends": bool(row.mute_weekends),
+            "timezone": str(row.timezone or "UTC"),
+            "escalation_enabled": bool(row.escalation_enabled),
+            "escalation_after_minutes": max(5, int(row.escalation_after_minutes or 60)),
+            "escalation_channels": _normalize_channels([str(item) for item in channels]),
+            "escalation_severity": str(row.escalation_severity or "critical"),
+            "ack_sla_minutes": max(5, int(row.ack_sla_minutes or 60)),
+            "dedupe_window_minutes": max(0, int(row.dedupe_window_minutes or 0)),
+            "min_severity": str(row.min_severity or "low"),
+            "daily_summary_enabled": bool(row.daily_summary_enabled),
+            "weekly_summary_enabled": bool(row.weekly_summary_enabled),
+            "created_at": row.created_at.isoformat() if row.created_at else _utcnow().isoformat(),
+            "updated_at": row.updated_at.isoformat() if row.updated_at else _utcnow().isoformat(),
+        }
+    )
+    return defaults
+
+
+def _is_muted_by_policy(policy: Dict[str, Any], now_utc: datetime) -> bool:
+    if not bool(policy.get("mute_window_enabled")):
+        return False
+    timezone_name = str(policy.get("timezone") or "UTC").strip() or "UTC"
+    try:
+        tz = ZoneInfo(timezone_name)
+    except Exception:
+        tz = timezone.utc
+
+    now_local = now_utc.replace(tzinfo=timezone.utc).astimezone(tz)
+    if bool(policy.get("mute_weekends")) and now_local.weekday() >= 5:
+        return True
+
+    start_hour = int(policy.get("mute_start_hour_utc", 0) or 0)
+    end_hour = int(policy.get("mute_end_hour_utc", 0) or 0)
+    current_hour = int(now_local.hour)
+    if start_hour == end_hour:
+        return False
+    if start_hour < end_hour:
+        return start_hour <= current_hour < end_hour
+    return current_hour >= start_hour or current_hour < end_hour
+
+
+def _alert_passes_policy(
+    db: Session,
+    organization_id: int,
+    customer_id: str,
+    alert_type: str,
+    severity: str,
+    title: str,
+    message: str,
+    now_utc: datetime,
+) -> tuple[bool, Optional[str], Dict[str, Any]]:
+    policy = _effective_alert_ops_policy(db, organization_id)
+    if _severity_rank(severity) < _severity_rank(str(policy.get("min_severity") or "low")):
+        return False, "below_min_severity", policy
+    if _is_muted_by_policy(policy, now_utc):
+        return False, "muted_window", policy
+
+    dedupe_window_minutes = int(policy.get("dedupe_window_minutes", 0) or 0)
+    if dedupe_window_minutes > 0:
+        cutoff = now_utc - timedelta(minutes=dedupe_window_minutes)
+        duplicate = (
+            db.query(AlertEvent.id)
+            .filter(
+                AlertEvent.organization_id == organization_id,
+                AlertEvent.customer_id == customer_id,
+                AlertEvent.alert_type == alert_type,
+                AlertEvent.severity == severity,
+                AlertEvent.title == title,
+                AlertEvent.message == message,
+                AlertEvent.created_at >= cutoff,
+            )
+            .first()
+        )
+        if duplicate is not None:
+            return False, "dedupe_window", policy
+
+    return True, None, policy
+
+
+def _serialize_alert_ops_policy(
+    policy: Dict[str, Any],
+    organization_id: int,
+) -> AlertOpsPolicyResponse:
+    now_iso = _utcnow().isoformat()
+    return AlertOpsPolicyResponse(
+        organization_id=organization_id,
+        mute_window_enabled=bool(policy.get("mute_window_enabled", False)),
+        mute_start_hour_utc=int(policy.get("mute_start_hour_utc", 0) or 0),
+        mute_end_hour_utc=int(policy.get("mute_end_hour_utc", 0) or 0),
+        mute_weekends=bool(policy.get("mute_weekends", False)),
+        timezone=str(policy.get("timezone") or "UTC"),
+        escalation_enabled=bool(policy.get("escalation_enabled", False)),
+        escalation_after_minutes=max(5, int(policy.get("escalation_after_minutes", 60) or 60)),
+        escalation_channels=_normalize_channels(
+            [str(item) for item in policy.get("escalation_channels", [])]
+        ),
+        escalation_severity=str(policy.get("escalation_severity") or "critical"),
+        ack_sla_minutes=max(5, int(policy.get("ack_sla_minutes", 60) or 60)),
+        dedupe_window_minutes=max(0, int(policy.get("dedupe_window_minutes", 0) or 0)),
+        min_severity=str(policy.get("min_severity") or "low"),
+        daily_summary_enabled=bool(policy.get("daily_summary_enabled", True)),
+        weekly_summary_enabled=bool(policy.get("weekly_summary_enabled", True)),
+        created_at=str(policy.get("created_at") or now_iso),
+        updated_at=str(policy.get("updated_at") or now_iso),
+    )
+
+
 def _latest_delivery_timestamp_for_channel(
     db: Session,
     organization_id: int,
@@ -2987,6 +3311,159 @@ async def simulate_alert_routing_policy(
     )
 
 
+@router.get("/alerts/ops-policy", response_model=AlertOpsPolicyResponse)
+async def get_alert_ops_policy(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AlertOpsPolicyResponse:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    db = SessionLocal()
+    try:
+        policy = _effective_alert_ops_policy(db, organization_id)
+        return _serialize_alert_ops_policy(policy, organization_id)
+    finally:
+        db.close()
+
+
+@router.put("/alerts/ops-policy", response_model=AlertOpsPolicyResponse)
+async def upsert_alert_ops_policy(
+    payload: AlertOpsPolicyRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AlertOpsPolicyResponse:
+    _require_management_role(membership, "alert operations policy updates")
+    organization_id = _organization_id_for_membership(membership)
+    try:
+        ZoneInfo(payload.timezone)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid timezone value") from exc
+
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(AlertOpsPolicy)
+            .filter(AlertOpsPolicy.organization_id == organization_id)
+            .first()
+        )
+        now = _utcnow()
+        if row is None:
+            row = AlertOpsPolicy(
+                organization_id=organization_id,
+                created_at=now,
+                updated_at=now,
+            )
+
+        row.mute_window_enabled = payload.mute_window_enabled
+        row.mute_start_hour_utc = int(payload.mute_start_hour_utc)
+        row.mute_end_hour_utc = int(payload.mute_end_hour_utc)
+        row.mute_weekends = payload.mute_weekends
+        row.timezone = payload.timezone
+        row.escalation_enabled = payload.escalation_enabled
+        row.escalation_after_minutes = int(payload.escalation_after_minutes)
+        row.escalation_channels_json = json.dumps(_normalize_channels(payload.escalation_channels))
+        row.escalation_severity = payload.escalation_severity
+        row.ack_sla_minutes = int(payload.ack_sla_minutes)
+        row.dedupe_window_minutes = int(payload.dedupe_window_minutes)
+        row.min_severity = payload.min_severity
+        row.daily_summary_enabled = payload.daily_summary_enabled
+        row.weekly_summary_enabled = payload.weekly_summary_enabled
+        row.updated_at = now
+        db.add(row)
+        db.flush()
+        db.add(
+            AuditLog(
+                organization_id=organization_id,
+                actor_user_id=current_user.id,
+                action="alerts.ops_policy.upsert",
+                entity_type="alert_ops_policy",
+                entity_id=str(row.id),
+                metadata_json=json.dumps(
+                    {
+                        "mute_window_enabled": bool(payload.mute_window_enabled),
+                        "escalation_enabled": bool(payload.escalation_enabled),
+                        "ack_sla_minutes": int(payload.ack_sla_minutes),
+                        "dedupe_window_minutes": int(payload.dedupe_window_minutes),
+                        "min_severity": payload.min_severity,
+                    }
+                ),
+            )
+        )
+        db.commit()
+        policy = _effective_alert_ops_policy(db, organization_id)
+        return _serialize_alert_ops_policy(policy, organization_id)
+    finally:
+        db.close()
+
+
+@router.get("/alerts/executive-summary", response_model=AlertExecutiveSummaryResponse)
+async def get_alert_executive_summary(
+    period: Literal["daily", "weekly"] = "daily",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> AlertExecutiveSummaryResponse:
+    _ = current_user
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    now = _utcnow()
+    days = 1 if period == "daily" else 7
+    window_start = now - timedelta(days=days)
+
+    db = SessionLocal()
+    try:
+        policy = _effective_alert_ops_policy(db, organization_id)
+        if period == "daily" and not bool(policy.get("daily_summary_enabled", True)):
+            raise HTTPException(status_code=403, detail="Daily summary is disabled by policy")
+        if period == "weekly" and not bool(policy.get("weekly_summary_enabled", True)):
+            raise HTTPException(status_code=403, detail="Weekly summary is disabled by policy")
+
+        rows = (
+            db.query(AlertEvent)
+            .filter(
+                AlertEvent.organization_id == organization_id,
+                AlertEvent.customer_id == customer_id,
+                AlertEvent.created_at >= window_start,
+            )
+            .order_by(AlertEvent.created_at.desc())
+            .all()
+        )
+        lifecycle_map = _alert_lifecycle_state_map(
+            db=db,
+            organization_id=organization_id,
+            alert_ids=[int(row.id) for row in rows],
+        )
+
+        by_severity: Dict[str, int] = {}
+        acknowledged = 0
+        dismissed = 0
+        for row in rows:
+            severity = str(row.severity or "unknown").lower()
+            by_severity[severity] = by_severity.get(severity, 0) + 1
+            lifecycle = lifecycle_map.get(
+                int(row.id),
+                "acknowledged" if row.acknowledged_at else "active",
+            )
+            if lifecycle == "dismissed":
+                dismissed += 1
+            elif lifecycle == "acknowledged":
+                acknowledged += 1
+
+        total_alerts = len(rows)
+        return AlertExecutiveSummaryResponse(
+            organization_id=organization_id,
+            period=period,
+            generated_at=now.isoformat(),
+            window_start=window_start.isoformat(),
+            total_alerts=total_alerts,
+            acknowledged=acknowledged,
+            unacknowledged=max(0, total_alerts - acknowledged - dismissed),
+            dismissed=dismissed,
+            by_severity=by_severity,
+        )
+    finally:
+        db.close()
+
+
 @router.get("/notifications/destinations", response_model=NotificationDestinationsResponse)
 async def list_notification_destinations(
     current_user: User = Depends(get_current_user),
@@ -3149,14 +3626,24 @@ async def test_notification_destination(
 @router.get("/alerts")
 async def list_alerts(
     limit: int = 20,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> List[Dict[str, Any]]:
     _ = current_user
     customer_id = _customer_id_for_org(membership)
     organization_id = _organization_id_for_membership(membership)
+    now = _utcnow()
     db = SessionLocal()
     try:
+        policy = _effective_alert_ops_policy(db, organization_id)
+        ack_sla_minutes = max(5, int(policy.get("ack_sla_minutes", 60) or 60))
+        escalation_enabled = bool(policy.get("escalation_enabled", False))
+        escalation_after_minutes = max(5, int(policy.get("escalation_after_minutes", 60) or 60))
+        escalation_channels = _normalize_channels(
+            [str(item) for item in policy.get("escalation_channels", [])]
+        )
+        escalation_severity = str(policy.get("escalation_severity") or "critical")
         rows = (
             db.query(AlertEvent)
             .filter(
@@ -3164,6 +3651,7 @@ async def list_alerts(
                 AlertEvent.organization_id == organization_id,
             )
             .order_by(AlertEvent.created_at.desc())
+            .offset(max(0, min(offset, 50000)))
             .limit(max(1, min(limit, 200)))
             .all()
         )
@@ -3172,28 +3660,46 @@ async def list_alerts(
             organization_id=organization_id,
             alert_ids=[int(row.id) for row in rows],
         )
-        return [
-            {
-                "id": row.id,
-                "alert_type": row.alert_type,
-                "severity": row.severity,
-                "title": row.title,
-                "message": row.message,
-                "delivered_channels": json.loads(row.delivered_channels_json or "[]"),
-                "channel_telemetry": _channel_delivery_telemetry(
-                    db=db,
-                    organization_id=organization_id,
-                    alert_id=int(row.id),
-                ),
-                "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
-                "lifecycle_state": lifecycle_map.get(
-                    int(row.id),
-                    "acknowledged" if row.acknowledged_at else "active",
-                ),
-                "created_at": row.created_at.isoformat(),
-            }
-            for row in rows
-        ]
+        payload: List[Dict[str, Any]] = []
+        for row in rows:
+            lifecycle_state = lifecycle_map.get(
+                int(row.id),
+                "acknowledged" if row.acknowledged_at else "active",
+            )
+            payload.append(
+                {
+                    "id": row.id,
+                    "alert_type": row.alert_type,
+                    "severity": row.severity,
+                    "title": row.title,
+                    "message": row.message,
+                    "delivered_channels": json.loads(row.delivered_channels_json or "[]"),
+                    "channel_telemetry": _channel_delivery_telemetry(
+                        db=db,
+                        organization_id=organization_id,
+                        alert_id=int(row.id),
+                    ),
+                    "acknowledged_at": row.acknowledged_at.isoformat() if row.acknowledged_at else None,
+                    "lifecycle_state": lifecycle_state,
+                    "ack_sla_minutes": ack_sla_minutes,
+                    "ack_sla_breached": (
+                        lifecycle_state not in {"acknowledged", "dismissed"}
+                        and row.created_at is not None
+                        and int((now - row.created_at).total_seconds()) > (ack_sla_minutes * 60)
+                    ),
+                    "escalation_due": (
+                        escalation_enabled
+                        and lifecycle_state not in {"acknowledged", "dismissed"}
+                        and row.created_at is not None
+                        and int((now - row.created_at).total_seconds()) > (escalation_after_minutes * 60)
+                        and _severity_rank(str(row.severity or "low"))
+                        >= _severity_rank(escalation_severity)
+                    ),
+                    "escalation_channels": escalation_channels,
+                    "created_at": row.created_at.isoformat(),
+                }
+            )
+        return payload
     finally:
         db.close()
 
@@ -3390,10 +3896,16 @@ async def record_channel_delivery(
 @router.get("/alerts.csv")
 async def download_alerts_csv(
     limit: int = 200,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Response:
-    rows = await list_alerts(limit=limit, current_user=current_user, membership=membership)
+    rows = await list_alerts(
+        limit=limit,
+        offset=offset,
+        current_user=current_user,
+        membership=membership,
+    )
     lines = ["id,alert_type,severity,title,message,lifecycle_state,acknowledged_at,created_at"]
     for row in rows:
         lines.append(
@@ -3409,6 +3921,7 @@ async def download_alerts_csv(
 @router.get("/audit-logs")
 async def list_audit_logs(
     limit: int = 20,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> List[Dict[str, Any]]:
@@ -3420,6 +3933,7 @@ async def list_audit_logs(
             db.query(AuditLog)
             .filter(AuditLog.organization_id == organization_id)
             .order_by(AuditLog.created_at.desc())
+            .offset(max(0, min(offset, 50000)))
             .limit(max(1, min(limit, 200)))
             .all()
         )
@@ -3442,10 +3956,16 @@ async def list_audit_logs(
 @router.get("/audit-logs.csv")
 async def download_audit_logs_csv(
     limit: int = 200,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Response:
-    rows = await list_audit_logs(limit=limit, current_user=current_user, membership=membership)
+    rows = await list_audit_logs(
+        limit=limit,
+        offset=offset,
+        current_user=current_user,
+        membership=membership,
+    )
     lines = ["id,action,entity_type,entity_id,actor_user_id,created_at"]
     for row in rows:
         lines.append(
@@ -3664,6 +4184,8 @@ async def _execute_export_job(
 
 @router.get("/exports/jobs", response_model=List[ExportJobResponse])
 async def list_export_jobs(
+    limit: int = 50,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> List[ExportJobResponse]:
@@ -3679,6 +4201,8 @@ async def list_export_jobs(
                 ExportJob.customer_id == customer_id,
             )
             .order_by(ExportJob.created_at.desc())
+            .offset(max(0, min(offset, 50000)))
+            .limit(max(1, min(limit, 200)))
             .all()
         )
         return [_serialize_export_job(row) for row in rows]
@@ -5171,8 +5695,10 @@ async def api_info() -> Dict[str, Any]:
             "provider_diagnostics": True,
             "audit_logging": True,
             "alert_lifecycle": True,
+            "alert_ops_policy": True,
             "routing_policy_simulator": True,
             "operations_data_freshness": True,
+            "scheduler_policy_overrides": True,
             "budget_alerts": True,
             "csv_exports": True,
             "csv_imports": True,
@@ -5188,7 +5714,42 @@ async def api_info() -> Dict[str, Any]:
             "kubernetes_cost_allocation": True,
             "virtual_tagging": True,
             "rightsizing_resource_level": True,
+            "admin_diagnostics": True,
+            "pagination": True,
         },
+    }
+
+
+@router.get("/admin/diagnostics")
+async def admin_diagnostics(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Dict[str, Any]:
+    """Consolidated operational snapshot for admin troubleshooting views."""
+    organization_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    db = SessionLocal()
+    try:
+        permission = ScanningManager(db).get_permission_status(customer_id)
+    finally:
+        db.close()
+
+    scheduler = await get_scheduler_status(current_user=current_user, membership=membership)
+    freshness = await get_data_freshness(current_user=current_user, membership=membership)
+    destinations = await list_notification_destinations(
+        current_user=current_user,
+        membership=membership,
+    )
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "organization_id": organization_id,
+        "api_health": await health_check(),
+        "api_info": await api_info(),
+        "provider_diagnostics": _provider_diagnostics(),
+        "scanning_permission": permission,
+        "scheduler": scheduler.model_dump(),
+        "data_freshness": freshness.model_dump(),
+        "notification_destinations": destinations.model_dump(),
     }
 
 
@@ -5197,6 +5758,7 @@ async def _run_cost_analysis(
     customer_id: str,
     providers: List[str],
     target_accounts: Optional[List[str]] = None,
+    raise_on_error: bool = False,
 ) -> None:
     """
     Background scan: fetch live cost data per provider, persist CostSnapshot
@@ -5510,6 +6072,8 @@ async def _run_cost_analysis(
     except Exception as exc:
         logger.exception("Background scan failed")
         scanning_manager.fail_scan_run(scan_id, str(exc))
+        if raise_on_error:
+            raise
     finally:
         db.close()
 
@@ -5625,10 +6189,28 @@ async def get_scheduler_status(
 
     permission_state = permission.state if permission else ScanningState.INITIALIZED.value
     scan_frequency = permission.scan_frequency if permission else "daily"
+    override_enabled = bool(permission.scheduler_override_enabled) if permission else False
+    override_frequency = (
+        str(permission.scheduler_override_frequency or "").strip().lower()
+        if permission
+        else ""
+    )
+    effective_scan_frequency = (
+        override_frequency if override_enabled and override_frequency in {"hourly", "daily", "weekly"} else scan_frequency
+    )
+    retry_max_attempts = (
+        max(1, int(permission.scheduler_retry_max_attempts or 1)) if permission else 1
+    )
+    retry_backoff_seconds = (
+        max(15, int(permission.scheduler_retry_backoff_seconds or 15)) if permission else 15
+    )
+    overdue_alert_hours = (
+        max(1, int(permission.scheduler_overdue_alert_hours or 24)) if permission else 24
+    )
     next_run_at: Optional[datetime] = None
     if permission and permission_state in [ScanningState.APPROVED.value, ScanningState.RUNNING.value]:
         anchor = last_success or permission.approved_at or permission.created_at or now
-        next_run_at = _compute_next_run(now, scan_frequency, anchor)
+        next_run_at = _compute_next_run(now, effective_scan_frequency, anchor)
 
     timeline: List[SchedulerTimelineItem] = []
     for row in runs[:6]:
@@ -5664,6 +6246,10 @@ async def get_scheduler_status(
     eta_seconds: Optional[int] = None
     if next_run_at is not None:
         eta_seconds = max(0, int((next_run_at - now).total_seconds()))
+    overdue = False
+    if last_success is not None:
+        interval = _scan_interval_seconds(effective_scan_frequency)
+        overdue = int((now - last_success).total_seconds()) > (interval + overdue_alert_hours * 3600)
 
     return SchedulerStatusResponse(
         organization_id=organization_id,
@@ -5672,10 +6258,16 @@ async def get_scheduler_status(
         scheduler_running=_scheduler_running,
         permission_state=permission_state,
         scan_frequency=scan_frequency,
+        effective_scan_frequency=effective_scan_frequency,
+        scheduler_override_enabled=override_enabled,
         next_run_at=next_run_at.isoformat() if next_run_at else None,
         next_run_eta_seconds=eta_seconds,
         last_success_at=last_success.isoformat() if last_success else None,
         last_failure_at=last_failure.isoformat() if last_failure else None,
+        retry_max_attempts=retry_max_attempts,
+        retry_backoff_seconds=retry_backoff_seconds,
+        overdue_alert_hours=overdue_alert_hours,
+        overdue=overdue,
         counters=SchedulerCounters(
             total=total_runs,
             success=success_runs,
@@ -5801,7 +6393,12 @@ async def get_data_freshness(
     scheduler_lag_seconds: Optional[int] = None
     scheduler_status: Literal["healthy", "lagging", "unknown"] = "unknown"
     if permission:
-        interval_seconds = _scan_interval_seconds(permission.scan_frequency)
+        effective_frequency = str(permission.scan_frequency or "daily").strip().lower()
+        if bool(permission.scheduler_override_enabled):
+            override_frequency = str(permission.scheduler_override_frequency or "").strip().lower()
+            if override_frequency in {"hourly", "daily", "weekly"}:
+                effective_frequency = override_frequency
+        interval_seconds = _scan_interval_seconds(effective_frequency)
         last_success = next(
             (
                 row.completed_at or row.started_at
@@ -5844,6 +6441,7 @@ async def ingest_external_aws_anomalies(
     try:
         alert_ids: List[int] = []
         duplicate_count = 0
+        suppressed_count = 0
         for event in payload.events:
             detail = event.get("detail")
             detail_payload = detail if isinstance(detail, dict) else event
@@ -5886,6 +6484,36 @@ async def ingest_external_aws_anomalies(
                 f"Anomaly {anomaly_id} estimated impact ${impact_usd:.2f}. "
                 f"Root cause: {detail_payload.get('rootCauses', [])[:1] or 'pending'}."
             )
+            allowed, suppressed_reason, _ = _alert_passes_policy(
+                db=db,
+                organization_id=organization_id,
+                customer_id=customer_id,
+                alert_type="external.aws.cost_anomaly",
+                severity=severity,
+                title=title[:255],
+                message=message,
+                now_utc=now,
+            )
+            if not allowed:
+                suppressed_count += 1
+                db.add(
+                    AuditLog(
+                        organization_id=organization_id,
+                        actor_user_id=current_user.id,
+                        action="alert.external.suppressed",
+                        entity_type="aws_cost_anomaly_event",
+                        entity_id=anomaly_id,
+                        metadata_json=json.dumps(
+                            {
+                                "reason": suppressed_reason,
+                                "severity": severity,
+                                "monitor_name": monitor_name,
+                            }
+                        ),
+                        created_at=now,
+                    )
+                )
+                continue
             row = AlertEvent(
                 organization_id=organization_id,
                 customer_id=customer_id,
@@ -5926,7 +6554,9 @@ async def ingest_external_aws_anomalies(
                 action="alert.external.ingest",
                 entity_type="aws_cost_anomaly_batch",
                 entity_id="aws-cost-anomaly-detection",
-                metadata_json=json.dumps({"count": len(alert_ids), "duplicates": duplicate_count}),
+                metadata_json=json.dumps(
+                    {"count": len(alert_ids), "duplicates": duplicate_count, "suppressed": suppressed_count}
+                ),
                 created_at=now,
             )
         )
@@ -5934,7 +6564,13 @@ async def ingest_external_aws_anomalies(
     finally:
         db.close()
 
-    return {"status": "ok", "ingested": len(alert_ids), "alert_ids": alert_ids, "duplicates": duplicate_count}
+    return {
+        "status": "ok",
+        "ingested": len(alert_ids),
+        "alert_ids": alert_ids,
+        "duplicates": duplicate_count,
+        "suppressed": suppressed_count,
+    }
 
 
 def _decode_gcp_pubsub_payload(raw_message: Dict[str, Any]) -> Dict[str, Any]:
@@ -6033,6 +6669,44 @@ async def ingest_external_gcp_budget_pubsub(
             f"GCP budget usage is ${cost_amount:.2f} against budget ${budget_amount:.2f}. "
             f"Utilization {usage_ratio * 100:.1f}%"
         )
+        allowed, suppressed_reason, _ = _alert_passes_policy(
+            db=db,
+            organization_id=organization_id,
+            customer_id=customer_id,
+            alert_type="external.gcp.budget_pubsub",
+            severity=severity,
+            title=title[:255],
+            message=message,
+            now_utc=now,
+        )
+        if not allowed:
+            db.add(
+                AuditLog(
+                    organization_id=organization_id,
+                    actor_user_id=current_user.id,
+                    action="alert.external.suppressed",
+                    entity_type="gcp_budget_event",
+                    entity_id=message_id or budget_name,
+                    metadata_json=json.dumps(
+                        {
+                            "reason": suppressed_reason,
+                            "severity": severity,
+                            "budget_name": budget_name,
+                            "message_id": message_id or None,
+                        }
+                    ),
+                    created_at=now,
+                )
+            )
+            db.commit()
+            return {
+                "status": "ok",
+                "ingested": 0,
+                "suppressed": True,
+                "reason": suppressed_reason,
+                "message_id": message_id or None,
+            }
+
         alert = AlertEvent(
             organization_id=organization_id,
             customer_id=customer_id,
@@ -10433,7 +11107,15 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
             )
         permissions = permissions_query.all()
         for permission in permissions:
-            cadence_seconds = _scan_interval_seconds(permission.scan_frequency)
+            effective_frequency = str(permission.scan_frequency or "daily").strip().lower()
+            if bool(permission.scheduler_override_enabled):
+                override_frequency = str(permission.scheduler_override_frequency or "").strip().lower()
+                if override_frequency in {"hourly", "daily", "weekly"}:
+                    effective_frequency = override_frequency
+            cadence_seconds = _scan_interval_seconds(effective_frequency)
+            max_attempts = max(1, int(permission.scheduler_retry_max_attempts or 1))
+            backoff_seconds = max(15, int(permission.scheduler_retry_backoff_seconds or 15))
+            overdue_alert_hours = max(1, int(permission.scheduler_overdue_alert_hours or 24))
             last_completed = (
                 db.query(ScanRunRecord)
                 .filter(
@@ -10443,6 +11125,64 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
                 .order_by(ScanRunRecord.completed_at.desc())
                 .first()
             )
+            derived_org_id = _organization_id_from_customer_id(permission.customer_id)
+            if (
+                derived_org_id is not None
+                and last_completed is not None
+                and last_completed.completed_at is not None
+            ):
+                elapsed_since_success = int((now - last_completed.completed_at).total_seconds())
+                overdue_threshold_seconds = cadence_seconds + (overdue_alert_hours * 3600)
+                if elapsed_since_success > overdue_threshold_seconds:
+                    recent_overdue = (
+                        db.query(AlertEvent.id)
+                        .filter(
+                            AlertEvent.organization_id == derived_org_id,
+                            AlertEvent.customer_id == permission.customer_id,
+                            AlertEvent.alert_type == "scheduler.overdue",
+                            AlertEvent.created_at >= now - timedelta(hours=overdue_alert_hours),
+                        )
+                        .first()
+                    )
+                    if recent_overdue is None:
+                        overdue_message = (
+                            f"Scheduler is overdue for {permission.customer_id}. "
+                            f"Last successful run was {elapsed_since_success // 3600}h ago; "
+                            f"expected cadence is {effective_frequency}."
+                        )
+                        db.add(
+                            AlertEvent(
+                                organization_id=derived_org_id,
+                                customer_id=permission.customer_id,
+                                scan_id=None,
+                                alert_type="scheduler.overdue",
+                                severity="warning",
+                                title="Scheduled scans are overdue",
+                                message=overdue_message,
+                                delivered_channels_json="[]",
+                                created_at=now,
+                            )
+                        )
+                        db.add(
+                            AuditLog(
+                                organization_id=derived_org_id,
+                                actor_user_id=None,
+                                action="scan.schedule.overdue_alert",
+                                entity_type="scanning_permission",
+                                entity_id=str(permission.id),
+                                metadata_json=json.dumps(
+                                    {
+                                        "customer_id": permission.customer_id,
+                                        "effective_frequency": effective_frequency,
+                                        "elapsed_seconds_since_success": elapsed_since_success,
+                                        "overdue_threshold_seconds": overdue_threshold_seconds,
+                                    }
+                                ),
+                                created_at=now,
+                            )
+                        )
+                        db.commit()
+
             if last_completed and last_completed.completed_at:
                 elapsed = (now - last_completed.completed_at).total_seconds()
                 if elapsed < cadence_seconds:
@@ -10451,35 +11191,94 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
             providers = json.loads(permission.providers_json or "[]")
             if not providers:
                 providers = ["aws", "azure", "gcp", "oci"]
-            scan_id = f"scan_{permission.customer_id}_{int(now.timestamp())}"
-            row = ScanRunRecord(
-                scan_id=scan_id,
-                customer_id=permission.customer_id,
-                state=ScanningState.RUNNING.value,
-                providers_json=json.dumps(providers),
-                progress=0,
-                started_at=now,
-            )
-            db.add(row)
-            db.commit()
             started += 1
-            await _run_cost_analysis(scan_id=scan_id, customer_id=permission.customer_id, providers=providers)
-            derived_org_id = _organization_id_from_customer_id(permission.customer_id)
-            if derived_org_id is not None:
+            base_scan_id = f"scan_{permission.customer_id}_{int(now.timestamp())}"
+            attempt_succeeded = False
+            last_error: Optional[str] = None
+            final_scan_id = base_scan_id
+            for attempt in range(1, max_attempts + 1):
+                scan_id = base_scan_id if attempt == 1 else f"{base_scan_id}_retry{attempt}"
+                final_scan_id = scan_id
+                row = ScanRunRecord(
+                    scan_id=scan_id,
+                    customer_id=permission.customer_id,
+                    state=ScanningState.RUNNING.value,
+                    providers_json=json.dumps(providers),
+                    progress=0,
+                    started_at=_utcnow(),
+                )
+                db.add(row)
+                db.commit()
+                try:
+                    await _run_cost_analysis(
+                        scan_id=scan_id,
+                        customer_id=permission.customer_id,
+                        providers=providers,
+                        raise_on_error=True,
+                    )
+                    attempt_succeeded = True
+                    last_error = None
+                    if derived_org_id is not None:
+                        db.add(
+                            AuditLog(
+                                organization_id=derived_org_id,
+                                actor_user_id=None,
+                                action="scan.schedule.triggered",
+                                entity_type="scan_run",
+                                entity_id=scan_id,
+                                metadata_json=json.dumps(
+                                    {
+                                        "customer_id": permission.customer_id,
+                                        "frequency": effective_frequency,
+                                        "providers": providers,
+                                        "attempt": attempt,
+                                    }
+                                ),
+                            )
+                        )
+                        db.commit()
+                    break
+                except Exception as exc:
+                    last_error = str(exc)
+                    if derived_org_id is not None:
+                        db.add(
+                            AuditLog(
+                                organization_id=derived_org_id,
+                                actor_user_id=None,
+                                action="scan.schedule.retry_failed",
+                                entity_type="scan_run",
+                                entity_id=scan_id,
+                                metadata_json=json.dumps(
+                                    {
+                                        "customer_id": permission.customer_id,
+                                        "frequency": effective_frequency,
+                                        "providers": providers,
+                                        "attempt": attempt,
+                                        "max_attempts": max_attempts,
+                                        "error": last_error,
+                                    }
+                                ),
+                            )
+                        )
+                        db.commit()
+                    if attempt < max_attempts:
+                        await asyncio.sleep(backoff_seconds * (2 ** (attempt - 1)))
+
+            if not attempt_succeeded and derived_org_id is not None:
                 db.add(
-                    AuditLog(
+                    AlertEvent(
                         organization_id=derived_org_id,
-                        actor_user_id=None,
-                        action="scan.schedule.triggered",
-                        entity_type="scan_run",
-                        entity_id=scan_id,
-                        metadata_json=json.dumps(
-                            {
-                                "customer_id": permission.customer_id,
-                                "frequency": permission.scan_frequency,
-                                "providers": providers,
-                            }
-                        ),
+                        customer_id=permission.customer_id,
+                        scan_id=final_scan_id,
+                        alert_type="scheduler.scan_failure",
+                        severity="critical",
+                        title="Scheduled scan failed after retries",
+                        message=(
+                            f"Scheduled scan for {permission.customer_id} failed after "
+                            f"{max_attempts} attempt(s). Last error: {last_error or 'unknown'}"
+                        )[:1000],
+                        delivered_channels_json="[]",
+                        created_at=_utcnow(),
                     )
                 )
                 db.commit()

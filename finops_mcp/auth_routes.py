@@ -12,6 +12,11 @@ import os
 import re
 import secrets
 
+try:
+    import redis  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    redis = None
+
 from .orm_models import (
     User,
     Organization,
@@ -47,6 +52,8 @@ PASSWORD_RESET_RETURN_TOKEN = os.getenv(
 )
 _RATE_LIMIT_BUCKETS: Dict[str, List[datetime]] = {}
 _RATE_LIMIT_LAST_PURGE: datetime = datetime.now(timezone.utc).replace(tzinfo=None)
+_REDIS_RATE_LIMIT_CLIENT = None
+_REDIS_RATE_LIMIT_DISABLED = False
 ACCESS_TOKEN_COOKIE_NAME = "optiora_access_token"
 REFRESH_TOKEN_COOKIE_NAME = "optiora_refresh_token"
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", os.getenv("ENVIRONMENT", "development").lower() == "production")
@@ -141,10 +148,41 @@ def _client_ip(request: Request) -> str:
 
 
 def _check_rate_limit(key: str, limit: int, window_seconds: int) -> None:
-    """In-process fixed-window rate limiting for auth abuse protection.
+    """Rate limiting with Redis support and in-memory fallback."""
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if redis_url:
+        global _REDIS_RATE_LIMIT_CLIENT, _REDIS_RATE_LIMIT_DISABLED
+        if _REDIS_RATE_LIMIT_CLIENT is None and not _REDIS_RATE_LIMIT_DISABLED:
+            if redis is None:
+                _REDIS_RATE_LIMIT_DISABLED = True
+                logger.warning("REDIS_URL is set but redis package is unavailable; using local rate limiting.")
+            else:
+                try:
+                    _REDIS_RATE_LIMIT_CLIENT = redis.from_url(redis_url, decode_responses=True)
+                    _REDIS_RATE_LIMIT_CLIENT.ping()
+                    logger.info("Redis-backed auth rate limiting enabled.")
+                except Exception:
+                    _REDIS_RATE_LIMIT_DISABLED = True
+                    logger.exception("Failed to initialize Redis rate limiter; using local fallback.")
+        if _REDIS_RATE_LIMIT_CLIENT is not None:
+            try:
+                redis_prefix = os.getenv("REDIS_RATE_LIMIT_PREFIX", "optiora:rate_limit")
+                redis_key = f"{redis_prefix}:{key}"
+                count = int(_REDIS_RATE_LIMIT_CLIENT.incr(redis_key))
+                if count == 1:
+                    _REDIS_RATE_LIMIT_CLIENT.expire(redis_key, int(window_seconds))
+                if count > limit:
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Too many attempts. Please try again later.",
+                    )
+                return
+            except HTTPException:
+                raise
+            except Exception:
+                logger.exception("Redis rate-limit check failed; falling back to local limiter.")
 
-    Stale buckets are purged periodically to prevent unbounded memory growth.
-    """
+    # Local fallback: fixed-window buckets with periodic purge.
     global _RATE_LIMIT_LAST_PURGE
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 

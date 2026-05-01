@@ -25,7 +25,7 @@ Local validation has been re-run end to end:
 - `.venv/bin/python -m unittest discover -s tests -v` ✅ (200 passed, 2 skipped when optional XLSX dependency is absent)
 - `tests.test_competitive_ops` covers alert lifecycle, routing simulation, freshness, and per-channel delivery telemetry ✅
 - `tests.test_epic2_multi_account` covers enterprise hierarchy/federation across AWS, Azure, GCP, and OCI ✅
-- `tests.test_auth_flow` covers public mode, org-scoped APIs, CSV import, exports, and Alembic upgrade/downgrade roundtrip through `0012` ✅
+- `tests.test_auth_flow` covers public mode, org-scoped APIs, CSV import, exports, and Alembic upgrade/downgrade roundtrip through `0013` ✅
 - `cd dashboard && npm run type-check -- --pretty false && npm run lint && npm run build` ✅
 - `./scripts/check-animated-svg-routes.sh` ✅ as a laptop-run release gate
 
@@ -149,7 +149,7 @@ Work should move into post-1.0 only after these are true:
 - at least one deployed environment has passed the full smoke test (including new analytics section 6)
 - at least one real customer data path has been validated end to end
 - deployment runbook is accurate enough for repeatable redeploys
-- all Alembic migrations (0001–0012) apply cleanly on a fresh database
+- all Alembic migrations (0001–0013) apply cleanly on a fresh database
 
 ## Post-1.0 Focus
 

@@ -41,6 +41,7 @@ function DashboardLayoutContent({
 
   const otherNavItems = [
     { href: '/dashboard/operations', label: 'Operations', icon: Activity },
+    { href: '/dashboard/admin', label: 'Admin Diagnostics', icon: ShieldCheck },
     { href: '/dashboard/anomalies', label: 'Anomalies', icon: AlertTriangle },
     { href: '/dashboard/recommendations', label: 'Recommendations', icon: Lightbulb },
     { href: '/dashboard/settings', label: 'Settings', icon: Settings },
@@ -240,7 +241,7 @@ function DashboardLayoutContent({
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           {children}
         </div>
       </main>

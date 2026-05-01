@@ -5,18 +5,47 @@ from __future__ import annotations
 import json
 import logging
 import smtplib
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy.orm import Session
 
 from .config import Config
-from .orm_models import AlertEvent, AlertRoutingPolicy, ScanningPermissionRecord
+from .orm_models import AlertEvent, AlertOpsPolicy, AlertRoutingPolicy, ScanningPermissionRecord
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_NOTIFICATION_CHANNELS = ("email", "slack", "teams")
+
+
+def _severity_rank(value: str) -> int:
+    normalized = str(value or "").strip().lower()
+    rank = {"low": 1, "medium": 2, "warning": 2, "high": 3, "critical": 4}
+    return rank.get(normalized, 1)
+
+
+def _is_muted_window(policy: AlertOpsPolicy, now_utc: datetime) -> bool:
+    if not bool(policy.mute_window_enabled):
+        return False
+    timezone_name = str(policy.timezone or "UTC").strip() or "UTC"
+    try:
+        tz = ZoneInfo(timezone_name)
+    except Exception:
+        tz = timezone.utc
+    now_local = now_utc.replace(tzinfo=timezone.utc).astimezone(tz)
+    if bool(policy.mute_weekends) and now_local.weekday() >= 5:
+        return True
+    start_hour = int(policy.mute_start_hour_utc or 0)
+    end_hour = int(policy.mute_end_hour_utc or 0)
+    current_hour = int(now_local.hour)
+    if start_hour == end_hour:
+        return False
+    if start_hour < end_hour:
+        return start_hour <= current_hour < end_hour
+    return current_hour >= start_hour or current_hour < end_hour
 
 
 def _send_slack_message(webhook_url: str, title: str, message: str) -> bool:
@@ -114,7 +143,37 @@ def evaluate_budget_alert(
         f"({spend_ratio:.1f}% used)."
     )
 
-    policy = (
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    ops_policy = (
+        db.query(AlertOpsPolicy)
+        .filter(AlertOpsPolicy.organization_id == organization_id)
+        .first()
+    )
+    if ops_policy is not None:
+        if _severity_rank(severity) < _severity_rank(str(ops_policy.min_severity or "low")):
+            return None
+        if _is_muted_window(ops_policy, now_utc):
+            return None
+        dedupe_window_minutes = max(0, int(ops_policy.dedupe_window_minutes or 0))
+        if dedupe_window_minutes > 0:
+            cutoff = now_utc - timedelta(minutes=dedupe_window_minutes)
+            duplicate = (
+                db.query(AlertEvent.id)
+                .filter(
+                    AlertEvent.organization_id == organization_id,
+                    AlertEvent.customer_id == customer_id,
+                    AlertEvent.alert_type == "budget_threshold",
+                    AlertEvent.severity == severity,
+                    AlertEvent.title == title,
+                    AlertEvent.message == message,
+                    AlertEvent.created_at >= cutoff,
+                )
+                .first()
+            )
+            if duplicate is not None:
+                return None
+
+    route_policy = (
         db.query(AlertRoutingPolicy)
         .filter(
             AlertRoutingPolicy.organization_id == organization_id,
@@ -123,7 +182,7 @@ def evaluate_budget_alert(
         )
         .first()
     )
-    channels = set(json.loads(policy.channels_json or "[]")) if policy else {"email", "slack", "teams"}
+    channels = set(json.loads(route_policy.channels_json or "[]")) if route_policy else {"email", "slack", "teams"}
 
     config = Config()
     delivered_channels: list[str] = []

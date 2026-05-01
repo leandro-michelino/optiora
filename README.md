@@ -173,10 +173,15 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `GET /api/v1/provider-accounts/{id}/region-breakdown`
 - `GET /api/v1/partner/customer-portfolio`
 - `GET /api/v1/alerts`
+- `GET /api/v1/alerts/executive-summary`
+- `GET /api/v1/alerts/ops-policy`
+- `PUT /api/v1/alerts/ops-policy`
 - `POST /api/v1/alerts/{alert_id}/acknowledge`
 - `POST /api/v1/alerts/{alert_id}/dismiss`
 - `POST /api/v1/alerts/{alert_id}/reactivate`
 - `GET /api/v1/audit-logs`
+- `PATCH /api/v1/scanning/scheduler/policy`
+- `GET /api/v1/admin/diagnostics`
 - `GET /api/v1/reports/executive-summary.csv`
 - `GET /api/v1/reports/executive-summary.xls`
 - `GET /api/v1/reports/executive-summary.xlsx`
@@ -191,6 +196,9 @@ Supported Python for backend setup: `3.10` through `3.13`
 ### Local bootstrap
 
 ```bash
+./scripts/bootstrap-local.sh
+
+# Manual equivalent:
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -201,6 +209,13 @@ cd ..
 
 terraform -chdir=terraform init
 terraform -chdir=terraform validate
+```
+
+Generate dashboard client from OpenAPI:
+
+```bash
+cd dashboard
+npm run generate-api-client
 ```
 
 ### Backend

@@ -1,7 +1,10 @@
 import {
   AccountRegionBreakdownResponse,
   AlertEvent,
+  AlertExecutiveSummary,
+  AlertOpsPolicy,
   AlertRoutingPolicy,
+  AdminDiagnosticsSnapshot,
   AllocationCoverageResponse,
   AuditLogEntry,
   BusinessMappingRule,
@@ -346,9 +349,9 @@ export async function fetchGenAICopilotPack(payload: {
   })
 }
 
-export async function fetchScanHistory(limit = 20): Promise<ScanHistoryItem[]> {
+export async function fetchScanHistory(limit = 20, offset = 0): Promise<ScanHistoryItem[]> {
   return requestJson<ScanHistoryItem[]>(
-    `/api/v1/scanning/history${toQueryString({ limit })}`,
+    `/api/v1/scanning/history${toQueryString({ limit, offset })}`,
     {},
   )
 }
@@ -434,9 +437,9 @@ export async function downloadImportedCostTemplateCsv(): Promise<void> {
   saveBlob(blob, 'optiora-cost-import-template.csv')
 }
 
-export async function fetchAlerts(limit = 20): Promise<AlertEvent[]> {
+export async function fetchAlerts(limit = 20, offset = 0): Promise<AlertEvent[]> {
   return requestJson<AlertEvent[]>(
-    `/api/v1/alerts${toQueryString({ limit })}`,
+    `/api/v1/alerts${toQueryString({ limit, offset })}`,
     {},
   )
 }
@@ -477,6 +480,25 @@ export async function simulateAlertRouting(
   )
 }
 
+export async function fetchAlertOpsPolicy(): Promise<AlertOpsPolicy> {
+  return requestJson<AlertOpsPolicy>('/api/v1/alerts/ops-policy')
+}
+
+export async function upsertAlertOpsPolicy(payload: Partial<AlertOpsPolicy>): Promise<AlertOpsPolicy> {
+  return requestJson<AlertOpsPolicy>('/api/v1/alerts/ops-policy', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchAlertExecutiveSummary(
+  period: 'daily' | 'weekly' = 'daily',
+): Promise<AlertExecutiveSummary> {
+  return requestJson<AlertExecutiveSummary>(
+    `/api/v1/alerts/executive-summary${toQueryString({ period })}`,
+  )
+}
+
 export async function fetchNotificationDestinations(): Promise<NotificationDestinationsResponse> {
   return requestJson<NotificationDestinationsResponse>('/api/v1/notifications/destinations')
 }
@@ -505,9 +527,9 @@ export async function testNotificationDestination(
   })
 }
 
-export async function fetchAuditLogs(limit = 20): Promise<AuditLogEntry[]> {
+export async function fetchAuditLogs(limit = 20, offset = 0): Promise<AuditLogEntry[]> {
   return requestJson<AuditLogEntry[]>(
-    `/api/v1/audit-logs${toQueryString({ limit })}`,
+    `/api/v1/audit-logs${toQueryString({ limit, offset })}`,
     {},
   )
 }
@@ -516,6 +538,22 @@ export async function runScheduledScanNow(): Promise<{ status: string; started: 
   return requestJson<{ status: string; started: number; organization_id?: number | null }>(
     '/api/v1/scanning/scheduler/run-now',
     { method: 'POST' },
+  )
+}
+
+export async function updateSchedulerPolicy(payload: {
+  scheduler_override_enabled?: boolean
+  scheduler_override_frequency?: 'hourly' | 'daily' | 'weekly' | null
+  scheduler_retry_max_attempts?: number
+  scheduler_retry_backoff_seconds?: number
+  scheduler_overdue_alert_hours?: number
+}): Promise<ScanningPermission> {
+  return requestJson<ScanningPermission>(
+    '/api/v1/scanning/scheduler/policy',
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    },
   )
 }
 
@@ -588,8 +626,10 @@ export async function createReadOnlyReportShareToken(payload: {
   })
 }
 
-export async function listExportJobs(): Promise<ExportJob[]> {
-  return requestJson<ExportJob[]>('/api/v1/exports/jobs')
+export async function listExportJobs(limit = 50, offset = 0): Promise<ExportJob[]> {
+  return requestJson<ExportJob[]>(
+    `/api/v1/exports/jobs${toQueryString({ limit, offset })}`,
+  )
 }
 
 export async function createExportJob(payload: {
@@ -616,6 +656,10 @@ export async function listExportJobRuns(jobId: number, limit = 20): Promise<Expo
   return requestJson<ExportJobRun[]>(
     `/api/v1/exports/jobs/${encodeURIComponent(String(jobId))}/runs${toQueryString({ limit })}`,
   )
+}
+
+export async function fetchAdminDiagnostics(): Promise<AdminDiagnosticsSnapshot> {
+  return requestJson<AdminDiagnosticsSnapshot>('/api/v1/admin/diagnostics')
 }
 
 export async function ingestGcpBudgetPubSub(message: Record<string, unknown>, subscription?: string): Promise<{

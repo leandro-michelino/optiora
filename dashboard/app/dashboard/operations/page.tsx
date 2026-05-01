@@ -29,6 +29,8 @@ import {
   downloadScanDiffCsv,
   downloadScanHistoryCsv,
   fetchAlerts,
+  fetchAlertExecutiveSummary,
+  fetchAlertOpsPolicy,
   fetchApiHealth,
   fetchApiInfo,
   fetchAuditLogs,
@@ -44,9 +46,13 @@ import {
   listExportJobs,
   runExportJob,
   startScan,
+  updateSchedulerPolicy,
+  upsertAlertOpsPolicy,
 } from '@/lib/api'
 import {
+  AlertExecutiveSummary,
   AlertEvent,
+  AlertOpsPolicy,
   AuditLogEntry,
   ApiHealth,
   ApiInfo,
@@ -92,6 +98,9 @@ interface OperationsState {
   auditLogs: AuditLogEntry[]
   exportJobs: ExportJob[]
   exportJobRunsByJobId: Record<number, ExportJobRun[]>
+  alertOpsPolicy: AlertOpsPolicy | null
+  dailyAlertSummary: AlertExecutiveSummary | null
+  weeklyAlertSummary: AlertExecutiveSummary | null
   error: string | null
 }
 
@@ -111,6 +120,9 @@ const initialState: OperationsState = {
   auditLogs: [],
   exportJobs: [],
   exportJobRunsByJobId: {},
+  alertOpsPolicy: null,
+  dailyAlertSummary: null,
+  weeklyAlertSummary: null,
   error: null,
 }
 
@@ -193,6 +205,31 @@ export default function OperationsPage() {
   const [shareToken, setShareToken] = useState<string | null>(null)
   const [creatingShareToken, setCreatingShareToken] = useState(false)
   const [digestFrequency, setDigestFrequency] = useState<'weekly' | 'monthly'>('weekly')
+  const [schedulerPolicySaving, setSchedulerPolicySaving] = useState(false)
+  const [schedulerPolicy, setSchedulerPolicy] = useState({
+    scheduler_override_enabled: false,
+    scheduler_override_frequency: 'daily' as 'hourly' | 'daily' | 'weekly',
+    scheduler_retry_max_attempts: 2,
+    scheduler_retry_backoff_seconds: 120,
+    scheduler_overdue_alert_hours: 24,
+  })
+  const [alertOpsPolicySaving, setAlertOpsPolicySaving] = useState(false)
+  const [alertOpsPolicy, setAlertOpsPolicy] = useState({
+    mute_window_enabled: false,
+    mute_start_hour_utc: 0,
+    mute_end_hour_utc: 0,
+    mute_weekends: false,
+    timezone: 'UTC',
+    escalation_enabled: false,
+    escalation_after_minutes: 60,
+    escalation_channels: ['email'] as string[],
+    escalation_severity: 'critical' as 'warning' | 'critical',
+    ack_sla_minutes: 60,
+    dedupe_window_minutes: 30,
+    min_severity: 'low' as 'low' | 'medium' | 'high' | 'warning' | 'critical',
+    daily_summary_enabled: true,
+    weekly_summary_enabled: true,
+  })
 
   const connectedProviders = useMemo(
     () => state.credentials.filter((credential) => credential.is_valid),
@@ -216,7 +253,23 @@ export default function OperationsPage() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
 
-    const [health, info, credentials, diagnostics, destinations, permission, scheduler, dataFreshness, history, alerts, auditLogs, exportJobs] = await Promise.allSettled([
+    const [
+      health,
+      info,
+      credentials,
+      diagnostics,
+      destinations,
+      permission,
+      scheduler,
+      dataFreshness,
+      history,
+      alerts,
+      auditLogs,
+      exportJobs,
+      alertOpsPolicyResult,
+      dailySummaryResult,
+      weeklySummaryResult,
+    ] = await Promise.allSettled([
       fetchApiHealth(),
       fetchApiInfo(),
       fetchCredentials(),
@@ -229,6 +282,9 @@ export default function OperationsPage() {
       fetchAlerts(8),
       fetchAuditLogs(8),
       listExportJobs(),
+      fetchAlertOpsPolicy(),
+      fetchAlertExecutiveSummary('daily'),
+      fetchAlertExecutiveSummary('weekly'),
     ])
 
     const historyItems = history.status === 'fulfilled' ? history.value : []
@@ -271,11 +327,56 @@ export default function OperationsPage() {
       auditLogs: auditLogs.status === 'fulfilled' ? auditLogs.value : [],
       exportJobs: exportJobRows,
       exportJobRunsByJobId,
+      alertOpsPolicy: alertOpsPolicyResult.status === 'fulfilled' ? alertOpsPolicyResult.value : null,
+      dailyAlertSummary: dailySummaryResult.status === 'fulfilled' ? dailySummaryResult.value : null,
+      weeklyAlertSummary: weeklySummaryResult.status === 'fulfilled' ? weeklySummaryResult.value : null,
       error:
         health.status === 'rejected'
           ? 'Backend health check failed. Verify API service and NEXT_PUBLIC_API_URL.'
           : null,
     }))
+
+    const permissionPayload = permission.status === 'fulfilled' ? permission.value : null
+    if (permissionPayload) {
+      setSchedulerPolicy({
+        scheduler_override_enabled: Boolean(permissionPayload.scheduler_override_enabled),
+        scheduler_override_frequency: (
+          permissionPayload.scheduler_override_frequency === 'hourly'
+          || permissionPayload.scheduler_override_frequency === 'weekly'
+          ? permissionPayload.scheduler_override_frequency
+          : 'daily'
+        ),
+        scheduler_retry_max_attempts: permissionPayload.scheduler_retry_max_attempts || 2,
+        scheduler_retry_backoff_seconds: permissionPayload.scheduler_retry_backoff_seconds || 120,
+        scheduler_overdue_alert_hours: permissionPayload.scheduler_overdue_alert_hours || 24,
+      })
+    }
+    if (alertOpsPolicyResult.status === 'fulfilled') {
+      const policy = alertOpsPolicyResult.value
+      setAlertOpsPolicy({
+        mute_window_enabled: policy.mute_window_enabled,
+        mute_start_hour_utc: policy.mute_start_hour_utc,
+        mute_end_hour_utc: policy.mute_end_hour_utc,
+        mute_weekends: policy.mute_weekends,
+        timezone: policy.timezone || 'UTC',
+        escalation_enabled: policy.escalation_enabled,
+        escalation_after_minutes: policy.escalation_after_minutes,
+        escalation_channels: policy.escalation_channels?.length ? policy.escalation_channels : ['email'],
+        escalation_severity: policy.escalation_severity === 'warning' ? 'warning' : 'critical',
+        ack_sla_minutes: policy.ack_sla_minutes,
+        dedupe_window_minutes: policy.dedupe_window_minutes,
+        min_severity: (
+          policy.min_severity === 'medium'
+          || policy.min_severity === 'high'
+          || policy.min_severity === 'warning'
+          || policy.min_severity === 'critical'
+            ? policy.min_severity
+            : 'low'
+        ),
+        daily_summary_enabled: policy.daily_summary_enabled,
+        weekly_summary_enabled: policy.weekly_summary_enabled,
+      })
+    }
     setLoading(false)
   }
 
@@ -347,6 +448,46 @@ export default function OperationsPage() {
       }))
     } finally {
       setRunningExportJobId(null)
+    }
+  }
+
+  async function handleSaveSchedulerPolicy() {
+    setSchedulerPolicySaving(true)
+    setState((current) => ({ ...current, error: null }))
+    try {
+      await updateSchedulerPolicy({
+        scheduler_override_enabled: schedulerPolicy.scheduler_override_enabled,
+        scheduler_override_frequency: schedulerPolicy.scheduler_override_enabled
+          ? schedulerPolicy.scheduler_override_frequency
+          : null,
+        scheduler_retry_max_attempts: schedulerPolicy.scheduler_retry_max_attempts,
+        scheduler_retry_backoff_seconds: schedulerPolicy.scheduler_retry_backoff_seconds,
+        scheduler_overdue_alert_hours: schedulerPolicy.scheduler_overdue_alert_hours,
+      })
+      await loadOperations()
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Unable to save scheduler policy.',
+      }))
+    } finally {
+      setSchedulerPolicySaving(false)
+    }
+  }
+
+  async function handleSaveAlertOpsPolicy() {
+    setAlertOpsPolicySaving(true)
+    setState((current) => ({ ...current, error: null }))
+    try {
+      await upsertAlertOpsPolicy(alertOpsPolicy)
+      await loadOperations()
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Unable to save alert operations policy.',
+      }))
+    } finally {
+      setAlertOpsPolicySaving(false)
     }
   }
 
@@ -549,8 +690,24 @@ export default function OperationsPage() {
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
+                <span>Effective cadence</span>
+                <span>{state.scheduler?.effective_scan_frequency || state.scheduler?.scan_frequency || 'daily'}</span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span>Next run ETA</span>
                 <span>{formatEta(state.scheduler?.next_run_eta_seconds)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Retry policy</span>
+                <span>
+                  {state.scheduler?.retry_max_attempts ?? 1}x / {state.scheduler?.retry_backoff_seconds ?? 15}s
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Overdue</span>
+                <Badge className={`rounded-md border ${statusTone(!state.scheduler?.overdue)}`}>
+                  {state.scheduler?.overdue ? 'yes' : 'no'}
+                </Badge>
               </div>
               <div className="flex items-center justify-between">
                 <span>Success / Failure</span>
@@ -562,6 +719,76 @@ export default function OperationsPage() {
                 <span>Total runs</span>
                 <span>{state.scheduler?.counters.total ?? 0}</span>
               </div>
+            </div>
+            <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>Override cadence</span>
+                <input
+                  type="checkbox"
+                  checked={schedulerPolicy.scheduler_override_enabled}
+                  onChange={(event) => setSchedulerPolicy((current) => ({ ...current, scheduler_override_enabled: event.target.checked }))}
+                />
+              </div>
+              <select
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                value={schedulerPolicy.scheduler_override_frequency}
+                disabled={!schedulerPolicy.scheduler_override_enabled}
+                onChange={(event) => setSchedulerPolicy((current) => ({
+                  ...current,
+                  scheduler_override_frequency: event.target.value as 'hourly' | 'daily' | 'weekly',
+                }))}
+              >
+                <option value="hourly">Hourly</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <input
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={schedulerPolicy.scheduler_retry_max_attempts}
+                  onChange={(event) => setSchedulerPolicy((current) => ({
+                    ...current,
+                    scheduler_retry_max_attempts: Number(event.target.value || 1),
+                  }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="retry attempts"
+                />
+                <input
+                  type="number"
+                  min={15}
+                  max={3600}
+                  value={schedulerPolicy.scheduler_retry_backoff_seconds}
+                  onChange={(event) => setSchedulerPolicy((current) => ({
+                    ...current,
+                    scheduler_retry_backoff_seconds: Number(event.target.value || 15),
+                  }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="retry backoff seconds"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={168}
+                  value={schedulerPolicy.scheduler_overdue_alert_hours}
+                  onChange={(event) => setSchedulerPolicy((current) => ({
+                    ...current,
+                    scheduler_overdue_alert_hours: Number(event.target.value || 1),
+                  }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="overdue alert hours"
+                />
+              </div>
+              <Button
+                variant="outline"
+                className="w-full rounded-lg"
+                disabled={schedulerPolicySaving}
+                onClick={() => void handleSaveSchedulerPolicy()}
+              >
+                {schedulerPolicySaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Scheduler Policy
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -750,6 +977,162 @@ export default function OperationsPage() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
+              <div>
+                <div className="font-medium text-slate-700 dark:text-slate-300">Daily summary</div>
+                <div className="text-slate-500">
+                  {state.dailyAlertSummary ? `${state.dailyAlertSummary.total_alerts} alerts · ${state.dailyAlertSummary.unacknowledged} open` : 'disabled or unavailable'}
+                </div>
+              </div>
+              <div>
+                <div className="font-medium text-slate-700 dark:text-slate-300">Weekly summary</div>
+                <div className="text-slate-500">
+                  {state.weeklyAlertSummary ? `${state.weeklyAlertSummary.total_alerts} alerts · ${state.weeklyAlertSummary.unacknowledged} open` : 'disabled or unavailable'}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <div className="text-xs font-medium text-slate-700 dark:text-slate-300">Alert Operations Policy</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex items-center justify-between rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
+                  <span>Mute window</span>
+                  <input
+                    type="checkbox"
+                    checked={alertOpsPolicy.mute_window_enabled}
+                    onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, mute_window_enabled: event.target.checked }))}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
+                  <span>Mute weekends</span>
+                  <input
+                    type="checkbox"
+                    checked={alertOpsPolicy.mute_weekends}
+                    onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, mute_weekends: event.target.checked }))}
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={alertOpsPolicy.mute_start_hour_utc}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, mute_start_hour_utc: Number(event.target.value || 0) }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="mute start hour"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={alertOpsPolicy.mute_end_hour_utc}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, mute_end_hour_utc: Number(event.target.value || 0) }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="mute end hour"
+                />
+                <input
+                  type="text"
+                  value={alertOpsPolicy.timezone}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, timezone: event.target.value }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="timezone"
+                />
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                <input
+                  type="number"
+                  min={5}
+                  max={10080}
+                  value={alertOpsPolicy.ack_sla_minutes}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, ack_sla_minutes: Number(event.target.value || 5) }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="ack sla minutes"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  value={alertOpsPolicy.dedupe_window_minutes}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, dedupe_window_minutes: Number(event.target.value || 0) }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="dedupe window minutes"
+                />
+                <select
+                  value={alertOpsPolicy.min_severity}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({
+                    ...current,
+                    min_severity: event.target.value as 'low' | 'medium' | 'high' | 'warning' | 'critical',
+                  }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                >
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="warning">warning</option>
+                  <option value="critical">critical</option>
+                </select>
+                <select
+                  value={alertOpsPolicy.escalation_severity}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({
+                    ...current,
+                    escalation_severity: event.target.value as 'warning' | 'critical',
+                  }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                >
+                  <option value="warning">warning+</option>
+                  <option value="critical">critical only</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex items-center justify-between rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
+                  <span>Escalation enabled</span>
+                  <input
+                    type="checkbox"
+                    checked={alertOpsPolicy.escalation_enabled}
+                    onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, escalation_enabled: event.target.checked }))}
+                  />
+                </label>
+                <input
+                  type="number"
+                  min={5}
+                  max={10080}
+                  value={alertOpsPolicy.escalation_after_minutes}
+                  onChange={(event) => setAlertOpsPolicy((current) => ({
+                    ...current,
+                    escalation_after_minutes: Number(event.target.value || 5),
+                  }))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  aria-label="escalation after minutes"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex items-center justify-between rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
+                  <span>Daily summary</span>
+                  <input
+                    type="checkbox"
+                    checked={alertOpsPolicy.daily_summary_enabled}
+                    onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, daily_summary_enabled: event.target.checked }))}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
+                  <span>Weekly summary</span>
+                  <input
+                    type="checkbox"
+                    checked={alertOpsPolicy.weekly_summary_enabled}
+                    onChange={(event) => setAlertOpsPolicy((current) => ({ ...current, weekly_summary_enabled: event.target.checked }))}
+                  />
+                </label>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full rounded-lg"
+                disabled={alertOpsPolicySaving}
+                onClick={() => void handleSaveAlertOpsPolicy()}
+              >
+                {alertOpsPolicySaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Alert Policy
+              </Button>
+            </div>
             {state.alerts.length === 0 ? (
               <p className="text-sm text-slate-500 dark:text-slate-400">No active alerts.</p>
             ) : (
@@ -761,6 +1144,18 @@ export default function OperationsPage() {
                       <div className="text-sm text-slate-600 dark:text-slate-400">{alert.message}</div>
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-500">
                         {alert.severity} · channels: {alert.delivered_channels.join(', ') || 'none'}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1 text-xs">
+                        {alert.ack_sla_breached && (
+                          <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-700 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                            SLA breached
+                          </span>
+                        )}
+                        {alert.escalation_due && (
+                          <span className="rounded-md border border-red-300 bg-red-50 px-2 py-0.5 text-red-700 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300">
+                            Escalation due
+                          </span>
+                        )}
                       </div>
                     </div>
                     <Button
