@@ -2,7 +2,7 @@
 
 This file turns the current public-dashboard build into a concrete go-live gate and defines what must be true before work is considered ready to move into `1.0`.
 
-## Current Go-Live Position (April 2026 — Feature-Complete)
+## Current Go-Live Position (May 2026 — Feature-Complete)
 
 Release 1.0 FinOps features are fully implemented:
 
@@ -18,7 +18,7 @@ Release 1.0 FinOps features are fully implemented:
 
 Dashboard now has 17 pages across 3 nav sections — all routes verified in production build.
 
-## Validation Snapshot (28 Apr 2026)
+## Validation Snapshot (1 May 2026)
 
 Local validation has been re-run end to end:
 
@@ -154,6 +154,13 @@ Work should move into post-1.0 only after these are true:
 ## Post-1.0 Focus
 
 `post-1.0` should expand product depth and enterprise readiness:
+
+- Recommended near-term order:
+	1. Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`)
+	2. SMTP notification integration with real email templates
+	3. Scheduled report delivery (weekly/monthly)
+	4. FOCUS 1.0 export certification
+	5. Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring)
 
 - Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`)
 - SMTP notification integration with real email templates

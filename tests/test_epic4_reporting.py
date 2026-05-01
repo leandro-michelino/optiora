@@ -27,6 +27,7 @@ try:
     from sqlalchemy import inspect as sa_inspect
 
     from finops_mcp.app import app
+    from finops_mcp.api import CostTrendPoint
     from finops_mcp.orm_models import (
         Base,
         CostPeriodSummary,
@@ -311,6 +312,33 @@ class ImportPreviewTest(unittest.TestCase):
         self.assertIn("mapping_feedback", data)
         self.assertIn("reconciliation_guidance", data)
         self.assertIn("issues", data)
+        self.assertEqual(data.get("total_rows"), data.get("accepted_rows") + data.get("rejected_rows"))
+
+
+class CostTrendPointModelTest(unittest.TestCase):
+    def test_service_breakdown_defaults_are_isolated(self):
+        left = CostTrendPoint(
+            period_start="2026-05-01",
+            period_end="2026-05-31",
+            provider="aws",
+            total_cost_usd=10.0,
+            mapped_cost_usd=8.0,
+            unmapped_cost_usd=2.0,
+            record_count=1,
+        )
+        right = CostTrendPoint(
+            period_start="2026-05-01",
+            period_end="2026-05-31",
+            provider="gcp",
+            total_cost_usd=20.0,
+            mapped_cost_usd=18.0,
+            unmapped_cost_usd=2.0,
+            record_count=1,
+        )
+
+        left.service_breakdown["compute"] = 10.0
+
+        self.assertEqual(right.service_breakdown, {})
 
 
 class ChargebackCsvExportTest(unittest.TestCase):

@@ -6,7 +6,6 @@ Static verification:
 
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
-python3 -m compileall $(find ./finops_* -type d)
 ```
 
 Once backend dependencies are installed:
@@ -30,7 +29,7 @@ Avoid using a Python `3.14` virtualenv for the backend test environment until th
 Regression tests:
 
 ```bash
-.venv/bin/python -m pytest -q
+.venv/bin/python -m unittest discover -s tests -v
 ./scripts/check-animated-svg-routes.sh
 ```
 
@@ -152,7 +151,7 @@ terraform -chdir=terraform validate
 - Backend tests require the Python dependencies from `pyproject.toml`.
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Alembic migrations require a single linear head before running the auth flow roundtrip migration test.
-- Pytest is configured to ignore accidental duplicate copy files matching `* (1).py`.
+- Pytest remains available as a developer tool, but the primary backend regression path is the `unittest` suite above.
 - Run `./scripts/cleanup-workspace.sh` to remove redundant duplicate-copy artifacts and local cache folders before packaging or handoff.
 - Dashboard linting requires ESLint flat config (`eslint.config.mjs`) when using ESLint 9.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.

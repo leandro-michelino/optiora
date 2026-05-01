@@ -1,95 +1,28 @@
-# OptiOra Repository Review
+# OptiOra Repository Maintenance Notes
 
-Reviewed in April 2026.
+This file is intentionally brief. The authoritative project descriptions now live in:
 
-## What was cleaned up in this pass
+- `README.md` for product scope, runtime behavior, and main validation commands
+- `ARCHITECTURE.md` for system topology and processing flows
+- `DEPLOYMENT.md` for OCI deployment and runtime configuration
+- `TESTING.md` for backend/frontend verification details
+- `NEXT_PHASE.md` for go-live gate and post-1.0 priorities
 
-- Fixed `Config` so each new instance reads the current environment instead of capturing env vars at module import time.
-- Corrected `OCI_GENAI_COMPARTMENT_ID` precedence so GenAI-specific compartments override the runtime compartment as documented.
-- Added regression tests for runtime config reload behavior and GenAI compartment fallback.
-- Aligned retention/archive configuration across `.env.example`, Ansible runtime env, deployment docs, and data policy docs.
-- Removed remaining `datetime.utcnow()` usage from the GenAI scope validator and connector tests.
-- Added forecast champion/challenger diagnostics and model-risk advisory prompts.
-- Fixed monthly cost snapshot history so repeated captures in the same month/provider do not inflate forecast history.
-- Updated the forecasting dashboard with model diagnostics.
-- Expanded GenAI copilot coverage for non-forecast FinOps use cases.
-- Converted the primary runtime architecture diagram to portable ASCII.
-- Updated Ruff configuration to the modern `[tool.ruff.lint]` layout.
-- Consolidated `ARCHITECTURE.md` into a single authoritative document.
-- Removed duplicated architecture sections that would drift over time.
-- Refreshed `README.md` so it matches the current architecture and feature intent more closely.
-- Clarified that deterministic analytics remain the source of truth and OCI GenAI is used as an advisory layer.
-- Added a clearer breakdown of forecasting, analytics, optimization, and reporting capabilities.
+## Why this file still exists
 
-## Key findings from the review
+It keeps a short record of repository-level maintenance themes without duplicating the main docs.
 
-### 1. Runtime configuration drift
+## Current maintenance priorities
 
-`Config` previously evaluated environment variables at import time. That made
-runtime env changes invisible to later `Config()` instances and made script/test
-behavior depend too heavily on import order.
+1. Keep `finops_mcp/api.py` shrinking by extracting route-adjacent helper logic by domain.
+2. Prefer one authoritative explanation per topic instead of repeating architecture or validation guidance across multiple files.
+3. Keep backend verification guidance aligned with the current `unittest`-based regression flow.
+4. Preserve deterministic analytics as the source of truth and keep GenAI advisory-only.
+5. Keep OCI hosting guidance separate from the product's multi-cloud analysis scope.
 
-### 2. Documentation drift
+## Cleanup rules
 
-The repo documentation had grown broader than the most trustworthy, easy-to-maintain description of the platform. The main issue was not only missing detail, but also duplicated architecture content and overlapping capability descriptions.
-
-### 3. Architecture duplication
-
-`ARCHITECTURE.md` contained repeated sections. This increases maintenance overhead and makes drift almost guaranteed after subsequent feature additions.
-
-### 4. GenAI surface is broad and valuable
-
-The repository already supports a richer GenAI role than just forecast narration. It includes spend narratives, roadmap generation, anomaly explanation, maturity narration, tagging strategy, sustainability commentary, chargeback reporting language, comparison briefs, rightsizing briefs, and negotiation talking points.
-
-### 5. Deterministic analytics are the right design choice
-
-The forecasting and analytics implementation is already correctly oriented toward deterministic logic first, with GenAI layered on top for explanation and prioritisation. This is the right approach for FinOps products.
-
-## Recommended next technical cleanup items
-
-### High priority
-
-- Add focused regression tests for GenAI advisor prompt builders and fallback mode.
-- Add more endpoint-level tests for `/api/v1/advisor/hybrid`, `/api/v1/genai/analyze`, and `/api/v1/genai/copilot-pack`.
-- Add dedicated tests for forecasting guardrails, breach probability, model diagnostics, and scenario timeline consistency.
-- Introduce a small validation suite to ensure README and API surface stay aligned.
-
-### Medium priority
-
-- Break `finops_mcp/api.py` into smaller route modules by domain:
-  - credentials and auth
-  - scanning and scheduler
-  - analytics and forecasting
-  - alerts and notifications
-  - reports and exports
-  - tagging and business mapping
-- Move repeated serialization helpers into a shared utility module.
-- Add typed schemas for internal analytics payloads where raw dict usage is still heavy.
-
-### Production hardening
-
-- Replace process-local rate limiting with Redis-backed distributed throttling for multi-replica deployments.
-- Add explicit provider timeout and retry policy configuration for external API calls.
-- Add stronger contract tests for imported CSV schemas and fallback behavior.
-- Keep laptop-run release checks for duplicated architecture sections and stale endpoint references.
-
-## Forecasting enhancement ideas for the next iteration
-
-- Store forecast diagnostics snapshots so model risk can be trended across releases.
-- Add forecast explainability by driver: trend, seasonality, concentration, and volatility contribution.
-- Add explicit forecast error decomposition per provider.
-- Budget corridor planning by owner, team, or cost-center.
-- Confidence downgrade logic when source data is synthetic or sparse.
-- Rolling benchmark comparisons against prior 3, 6, and 12 month windows.
-
-## FinOps analytics enhancement ideas for the next iteration
-
-- Provider benchmark normalization by workload archetype.
-- Savings confidence scoring from evidence quality, not only heuristics.
-- Commitment recommendation segmentation by workload stability class.
-- Cost-of-delay scoring for each optimization action.
-- Team-level scorecards linked directly to chargeback and tagging coverage.
-
-## Final recommendation
-
-The project direction is strong. The highest-value next step is tightening test coverage, modularizing the large API file, and making documentation accuracy part of the laptop-run release gate so the repo stays clean as capabilities continue to expand.
+- Avoid adding new long-form review documents when an existing authoritative doc can be updated instead.
+- Treat generated Terraform state/plan artifacts and duplicate local copies as disposable workspace outputs, not project assets.
+- Keep Alembic revisions linear before running migration roundtrip tests.
+- Re-run focused validation after each local refactor slice instead of batching many unverified edits.

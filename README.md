@@ -263,8 +263,7 @@ Primary OCI region for hosting and GenAI inference: `uk-london-1`
 
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
-python3 -m compileall $(find ./finops_* -type d)
-.venv/bin/python -m pytest -q
+.venv/bin/python -m unittest discover -s tests -v
 
 cd dashboard
 npm run type-check
