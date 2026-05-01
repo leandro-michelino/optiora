@@ -42,7 +42,7 @@ class GCPCredentialInput(BaseModel):
 
 class OCICredentialInput(BaseModel):
     provider: Literal["oci"]
-    config_file: str
+    config_file: Optional[str] = "~/.oci/config"
     profile: Optional[str] = "DEFAULT"
 
 
@@ -66,7 +66,14 @@ def parse_credential_payload(raw: Dict[str, Any]) -> CredentialInput:
             payload["service_account_json"] = json.loads(payload["service_account_json"])
         return GCPCredentialInput(**payload)
     if provider == "oci":
-        return OCICredentialInput(**raw)
+        payload = dict(raw)
+        profile = str(payload.get("profile") or "DEFAULT").strip()
+        if profile.startswith("[") and profile.endswith("]") and len(profile) > 2:
+            profile = profile[1:-1].strip()
+        payload["profile"] = profile or "DEFAULT"
+        config_file = str(payload.get("config_file") or "").strip()
+        payload["config_file"] = config_file or "~/.oci/config"
+        return OCICredentialInput(**payload)
     raise ValueError(f"Unsupported provider: {provider}")
 
 

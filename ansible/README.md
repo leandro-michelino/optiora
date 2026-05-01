@@ -12,6 +12,8 @@ Preferred end-to-end path:
 
 The single deploy script generates the temporary inventory, applies Terraform when requested, creates/attaches the extra OCI data volume when enabled, uploads the source archive, and then runs this playbook automatically.
 
+Provisioning is Oracle Linux-only by policy. The playbook asserts `ansible_distribution == OracleLinux` before installing packages.
+
 ## First Run
 
 1. Apply or otherwise create the OCI compute host.
@@ -72,9 +74,8 @@ Migrations are applied before the health checks so schema-changing releases come
 
 The playbook now applies host-level hardening defaults suitable for production VMs:
 
-- automatic security updates (`unattended-upgrades` on Debian/Ubuntu, `dnf-automatic` on Oracle Linux/RHEL)
+- automatic security updates with `dnf-automatic`
 - baseline firewall policy (SSH + web ports, or API/UI direct ports when nginx is disabled)
-- fail2ban on Debian/Ubuntu
 - kernel safety defaults (`tcp_syncookies`, reverse path filtering, swappiness)
 - elevated file descriptor limits for high-concurrency API/UI workloads
 - stricter systemd service confinement for API and dashboard
@@ -83,7 +84,6 @@ These are controlled via `ansible/group_vars/all.yml`:
 
 - `optiora_vm_hardening`
 - `optiora_auto_security_updates`
-- `optiora_enable_fail2ban`
 - `optiora_configure_firewall`
 - `optiora_ssh_port`
 - `optiora_firewall_expose_direct_services`

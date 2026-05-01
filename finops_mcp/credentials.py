@@ -6,6 +6,7 @@ Validates provider credentials and stores credential metadata in the local DB.
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional
@@ -29,6 +30,19 @@ class CredentialStatus:
 
 class CredentialValidator:
     """Validate cloud provider credentials with lightweight provider API calls."""
+
+    @staticmethod
+    def _normalize_oci_inputs(config_file: str, profile: str) -> tuple[str, str]:
+        resolved_config = str(config_file or "~/.oci/config").strip() or "~/.oci/config"
+        resolved_profile = str(profile or "DEFAULT").strip() or "DEFAULT"
+
+        if resolved_profile.startswith("[") and resolved_profile.endswith("]") and len(resolved_profile) > 2:
+            resolved_profile = resolved_profile[1:-1].strip() or "DEFAULT"
+
+        expanded = os.path.abspath(
+            os.path.expanduser(os.path.expandvars(resolved_config))
+        )
+        return expanded, resolved_profile
 
     @staticmethod
     def validate_aws(
@@ -273,15 +287,32 @@ class CredentialValidator:
             import oci
             from datetime import date
 
-            oci_config = oci.config.from_file(config_file, profile)
+            resolved_config_file, resolved_profile = CredentialValidator._normalize_oci_inputs(
+                config_file=config_file,
+                profile=profile,
+            )
+
+            if not os.path.isfile(resolved_config_file):
+                return CredentialStatus(
+                    provider="oci",
+                    is_valid=False,
+                    message=(
+                        "OCI config file not found on the API server. "
+                        f"Resolved path: {resolved_config_file}. "
+                        "Use a path that exists on the OptiOra host (not your browser/laptop path)."
+                    ),
+                    error_details=f"Missing file: {resolved_config_file}",
+                    tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                )
+
+            oci_config = oci.config.from_file(resolved_config_file, resolved_profile)
             tenancy_id = oci_config["tenancy"]
 
-            usage_client = oci.usage_api.UsageapiClient(oci_config)
-
-            # Use the current month-to-date window so we get a real cost figure.
+            # Use an exact UTC boundary window to satisfy Usage API precision
+            # requirements (hours/minutes/seconds must be zeroed).
             today = date.today()
-            start = datetime(today.year, today.month, 1)
-            end = datetime(today.year, today.month, today.day, 23, 59, 59)
+            start = datetime(today.year, today.month, 1, 0, 0, 0, tzinfo=timezone.utc)
+            end = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=timezone.utc) + timedelta(days=1)
 
             request = oci.usage_api.models.RequestSummarizedUsagesDetails(
                 tenant_id=tenancy_id,
@@ -289,9 +320,37 @@ class CredentialValidator:
                 time_usage_ended=end,
                 granularity="MONTHLY",
             )
-            response = usage_client.request_summarized_usages(
-                request_summarized_usages_details=request
-            )
+            def _request_usage(cfg: Dict[str, Any]):
+                usage_client = oci.usage_api.UsageapiClient(cfg)
+                return usage_client.request_summarized_usages(
+                    request_summarized_usages_details=request
+                )
+
+            used_region = str(oci_config.get("region") or "")
+            try:
+                response = _request_usage(oci_config)
+            except Exception as usage_exc:
+                usage_text = str(usage_exc).lower()
+                if "home region" not in usage_text:
+                    raise
+                identity_client = oci.identity.IdentityClient(oci_config)
+                subscriptions = identity_client.list_region_subscriptions(
+                    tenancy_id=tenancy_id
+                ).data
+                home_region = next(
+                    (
+                        str(sub.region_name)
+                        for sub in subscriptions
+                        if bool(getattr(sub, "is_home_region", False))
+                    ),
+                    "",
+                )
+                if not home_region:
+                    raise
+                retry_config = dict(oci_config)
+                retry_config["region"] = home_region
+                response = _request_usage(retry_config)
+                used_region = home_region
 
             # Extract MTD cost total from the response items.
             total_cost = 0.0
@@ -302,6 +361,8 @@ class CredentialValidator:
                     pass
 
             permissions_verified = ["oci:usage-api:RequestSummarizedUsages"]
+            if used_region:
+                permissions_verified.append(f"oci:usage-region:{used_region}")
 
             # Secondary probe: identity tenancy read.
             try:
@@ -325,11 +386,19 @@ class CredentialValidator:
             )
         except Exception as exc:
             logger.error("OCI credential validation failed: %s", exc)
+            detail = str(exc)
+            hint = ""
+            lowered = detail.lower()
+            if "profile" in lowered and "not found" in lowered:
+                hint = (
+                    " Check OCI profile name. Use profile names without brackets "
+                    "(for example: JNB, not [JNB])."
+                )
             return CredentialStatus(
                 provider="oci",
                 is_valid=False,
-                message="Failed to validate OCI credentials",
-                error_details=str(exc),
+                message=f"Failed to validate OCI credentials.{hint}".strip(),
+                error_details=detail,
                 tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             )
 

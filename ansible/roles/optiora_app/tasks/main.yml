@@ -1,42 +1,12 @@
-- name: Install Debian/Ubuntu system packages
-  ansible.builtin.apt:
-    name:
-      - build-essential
-      - curl
-      - fail2ban
-      - libffi-dev
-      - libssl-dev
-      - openssl
-      - postgresql-client
-      - python3
-      - python3-dev
-      - python3-pip
-      - python3-venv
-      - rsync
-      - ufw
-      - unattended-upgrades
-      - wget
-    update_cache: true
-    state: present
-  when: ansible_os_family == "Debian"
+- name: Require Oracle Linux host
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "OracleLinux"
+    fail_msg: >-
+      OptiOra provisioning supports only Oracle Linux hosts on OCI.
+      Detected {{ ansible_distribution }} {{ ansible_distribution_version }}.
 
-- name: Install NodeSource repository on Debian/Ubuntu
-  ansible.builtin.shell: |
-    set -euo pipefail
-    curl -fsSL https://deb.nodesource.com/setup_{{ optiora_node_major }}.x | bash -
-  args:
-    executable: /bin/bash
-    creates: "/etc/apt/sources.list.d/nodesource.list"
-  when: ansible_os_family == "Debian"
-
-- name: Install Node.js on Debian/Ubuntu
-  ansible.builtin.apt:
-    name: nodejs
-    update_cache: true
-    state: present
-  when: ansible_os_family == "Debian"
-
-- name: Install Oracle Linux / RHEL system packages
+- name: Install Oracle Linux system packages
   ansible.builtin.dnf:
     name:
       - curl
@@ -56,51 +26,25 @@
       - python3.11-devel
       - rsync
       - wget
+    update_cache: true
     state: present
-  when: ansible_os_family == "RedHat"
 
-- name: Enable Node.js {{ optiora_node_major }} module on Oracle Linux / RHEL
+- name: Enable Node.js {{ optiora_node_major }} module on Oracle Linux
   ansible.builtin.shell: |
     set -euo pipefail
     dnf -y module reset nodejs
     dnf -y module enable nodejs:{{ optiora_node_major }}
   args:
     executable: /bin/bash
-  when: ansible_os_family == "RedHat"
 
-- name: Install Node.js on Oracle Linux / RHEL
+- name: Install Node.js on Oracle Linux
   ansible.builtin.dnf:
     name:
       - nodejs
       - npm
     state: present
-  when: ansible_os_family == "RedHat"
 
-- name: Enable unattended security upgrades on Debian/Ubuntu
-  ansible.builtin.copy:
-    dest: /etc/apt/apt.conf.d/20auto-upgrades
-    owner: root
-    group: root
-    mode: "0644"
-    content: |
-      APT::Periodic::Update-Package-Lists "1";
-      APT::Periodic::Unattended-Upgrade "1";
-  when:
-    - ansible_os_family == "Debian"
-    - optiora_vm_hardening | bool
-    - optiora_auto_security_updates | bool
-
-- name: Enable unattended-upgrades service on Debian/Ubuntu
-  ansible.builtin.systemd:
-    name: unattended-upgrades
-    enabled: true
-    state: started
-  when:
-    - ansible_os_family == "Debian"
-    - optiora_vm_hardening | bool
-    - optiora_auto_security_updates | bool
-
-- name: Configure dnf-automatic updates on Oracle Linux / RHEL
+- name: Configure dnf-automatic updates on Oracle Linux
   ansible.builtin.ini_file:
     path: /etc/dnf/automatic.conf
     section: commands
@@ -112,29 +56,17 @@
     - { option: download_updates, value: "yes" }
     - { option: upgrade_type, value: "security" }
   when:
-    - ansible_os_family == "RedHat"
     - optiora_vm_hardening | bool
     - optiora_auto_security_updates | bool
 
-- name: Enable dnf-automatic timer on Oracle Linux / RHEL
+- name: Enable dnf-automatic timer on Oracle Linux
   ansible.builtin.systemd:
     name: dnf-automatic.timer
     enabled: true
     state: started
   when:
-    - ansible_os_family == "RedHat"
     - optiora_vm_hardening | bool
     - optiora_auto_security_updates | bool
-
-- name: Enable fail2ban service on Debian/Ubuntu
-  ansible.builtin.systemd:
-    name: fail2ban
-    enabled: true
-    state: started
-  when:
-    - ansible_os_family == "Debian"
-    - optiora_vm_hardening | bool
-    - optiora_enable_fail2ban | bool
 
 - name: Configure kernel hardening and memory behavior
   ansible.posix.sysctl:
@@ -162,35 +94,12 @@
       {{ optiora_app_user }} hard nofile {{ optiora_limits_nofile_hard }}
   when: optiora_vm_hardening | bool
 
-- name: Configure UFW baseline policy on Debian/Ubuntu
-  ansible.builtin.shell: |
-    set -euo pipefail
-    ufw --force default deny incoming
-    ufw --force default allow outgoing
-    ufw --force allow {{ optiora_ssh_port }}/tcp
-    if [[ "{{ optiora_install_nginx | bool }}" == "True" ]]; then
-      ufw --force allow 80/tcp
-      ufw --force allow 443/tcp
-    elif [[ "{{ optiora_firewall_expose_direct_services | bool }}" == "True" ]]; then
-      ufw --force allow {{ optiora_api_port }}/tcp
-      ufw --force allow {{ optiora_dashboard_port }}/tcp
-    fi
-    ufw --force enable
-  args:
-    executable: /bin/bash
-  changed_when: false
-  when:
-    - ansible_os_family == "Debian"
-    - optiora_vm_hardening | bool
-    - optiora_configure_firewall | bool
-
-- name: Ensure firewalld is enabled on Oracle Linux / RHEL
+- name: Ensure firewalld is enabled on Oracle Linux
   ansible.builtin.systemd:
     name: firewalld
     enabled: true
     state: started
   when:
-    - ansible_os_family == "RedHat"
     - optiora_vm_hardening | bool
     - optiora_configure_firewall | bool
 
@@ -201,7 +110,6 @@
     immediate: true
     state: enabled
   when:
-    - ansible_os_family == "RedHat"
     - optiora_vm_hardening | bool
     - optiora_configure_firewall | bool
 
@@ -215,7 +123,6 @@
     - http
     - https
   when:
-    - ansible_os_family == "RedHat"
     - optiora_vm_hardening | bool
     - optiora_configure_firewall | bool
     - optiora_install_nginx | bool
@@ -230,7 +137,6 @@
     - "{{ optiora_api_port }}"
     - "{{ optiora_dashboard_port }}"
   when:
-    - ansible_os_family == "RedHat"
     - optiora_vm_hardening | bool
     - optiora_configure_firewall | bool
     - not (optiora_install_nginx | bool)
@@ -408,20 +314,14 @@
     creates: "{{ optiora_app_dir }}/venv/bin/python"
 
 - name: Upgrade Python packaging tools
-  ansible.builtin.pip:
-    name:
-      - pip
-      - setuptools
-      - wheel
-      - poetry-core
-    virtualenv: "{{ optiora_app_dir }}/venv"
-    state: latest
+  ansible.builtin.command:
+    cmd: "{{ optiora_app_dir }}/venv/bin/python -m pip install --upgrade pip setuptools wheel poetry-core"
+  changed_when: true
 
 - name: Install backend package
-  ansible.builtin.pip:
-    name: "{{ optiora_app_dir }}"
-    virtualenv: "{{ optiora_app_dir }}/venv"
-    editable: true
+  ansible.builtin.command:
+    cmd: "{{ optiora_app_dir }}/venv/bin/python -m pip install -e {{ optiora_app_dir }}"
+  changed_when: true
   notify: Restart optiora api
 
 - name: Install dashboard dependencies
@@ -534,19 +434,7 @@
   until: optiora_dashboard_health.status == 200
 
 # ── nginx reverse-proxy + optional TLS ──────────────────────────────────────
-- name: Install nginx and certbot on Debian/Ubuntu
-  ansible.builtin.apt:
-    name:
-      - nginx
-      - certbot
-      - python3-certbot-nginx
-    state: present
-    update_cache: true
-  when:
-    - optiora_install_nginx | bool
-    - ansible_os_family == "Debian"
-
-- name: Install nginx and certbot on Oracle Linux / RHEL
+- name: Install nginx and certbot on Oracle Linux
   ansible.builtin.dnf:
     name:
       - nginx
@@ -555,7 +443,6 @@
     state: present
   when:
     - optiora_install_nginx | bool
-    - ansible_os_family == "RedHat"
 
 - name: Create webroot for ACME challenges
   ansible.builtin.file:
@@ -569,28 +456,9 @@
 - name: Write nginx site config
   ansible.builtin.template:
     src: nginx-optiora.conf.j2
-    dest: "{{ '/etc/nginx/conf.d/optiora.conf' if ansible_os_family == 'RedHat' else '/etc/nginx/sites-available/optiora.conf' }}"
+    dest: /etc/nginx/conf.d/optiora.conf
     mode: "0644"
   when: optiora_install_nginx | bool
-  notify: Reload nginx
-
-- name: Enable nginx site on Debian/Ubuntu
-  ansible.builtin.file:
-    src: /etc/nginx/sites-available/optiora.conf
-    dest: /etc/nginx/sites-enabled/optiora.conf
-    state: link
-  when:
-    - optiora_install_nginx | bool
-    - ansible_os_family == "Debian"
-  notify: Reload nginx
-
-- name: Remove default nginx site on Debian/Ubuntu
-  ansible.builtin.file:
-    path: /etc/nginx/sites-enabled/default
-    state: absent
-  when:
-    - optiora_install_nginx | bool
-    - ansible_os_family == "Debian"
   notify: Reload nginx
 
 - name: Start and enable nginx
@@ -625,7 +493,7 @@
 - name: Re-render nginx config after certificate is available
   ansible.builtin.template:
     src: nginx-optiora.conf.j2
-    dest: "{{ '/etc/nginx/conf.d/optiora.conf' if ansible_os_family == 'RedHat' else '/etc/nginx/sites-available/optiora.conf' }}"
+    dest: /etc/nginx/conf.d/optiora.conf
     mode: "0644"
   when:
     - optiora_install_nginx | bool

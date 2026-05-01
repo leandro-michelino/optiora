@@ -86,6 +86,27 @@ log_step() {
     echo -e "${BLUE}============================================================${NC}"
 }
 
+format_duration() {
+    local total_seconds="${1:-0}"
+    local hours minutes seconds
+
+    if [ "$total_seconds" -lt 0 ]; then
+        total_seconds=0
+    fi
+
+    hours=$((total_seconds / 3600))
+    minutes=$(((total_seconds % 3600) / 60))
+    seconds=$((total_seconds % 60))
+
+    if [ "$hours" -gt 0 ]; then
+        printf '%dh %dm %ds' "$hours" "$minutes" "$seconds"
+    elif [ "$minutes" -gt 0 ]; then
+        printf '%dm %ds' "$minutes" "$seconds"
+    else
+        printf '%ds' "$seconds"
+    fi
+}
+
 prompt_value() {
     local label="$1"
     local default_value="${2:-}"
@@ -633,6 +654,38 @@ resolve_image_compartment_id() {
     log_success "Resolved platform image compartment from OCI profile '$CLI_PROFILE'"
 }
 
+find_latest_compatible_image() {
+    local image_ids_json
+    local image_id
+
+    image_ids_json=$(oci compute image list \
+        --compartment-id "$RESOLVED_IMAGE_COMPARTMENT_ID" \
+        --region "$REGION" \
+        --operating-system "$IMAGE_OS" \
+        --operating-system-version "$IMAGE_OS_VERSION" \
+        --query "reverse(sort_by(data, &\"time-created\"))[0:50].id" \
+        2>/dev/null || echo "")
+
+    if [ -z "$image_ids_json" ] || [ "$image_ids_json" = "null" ]; then
+        return 1
+    fi
+
+    while IFS= read -r image_id; do
+        if [ -z "$image_id" ]; then
+            continue
+        fi
+        if oci compute image-shape-compatibility-entry get \
+            --image-id "$image_id" \
+            --shape-name "$SHAPE" \
+            --region "$REGION" >/dev/null 2>&1; then
+            echo "$image_id"
+            return 0
+        fi
+    done < <(printf '%s\n' "$image_ids_json" | grep -o 'ocid1\.image[^"[:space:]]*' || true)
+
+    return 1
+}
+
 wait_for_ssh() {
     local public_ip="$1"
     log_info "Waiting for SSH on ${REMOTE_USER}@${public_ip} ..."
@@ -787,17 +840,11 @@ prepare_compute_instance() {
             exit 1
         fi
 
-        log_info "Finding latest ${IMAGE_OS} ${IMAGE_OS_VERSION} image..."
-        image_id=$(oci compute image list \
-            --compartment-id "$RESOLVED_IMAGE_COMPARTMENT_ID" \
-            --region "$REGION" \
-            --operating-system "$IMAGE_OS" \
-            --operating-system-version "$IMAGE_OS_VERSION" \
-            --query "reverse(sort_by(data, &\"time-created\"))[0].id" \
-            --raw-output 2>/dev/null)
+        log_info "Finding latest ${IMAGE_OS} ${IMAGE_OS_VERSION} image compatible with shape ${SHAPE}..."
+        image_id=$(find_latest_compatible_image || true)
 
         if [ -z "$image_id" ] || [ "$image_id" = "null" ]; then
-            log_error "Could not find ${IMAGE_OS} ${IMAGE_OS_VERSION} image from image compartment $RESOLVED_IMAGE_COMPARTMENT_ID"
+            log_error "Could not find a compatible ${IMAGE_OS} ${IMAGE_OS_VERSION} image for shape ${SHAPE} from image compartment $RESOLVED_IMAGE_COMPARTMENT_ID"
             exit 1
         fi
         log_success "Image: $image_id"
@@ -882,6 +929,10 @@ ensure_instance_running() {
 }
 
 deploy_compute() {
+    local deploy_started_at
+    local deploy_elapsed
+
+    deploy_started_at=$(date +%s)
     prepare_compute_instance
 
     ensure_extra_block_volume "$CURRENT_INSTANCE_ID" "$CURRENT_AVAILABILITY_DOMAIN"
@@ -894,6 +945,8 @@ deploy_compute() {
     log_info "Verification: ./deploy/deploy-oci.sh verify"
     log_info "API logs:   sudo journalctl -u optiora-api -n 100 --no-pager"
     log_info "UI logs:    sudo journalctl -u optiora-dashboard -n 100 --no-pager"
+    deploy_elapsed=$(( $(date +%s) - deploy_started_at ))
+    log_success "End-to-end compute deploy time: $(format_duration "$deploy_elapsed")"
 }
 
 instance_action() {
@@ -1074,6 +1127,10 @@ EOF
 }
 
 run_fancy_end_to_end_deploy() {
+    local full_started_at
+    local full_elapsed
+
+    full_started_at=$(date +%s)
     log_step "Fancy End-to-End Deploy (Terraform + Compute + Ansible)"
 
     if [[ ! -f "$TFVARS_PATH" && -f "${ROOT_DIR}/terraform/terraform.tfvars.example" ]]; then
@@ -1094,6 +1151,8 @@ run_fancy_end_to_end_deploy() {
     deploy_compute
     verify_deployment || true
 
+    full_elapsed=$(( $(date +%s) - full_started_at ))
+    log_success "End-to-end full deploy time: $(format_duration "$full_elapsed")"
     log_success "End-to-end deployment flow finished"
 }
 

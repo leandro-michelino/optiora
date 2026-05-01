@@ -114,6 +114,17 @@ curl http://localhost:8000/health
 curl http://localhost:8000/api/v1/info
 ```
 
+Cloud connectivity probe (from the backend runtime host):
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/check_cloud_connectivity.py
+```
+
+Notes:
+
+- The script reports configured/missing state for AWS, Azure, GCP, and OCI.
+- OCI validation normalizes bracketed profiles (`[JNB]` -> `JNB`) and auto-retries Usage API calls in tenancy home region when needed.
+
 Auth smoke flow:
 
 ```bash

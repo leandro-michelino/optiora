@@ -53,7 +53,8 @@ const PROVIDER_HELP = {
       'Install the OCI CLI on the server: bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)"',
       'Run oci setup config and follow the prompts — this creates ~/.oci/config.',
       'The user/API key must have the policy: Allow group <YourGroup> to read usage-reports in tenancy.',
-      'Enter the path to the config file (default: ~/.oci/config) and the profile name (default: DEFAULT).',
+      'Enter the config path as it exists on the API server (default: ~/.oci/config), not a browser/local-machine-only path.',
+      'Enter profile without brackets (use JNB, not [JNB]).',
     ],
     docLabel: 'OCI Usage API guide',
     docHref: 'https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/usagereportsoverview.htm',
@@ -114,7 +115,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   });
 
   const [ociForm, setOciForm] = useState({
-    config_file: '',
+    config_file: '~/.oci/config',
     profile: 'DEFAULT'
   });
 
@@ -148,8 +149,9 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
       });
       const data = await res.json();
       if (!res.ok || !data.is_valid) {
+        const detailSuffix = data.error_details ? ` (${data.error_details})` : '';
         setValidationStatus('invalid');
-        setValidationMessage(data.detail || data.message || 'Credential validation failed.');
+        setValidationMessage(data.detail || `${data.message || 'Credential validation failed.'}${detailSuffix}`);
         return;
       }
       setValidationStatus('valid');
@@ -383,6 +385,9 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   required
                   className="w-full px-3 py-2 border rounded-md"
                 />
+                <p className="mt-1 text-xs text-slate-500">
+                  This path is resolved on the API server host. If your profile is shown like <code>[JNB]</code> in the file, enter <code>JNB</code> here.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Profile Name</label>

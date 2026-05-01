@@ -41,7 +41,6 @@ optiora_health_delay: 5
 # ── VM hardening defaults ──────────────────────────────────────────────────
 optiora_vm_hardening: true
 optiora_auto_security_updates: true
-optiora_enable_fail2ban: true
 optiora_configure_firewall: true
 optiora_ssh_port: 22
 # Keep direct dashboard/API ports reachable by default when nginx is disabled.

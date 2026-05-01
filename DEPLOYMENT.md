@@ -8,7 +8,7 @@ This repository deploys two services onto one OCI compute instance:
 Deployment can be done two ways:
 
 - `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services on the latest Oracle Linux 9 platform image for the selected shape.
-- Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime on either Debian-family or Oracle Linux / RHEL hosts.
+- Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime on Oracle Linux hosts only.
 
 The quick deploy path now runs the application under the dedicated `optiora` system user instead of `root`.
 
@@ -139,6 +139,19 @@ Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script alw
 
 The same script also manages the extra block volume. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
 
+### End-to-end deployment timing
+
+The deploy script now prints total runtime at the end of each deployment run:
+
+- `End-to-end compute deploy time: ...`
+- `End-to-end full deploy time: ...`
+
+Observed run on **May 1, 2026** (warm compute redeploy to an existing `RUNNING` VM, shape `VM.Standard.E4.Flex` with `1 OCPU / 4 GB`, no extra data volume):
+
+- `End-to-end compute deploy time: 6m 20s`
+
+First-time cold deployments that create a new instance are typically longer.
+
 Quick-deploy troubleshooting on the VM:
 
 ```bash
@@ -161,7 +174,7 @@ sudo systemctl status optiora-dashboard
 - rewrites `FRONTEND_URL` to `http://<instance-ip>:3000`
 - rewrites `NEXT_PUBLIC_API_URL` to `http://<instance-ip>:8000`
 - replaces placeholder `SECRET_KEY` values with a generated secret
-- installs dependencies with `dnf` on Oracle Linux hosts while keeping `apt` fallback support for Debian-family hosts
+- installs and updates dependencies with Oracle Linux `dnf` only
 - builds the dashboard after the remote env has been corrected
 
 Those rewrites matter because the dashboard is browser-executed; leaving `NEXT_PUBLIC_API_URL=http://localhost:8000` would break the deployed UI.
@@ -351,6 +364,15 @@ set +a
 1. Re-check provider permissions and region/subscription/project/profile values
 2. Confirm outbound egress from the subnet to the relevant cloud provider APIs
 3. Use `/api/v1/credentials/validate` response details for root cause
+4. For OCI:
+   - `OCI_CONFIG_FILE` must exist on the backend host filesystem.
+   - Profile names must be plain section names (`JNB`), not bracketed (`[JNB]`).
+   - Usage API may require tenancy home-region routing; OptiOra now retries OCI usage validation against the home region automatically.
+5. Run runtime connectivity checks from the backend host:
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/check_cloud_connectivity.py
+```
 
 ### CSV import failures
 

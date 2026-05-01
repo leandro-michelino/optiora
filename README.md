@@ -109,6 +109,8 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - provider diagnostics expose readiness without exposing secrets
 - dashboard views indicate whether data is live, imported, partial, or fallback
 - OCI GenAI is optional; prompt-only fallback remains supported when it is not configured
+- OCI credential file paths are resolved on the backend host (not in the browser)
+- OCI profile names should be entered without brackets (use `JNB`, not `[JNB]`)
 - `OCI_GENAI_COMPARTMENT_ID` overrides `OCI_COMPARTMENT_OCID` for GenAI calls when the model lives in a separate compartment
 - OCI managed database services should use `BYOL` license model by default when that option is available
 - optional data retention archives cold cost rows to OCI Object Storage before purging them from the database

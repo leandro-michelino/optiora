@@ -18,7 +18,7 @@ all:
           # optiora_swap_size: "2G"
 
           # --- Optional: VM host firewall behavior ---
-          # true  = configure UFW/firewalld from Ansible hardening defaults
+          # true  = configure Oracle Linux firewalld from Ansible hardening defaults
           # false = do not configure host firewall (rely on OCI security lists only)
           # optiora_configure_firewall: true
 
