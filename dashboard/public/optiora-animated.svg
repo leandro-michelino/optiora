@@ -177,6 +177,8 @@
   <!-- Management section -->
   <circle cx="26" cy="368" r="3.5" fill="#f97316"/>
   <text   x="38"  y="372" fill="#64748b" font-size="10.5">Operations</text>
+  <rect   x="108" y="362" width="26" height="13" rx="5" fill="#b45309"/>
+  <text   x="121" y="372" fill="#fff" font-size="7.5" font-weight="700" text-anchor="middle">NEW</text>
 
   <circle cx="26" cy="384" r="3.5" fill="#64748b"/>
   <text   x="38"  y="388" fill="#64748b" font-size="10.5">Recommendations</text>
@@ -210,13 +212,13 @@
   <text class="scene1" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Account Hierarchy + Multi-Cloud Overview + Budget Rollups</text>
   <text class="scene2" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Deep FinOps Analytics — Maturity · Attribution · Commitment ROI</text>
   <text class="scene3" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Forecasting with GenAI Narration + Budget Risk</text>
-  <text class="scene4" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Anomaly Z-Score Scoring + Operations + Export Jobs</text>
+  <text class="scene4" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Anomaly Z-Score + Alert Ops Policy + Scheduler Controls</text>
   <text class="scene5" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">FinOps Intelligence — Virtual Tags · Rightsizing · Scorecards · Cloud Resources · K8s Namespaces</text>
 
   <text class="scene1" x="202" y="40" fill="#64748b" font-size="9.5">Epic 2 · tree view, region drill-down, cost rollups + budget utilization/status per account</text>
   <text class="scene2" x="202" y="40" fill="#64748b" font-size="9.5">CRAWL/WALK/RUN/OPTIMIZE · Pareto 80/20 · RI savings projection per provider tier</text>
   <text class="scene3" x="202" y="40" fill="#64748b" font-size="9.5">p10/p50/p90/p95 fan · velocity +3.2% MoM · OCI GenAI backend narration active</text>
-  <text class="scene4" x="202" y="40" fill="#64748b" font-size="9.5">z-score severity ranking · financial impact % · scan history · diff exports · scheduled executive exports</text>
+  <text class="scene4" x="202" y="40" fill="#64748b" font-size="9.5">z-score ranking · ack/reactivate lifecycle · executive summary · scheduler policy · admin diagnostics</text>
   <text class="scene5" x="202" y="40" fill="#64748b" font-size="9.5">rule builder + coverage preview · per-resource savings · scorecards · expandable inventory rows · OpenCost namespace sync</text>
 
   <rect x="810" y="12" width="72" height="26" rx="7" fill="#f8fafc"/>
@@ -698,7 +700,7 @@
     <rect x="202" y="64" width="350" height="26" rx="9" fill="#fff7ed" filter="url(#shadow)"/>
     <circle cx="220" cy="77" r="4.5" fill="#f97316"/>
     <text x="232" y="81" fill="#c2410c" font-size="9.5" font-weight="700">Anomaly z-score scoring</text>
-    <text x="348" y="81" fill="#c2410c" font-size="9.5">statistical severity · financial impact · scan diff history</text>
+    <text x="348" y="81" fill="#c2410c" font-size="9.5">statistical severity · alert ops policy · scheduler controls</text>
 
     <!-- Anomaly scoring panel -->
     <rect x="202" y="100" width="420" height="392" rx="12" fill="#ffffff" filter="url(#shadow)"/>
@@ -782,8 +784,8 @@
 
     <!-- Operations panel (right) -->
     <rect x="634" y="100" width="246" height="392" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="654" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Scan Operations</text>
-    <text x="654" y="136" fill="#94a3b8" font-size="8.5">history · diff · exports · alert stream · gcp pubsub</text>
+    <text x="654" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Operations + Admin Diagnostics</text>
+    <text x="654" y="136" fill="#94a3b8" font-size="8.5">history · diff · exports · alert ops policy · scheduler policy</text>
     <line x1="654" y1="144" x2="860" y2="144" stroke="#f1f5f9"/>
 
     <!-- Current scan progress -->
@@ -828,18 +830,19 @@
     <text x="654" y="372" fill="#475569" font-size="8.5" font-weight="700">Alert stream</text>
     <rect x="654" y="378" width="200" height="38" rx="8" fill="#fffbeb"/>
     <text x="664" y="392" fill="#78350f" font-size="8.5" font-weight="700">Azure network +11.6% vs prev scan</text>
-    <text x="664" y="406" fill="#a16207" font-size="8">ACK available · 2 new budget alerts triggered</text>
+    <text x="664" y="406" fill="#a16207" font-size="8">ACK + Reactivate · escalation in 40m (owner → admin)</text>
     <rect x="800" y="382" width="44" height="16" rx="6" fill="#fed7aa"/>
     <text x="822" y="394" fill="#7c2d12" font-size="8" font-weight="700" text-anchor="middle">ACK</text>
 
-    <rect x="654" y="418" width="200" height="26" rx="8" fill="#ecfeff"/>
-    <text x="664" y="434" fill="#0f766e" font-size="8.5" font-weight="700">GCP budget Pub/Sub ingested · messageId msg-123</text>
+    <rect x="654" y="418" width="200" height="22" rx="8" fill="#ecfeff"/>
+    <text x="664" y="432" fill="#0f766e" font-size="8" font-weight="700">Exec summary: open 3 · critical 1 · avg ack 1h42m</text>
 
-    <!-- Unit economics summary -->
-    <line x1="654" y1="450" x2="860" y2="450" stroke="#f1f5f9"/>
-    <text x="654" y="466" fill="#475569" font-size="8.5" font-weight="700">Scheduled Export Jobs</text>
-    <text x="654" y="480" fill="#64748b" font-size="8.5">weekly executive csv · last run: completed</text>
-    <text x="654" y="492" fill="#64748b" font-size="8.5">rows: 38 · artifact: executive-summary-12.csv</text>
+    <rect x="654" y="444" width="200" height="22" rx="8" fill="#eef2ff"/>
+    <text x="664" y="458" fill="#4338ca" font-size="8" font-weight="700">Admin diagnostics: queue 0 · retries healthy · stale scans 0</text>
+
+    <line x1="654" y1="472" x2="860" y2="472" stroke="#f1f5f9"/>
+    <text x="654" y="484" fill="#475569" font-size="8.5" font-weight="700">Policy controls</text>
+    <text x="654" y="492" fill="#64748b" font-size="7.5">/api/v1/alerts/ops-policy · /api/v1/scanning/scheduler/policy · /api/v1/admin/diagnostics</text>
   </g>
 
   <!-- ═══════════════════════════════════════════════════════

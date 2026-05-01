@@ -10,6 +10,14 @@ if [ ! -d ".venv" ]; then
 fi
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e .
+if [[ "${BOOTSTRAP_INSTALL_DEV_TOOLS:-true}" =~ ^([Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1)$ ]]; then
+  echo "[bootstrap] Installing backend dev toolchain (pytest, ruff, mypy, black)..."
+  .venv/bin/pip install \
+    "pytest>=9,<10" \
+    "ruff>=0.1,<0.2" \
+    "mypy>=1.5,<2" \
+    "black>=23,<24"
+fi
 
 echo "[bootstrap] Installing dashboard dependencies..."
 (

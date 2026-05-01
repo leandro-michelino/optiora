@@ -62,7 +62,7 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
 python3 -m compileall $(find ./finops_* -type d)
-./.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m pytest -q
 
 cd dashboard
 npm run type-check

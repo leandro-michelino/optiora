@@ -17,10 +17,10 @@ fi
 
 if command -v rg >/dev/null 2>&1; then
   svg_matches="$(rg -o '/api/v1/[A-Za-z0-9_./{}-]+' "$svg_file" || true)"
-  api_matches="$(rg -o '@router\.(get|post|put|delete)\("/[^"]+"' "$api_file" || true)"
+  api_matches="$(rg -o '@router\.(get|post|put|patch|delete)\("/[^"]+"' "$api_file" || true)"
 else
   svg_matches="$(grep -oE '/api/v1/[A-Za-z0-9_./{}-]+' "$svg_file" || true)"
-  api_matches="$(grep -oE '@router\.(get|post|put|delete)\("/[^"]+"' "$api_file" || true)"
+  api_matches="$(grep -oE '@router\.(get|post|put|patch|delete)\("/[^"]+"' "$api_file" || true)"
 fi
 
 svg_routes="$(printf "%s\n" "$svg_matches" | sed 's/["<>,)]$//' | sed '/^$/d' | sort -u)"

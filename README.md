@@ -202,6 +202,7 @@ Supported Python for backend setup: `3.10` through `3.13`
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+pip install "pytest>=9,<10" "ruff>=0.1,<0.2" "mypy>=1.5,<2" "black>=23,<24"
 
 cd dashboard
 npm install
@@ -263,7 +264,8 @@ Primary OCI region for hosting and GenAI inference: `uk-london-1`
 
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m pytest -q
+./scripts/check-animated-svg-routes.sh
 
 cd dashboard
 npm run type-check
