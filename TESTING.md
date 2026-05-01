@@ -153,6 +153,7 @@ terraform -chdir=terraform validate
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Alembic migrations require a single linear head before running the auth flow roundtrip migration test.
 - Pytest is configured to ignore accidental duplicate copy files matching `* (1).py`.
+- Run `./scripts/cleanup-workspace.sh` to remove redundant duplicate-copy artifacts and local cache folders before packaging or handoff.
 - Dashboard linting requires ESLint flat config (`eslint.config.mjs`) when using ESLint 9.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.

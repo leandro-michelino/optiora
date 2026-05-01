@@ -260,6 +260,14 @@ npm run test:e2e
 terraform -chdir=../terraform validate
 ```
 
+## Workspace Cleanup
+
+```bash
+./scripts/cleanup-workspace.sh
+```
+
+This removes redundant duplicate-copy artifacts (for example `* (1).*`) and local cache directories while keeping `.git`, virtualenvs, `dashboard/node_modules`, and `dashboard/.next` untouched.
+
 ## Documentation
 
 - [Architecture](ARCHITECTURE.md)
