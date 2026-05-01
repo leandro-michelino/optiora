@@ -2,6 +2,8 @@
 
 This folder contains the OCI network baseline used by OptiOra. It does not provision the application runtime; Ansible owns host setup and service configuration.
 
+This module currently does not provision OCI databases. If you extend it with OCI managed database resources, use BYOL as the default license model where OCI offers that choice.
+
 Preferred operator flow is the interactive root setup wizard:
 
 ```bash

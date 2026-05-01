@@ -23,6 +23,10 @@ def _env_float(name: str, default: float) -> float:
     return float(os.getenv(name, str(default)))
 
 
+def _env_upper_str(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip().upper()
+
+
 def _genai_compartment_id() -> str:
     return os.getenv("OCI_GENAI_COMPARTMENT_ID", "").strip() or os.getenv(
         "OCI_COMPARTMENT_OCID", ""
@@ -122,6 +126,10 @@ class Config:
     oci_db_user: str = field(default_factory=lambda: _env_str("OCI_DB_USER"))
     oci_db_password: str = field(default_factory=lambda: _env_str("OCI_DB_PASSWORD"))
     oci_db_name: str = field(default_factory=lambda: _env_str("OCI_DB_NAME", "optiora"))
+    oci_db_license_model: str = field(
+        default_factory=lambda: _env_upper_str("OCI_DB_LICENSE_MODEL", "BYOL")
+        or "BYOL"
+    )
 
     # API Keys for callbacks
     jira_api_token: str = field(default_factory=lambda: _env_str("JIRA_API_TOKEN"))
@@ -180,6 +188,18 @@ class Config:
 
     def validate(self):
         """Validate required configuration."""
+        valid_license_models = {"BYOL", "LICENSE_INCLUDED"}
+        if self.oci_db_license_model not in valid_license_models:
+            raise ValueError(
+                "OCI_DB_LICENSE_MODEL must be BYOL or LICENSE_INCLUDED"
+            )
+        if self.oci_db_license_model != "BYOL":
+            _logger.warning(
+                "OCI_DB_LICENSE_MODEL=%s. BYOL is the current recommended default "
+                "when OCI database licensing choice is available.",
+                self.oci_db_license_model,
+            )
+
         has_aws = bool(
             (self.aws_access_key_id and self.aws_secret_access_key)
             or self.aws_organization_role_arns

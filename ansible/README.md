@@ -31,6 +31,8 @@ When the playbook finishes successfully it now prints a deployment summary with 
 
 Recommended data disk sizing: `200 GiB` at `10 VPUs/GB` (balanced). That is enough headroom for the database, imported billing files, exports, and dashboard build artifacts without wasting money on a very large boot disk.
 
+When an OCI managed database service is used and licensing model selection is available, keep `optiora_oci_db_license_model: "BYOL"` (current default policy).
+
 ## Source Deployment
 
 By default, `optiora_manage_source` is `false`, so Ansible expects the app source to already exist on the host at `/opt/optiora`. Set it to `true` after uploading an archive to `/tmp/optiora-deploy.tar.gz`:

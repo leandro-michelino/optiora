@@ -58,6 +58,16 @@ class ConfigTest(unittest.TestCase):
                 "ocid1.compartment.oc1..runtime",
             )
 
+    def test_oci_db_license_model_defaults_to_byol(self) -> None:
+        with patch.dict(os.environ, {"OCI_DB_LICENSE_MODEL": ""}, clear=False):
+            self.assertEqual(Config().oci_db_license_model, "BYOL")
+
+    def test_oci_db_license_model_normalizes_uppercase(self) -> None:
+        with patch.dict(
+            os.environ, {"OCI_DB_LICENSE_MODEL": "license_included"}, clear=False
+        ):
+            self.assertEqual(Config().oci_db_license_model, "LICENSE_INCLUDED")
+
     def test_provider_diagnostic_requirements_cover_all_supported_providers(self) -> None:
         requirements = provider_diagnostic_requirements(Config())
         self.assertEqual(tuple(requirements.keys()), SUPPORTED_CLOUD_PROVIDERS)

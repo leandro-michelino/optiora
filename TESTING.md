@@ -2,6 +2,12 @@
 
 ## Backend
 
+Bootstrap first (recommended):
+
+```bash
+./setup.sh
+```
+
 Static verification:
 
 ```bash

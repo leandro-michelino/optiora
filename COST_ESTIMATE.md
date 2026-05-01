@@ -44,7 +44,7 @@ Optional Redis               : for distributed auth rate limiting at scale
 
 ## Autonomous Database BYOL Note
 
-For enterprise deployments using Autonomous Database with **BYOL**:
+For enterprise deployments using Autonomous Database with **BYOL** (current default policy when license-model choice exists):
 
 - Runtime infrastructure delta is typically **+$120 to +$280** / month versus small PostgreSQL footprints (usage dependent).
 - Oracle database license entitlement is external to this estimate and must be budgeted separately.

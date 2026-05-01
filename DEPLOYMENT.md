@@ -59,6 +59,12 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
 
 ## Local Preflight
 
+For a clean local bootstrap before preflight checks:
+
+```bash
+./setup.sh --clean
+```
+
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
 python3 -m compileall $(find ./finops_* -type d)
@@ -201,6 +207,9 @@ Optional runtime values copied into the remote `.env`:
 # Leave blank for the small deployment profile (SQLite on the VM).
 # Set for medium and enterprise deployments to point at PostgreSQL on OCI.
 DATABASE_URL=
+# License model policy for OCI managed DB services when a choice exists.
+# Current default: BYOL.
+OCI_DB_LICENSE_MODEL=BYOL
 SECRET_KEY=
 ENABLE_AUTH=false
 NEXT_PUBLIC_ENABLE_AUTH=false
@@ -235,6 +244,7 @@ Database deployment policy:
 
 - Small deployment: keep `DATABASE_URL` blank and run on the local SQLite file for the lowest-cost footprint.
 - Medium and enterprise deployments: set `DATABASE_URL` to PostgreSQL on OCI.
+- When using OCI managed database services that support license-model selection, use `BYOL` by default for now.
 - `OCI_DB_*` compatibility fields remain supported if you prefer deriving `DATABASE_URL` instead of setting it explicitly.
 
 Example medium / enterprise PostgreSQL connection string:

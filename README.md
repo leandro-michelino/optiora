@@ -110,6 +110,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - dashboard views indicate whether data is live, imported, partial, or fallback
 - OCI GenAI is optional; prompt-only fallback remains supported when it is not configured
 - `OCI_GENAI_COMPARTMENT_ID` overrides `OCI_COMPARTMENT_OCID` for GenAI calls when the model lives in a separate compartment
+- OCI managed database services should use `BYOL` license model by default when that option is available
 - optional data retention archives cold cost rows to OCI Object Storage before purging them from the database
 
 ## Core API Surface
@@ -196,7 +197,10 @@ Supported Python for backend setup: `3.10` through `3.13`
 ### Local bootstrap
 
 ```bash
-./scripts/bootstrap-local.sh
+./setup.sh
+
+# With cleanup + quick validation:
+./setup.sh --clean --verify
 
 # Manual equivalent:
 python3.13 -m venv .venv
@@ -211,6 +215,8 @@ cd ..
 terraform -chdir=terraform init
 terraform -chdir=terraform validate
 ```
+
+`scripts/bootstrap-local.sh` is kept as a compatibility wrapper and delegates to `./setup.sh`.
 
 Generate dashboard client from OpenAPI:
 
