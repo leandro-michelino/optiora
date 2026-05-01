@@ -50,6 +50,14 @@ _MAX_TOKENS = int(os.getenv("OCI_GENAI_MAX_TOKENS", "800"))
 _DEFAULT_ENDPOINT = "https://inference.generativeai.uk-london-1.oci.oraclecloud.com"
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """Best-effort numeric coercion for prompt context composition."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def _is_configured() -> bool:
     """Return True if enough config is present to attempt an OCI GenAI call."""
     endpoint = _OCI_GENAI_ENDPOINT or _DEFAULT_ENDPOINT
@@ -835,6 +843,68 @@ def generate_forecast_model_diagnostics(context: dict[str, Any]) -> tuple[Option
         f"History source: {history_source}; history points: {history_points}. "
         f"Drift signals: {drift}. "
         f"Challenger models: {challenger_summary}."
+    )
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt
+
+
+def generate_finops_operating_review(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a weekly FinOps operating review for engineering and finance."""
+    monthly = _safe_float(context.get("current_monthly_spend_usd"), 0.0)
+    budget = _safe_float(context.get("budget_monthly_usd"), 0.0)
+    waste = _safe_float(
+        context.get("total_estimated_waste_usd", context.get("estimated_monthly_waste_usd")),
+        0.0,
+    )
+    spend_at_risk = _safe_float(context.get("spend_at_risk_usd"), 0.0)
+    risk_score = _safe_float(context.get("risk_score"), 0.0)
+    maturity = str(context.get("maturity_level", "walk") or "walk").upper()
+    efficiency_grade = str(context.get("grade", "C") or "C")
+    cost_velocity = context.get("cost_velocity_pct_mom")
+    breach_prob = _safe_float(
+        (context.get("budget_guardrails") or {}).get("average_breach_probability"),
+        0.0,
+    )
+    coverage_gap = _safe_float(context.get("coverage_gap_percent"), 0.0)
+    unallocated = _safe_float(context.get("unallocated_percent"), 0.0)
+    annual_commitment_opportunity = _safe_float(context.get("total_annual_opportunity_usd"), 0.0)
+    top_actions = context.get("top_opportunities", []) or context.get("quick_wins", []) or []
+
+    top_actions_str = "\n".join(
+        f"- {a.get('title') or a.get('category') or a.get('service') or 'Optimization action'}"
+        for a in top_actions[:3]
+        if isinstance(a, dict)
+    ) or "- No prioritized actions provided"
+
+    budget_line = (
+        f"Budget: ${budget:,.0f}/month (utilization: {monthly / budget * 100:.0f}%)."
+        if budget > 0
+        else "Budget: not configured."
+    )
+    velocity_line = (
+        f"Spend velocity: {cost_velocity:+.1f}% MoM."
+        if isinstance(cost_velocity, (int, float))
+        else "Spend velocity: not available."
+    )
+
+    prompt = (
+        "You are a FinOps lead writing a weekly operating review update for engineering, finance, "
+        "and platform leadership. Write exactly 5 concise bullets under these headings:\n"
+        "1) Spend Position\n2) Forecast and Budget Risk\n3) Optimization Execution\n"
+        "4) Governance and Allocation\n5) Next 7-Day Priorities\n\n"
+        "Use all provided numbers exactly as-is. Be direct and action-oriented.\n\n"
+        f"Monthly spend: ${monthly:,.0f}. {budget_line}\n"
+        f"{velocity_line}\n"
+        f"Estimated waste: ${waste:,.0f}/month. Spend at risk: ${spend_at_risk:,.0f}/month.\n"
+        f"Risk score: {risk_score:.0f}/100. Maturity: {maturity}. Efficiency grade: {efficiency_grade}.\n"
+        f"Average budget breach probability: {breach_prob:.0%}.\n"
+        f"Tagging coverage gap: {coverage_gap:.1f}%.\n"
+        f"Unallocated spend percent: {unallocated:.1f}%.\n"
+        f"Annual commitment opportunity: ${annual_commitment_opportunity:,.0f}.\n"
+        f"Top actions:\n{top_actions_str}\n\n"
+        "For each bullet, include one explicit owner role (FinOps, Platform, Procurement, or App Team)."
     )
 
     if not _is_configured():

@@ -64,3 +64,7 @@ terraform/tfplan
 # Local scratch / generated artifacts
 tmp/
 .tmp/
+
+# Common accidental duplicate copies (Finder/Downloads)
+* (1).*
+* (1)

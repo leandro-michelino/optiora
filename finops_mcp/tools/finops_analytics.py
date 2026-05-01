@@ -967,6 +967,145 @@ def build_forecast_model_diagnostics(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _forecast_sensitivity(
+    forecast_rows: list[dict[str, Any]], budget_monthly: float, months: int
+) -> list[dict[str, Any]]:
+    """Deterministic sensitivity scenarios over the baseline forecast."""
+    baseline_total = sum(_safe_float(r.get("baseline"), 0.0) for r in forecast_rows)
+    profiles = [
+        {"name": "conservative", "monthly_multiplier": 1.03, "starts_month": 1},
+        {"name": "balanced", "monthly_multiplier": 1.08, "starts_month": 2},
+        {"name": "aggressive", "monthly_multiplier": 1.14, "starts_month": 3},
+    ]
+    scenarios: list[dict[str, Any]] = []
+
+    for profile in profiles:
+        stressed_total = 0.0
+        breach_count = 0
+        for idx, row in enumerate(forecast_rows, start=1):
+            baseline = _safe_float(row.get("baseline"), 0.0)
+            stressed = baseline
+            if idx >= profile["starts_month"]:
+                stressed = baseline * profile["monthly_multiplier"]
+            stressed_total += stressed
+            if budget_monthly > 0 and stressed > budget_monthly:
+                breach_count += 1
+        scenarios.append(
+            {
+                "name": profile["name"],
+                "starts_month": profile["starts_month"],
+                "stressed_total_usd": round(stressed_total, 2),
+                "incremental_risk_usd": round(max(stressed_total - baseline_total, 0.0), 2),
+                "breach_months": breach_count,
+                "months_modeled": months,
+            }
+        )
+    return scenarios
+
+
+def build_forecast_diagnostics(params: dict[str, Any]) -> dict[str, Any]:
+    """Diagnostic view for forecast reliability, budget pressure, and sensitivity."""
+    forecast = build_forecast(params)
+    rows = forecast.get("forecast", [])
+    summary = forecast.get("forecast_summary", {})
+    quality = dict(forecast.get("forecast_quality", {}) or {})
+    guardrails = dict(forecast.get("budget_guardrails") or {})
+    downside = forecast.get("downside_risk", {}) or {}
+    backtesting = forecast.get("backtesting") or {}
+
+    high_risk_months = [
+        row.get("month")
+        for row in rows
+        if _safe_float(row.get("budget_breach_probability"), 0.0) >= 0.5
+    ]
+
+    run_rate = _safe_float(summary.get("annualized_run_rate_usd"), 0.0)
+    budget_monthly = _safe_float(guardrails.get("budget_monthly_usd"), 0.0)
+    burn_rate = round((run_rate / (budget_monthly * 12)) * 100, 2) if budget_monthly > 0 else None
+
+    rmse_bias = _forecast_error_metrics(
+        [float(v) for v in (backtesting.get("actual_points") or [])],
+        [float(v) for v in (backtesting.get("predicted_points") or [])],
+    )
+    diagnostics = {
+        "burn_rate_percent_of_budget": burn_rate,
+        "backtesting_window_months": backtesting.get("window_months"),
+        "backtesting_mape_percent": backtesting.get("mape_percent"),
+        "backtesting_wmape_percent": backtesting.get("wmape_percent"),
+        "backtesting_bias_percent": rmse_bias.get("bias_percent"),
+        "backtesting_rmse_usd": rmse_bias.get("rmse_usd"),
+        "concentration_tier": (
+            "high"
+            if _safe_float(forecast.get("model", {}).get("provider_concentration_hhi"), 0.0) >= 0.65
+            else "medium"
+            if _safe_float(forecast.get("model", {}).get("provider_concentration_hhi"), 0.0) >= 0.40
+            else "low"
+        ),
+        "sensitivity": _forecast_sensitivity(
+            rows,
+            budget_monthly,
+            int(forecast.get("forecast_months", 12) or 12),
+        ),
+    }
+
+    confidence_anchor = _safe_float(quality.get("confidence_score"), 50.0) / 100.0
+    quality["scenario_confidence"] = {
+        "baseline": round(max(min(confidence_anchor, 0.97), 0.05), 3),
+        "conservative": round(max(min(confidence_anchor + 0.05, 0.98), 0.08), 3),
+        "balanced": round(max(min(confidence_anchor + 0.02, 0.96), 0.07), 3),
+        "aggressive": round(max(min(confidence_anchor - 0.10, 0.92), 0.03), 3),
+    }
+
+    first_breach = guardrails.get("first_breach_month")
+    if first_breach:
+        first_idx = next((idx for idx, row in enumerate(rows, start=1) if row.get("month") == first_breach), None)
+        guardrails["first_breach_index"] = first_idx
+        guardrails["months_to_first_breach"] = first_idx
+    else:
+        guardrails["first_breach_index"] = None
+        guardrails["months_to_first_breach"] = None
+
+    cvar_excess = _safe_float(downside.get("cvar95_excess_vs_baseline_usd"), 0.0)
+    recommended_actions: list[str] = []
+    if burn_rate is not None and burn_rate > 100:
+        recommended_actions.append("Raise budget guardrail or accelerate balanced-scenario execution.")
+    if high_risk_months:
+        recommended_actions.append(
+            f"Apply spend controls before {high_risk_months[0]} to reduce breach probability."
+        )
+    if cvar_excess > 0:
+        recommended_actions.append("Prioritize hedging and commitment coverage to reduce tail-risk exposure.")
+    if not recommended_actions:
+        recommended_actions.append("Maintain current course and keep monthly backtesting enabled.")
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "forecast_months": forecast.get("forecast_months"),
+        "cost_velocity_pct_mom": forecast.get("cost_velocity_pct_mom"),
+        "forecast_quality": quality,
+        "forecast_diagnostics": diagnostics,
+        "budget_guardrails": guardrails,
+        "scenario_summary": forecast.get("scenarios", []),
+        "exposure": {
+            "annualized_run_rate_usd": run_rate,
+            "balanced_savings_12m_usd": _safe_float(summary.get("expected_12m_savings_balanced_usd"), 0.0),
+            "tail_risk_excess_monthly_usd": cvar_excess,
+            "high_risk_months": [m for m in high_risk_months if isinstance(m, str)],
+            "first_breach_month": guardrails.get("first_breach_month"),
+        },
+        "recommended_actions": recommended_actions,
+        "genai_context": {
+            "prompt": (
+                "Explain forecast diagnostics for an engineering manager and finance partner. "
+                "Highlight model confidence, budget pressure months, tail risk, and the next two actions."
+            ),
+            "high_risk_months": [m for m in high_risk_months if isinstance(m, str)],
+            "burn_rate_percent_of_budget": burn_rate,
+            "tail_risk_excess_monthly_usd": cvar_excess,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Public: Analytics
 # ---------------------------------------------------------------------------
@@ -2033,6 +2172,10 @@ async def get_forecast_stress_test(params: dict[str, Any]) -> str:
 
 async def get_forecast_model_diagnostics(params: dict[str, Any]) -> str:
     return json.dumps(build_forecast_model_diagnostics(params))
+
+
+async def get_forecast_diagnostics(params: dict[str, Any]) -> str:
+    return json.dumps(build_forecast_diagnostics(params))
 
 
 # ---------------------------------------------------------------------------

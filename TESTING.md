@@ -30,7 +30,7 @@ Avoid using a Python `3.14` virtualenv for the backend test environment until th
 Regression tests:
 
 ```bash
-.venv/bin/python -m unittest discover -s tests
+.venv/bin/python -m pytest -q
 ./scripts/check-animated-svg-routes.sh
 ```
 
@@ -93,7 +93,8 @@ Current backend coverage includes:
 - forecast quality and downside-risk contract
 - what-if timeline simulation
 - champion/challenger model diagnostics (`GET /api/v1/forecast/model-diagnostics`)
-- GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, and vendor negotiation
+- forecast diagnostics contract (`GET /api/v1/analytics/forecast-diagnostics`)
+- GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, vendor negotiation, and operating reviews
 
 **Kubernetes and partner portfolio** (`tests/test_kubernetes.py`, `tests/test_partner_portfolio.py`):
 
@@ -151,6 +152,7 @@ terraform -chdir=terraform validate
 - Backend tests require the Python dependencies from `pyproject.toml`.
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Alembic migrations require a single linear head before running the auth flow roundtrip migration test.
+- Pytest is configured to ignore accidental duplicate copy files matching `* (1).py`.
 - Dashboard linting requires ESLint flat config (`eslint.config.mjs`) when using ESLint 9.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.

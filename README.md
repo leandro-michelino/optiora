@@ -11,7 +11,7 @@ The dashboard is the main workspace for:
 - multi-cloud cost visibility across AWS, Azure, GCP, and OCI
 - provider onboarding, CSV billing upload, and scan readiness checks
 - anomaly detection and optimization recommendations
-- forecasting with deterministic scenarios, fan percentiles, downside risk, model diagnostics, and budget guardrails
+- forecasting with deterministic scenarios, fan percentiles, downside risk, model diagnostics, diagnostics views, and budget guardrails
 - deeper FinOps analytics such as unit economics, scorecards, tagging coverage, sustainability, cross-provider comparison, anomaly intelligence, and chargeback/showback
 - resource inventory, Kubernetes cost allocation, virtual tagging, and rightsizing workflows
 - OCI GenAI-assisted narratives, hybrid advisory flows, and copilot bundles
@@ -62,6 +62,7 @@ The dashboard is the presentation layer. The FastAPI backend is the control plan
 - what-if simulation with phased actions, ROI, and payback
 - deterministic stress testing for demand, price, and execution shocks
 - champion/challenger model diagnostics with data quality, drift flags, and wMAPE
+- forecast diagnostics with budget burn-rate, sensitivity analysis, and action recommendations
 
 ### FinOps analytics
 
@@ -95,6 +96,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - rightsizing ROI briefs
 - vendor negotiation talking points
 - forecast model-risk explanations
+- weekly FinOps operating review narratives
 - MSP/customer portfolio summaries and next-best-action prompts
 
 ## Key Behavior
@@ -131,6 +133,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `POST /api/v1/forecast/what-if`
 - `POST /api/v1/forecast/stress-test`
 - `GET /api/v1/forecast/model-diagnostics`
+- `GET /api/v1/analytics/forecast-diagnostics`
 - `GET /api/v1/analytics`
 - `GET /api/v1/analytics/attribution`
 - `GET /api/v1/analytics/commitment-optimization`
@@ -144,6 +147,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `GET /api/v1/analytics/sustainability`
 - `GET /api/v1/analytics/cross-provider-comparison`
 - `GET /api/v1/analytics/anomaly-intelligence`
+- `GET /api/v1/analytics/chargeback-summary`
 - `GET /api/v1/analytics/scorecards`
 
 ### Operations and optimization
@@ -159,7 +163,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `GET /api/v1/virtual-tags/preview`
 - `GET /api/v1/recommendations/rightsizing`
 - `GET /api/v1/advisor/hybrid`
-- `POST /api/v1/genai/analyze`
+- `POST /api/v1/genai/analyze` (`spend`, `anomaly`, `optimization`, `maturity`, `budget_risk`, `waste_insights`, `optimization_roadmap`, `executive_narrative`, `commitment_strategy`, `tagging_strategy`, `sustainability_narrative`, `chargeback_narrative`, `cross_provider_comparison_brief`, `alert_triage`, `rightsizing_brief`, `vendor_negotiation_brief`, `forecast_model_diagnostics`, `finops_operating_review`)
 - `POST /api/v1/genai/copilot-pack`
 
 ### Accounts, alerts, reporting, exports
@@ -245,7 +249,7 @@ Primary OCI region for hosting and GenAI inference: `uk-london-1`
 ```bash
 python3 -m py_compile $(find ./finops_* -name '*.py')
 python3 -m compileall $(find ./finops_* -type d)
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m pytest -q
 
 cd dashboard
 npm run type-check

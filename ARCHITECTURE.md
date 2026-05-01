@@ -163,6 +163,12 @@ champion / challenger backtest
         +--> drift flags
         +--> model risk level
         +--> GenAI model-risk prompt or narrative
+
+/api/v1/analytics/forecast-diagnostics
+        |
+        +--> budget burn-rate vs guardrails
+        +--> sensitivity scenarios (conservative/balanced/aggressive)
+        +--> high-risk months and recommended actions
 ```
 
 ## GenAI Integration
@@ -196,6 +202,11 @@ Path E: Model-risk advisory
   /api/v1/forecast/model-diagnostics
       -> deterministic champion/challenger metrics
       -> GenAI model-risk explanation for finance and engineering
+
+Path F: Forecast diagnostics advisory
+  /api/v1/analytics/forecast-diagnostics
+      -> deterministic budget pressure and sensitivity
+      -> GenAI budget-risk narrative context
 ```
 
 ## How GenAI Is Used Beyond Forecasting
@@ -212,6 +223,7 @@ GenAI is used for:
   - cross-provider comparison briefs
   - vendor negotiation talking points
   - forecast model-risk explanations
+  - weekly FinOps operating review updates
   - MSP customer portfolio summaries and next-best-action prompts
 
 GenAI is not used as the source of truth for:

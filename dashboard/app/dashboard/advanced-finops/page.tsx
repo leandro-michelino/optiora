@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Bot, Leaf, RefreshCw, ShieldCheck, Tags, Users, BarChart3, AlertTriangle, DollarSign } from 'lucide-react'
 import {
   fetchDecisionGradeRecommendations,
@@ -70,15 +70,15 @@ export default function AdvancedFinOpsPage() {
   const [anomalyIntel, setAnomalyIntel] = useState<AnomalyIntelligenceResponse | null>(null)
   const [chargeback, setChargeback] = useState<ChargebackSummaryResponse | null>(null)
 
-  function pushToast(title: string, detail: string, kind: ToastKind = 'info') {
+  const pushToast = useCallback((title: string, detail: string, kind: ToastKind = 'info') => {
     const id = Date.now() + Math.floor(Math.random() * 1000)
     setToasts(prev => [...prev, { id, title, detail, kind }])
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id))
     }, 3500)
-  }
+  }, [])
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     setTagQualityError(null)
@@ -135,7 +135,7 @@ export default function AdvancedFinOpsPage() {
       setError('Failed to load advanced FinOps data.')
     }
     setLoading(false)
-  }
+  }, [pushToast])
 
   async function runDryRunLoop() {
     setRunningLoop(true)
@@ -159,7 +159,7 @@ export default function AdvancedFinOpsPage() {
 
   useEffect(() => {
     void load()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [load])
 
   return (
     <div className="space-y-8">

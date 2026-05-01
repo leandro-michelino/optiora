@@ -177,6 +177,7 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
                 "sustainability_narrative",
                 "vendor_negotiation_brief",
                 "forecast_model_diagnostics",
+                "finops_operating_review",
             ],
         }
         resp = self.client.post("/api/v1/genai/copilot-pack", json=payload, headers=self.headers)
@@ -185,6 +186,36 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         for key in payload["include"]:
             self.assertIn(key, data["narratives"])
             self.assertIn("prompt", data["narratives"][key])
+
+    def test_06_forecast_diagnostics_contract(self) -> None:
+        resp = self.client.get(
+            "/api/v1/analytics/forecast-diagnostics?months=12&cloud_provider=all",
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("forecast_quality", data)
+        self.assertIn("forecast_diagnostics", data)
+        self.assertIn("sensitivity", data["forecast_diagnostics"])
+        self.assertIn("exposure", data)
+        self.assertIn("recommended_actions", data)
+
+    def test_07_genai_operating_review_contract(self) -> None:
+        payload = {
+            "analysis_type": "finops_operating_review",
+            "context": {
+                "current_monthly_spend_usd": 10000,
+                "budget_monthly_usd": 9000,
+                "risk_score": 64,
+                "maturity_level": "walk",
+                "grade": "B",
+            },
+        }
+        resp = self.client.post("/api/v1/genai/analyze", json=payload, headers=self.headers)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertEqual(data.get("analysis_type"), "finops_operating_review")
+        self.assertIn("prompt", data)
 
 
 if __name__ == "__main__":

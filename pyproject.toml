@@ -46,6 +46,7 @@ python-multipart = "^0.0.6"
 black = "^23.0.0"
 ruff = "^0.1.0"
 mypy = "^1.5.0"
+pytest = "^9.0.0"
 
 [tool.poetry.scripts]
 optiora = "finops_mcp.app:main"
@@ -69,3 +70,8 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--ignore-glob='* (1).py'"

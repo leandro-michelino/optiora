@@ -4131,6 +4131,52 @@ async def dashboard_forecast_model_diagnostics(
     return result
 
 
+@router.get("/analytics/forecast-diagnostics")
+async def analytics_forecast_diagnostics(
+    months: int = Query(default=12, ge=1, le=24),
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Forecast quality diagnostics including sensitivity and budget pressure."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+        months=18,
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_forecast_diagnostics(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                "fallback_monthly_spend": 0,
+            }
+        ),
+        {},
+    )
+    narrative, prompt = genai_advisor.generate_budget_risk_alert(
+        result.get("budget_guardrails") or {},
+        {
+            "current_monthly_spend_usd": context["total_cost"],
+            "cost_velocity_pct_mom": result.get("cost_velocity_pct_mom"),
+        },
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/analytics")
 async def dashboard_analytics(
     cloud_provider: str = "all",
@@ -4300,7 +4346,7 @@ class GenAIAnalyzeRequest(BaseModel):
         "waste_insights", "optimization_roadmap", "executive_narrative", "commitment_strategy",
         "tagging_strategy", "sustainability_narrative", "chargeback_narrative",
         "cross_provider_comparison_brief", "alert_triage", "rightsizing_brief",
-        "vendor_negotiation_brief", "forecast_model_diagnostics",
+        "vendor_negotiation_brief", "forecast_model_diagnostics", "finops_operating_review",
     ] = "spend"
     context: Dict[str, Any] = Field(default_factory=dict)
     anomaly: Optional[Dict[str, Any]] = None
@@ -4322,6 +4368,7 @@ class GenAICopilotPackRequest(BaseModel):
             "rightsizing_brief",
             "vendor_negotiation_brief",
             "forecast_model_diagnostics",
+            "finops_operating_review",
         ]
     ] = Field(default_factory=lambda: ["spend", "optimization_roadmap", "executive_narrative"])
 
@@ -4372,7 +4419,7 @@ async def advisor_hybrid(
     cloud_provider: str = "all",
     narrative_type: Literal[
         "waste_insights", "optimization_roadmap", "executive_narrative",
-        "tagging_strategy", "sustainability_narrative",
+        "tagging_strategy", "sustainability_narrative", "finops_operating_review",
     ] = "optimization_roadmap",
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
@@ -4385,6 +4432,8 @@ async def advisor_hybrid(
     """
     _ = current_user
     context = await _cost_context(membership, db, "month", cloud_provider)
+    customer_id = _customer_id_for_org(membership)
+    permission = ScanningManager(db).get_permission_status(customer_id)
 
     analytics_result = _safe_json_load(
         await finops_analytics.get_analytics(
@@ -4432,6 +4481,39 @@ async def advisor_hybrid(
         {},
     )
 
+    tagging_result = _safe_json_load(
+        await finops_analytics.get_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+
+    chargeback_result = _safe_json_load(
+        await finops_analytics.get_chargeback_summary(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+
+    forecast_result = _safe_json_load(
+        await finops_analytics.get_forecast(
+            {
+                "months": 12,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            }
+        ),
+        {},
+    )
+
     maturity_result = _safe_json_load(
         await finops_analytics.get_maturity_assessment(
             {
@@ -4473,6 +4555,12 @@ async def advisor_hybrid(
         "total_annual_opportunity_usd": commitment_gap_result.get("total_annual_opportunity_usd", 0),
         "priority_provider": commitment_gap_result.get("priority_provider"),
         "top_opportunities": top_actions,
+        "budget_monthly_usd": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+        "budget_guardrails": forecast_result.get("budget_guardrails") or {},
+        "cost_velocity_pct_mom": forecast_result.get("cost_velocity_pct_mom"),
+        "spend_at_risk_usd": analytics_result.get("spend_at_risk_usd", 0),
+        "coverage_gap_percent": tagging_result.get("coverage_gap_percent", 0.0),
+        "unallocated_percent": chargeback_result.get("unallocated_percent", 0.0),
     }
 
     narrative: Optional[str]
@@ -4485,6 +4573,8 @@ async def advisor_hybrid(
         narrative, prompt = genai_advisor.generate_tagging_strategy(genai_context)
     elif narrative_type == "sustainability_narrative":
         narrative, prompt = genai_advisor.generate_sustainability_narrative(genai_context)
+    elif narrative_type == "finops_operating_review":
+        narrative, prompt = genai_advisor.generate_finops_operating_review(genai_context)
     else:
         narrative, prompt = genai_advisor.generate_optimization_roadmap(genai_context)
 
@@ -4567,6 +4657,8 @@ async def genai_analyze(
         narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(ctx)
     elif request.analysis_type == "forecast_model_diagnostics":
         narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(ctx)
+    elif request.analysis_type == "finops_operating_review":
+        narrative, prompt = genai_advisor.generate_finops_operating_review(ctx)
 
     return {
         "analysis_type": request.analysis_type,
@@ -4627,6 +4719,26 @@ async def genai_copilot_pack(
         {},
     )
 
+    tagging_result = _safe_json_load(
+        await finops_analytics.get_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+
+    chargeback_result = _safe_json_load(
+        await finops_analytics.get_chargeback_summary(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+
     base_context = dict(analytics_result)
     base_context.update(
         {
@@ -4637,6 +4749,9 @@ async def genai_copilot_pack(
             "total_annual_opportunity_usd": commitment_gap_result.get("total_annual_opportunity_usd", 0),
             "priority_provider": commitment_gap_result.get("priority_provider"),
             "provider_gaps": commitment_gap_result.get("provider_gaps", []),
+            "coverage_gap_percent": tagging_result.get("coverage_gap_percent", 0.0),
+            "unallocated_percent": chargeback_result.get("unallocated_percent", 0.0),
+            "top_opportunities": commitment_gap_result.get("provider_gaps", []),
         }
     )
 
@@ -4686,6 +4801,8 @@ async def genai_copilot_pack(
                 {},
             )
             narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(diagnostics_result)
+        elif item == "finops_operating_review":
+            narrative, prompt = genai_advisor.generate_finops_operating_review(base_context)
         else:
             narrative, prompt = genai_advisor.generate_commitment_strategy(base_context)
 
@@ -4706,6 +4823,8 @@ async def genai_copilot_pack(
                 "downside_risk": forecast_result.get("downside_risk"),
             },
             "commitment_gap": commitment_gap_result,
+            "tagging_coverage": tagging_result,
+            "chargeback_summary": chargeback_result,
         },
         "narratives": narratives,
         "genai_configured": genai_advisor._is_configured(),
@@ -5028,6 +5147,7 @@ async def api_info() -> Dict[str, Any]:
             "forecasting": True,
             "forecast_what_if": True,
             "forecast_stress_test": True,
+            "forecast_diagnostics": True,
             "forecast_model_diagnostics": True,
             "cost_attribution": True,
             "commitment_optimization": True,
@@ -5044,6 +5164,7 @@ async def api_info() -> Dict[str, Any]:
             "genai_optimization_roadmap": True,
             "genai_executive_narrative": True,
             "genai_commitment_strategy": True,
+            "genai_finops_operating_review": True,
             "genai_forecast_model_diagnostics": True,
             "genai_copilot_pack": True,
             "genai_backend_narration": genai_advisor._is_configured(),
