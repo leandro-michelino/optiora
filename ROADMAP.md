@@ -114,13 +114,14 @@ Status: **implemented as MVP; scheduled delivery remains**.
 
 ### 5. Add alerts and notifications
 
-Status: **core implemented; advanced alert operations remain**.
+Status: **core implemented with advanced ops policy + scheduler controls; scheduled delivery remains**.
 
 - alert routing by organization and severity/channel matrix
 - destination toggles, test endpoint, delivery status, last-success/last-error telemetry
 - cost spike/budget alerts and external AWS/GCP anomaly ingestion
 - acknowledgement, dismissal, reactivation, and audit history
-- remaining: mute windows, escalation policies, acknowledgement SLAs, daily/weekly delivered executive summaries, and deeper noise-reduction analytics
+- mute windows, escalation policies, acknowledgement SLAs, scheduler retry/backoff controls, and executive alert summary APIs ✅ implemented
+- remaining: daily/weekly delivered executive summaries and deeper noise-reduction analytics
 
 ## Competitive Gap Closure
 
@@ -290,7 +291,7 @@ Status: **feature-complete MVP; live OCI validation is the release gate**.
 - publish OCI-first product positioning
 - strengthen reporting for finance and procurement teams
 
-Implementation detail for this release is tracked in `RELEASE_1_0_BACKLOG.md`.
+Implementation detail for this release is tracked in `NEXT_PHASE.md`.
 
 ### Release 1.5 - Optimization and Automation
 

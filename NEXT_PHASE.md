@@ -22,7 +22,7 @@ Dashboard now has 17 pages across 3 nav sections — all routes verified in prod
 
 Local validation has been re-run end to end:
 
-- `.venv/bin/python -m unittest discover -s tests -v` ✅ (200 passed, 2 skipped when optional XLSX dependency is absent)
+- `.venv/bin/python -m pytest -q` ✅ (245 passed)
 - `tests.test_competitive_ops` covers alert lifecycle, routing simulation, freshness, and per-channel delivery telemetry ✅
 - `tests.test_epic2_multi_account` covers enterprise hierarchy/federation across AWS, Azure, GCP, and OCI ✅
 - `tests.test_auth_flow` covers public mode, org-scoped APIs, CSV import, exports, and Alembic upgrade/downgrade roundtrip through `0013` ✅
@@ -42,8 +42,10 @@ Before declaring an environment ready, all of the following should be done.
 ### 1. Local validation
 
 ```bash
+./setup.sh --clean
+
 python3 -m py_compile $(find ./finops_* -maxdepth 1 -name '*.py')
-./.venv*/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m pytest -q
 
 cd dashboard
 npm run type-check
@@ -155,22 +157,20 @@ Work should move into post-1.0 only after these are true:
 
 `post-1.0` should expand product depth and enterprise readiness:
 
-- Recommended near-term order:
-	1. Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`)
-	2. SMTP notification integration with real email templates
-	3. Scheduled report delivery (weekly/monthly)
-	4. FOCUS 1.0 export certification
-	5. Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring)
+Recommended near-term order:
 
-- Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`)
-- SMTP notification integration with real email templates
-- SAML / OIDC / SSO authentication path
-- Vault-backed secret orchestration for credential storage
-- Real Kubernetes metrics integration (Prometheus, cost-model)
-- Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring)
-- FOCUS 1.0 export certification
-- Scheduled report delivery (weekly/monthly)
-- Multi-tenancy isolation hardening for SaaS deployment
+1. Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`) ✅ implemented (optional Redis backend + in-memory fallback)
+2. SMTP notification integration with real email templates
+3. Scheduled report delivery (weekly/monthly)
+4. FOCUS 1.0 export certification
+5. Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring)
+
+Additional post-1.0 backlog:
+
+1. SAML / OIDC / SSO authentication path
+2. Vault-backed secret orchestration for credential storage
+3. Real Kubernetes metrics integration (Prometheus, cost-model)
+4. Multi-tenancy isolation hardening for SaaS deployment
 
 ## Deferred Optional Hardening
 
@@ -188,3 +188,13 @@ If a hardened deployment is requested later, enable:
 ENABLE_AUTH=true
 NEXT_PUBLIC_ENABLE_AUTH=true
 ```
+
+## Repository Maintenance Notes
+
+Merged from `REPO_REVIEW.md` so this file remains the single source for go-live and post-1.0 operations guidance.
+
+- Keep `finops_mcp/api.py` shrinking by extracting route-adjacent helper logic by domain.
+- Prefer one authoritative explanation per topic instead of repeating architecture/validation content across multiple docs.
+- Keep backend verification guidance aligned with the current `pytest` regression flow.
+- Preserve deterministic analytics as the source of truth and keep GenAI advisory-only.
+- Keep OCI hosting guidance separate from the product's multi-cloud analysis scope.

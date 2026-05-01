@@ -30,36 +30,37 @@ Strong today:
 - Alert routing policies with severity/channel matrix.
 - Finance pack report dimensions (`business_unit`, `cost_center`, `owner`).
 
-Known gap to close for full parity (already tracked):
+Known parity gaps:
 
-- Notification destination test endpoint and UI destination toggles/status in Operations/Settings.
+- No critical Phase 0/1 parity gaps remain open in the local codebase.
+- Focus should now move to Phase 2 differentiation and live OCI evidence runs.
 
 ## Capability Gap Matrix
 
 1. Programmatic alert reliability and idempotency visibility
 - Competitor baseline: explicit delivery semantics and failure handling guidance (Pub/Sub at-least-once/out-of-order).
-- OptiOra status: ingestion endpoints exist, but operations UX can better expose dedupe/replay and delivery health.
-- Plan: add ingestion replay-safe metadata, dedupe keys, and delivery health panel.
+- OptiOra status: ✅ implemented (idempotency, dedupe trail, replay endpoints, and operations telemetry).
+- Next: improve visualization depth, not core parity.
 
 2. Alert operations lifecycle depth
 - Competitor baseline: active/dismissed/reactivated workflows and role-aware alert actions.
-- OptiOra status: acknowledge exists.
-- Plan: add dismiss/reactivate states + audit trail enrichment.
+- OptiOra status: ✅ implemented (acknowledge/dismiss/reactivate + audit enrichment + ops policy).
+- Next: add scheduled executive delivery and deeper noise reduction.
 
 3. Data freshness observability
 - Competitor baseline: explicit data history pages showing last bill received / last processed.
-- OptiOra status: scheduler and scan history exist.
-- Plan: add unified freshness SLO card per provider and connector.
+- OptiOra status: ✅ implemented (`/api/v1/operations/data-freshness` + Operations page exposure).
+- Next: tighten SLO alerting thresholds.
 
 4. Allocation and tag quality controls
 - Competitor baseline: tag correction/enrichment rules and allocation confidence.
-- OptiOra status: finance mapping exists.
-- Plan: add tagging quality score + rule engine for inferred/fixed dimensions.
+- OptiOra status: ✅ implemented as MVP (virtual tag rules + preview + finance mapping).
+- Next: add richer confidence scoring.
 
 5. Unit economics and KPI benchmarking
 - Competitor baseline: trendable unit economics and benchmark framing.
-- OptiOra status: analytics and forecasting are strong.
-- Plan: add explicit unit-cost trend widgets and benchmark deltas by business dimension.
+- OptiOra status: ✅ implemented as MVP (unit economics + scorecards endpoints and dashboard views).
+- Next: deepen trend/baseline benchmarking history.
 
 ## Implementation Plan
 
@@ -127,7 +128,7 @@ Exit criteria:
 ## Delivery Governance
 
 - Release gate checks:
-  - Backend tests: `./.venv313/bin/python -m unittest discover -s tests`
+  - Backend tests: `.venv/bin/python -m pytest -q`
   - Frontend checks: `npm run type-check && npm run lint && npm run build`
 - Documentation gate:
   - Keep architecture and operations docs updated with each new endpoint.
@@ -139,4 +140,4 @@ Exit criteria:
 
 ## Recommended Immediate Next Slice
 
-Implement Phase 0 item 1 first (destination test endpoint + Settings/Operations controls), because it closes the only remaining tracked competitor gap and improves operator trust fastest.
+Implement Phase 2 item 1 next (decision-grade recommendation confidence + realization windows), because parity is already covered and this provides the strongest differentiation lift.
