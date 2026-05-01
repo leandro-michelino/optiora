@@ -198,6 +198,8 @@ OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
 Optional runtime values copied into the remote `.env`:
 
 ```env
+# Leave blank for the small deployment profile (SQLite on the VM).
+# Set for medium and enterprise deployments to point at PostgreSQL on OCI.
 DATABASE_URL=
 SECRET_KEY=
 ENABLE_AUTH=false
@@ -227,6 +229,18 @@ RETENTION_HOT_MONTHS=3
 RETENTION_RUN_INTERVAL_HOURS=24
 OCI_ARCHIVE_BUCKET=
 OCI_ARCHIVE_NAMESPACE=
+```
+
+Database deployment policy:
+
+- Small deployment: keep `DATABASE_URL` blank and run on the local SQLite file for the lowest-cost footprint.
+- Medium and enterprise deployments: set `DATABASE_URL` to PostgreSQL on OCI.
+- `OCI_DB_*` compatibility fields remain supported if you prefer deriving `DATABASE_URL` instead of setting it explicitly.
+
+Example medium / enterprise PostgreSQL connection string:
+
+```env
+DATABASE_URL=postgresql+psycopg2://optiora_user:your_secure_db_password@postgres-hostname.example.com:5432/optiora
 ```
 
 `OCI_PRIVATE_KEY_PATH` is the preferred deployment option because it avoids fragile multiline env formatting.
@@ -274,7 +288,7 @@ Manual product checks:
 1. Open `http://<instance-ip>:3000/dashboard` and confirm the dashboard opens directly with no login wall.
 2. Upload a UTF-8 billing CSV from the settings page and confirm the imported dataset summary updates.
 3. Confirm the costs overview reflects the imported CSV totals.
-4. If live provider validation is in scope, add one cloud credential, approve scanning, and start a scan.
+4. If live provider validation is in scope, add one cloud provider credential, approve scanning, and start a scan.
 5. Confirm history, diff, alerts, and CSV exports still work after deployment.
 
 Optional live credential verification:
@@ -314,7 +328,7 @@ set +a
 1. `sudo journalctl -u optiora-api -n 100 --no-pager`
 2. Confirm `/opt/optiora/.env` exists and has a non-placeholder `SECRET_KEY`
 3. Confirm backend deps exist: `/opt/optiora/venv/bin/pip list`
-4. Check DB config: `DATABASE_URL` or `OCI_DB_*`
+4. Check DB config: `DATABASE_URL` or `OCI_DB_*`, and confirm the intended profile matches the deployment size
 
 ### Dashboard unreachable
 
@@ -324,8 +338,8 @@ set +a
 
 ### Live provider credential validation failures
 
-1. Re-check provider permissions and region/subscription/project values
-2. Confirm outbound egress from the subnet to the cloud provider APIs
+1. Re-check provider permissions and region/subscription/project/profile values
+2. Confirm outbound egress from the subnet to the relevant cloud provider APIs
 3. Use `/api/v1/credentials/validate` response details for root cause
 
 ### CSV import failures

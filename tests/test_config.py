@@ -5,6 +5,10 @@ import unittest
 from unittest.mock import patch
 
 from finops_mcp.config import Config
+from finops_mcp.provider_support import (
+    SUPPORTED_CLOUD_PROVIDERS,
+    provider_diagnostic_requirements,
+)
 
 
 class ConfigTest(unittest.TestCase):
@@ -53,3 +57,18 @@ class ConfigTest(unittest.TestCase):
                 Config().oci_genai_compartment_id,
                 "ocid1.compartment.oc1..runtime",
             )
+
+    def test_provider_diagnostic_requirements_cover_all_supported_providers(self) -> None:
+        requirements = provider_diagnostic_requirements(Config())
+        self.assertEqual(tuple(requirements.keys()), SUPPORTED_CLOUD_PROVIDERS)
+
+    def test_provider_diagnostic_requirements_expose_expected_fields(self) -> None:
+        requirements = provider_diagnostic_requirements(Config())
+        self.assertEqual(
+            requirements["aws"]["settings"],
+            ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"],
+        )
+        self.assertEqual(
+            requirements["oci"]["settings"],
+            ["OCI_CONFIG_FILE", "OCI_PROFILE", "OCI_REGION"],
+        )

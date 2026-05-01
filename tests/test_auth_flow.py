@@ -110,6 +110,14 @@ class AuthFlowTest(unittest.TestCase):
         )
         self.assertEqual(new_login.status_code, 200)
 
+    def test_info_exposes_all_supported_providers(self) -> None:
+        info = self.client.get("/api/v1/info")
+        self.assertEqual(info.status_code, 200)
+        self.assertEqual(
+            info.json()["supported_providers"],
+            ["aws", "azure", "gcp", "oci"],
+        )
+
     def test_cookie_refresh_and_org_switch(self) -> None:
         register = self.client.post(
             "/auth/register",

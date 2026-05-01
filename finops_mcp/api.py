@@ -44,6 +44,26 @@ from .notifications import (
     destination_configured,
     send_test_notification,
 )
+from .cost_context import (
+    build_imported_cost_context,
+    build_live_cost_context,
+    fetch_provider_cost_summary,
+)
+from .imported_cost_csv import CsvImportError, load_normalized_csv_upload, validate_cost_csv_row
+from .imported_costs import query_imported_cost_rows, summarize_imported_cost_rows
+from .provider_support import (
+    AWSCredentialInput,
+    AzureCredentialInput,
+    CredentialInput,
+    GCPCredentialInput,
+    OCICredentialInput,
+    SUPPORTED_CLOUD_PROVIDERS,
+    SUPPORTED_COST_IMPORT_PROVIDERS,
+    parse_credential_payload,
+    provider_diagnostic_requirements,
+    run_credential_validation,
+)
+from .scheduler_status import compute_next_run, scan_interval_seconds, scheduler_runtime_snapshot
 from .access_control import require_role
 from .connectors import ConnectorManager, ConnectorType, BaseConnector, ConnectorStatus
 from .orm_models import (
@@ -87,7 +107,6 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 router = APIRouter(prefix="/api/v1", tags=["api"])
-SUPPORTED_COST_IMPORT_PROVIDERS = {"aws", "azure", "gcp", "oci"}
 _SUPPORTED_TREND_VIEWS = {"provider", "region", "service", "account"}
 
 
@@ -149,41 +168,6 @@ def _trend_dimension_value(rec: ImportedCostRecord, view_by: str) -> str:
             or "unknown"
         ).strip() or "unknown"
     return (rec.provider or "imported").strip().lower() or "imported"
-
-
-class AWSCredentialInput(BaseModel):
-    provider: Literal["aws"]
-    access_key_id: str
-    secret_access_key: str
-    region: Optional[str] = "us-east-1"
-
-
-class AzureCredentialInput(BaseModel):
-    provider: Literal["azure"]
-    subscription_id: str
-    tenant_id: str
-    client_id: str
-    client_secret: str
-
-
-class GCPCredentialInput(BaseModel):
-    provider: Literal["gcp"]
-    project_id: str
-    service_account_json: Union[Dict[str, Any], str]
-
-
-class OCICredentialInput(BaseModel):
-    provider: Literal["oci"]
-    config_file: str
-    profile: Optional[str] = "DEFAULT"
-
-
-CredentialInput = Union[
-    AWSCredentialInput,
-    AzureCredentialInput,
-    GCPCredentialInput,
-    OCICredentialInput,
-]
 
 
 class CredentialResponse(BaseModel):
@@ -877,16 +861,7 @@ def _spreadsheet_xml_response(filename: str, sheet_name: str, rows: List[List[An
 
 
 def _imported_cost_summary(rows: List[ImportedCostRecord]) -> Dict[str, Any]:
-    providers = sorted({row.provider for row in rows})
-    latest_imported_at = max((row.created_at for row in rows), default=None)
-    return {
-        "rows_imported": len(rows),
-        "total_cost_usd": round(sum(float(row.cost_usd or 0.0) for row in rows), 2),
-        "providers": providers,
-        "last_imported_at": latest_imported_at,
-        "upload_id": rows[0].upload_id if rows else None,
-        "source_filename": rows[0].source_filename if rows else None,
-    }
+    return summarize_imported_cost_rows(rows)
 
 
 def _get_imported_cost_rows(
@@ -895,16 +870,7 @@ def _get_imported_cost_rows(
     customer_id: str,
     cloud_provider: str = "all",
 ) -> List[ImportedCostRecord]:
-    query = db.query(ImportedCostRecord).filter(
-        ImportedCostRecord.organization_id == organization_id,
-        ImportedCostRecord.customer_id == customer_id,
-    )
-    if cloud_provider != "all":
-        query = query.filter(ImportedCostRecord.provider == cloud_provider)
-    return query.order_by(
-        ImportedCostRecord.created_at.desc(),
-        ImportedCostRecord.id.desc(),
-    ).all()
+    return query_imported_cost_rows(db, organization_id, customer_id, cloud_provider)
 
 
 def _materialize_rollup_items(nodes: Dict[int, Dict[str, Any]]) -> List[ProviderAccountRollupItem]:
@@ -1234,47 +1200,11 @@ def _build_rollups_from_imported_rows(
 
 
 def _parse_credential_payload(raw: Dict[str, Any]) -> CredentialInput:
-    provider = str(raw.get("provider", "")).lower()
-    if provider == "aws":
-        return AWSCredentialInput(**raw)
-    if provider == "azure":
-        return AzureCredentialInput(**raw)
-    if provider == "gcp":
-        payload = dict(raw)
-        if isinstance(payload.get("service_account_json"), str):
-            payload["service_account_json"] = json.loads(payload["service_account_json"])
-        return GCPCredentialInput(**payload)
-    if provider == "oci":
-        return OCICredentialInput(**raw)
-    raise ValueError(f"Unsupported provider: {provider}")
+    return parse_credential_payload(raw)
 
 
 def _run_validation(credential: CredentialInput) -> CredentialStatus:
-    validator = CredentialValidator()
-    if isinstance(credential, AWSCredentialInput):
-        return validator.validate_aws(
-            credential.access_key_id,
-            credential.secret_access_key,
-            credential.region or "us-east-1",
-        )
-    if isinstance(credential, AzureCredentialInput):
-        return validator.validate_azure(
-            credential.subscription_id,
-            credential.tenant_id,
-            credential.client_id,
-            credential.client_secret,
-        )
-    if isinstance(credential, GCPCredentialInput):
-        service_account_json = credential.service_account_json
-        if isinstance(service_account_json, str):
-            service_account_json = json.loads(service_account_json)
-        return validator.validate_gcp(credential.project_id, service_account_json)
-    if isinstance(credential, OCICredentialInput):
-        return validator.validate_oci(
-            credential.config_file,
-            credential.profile or "DEFAULT",
-        )
-    raise ValueError("Unsupported credential payload")
+    return run_credential_validation(credential)
 
 
 def _safe_json_load(raw: str, default: Dict[str, Any]) -> Dict[str, Any]:
@@ -1329,18 +1259,17 @@ def _resolve_customer_id(
 
 
 async def _cost_summary_for_provider(provider: str, period: str = "month") -> Dict[str, Any]:
-    params = {"period": period, "cloud_provider": provider}
-    if provider == "aws":
-        raw = await aws_costs.get_cost_summary(params)
-    elif provider == "azure":
-        raw = await azure_costs.get_cost_summary(params)
-    elif provider == "gcp":
-        raw = await gcp_costs.get_cost_summary(params)
-    elif provider == "oci":
-        raw = await oci_costs.get_cost_summary(params)
-    else:
-        return {"error": f"Unsupported provider: {provider}"}
-    return _safe_json_load(raw, {"error": "Invalid tool response"})
+    return await fetch_provider_cost_summary(
+        provider,
+        period,
+        fetchers={
+            "aws": aws_costs.get_cost_summary,
+            "azure": azure_costs.get_cost_summary,
+            "gcp": gcp_costs.get_cost_summary,
+            "oci": oci_costs.get_cost_summary,
+        },
+        safe_json_load=_safe_json_load,
+    )
 
 
 def _imported_cost_context(
@@ -1348,55 +1277,15 @@ def _imported_cost_context(
     db: Session,
     cloud_provider: str = "all",
 ) -> Optional[Dict[str, Any]]:
-    resolved_org_id = _organization_id_for_membership(membership)
-    customer_id = _customer_id_for_org(membership)
-    rows = _get_imported_cost_rows(
+    return build_imported_cost_context(
+        membership,
         db,
-        organization_id=resolved_org_id,
-        customer_id=customer_id,
         cloud_provider=cloud_provider,
+        organization_id_for_membership=_organization_id_for_membership,
+        customer_id_for_org=_customer_id_for_org,
+        get_imported_cost_rows=_get_imported_cost_rows,
+        imported_cost_summary=_imported_cost_summary,
     )
-    if not rows:
-        return None
-
-    breakdown: Dict[str, Dict[str, float]] = {}
-    region_breakdown: Dict[str, float] = {}
-    total_cost = 0.0
-    for row in rows:
-        provider = str(row.provider or "").strip().lower()
-        if not provider:
-            continue
-        cost = float(row.cost_usd or 0.0)
-        total_cost += cost
-        provider_bucket = breakdown.setdefault(provider, {"cost": 0.0, "percentage": 0.0})
-        provider_bucket["cost"] = round(provider_bucket["cost"] + cost, 2)
-        region_name = str(row.region or "").strip()
-        if region_name:
-            region_breakdown[region_name] = round(region_breakdown.get(region_name, 0.0) + cost, 2)
-
-    if total_cost > 0:
-        for provider in breakdown:
-            breakdown[provider]["percentage"] = round(
-                (breakdown[provider]["cost"] / total_cost) * 100,
-                1,
-            )
-
-    summary = _imported_cost_summary(rows)
-    return {
-        "period": "imported",
-        "cloud_provider": cloud_provider,
-        "total_cost": round(total_cost, 2),
-        "breakdown": breakdown,
-        "region_breakdown": [
-            {"region": region, "cost_usd": round(cost, 2)}
-            for region, cost in sorted(region_breakdown.items(), key=lambda item: item[1], reverse=True)
-        ],
-        "source": "csv_import",
-        "rows_imported": summary["rows_imported"],
-        "last_imported_at": summary["last_imported_at"].isoformat()
-        if summary["last_imported_at"]
-        else None,
-    }
 
 
 async def _cost_context(
@@ -1405,53 +1294,15 @@ async def _cost_context(
     period: str = "month",
     cloud_provider: str = "all",
 ) -> Dict[str, Any]:
-    providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
-    configured_live_providers = {
-        diagnostic.provider
-        for diagnostic in _provider_diagnostics()
-        if diagnostic.configured and diagnostic.provider in providers
-    }
-
-    if not configured_live_providers:
-        imported_context = _imported_cost_context(
-            membership,
-            db,
-            cloud_provider=cloud_provider,
-        )
-        if imported_context is not None:
-            return imported_context
-
-    breakdown: Dict[str, Dict[str, float]] = {}
-    region_breakdown: Dict[str, float] = {}
-    total_cost = 0.0
-
-    for provider in providers:
-        summary = await _cost_summary_for_provider(provider, period)
-        cost = float(summary.get("total_cost_usd", 0) or 0)
-        total_cost += cost
-        breakdown[provider] = {"cost": round(cost, 2), "percentage": 0.0}
-        for region_row in summary.get("region_breakdown", []):
-            region_name = str(region_row.get("region") or "global")
-            region_cost = float(region_row.get("cost_usd") or 0.0)
-            region_breakdown[region_name] = region_breakdown.get(region_name, 0.0) + region_cost
-
-    if total_cost > 0:
-        for provider in breakdown:
-            breakdown[provider]["percentage"] = round(
-                (breakdown[provider]["cost"] / total_cost) * 100, 1
-            )
-
-    return {
-        "period": period,
-        "cloud_provider": cloud_provider,
-        "total_cost": round(total_cost, 2),
-        "breakdown": breakdown,
-        "source": "live_provider_api" if configured_live_providers else "live_backend",
-        "region_breakdown": [
-            {"region": region, "cost_usd": round(cost, 2)}
-            for region, cost in sorted(region_breakdown.items(), key=lambda item: item[1], reverse=True)
-        ],
-    }
+    return await build_live_cost_context(
+        membership,
+        db,
+        period=period,
+        cloud_provider=cloud_provider,
+        provider_diagnostics=_provider_diagnostics,
+        imported_cost_context_builder=_imported_cost_context,
+        cost_summary_for_provider=_cost_summary_for_provider,
+    )
 
 
 def _historical_monthly_spend_from_snapshots(
@@ -1502,38 +1353,7 @@ def _setting_missing(value: Any) -> bool:
 
 def _provider_diagnostics() -> List[ProviderDiagnostic]:
     config = Config()
-    requirements = {
-        "aws": {
-            "settings": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"],
-            "values": [
-                config.aws_access_key_id,
-                config.aws_secret_access_key,
-                config.aws_region,
-            ],
-        },
-        "azure": {
-            "settings": [
-                "AZURE_SUBSCRIPTION_ID",
-                "AZURE_TENANT_ID",
-                "AZURE_CLIENT_ID",
-                "AZURE_CLIENT_SECRET",
-            ],
-            "values": [
-                config.azure_subscription_id,
-                config.azure_tenant_id,
-                config.azure_client_id,
-                config.azure_client_secret,
-            ],
-        },
-        "gcp": {
-            "settings": ["GOOGLE_APPLICATION_CREDENTIALS", "GCP_PROJECT_ID"],
-            "values": [config.google_application_credentials, config.gcp_project_id],
-        },
-        "oci": {
-            "settings": ["OCI_CONFIG_FILE", "OCI_PROFILE", "OCI_REGION"],
-            "values": [config.oci_config_file, config.oci_profile, config.oci_region],
-        },
-    }
+    requirements = provider_diagnostic_requirements(config)
 
     diagnostics: List[ProviderDiagnostic] = []
     for provider, detail in requirements.items():
@@ -2557,34 +2377,11 @@ async def preview_cost_csv_import(
     customer_id = _customer_id_for_org(membership)
 
     filename = str(file.filename or "").strip() or "cost-import.csv"
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV uploads are supported right now.")
-
     raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="Uploaded CSV file is empty.")
-
-    _MAX_CSV_BYTES = 10 * 1024 * 1024
-    if len(raw) > _MAX_CSV_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"CSV file too large ({len(raw):,} bytes). Maximum allowed size is 10 MB.",
-        )
-
     try:
-        content = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="CSV upload must be UTF-8 encoded.") from exc
-
-    reader = csv.DictReader(io.StringIO(content))
-    if not reader.fieldnames:
-        raise HTTPException(
-            status_code=400,
-            detail="CSV header row is missing. Expected columns include provider and cost_usd.",
-        )
-
-    headers = [str(name or "").strip().lower() for name in reader.fieldnames]
-    reader.fieldnames = headers
+        headers, rows = load_normalized_csv_upload(filename, raw)
+    except CsvImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     issues: List[ImportPreviewIssue] = []
     if "provider" not in headers:
@@ -2602,62 +2399,31 @@ async def preview_cost_csv_import(
     rows_with_service = 0
     rows_with_tags = 0
 
-    for line_number, row in enumerate(reader, start=2):
+    for line_number, normalized_row in enumerate(rows, start=2):
         total_rows += 1
-        normalized_row = {
-            str(key or "").strip().lower(): str(value or "").strip()
-            for key, value in row.items()
-        }
-
-        provider = normalized_row.get("provider", "").lower()
-        if provider not in SUPPORTED_COST_IMPORT_PROVIDERS:
-            rejected_rows += 1
-            issues.append(
-                ImportPreviewIssue(
-                    line_number=line_number,
-                    severity="error",
-                    message=(
-                        f"Unsupported provider '{provider or 'empty'}'. "
-                        f"Use one of: {', '.join(sorted(SUPPORTED_COST_IMPORT_PROVIDERS))}."
-                    ),
-                )
-            )
-            continue
-
-        currency = normalized_row.get("currency", "USD").upper() or "USD"
-        if currency != "USD":
-            rejected_rows += 1
-            issues.append(
-                ImportPreviewIssue(
-                    line_number=line_number,
-                    severity="error",
-                    message=f"Only USD is supported right now (got {currency}).",
-                )
-            )
-            continue
-
-        cost_usd, cost_error = _parse_required_float_value(normalized_row.get("cost_usd"), "cost_usd", line_number)
-        period_start, period_start_error = _parse_optional_datetime_value(
-            normalized_row.get("period_start"), "period_start", line_number
+        parsed_row = validate_cost_csv_row(
+            normalized_row,
+            line_number=line_number,
+            supported_providers=SUPPORTED_COST_IMPORT_PROVIDERS,
+            parse_required_float_value=_parse_required_float_value,
+            parse_optional_datetime_value=_parse_optional_datetime_value,
+            format_provider_error=lambda provider, _line_number, allowed: (
+                f"Unsupported provider '{provider or 'empty'}'. Use one of: {', '.join(allowed)}."
+            ),
+            format_currency_error=lambda currency, _line_number: (
+                f"Only USD is supported right now (got {currency})."
+            ),
         )
-        period_end, period_end_error = _parse_optional_datetime_value(
-            normalized_row.get("period_end"), "period_end", line_number
-        )
-
-        if cost_error:
-            issues.append(ImportPreviewIssue(line_number=line_number, severity="error", message=cost_error))
-        if period_start_error:
-            issues.append(ImportPreviewIssue(line_number=line_number, severity="error", message=period_start_error))
-        if period_end_error:
-            issues.append(ImportPreviewIssue(line_number=line_number, severity="error", message=period_end_error))
-
-        if cost_usd is None or cost_error or period_start_error or period_end_error:
+        if parsed_row.errors:
+            rejected_rows += 1
+            for error in parsed_row.errors:
+                issues.append(ImportPreviewIssue(line_number=line_number, severity="error", message=error))
             rejected_rows += 1
             continue
 
         accepted_rows += 1
-        total_cost_usd += float(cost_usd)
-        providers.add(provider)
+        total_cost_usd += float(parsed_row.cost_usd or 0.0)
+        providers.add(parsed_row.provider)
 
         if normalized_row.get("account_identifier") or normalized_row.get("account_name"):
             rows_with_account += 1
@@ -2726,33 +2492,12 @@ async def upload_cost_csv(
     customer_id = _customer_id_for_org(membership)
 
     filename = str(file.filename or "").strip() or "cost-import.csv"
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV uploads are supported right now.")
-
     raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="Uploaded CSV file is empty.")
-    # Guard against excessively large uploads (10 MB)
-    _MAX_CSV_BYTES = 10 * 1024 * 1024
-    if len(raw) > _MAX_CSV_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"CSV file too large ({len(raw):,} bytes). Maximum allowed size is 10 MB.",
-        )
-
     try:
-        content = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="CSV upload must be UTF-8 encoded.") from exc
-
-    reader = csv.DictReader(io.StringIO(content))
-    if not reader.fieldnames:
-        raise HTTPException(
-            status_code=400,
-            detail="CSV header row is missing. Expected columns include provider and cost_usd.",
-        )
-    reader.fieldnames = [str(name or "").strip().lower() for name in reader.fieldnames]
-    if "provider" not in reader.fieldnames or "cost_usd" not in reader.fieldnames:
+        headers, rows = load_normalized_csv_upload(filename, raw)
+    except CsvImportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if "provider" not in headers or "cost_usd" not in headers:
         raise HTTPException(status_code=400, detail="CSV must include provider and cost_usd columns.")
 
     imported_at = _utcnow()
@@ -2762,62 +2507,43 @@ async def upload_cost_csv(
     providers: set[str] = set()
     validation_errors: List[str] = []
 
-    for line_number, row in enumerate(reader, start=2):
-        normalized_row = {
-            str(key or "").strip().lower(): str(value or "").strip()
-            for key, value in row.items()
-        }
-        provider = normalized_row.get("provider", "").lower()
-        if provider not in SUPPORTED_COST_IMPORT_PROVIDERS:
-            validation_errors.append(
-                f"Unsupported provider at CSV line {line_number}. "
-                f"Use one of: {', '.join(sorted(SUPPORTED_COST_IMPORT_PROVIDERS))}."
-            )
-            continue
-
-        currency = normalized_row.get("currency", "USD").upper() or "USD"
-        if currency != "USD":
-            validation_errors.append(
-                f"Only USD CSV imports are supported right now. Invalid currency at line {line_number}."
-            )
-            continue
-
-        cost_usd, cost_error = _parse_required_float_value(normalized_row.get("cost_usd"), "cost_usd", line_number)
-        period_start, period_start_error = _parse_optional_datetime_value(
-            normalized_row.get("period_start"),
-            "period_start",
-            line_number,
+    for line_number, normalized_row in enumerate(rows, start=2):
+        parsed_row = validate_cost_csv_row(
+            normalized_row,
+            line_number=line_number,
+            supported_providers=SUPPORTED_COST_IMPORT_PROVIDERS,
+            parse_required_float_value=_parse_required_float_value,
+            parse_optional_datetime_value=_parse_optional_datetime_value,
+            format_provider_error=lambda _provider, current_line_number, allowed: (
+                f"Unsupported provider at CSV line {current_line_number}. Use one of: {', '.join(allowed)}."
+            ),
+            format_currency_error=lambda _currency, current_line_number: (
+                f"Only USD CSV imports are supported right now. Invalid currency at line {current_line_number}."
+            ),
         )
-        period_end, period_end_error = _parse_optional_datetime_value(
-            normalized_row.get("period_end"),
-            "period_end",
-            line_number,
-        )
-        for error in (cost_error, period_start_error, period_end_error):
-            if error:
-                validation_errors.append(error)
-        if cost_usd is None or cost_error or period_start_error or period_end_error:
+        if parsed_row.errors:
+            validation_errors.extend(parsed_row.errors)
             continue
 
-        total_cost += cost_usd
-        providers.add(provider)
+        total_cost += float(parsed_row.cost_usd or 0.0)
+        providers.add(parsed_row.provider)
         rows_to_store.append(
             ImportedCostRecord(
                 organization_id=organization_id,
                 customer_id=customer_id,
                 upload_id=upload_id,
                 source_filename=filename,
-                provider=provider,
+                provider=parsed_row.provider,
                 service_name=normalized_row.get("service_name") or normalized_row.get("service") or None,
                 account_identifier=normalized_row.get("account_identifier") or None,
                 account_name=normalized_row.get("account_name") or None,
                 account_type=normalized_row.get("account_type") or None,
                 parent_account_identifier=normalized_row.get("parent_account_identifier") or None,
                 region=normalized_row.get("region") or None,
-                period_start=period_start,
-                period_end=period_end,
-                cost_usd=cost_usd,
-                currency=currency,
+                period_start=parsed_row.period_start,
+                period_end=parsed_row.period_end,
+                cost_usd=float(parsed_row.cost_usd or 0.0),
+                currency=parsed_row.currency,
                 line_number=line_number,
                 tags_json=normalized_row.get("tags") or None,
                 created_at=imported_at,
@@ -5661,7 +5387,7 @@ async def api_info() -> Dict[str, Any]:
         "name": "OptiOra API",
         "version": __version__,
         "description": "Cloud Cost Optimization Platform",
-        "supported_providers": ["aws", "azure", "gcp", "oci"],
+        "supported_providers": list(SUPPORTED_CLOUD_PROVIDERS),
         "features": {
             "credential_management": True,
             "credential_validation": True,
@@ -6079,12 +5805,7 @@ async def _run_cost_analysis(
 
 
 def _scan_interval_seconds(scan_frequency: str) -> int:
-    normalized = str(scan_frequency or "daily").strip().lower()
-    if normalized == "hourly":
-        return 60 * 60
-    if normalized == "weekly":
-        return 7 * 24 * 60 * 60
-    return 24 * 60 * 60
+    return scan_interval_seconds(scan_frequency)
 
 
 def _coerce_aws_anomaly_impact_usd(payload: Dict[str, Any]) -> float:
@@ -6123,11 +5844,7 @@ def _aws_anomaly_severity(impact_usd: float, source_severity: Optional[str]) -> 
 
 
 def _compute_next_run(now: datetime, scan_frequency: str, anchor: datetime) -> datetime:
-    interval = timedelta(seconds=_scan_interval_seconds(scan_frequency))
-    next_run = anchor + interval
-    while next_run < now:
-        next_run += interval
-    return next_run
+    return compute_next_run(now, scan_frequency, anchor)
 
 
 @router.get("/scanning/scheduler/status", response_model=SchedulerStatusResponse)
@@ -6167,113 +5884,42 @@ async def get_scheduler_status(
     finally:
         db.close()
 
-    total_runs = len(runs)
-    success_runs = sum(1 for row in runs if row.state == ScanningState.COMPLETED.value)
-    failed_runs = sum(1 for row in runs if row.state == ScanningState.FAILED.value)
-    last_success = next(
-        (
-            row.completed_at or row.started_at
-            for row in runs
-            if row.state == ScanningState.COMPLETED.value
-        ),
-        None,
+    snapshot = scheduler_runtime_snapshot(
+        now=now,
+        permission=permission,
+        runs=runs,
+        audit_rows=audit_rows,
+        initialized_state=ScanningState.INITIALIZED.value,
+        approved_state=ScanningState.APPROVED.value,
+        running_state=ScanningState.RUNNING.value,
+        completed_state=ScanningState.COMPLETED.value,
+        failed_state=ScanningState.FAILED.value,
+        safe_json_load=_safe_json_load,
     )
-    last_failure = next(
-        (
-            row.completed_at or row.started_at
-            for row in runs
-            if row.state == ScanningState.FAILED.value
-        ),
-        None,
-    )
-
-    permission_state = permission.state if permission else ScanningState.INITIALIZED.value
-    scan_frequency = permission.scan_frequency if permission else "daily"
-    override_enabled = bool(permission.scheduler_override_enabled) if permission else False
-    override_frequency = (
-        str(permission.scheduler_override_frequency or "").strip().lower()
-        if permission
-        else ""
-    )
-    effective_scan_frequency = (
-        override_frequency if override_enabled and override_frequency in {"hourly", "daily", "weekly"} else scan_frequency
-    )
-    retry_max_attempts = (
-        max(1, int(permission.scheduler_retry_max_attempts or 1)) if permission else 1
-    )
-    retry_backoff_seconds = (
-        max(15, int(permission.scheduler_retry_backoff_seconds or 15)) if permission else 15
-    )
-    overdue_alert_hours = (
-        max(1, int(permission.scheduler_overdue_alert_hours or 24)) if permission else 24
-    )
-    next_run_at: Optional[datetime] = None
-    if permission and permission_state in [ScanningState.APPROVED.value, ScanningState.RUNNING.value]:
-        anchor = last_success or permission.approved_at or permission.created_at or now
-        next_run_at = _compute_next_run(now, effective_scan_frequency, anchor)
-
-    timeline: List[SchedulerTimelineItem] = []
-    for row in runs[:6]:
-        providers = json.loads(row.providers_json or "[]")
-        timeline.append(
-            SchedulerTimelineItem(
-                id=f"scan-{row.scan_id}",
-                event_type="scan_run",
-                state=row.state,
-                title=f"Scan {row.state}",
-                detail=f"Providers: {', '.join(providers) if providers else 'n/a'}",
-                created_at=(row.completed_at or row.started_at).isoformat(),
-            )
-        )
-    for row in audit_rows:
-        metadata = _safe_json_load(row.metadata_json or "{}", {})
-        providers = metadata.get("providers", [])
-        detail = f"Frequency: {metadata.get('frequency', 'n/a')}"
-        if providers:
-            detail = f"{detail} | Providers: {', '.join([str(item) for item in providers])}"
-        timeline.append(
-            SchedulerTimelineItem(
-                id=f"audit-{row.id}",
-                event_type="scheduler_trigger",
-                state="info",
-                title="Scheduler triggered scan",
-                detail=detail,
-                created_at=row.created_at.isoformat(),
-            )
-        )
-    timeline = sorted(timeline, key=lambda item: item.created_at, reverse=True)[:10]
-
-    eta_seconds: Optional[int] = None
-    if next_run_at is not None:
-        eta_seconds = max(0, int((next_run_at - now).total_seconds()))
-    overdue = False
-    if last_success is not None:
-        interval = _scan_interval_seconds(effective_scan_frequency)
-        overdue = int((now - last_success).total_seconds()) > (interval + overdue_alert_hours * 3600)
 
     return SchedulerStatusResponse(
         organization_id=organization_id,
         customer_id=customer_id,
         scheduler_enabled=Config().enable_scan_scheduler,
         scheduler_running=_scheduler_running,
-        permission_state=permission_state,
-        scan_frequency=scan_frequency,
-        effective_scan_frequency=effective_scan_frequency,
-        scheduler_override_enabled=override_enabled,
-        next_run_at=next_run_at.isoformat() if next_run_at else None,
-        next_run_eta_seconds=eta_seconds,
-        last_success_at=last_success.isoformat() if last_success else None,
-        last_failure_at=last_failure.isoformat() if last_failure else None,
-        retry_max_attempts=retry_max_attempts,
-        retry_backoff_seconds=retry_backoff_seconds,
-        overdue_alert_hours=overdue_alert_hours,
-        overdue=overdue,
+        permission_state=snapshot["permission_state"],
+        scan_frequency=snapshot["scan_frequency"],
+        effective_scan_frequency=snapshot["effective_scan_frequency"],
+        scheduler_override_enabled=snapshot["scheduler_override_enabled"],
+        next_run_at=snapshot["next_run_at"].isoformat() if snapshot["next_run_at"] else None,
+        next_run_eta_seconds=snapshot["next_run_eta_seconds"],
+        last_success_at=snapshot["last_success"].isoformat() if snapshot["last_success"] else None,
+        last_failure_at=snapshot["last_failure"].isoformat() if snapshot["last_failure"] else None,
+        retry_max_attempts=snapshot["retry_max_attempts"],
+        retry_backoff_seconds=snapshot["retry_backoff_seconds"],
+        overdue_alert_hours=snapshot["overdue_alert_hours"],
+        overdue=snapshot["overdue"],
         counters=SchedulerCounters(
-            total=total_runs,
-            success=success_runs,
-            failure=failed_runs,
+            total=snapshot["counters"]["total"],
+            success=snapshot["counters"]["success"],
+            failure=snapshot["counters"]["failure"],
         ),
-        timeline=timeline,
+        timeline=[SchedulerTimelineItem(**item) for item in snapshot["timeline"]],
     )
 
 

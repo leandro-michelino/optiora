@@ -291,8 +291,8 @@ Evaluation
 ```text
 /api/v1/recommendations/rightsizing
 
-Tier 1  AWS Cost Explorer rightsizing API
-Tier 2  Azure Advisor recommendations
+Tier 1  Provider-native usage and rightsizing signals when available
+Tier 2  Provider inventory and configuration heuristics
 Tier 3  Snapshot trend analysis
 Tier 4  Imported CSV cost-signal analysis
 Tier 5  Synthetic fallback examples
