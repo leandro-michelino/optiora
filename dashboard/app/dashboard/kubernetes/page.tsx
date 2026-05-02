@@ -719,6 +719,14 @@ export default function KubernetesPage() {
                   {opencostInstallResult.api_url && (
                     <p className="mt-1 font-mono">API URL: {opencostInstallResult.api_url}</p>
                   )}
+                  {opencostInstallResult.command_log.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-slate-600 dark:text-slate-400">Command log</summary>
+                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-100 p-2 text-[11px] dark:bg-slate-800">
+                        {opencostInstallResult.command_log.join('\n')}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
             </form>
