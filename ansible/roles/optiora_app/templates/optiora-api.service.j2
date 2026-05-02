@@ -9,7 +9,7 @@ Group={{ optiora_app_user }}
 WorkingDirectory={{ optiora_app_dir }}
 EnvironmentFile={{ optiora_app_dir }}/.env
 Environment=PATH={{ optiora_app_dir }}/venv/bin
-ExecStart={{ optiora_app_dir }}/venv/bin/python -m uvicorn finops_mcp.app:app --host 0.0.0.0 --port {{ optiora_api_port }}
+ExecStart={{ optiora_app_dir }}/venv/bin/python -m uvicorn finops_mcp.app:app --host 0.0.0.0 --port {{ optiora_api_port }} --workers {{ optiora_api_workers }}
 Restart=always
 RestartSec=10
 NoNewPrivileges=true
