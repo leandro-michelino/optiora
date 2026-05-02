@@ -36,6 +36,7 @@ Current as of April 2026.
 | - Costs, anomalies, recs        /api/v1/costs|anomalies|recs  |
 | - Forecasting and diagnostics   /api/v1/forecast*             |
 | - Deep analytics                /api/v1/analytics/*           |
+| - Operating review pack         /api/v1/analytics/operating-review |
 | - Hybrid advisor                /api/v1/advisor/hybrid        |
 | - GenAI narratives              /api/v1/genai/*               |
 | - Provider accounts             /api/v1/provider-accounts/*   |
@@ -110,6 +111,29 @@ finops_mcp/tools/finops_analytics.py
             - build_cross_provider_comparison()
             - build_cost_anomaly_intelligence()
             - build_chargeback_summary()
+            - build_finops_operating_review()
+```
+
+## Weekly Operating Review Pack
+
+```text
+cost context + provider mix + budget policy + recommendations
+        |
+        v
+/api/v1/analytics/operating-review
+        |
+        +--> deterministic summary
+        |    - spend, waste, risk, velocity
+        |    - budget breach probability
+        |    - tagging and chargeback governance gaps
+        |
+        +--> deterministic execution plan
+        |    - top actions by savings signal
+        |    - owner-aligned workstreams
+        |
+        +--> GenAI narrative overlay (optional)
+             - generate_finops_operating_review()
+             - prompt fallback when GenAI is not configured
 ```
 
 ## Forecasting Models
@@ -328,5 +352,6 @@ Primary OCI region
 - CSV uploads are limited to 10 MB and UTF-8
 - Authentication is optional but should be enabled for production
 - OCI GenAI is optional; prompt-only fallback remains supported
+- Auto-remediation execution is disabled by default and guarded by ENABLE_AUTO_REMEDIATION
 - Process-local rate limiting exists today; distributed rate limiting should move to Redis in a future hardening phase
 ```

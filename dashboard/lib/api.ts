@@ -74,6 +74,7 @@ import {
   CrossProviderComparisonResponse,
   AnomalyIntelligenceResponse,
   ChargebackSummaryResponse,
+  FinOpsOperatingReviewResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -104,10 +105,29 @@ async function requestJson<T>(
   init: RequestInit = {},
   options: { authenticated?: boolean; timeoutMs?: number } = {},
 ): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000))
+  const timeoutError = new Error(`Request to ${path} timed out after ${timeoutSeconds}s. Please try again.`)
   const controller = new AbortController()
+  const upstreamSignal = init.signal
+  const abortFromUpstream = () => {
+    if (controller.signal.aborted) return
+    if (upstreamSignal && upstreamSignal.reason !== undefined) {
+      controller.abort(upstreamSignal.reason)
+      return
+    }
+    controller.abort(new DOMException('Request was cancelled.', 'AbortError'))
+  }
+  if (upstreamSignal) {
+    if (upstreamSignal.aborted) {
+      abortFromUpstream()
+    } else {
+      upstreamSignal.addEventListener('abort', abortFromUpstream, { once: true })
+    }
+  }
   const timeout = globalThis.setTimeout(
-    () => controller.abort(),
-    options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    () => controller.abort(timeoutError),
+    timeoutMs,
   )
 
   try {
@@ -130,7 +150,25 @@ async function requestJson<T>(
     }
 
     return await response.json() as T
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const reason = controller.signal.reason
+      if (reason instanceof Error) {
+        throw reason
+      }
+      if (typeof reason === 'string' && reason.trim().length > 0) {
+        throw new Error(reason)
+      }
+      if (error instanceof Error && error.message.trim().length > 0) {
+        throw new Error(error.message)
+      }
+      throw timeoutError
+    }
+    throw error
   } finally {
+    if (upstreamSignal) {
+      upstreamSignal.removeEventListener('abort', abortFromUpstream)
+    }
     globalThis.clearTimeout(timeout)
   }
 }
@@ -326,6 +364,7 @@ export async function fetchHybridAdvisor(
   return requestJson<HybridAdvisorResponse>(
     `/api/v1/advisor/hybrid${toQueryString({ narrative_type: narrativeType })}`,
     {},
+    { timeoutMs: 45000 },
   )
 }
 
@@ -346,13 +385,17 @@ export async function fetchGenAICopilotPack(payload: {
     | 'forecast_model_diagnostics'
   >
 } = {}): Promise<GenAICopilotPackResponse> {
-  return requestJson<GenAICopilotPackResponse>('/api/v1/genai/copilot-pack', {
-    method: 'POST',
-    body: JSON.stringify({
-      cloud_provider: payload.cloud_provider ?? 'all',
-      include: payload.include ?? ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy'],
-    }),
-  })
+  return requestJson<GenAICopilotPackResponse>(
+    '/api/v1/genai/copilot-pack',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        cloud_provider: payload.cloud_provider ?? 'all',
+        include: payload.include ?? ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy'],
+      }),
+    },
+    { timeoutMs: 60000 },
+  )
 }
 
 export async function fetchScanHistory(limit = 20, offset = 0): Promise<ScanHistoryItem[]> {
@@ -1018,5 +1061,16 @@ export function fetchAnomalyIntelligence(cloudProvider = 'all'): Promise<Anomaly
 export function fetchChargebackSummary(cloudProvider = 'all'): Promise<ChargebackSummaryResponse> {
   return requestJson<ChargebackSummaryResponse>(
     `/api/v1/analytics/chargeback-summary${toQueryString({ cloud_provider: cloudProvider })}`,
+  )
+}
+
+export function fetchFinOpsOperatingReview(
+  cloudProvider = 'all',
+  months = 12,
+): Promise<FinOpsOperatingReviewResponse> {
+  return requestJson<FinOpsOperatingReviewResponse>(
+    `/api/v1/analytics/operating-review${toQueryString({ cloud_provider: cloudProvider, months })}`,
+    {},
+    { timeoutMs: 45000 },
   )
 }

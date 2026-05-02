@@ -217,6 +217,20 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         self.assertEqual(data.get("analysis_type"), "finops_operating_review")
         self.assertIn("prompt", data)
 
+    def test_08_operating_review_pack_endpoint(self) -> None:
+        resp = self.client.get(
+            "/api/v1/analytics/operating-review?months=12&cloud_provider=all",
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("summary", data)
+        self.assertIn("top_actions", data)
+        self.assertIn("execution_plan", data)
+        self.assertIn("risk_register", data)
+        self.assertIn("genai_prompt", data)
+        self.assertIn("cost_context", data)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -387,6 +387,20 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     })
   }
 
+  async function post_api_v1_analytics_kubernetes_opencost_auto_install(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/kubernetes/opencost/auto-install"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'POST',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
   async function post_api_v1_analytics_kubernetes_opencost_sync(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/analytics/kubernetes/opencost/sync"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
@@ -394,6 +408,20 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     }
     return request({
       method: 'POST',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
+  async function get_api_v1_analytics_kubernetes_provider_catalog(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/kubernetes/provider-catalog"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
       path: resolvedPath,
       query: args.query,
       body: args.body,
@@ -417,6 +445,20 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
 
   async function get_api_v1_analytics_maturity(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/analytics/maturity"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
+  async function get_api_v1_analytics_operating_review(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/operating-review"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
       resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
     }
@@ -1967,9 +2009,12 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     get_api_v1_analytics_efficiency_score,
     get_api_v1_analytics_forecast_diagnostics,
     post_api_v1_analytics_kubernetes_cluster_cost,
+    post_api_v1_analytics_kubernetes_opencost_auto_install,
     post_api_v1_analytics_kubernetes_opencost_sync,
+    get_api_v1_analytics_kubernetes_provider_catalog,
     get_api_v1_analytics_kubernetes_summary,
     get_api_v1_analytics_maturity,
+    get_api_v1_analytics_operating_review,
     get_api_v1_analytics_optimization_portfolio,
     get_api_v1_analytics_scorecards,
     get_api_v1_analytics_sustainability,

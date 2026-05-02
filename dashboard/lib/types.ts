@@ -1418,20 +1418,27 @@ export interface RightsizingResponse {
 // ---------------------------------------------------------------------------
 
 export interface TagCoverageDetail {
-  tag_key: string
+  tag: string
   coverage_percent: number
-  missing_on_resources: number
-  estimated_untagged_spend_usd: number
-  is_critical: boolean
+  compliant: boolean
+  priority: 'critical' | 'recommended' | string
+  allocation_impact: 'high' | 'medium' | 'low' | string
 }
 
 export interface TaggingCoverageResponse {
   generated_at: string
-  overall_coverage_percent: number
+  coverage_percent: number
+  benchmark_percent: number
+  coverage_gap_percent: number
+  grade: string
   allocation_readiness_score: number
-  untagged_spend_usd: number
+  untagged_spend_monthly_usd: number
+  untagged_spend_annual_usd: number
+  resource_count: number
+  untagged_resource_count: number
   critical_tag_gaps: string[]
-  tag_details: TagCoverageDetail[]
+  tag_analysis: TagCoverageDetail[]
+  enforcement_recommendations: string[]
   genai_narrative: string | null
   genai_prompt: string
   cost_context: Record<string, unknown>
@@ -1443,25 +1450,29 @@ export interface TaggingCoverageResponse {
 
 export interface ProviderFootprint {
   provider: string
-  carbon_kg_co2e_monthly: number
+  monthly_cost_usd: number
+  kg_co2e_monthly: number
+  tonnes_co2e_annual: number
   carbon_intensity_kg_per_usd: number
-  region_modifier: number
 }
 
 export interface SustainabilityReductionOpportunity {
-  action: string
-  estimated_reduction_kg_co2e: number
-  estimated_savings_usd: number
-  effort: string
+  rightsizing_co2e_kg_monthly: number
+  incremental_renewable_co2e_kg_monthly: number
+  total_reduction_potential_kg_monthly: number
+  total_reduction_potential_percent: number
 }
 
 export interface SustainabilityResponse {
   generated_at: string
-  total_carbon_kg_co2e_monthly: number
-  total_carbon_tonnes_co2e_annual: number
+  total_kg_co2e_monthly: number
+  total_tonnes_co2e_annual: number
+  current_renewable_energy_percent: number
   sustainability_score: number
-  provider_footprints: ProviderFootprint[]
+  sustainability_grade: string
+  provider_emissions: ProviderFootprint[]
   reduction_opportunities: SustainabilityReductionOpportunity[]
+  recommendations: string[]
   genai_narrative: string | null
   genai_prompt: string
   cost_context: Record<string, unknown>
@@ -1474,25 +1485,34 @@ export interface SustainabilityResponse {
 export interface ProviderHealthScore {
   provider: string
   health_score: number
-  cost_share_percent: number
+  monthly_cost_usd: number
+  share_percent: number
+  estimated_waste_usd: number
   waste_rate_percent: number
   commitment_coverage_percent: number
-  tagging_coverage_percent: number
+  volatility_score: number
+  growth_rate_percent: number
+  commitment_opportunity_usd: number
+  health_grade: string
 }
 
 export interface ArbitrageOpportunity {
-  workload: string
-  current_provider: string
-  target_provider: string
-  estimated_monthly_savings_usd: number
-  confidence: string
+  from_provider: string
+  to_provider: string
+  moveable_spend_usd: number
+  estimated_annual_savings_usd: number
+  rationale: string
 }
 
 export interface CrossProviderComparisonResponse {
   generated_at: string
-  hhi_concentration_score: number
+  total_monthly_spend_usd: number
+  provider_count: number
   concentration_risk: string
-  provider_health_scores: ProviderHealthScore[]
+  concentration_hhi: number
+  providers: ProviderHealthScore[]
+  best_performing_provider: string | null
+  lowest_health_provider: string | null
   arbitrage_opportunities: ArbitrageOpportunity[]
   genai_narrative: string | null
   genai_prompt: string
@@ -1504,21 +1524,38 @@ export interface CrossProviderComparisonResponse {
 // ---------------------------------------------------------------------------
 
 export interface AnomalyIntelligenceItem {
+  rank: number
   service: string
   provider: string
+  z_score: number
+  change_usd: number
+  baseline_monthly_usd: number
+  impact_percent: number
   anomaly_score: number
-  root_cause_pattern: string
-  investigation_playbook: string[]
-  escalation_recommended: boolean
-  estimated_monthly_impact_usd: number
+  severity: string
+  root_cause: {
+    hypothesis: string
+    investigation_action: string
+  }
+  escalation: string
+  financial_context: {
+    change_as_percent_of_monthly: number
+    annualized_if_persistent_usd: number
+  }
 }
 
 export interface AnomalyIntelligenceResponse {
   generated_at: string
-  total_anomalies_detected: number
-  high_confidence_anomalies: number
-  annualized_risk_usd: number
+  anomaly_count: number
+  total_financial_impact_usd: number
+  critical_count: number
+  high_count: number
+  unresolved_critical_annual_risk_usd: number
   anomalies: AnomalyIntelligenceItem[]
+  triage_summary: {
+    immediate_action: string[]
+    watch_list: string[]
+  }
   genai_narrative: string | null
   genai_prompt: string
   cost_context: Record<string, unknown>
@@ -1530,18 +1567,81 @@ export interface AnomalyIntelligenceResponse {
 
 export interface TeamAllocation {
   team: string
+  provider: string
   allocated_spend_usd: number
   share_percent: number
-  top_providers: string[]
+  monthly_budget_usd: number
+  budget_utilization_percent: number | null
+  tags: Record<string, string>
 }
 
 export interface ChargebackSummaryResponse {
   generated_at: string
-  total_spend_usd: number
-  allocated_spend_usd: number
-  unallocated_spend_usd: number
+  model: string
+  total_monthly_spend_usd: number
+  total_allocated_usd: number
+  unallocated_usd: number
+  unallocated_percent: number
   allocation_coverage_percent: number
-  team_allocations: TeamAllocation[]
+  team_count: number
+  allocations: TeamAllocation[]
+  top_spenders: TeamAllocation[]
+  action: string
+  genai_narrative: string | null
+  genai_prompt: string
+  cost_context: Record<string, unknown>
+}
+
+export interface FinOpsOperatingReviewPlanItem {
+  workstream: string
+  owner: string
+  priority: string
+  objective: string
+  target_monthly_savings_usd: number
+}
+
+export interface FinOpsOperatingReviewRiskItem {
+  risk: string
+  severity: string
+  metric: string
+  value: number
+  owner: string
+}
+
+export interface FinOpsOperatingReviewResponse {
+  generated_at: string
+  summary: {
+    current_monthly_spend_usd: number
+    budget_monthly_usd: number
+    budget_utilization_percent: number | null
+    risk_score: number
+    efficiency_score: number
+    estimated_waste_usd: number
+    spend_at_risk_usd: number
+    cost_velocity_pct_mom: number | null
+    commitment_opportunity_annual_usd: number
+    average_budget_breach_probability: number
+    coverage_gap_percent: number
+    unallocated_percent: number
+  }
+  provider_mix: Array<{
+    provider: string
+    monthly_spend_usd: number
+    share_percent: number
+  }>
+  top_actions: Array<{
+    id?: string
+    service?: string
+    title?: string
+    description?: string
+    savings_monthly_usd?: number
+    roi_percent?: number
+    payback_months?: number
+  }>
+  risk_register: FinOpsOperatingReviewRiskItem[]
+  execution_plan: FinOpsOperatingReviewPlanItem[]
+  deterministic_inputs: Record<string, unknown>
+  genai_context: Record<string, unknown>
   genai_narrative: string | null
   genai_prompt: string
   cost_context: Record<string, unknown>

@@ -111,7 +111,7 @@ class Config:
     )
     oci_genai_model: str = field(
         default_factory=lambda: _env_str(
-            "OCI_GENAI_MODEL", "meta.llama-3-70b-instruct"
+            "OCI_GENAI_MODEL", "meta.llama-3.3-70b-instruct"
         )
     )
     oci_genai_compartment_id: str = field(default_factory=_genai_compartment_id)
@@ -152,6 +152,10 @@ class Config:
     # Max $ to save via automation without approval.
     max_auto_action_spend: float = field(
         default_factory=lambda: _env_float("MAX_AUTO_ACTION_SPEND", 1000)
+    )
+    # When false, only dry-run remediation planning is allowed.
+    enable_auto_remediation: bool = field(
+        default_factory=lambda: _env_bool("ENABLE_AUTO_REMEDIATION", "false")
     )
 
     # Scan scheduling

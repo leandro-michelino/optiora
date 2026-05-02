@@ -27,6 +27,20 @@ function formatCurrency(value: number): string {
   });
 }
 
+function resolveHybridErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Unable to load hybrid advisor data.';
+  }
+
+  const message = error.message.trim();
+  const lower = message.toLowerCase();
+  if (lower.includes('timed out') || lower.includes('aborted')) {
+    return 'Hybrid advisor is taking longer than expected. Please retry in a few seconds.';
+  }
+
+  return message || 'Unable to load hybrid advisor data.';
+}
+
 export default function CostAdvisorPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -44,6 +58,7 @@ export default function CostAdvisorPage() {
   const [hybridError, setHybridError] = useState<string | null>(null);
   const [narrativeType, setNarrativeType] = useState<NarrativeType>('optimization_roadmap');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hybridRequestIdRef = useRef(0);
 
   const suggestions: Suggestion[] = [
     { emoji: '📊', text: 'Analyze my cost trends' },
@@ -58,17 +73,26 @@ export default function CostAdvisorPage() {
   }, [messages]);
 
   const loadHybrid = useCallback(async (type: NarrativeType) => {
+    const requestId = hybridRequestIdRef.current + 1;
+    hybridRequestIdRef.current = requestId;
     setHybridLoading(true);
     setHybridError(null);
     setNarrativeType(type);
     try {
       const response = await fetchHybridAdvisor(type);
+      if (requestId !== hybridRequestIdRef.current) {
+        return;
+      }
       setHybrid(response);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : 'Unable to load hybrid advisor data.';
-      setHybridError(detail);
+      if (requestId !== hybridRequestIdRef.current) {
+        return;
+      }
+      setHybridError(resolveHybridErrorMessage(error));
     } finally {
-      setHybridLoading(false);
+      if (requestId === hybridRequestIdRef.current) {
+        setHybridLoading(false);
+      }
     }
   }, []);
 

@@ -135,6 +135,30 @@ class AdvancedFinOpsFeaturesTest(unittest.TestCase):
         statuses = {d["status"] for d in data["decisions"]}
         self.assertTrue("planned" in statuses or "requires_approval" in statuses)
 
+    def test_04b_auto_remediation_execute_requires_flag(self) -> None:
+        payload = {
+            "dry_run": False,
+            "max_actions_per_run": 1,
+            "candidates": [
+                {
+                    "action_id": "a1",
+                    "provider": "aws",
+                    "resource_id": "i-123",
+                    "action_type": "downsize",
+                    "estimated_monthly_impact_usd": 75,
+                    "risk_level": "low",
+                    "confidence": "high"
+                }
+            ],
+        }
+        resp = self.client.post(
+            "/api/v1/automation/remediation/loop",
+            json=payload,
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 503, resp.text)
+        self.assertIn("ENABLE_AUTO_REMEDIATION", resp.text)
+
     def test_05_kubernetes_cluster_cost_fallback_still_works(self) -> None:
         payload = {
             "cluster_name": "prod-k8s",

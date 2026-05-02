@@ -231,7 +231,10 @@ export default function OperationsPage() {
     weekly_summary_enabled: true,
   })
 
-  const supportedProviders = state.info?.supported_providers || ['aws', 'azure', 'gcp', 'oci']
+  const supportedProviders = useMemo(
+    () => state.info?.supported_providers || ['aws', 'azure', 'gcp', 'oci'],
+    [state.info?.supported_providers],
+  )
   const visibleProviders = useMemo(() => {
     const providers = new Set<string>()
     state.credentials.forEach((credential) => providers.add(credential.provider))

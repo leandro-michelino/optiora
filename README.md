@@ -115,6 +115,7 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - `OCI_GENAI_COMPARTMENT_ID` overrides `OCI_COMPARTMENT_OCID` for GenAI calls when the model lives in a separate compartment
 - OCI managed database services should use `BYOL` license model by default when that option is available
 - optional data retention archives cold cost rows to OCI Object Storage before purging them from the database
+- auto-remediation execution is config-gated (`ENABLE_AUTO_REMEDIATION=false` by default); dry-run planning remains available
 
 ## OpenCost Quick Start
 
@@ -159,6 +160,7 @@ Important: `localhost` is resolved on the OptiOra API server, not your browser m
 - `GET /api/v1/analytics/efficiency-score`
 - `GET /api/v1/analytics/commitment-gap`
 - `GET /api/v1/analytics/optimization-portfolio`
+- `GET /api/v1/analytics/operating-review`
 - `GET /api/v1/analytics/tagging-coverage`
 - `GET /api/v1/analytics/sustainability`
 - `GET /api/v1/analytics/cross-provider-comparison`

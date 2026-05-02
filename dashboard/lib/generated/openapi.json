@@ -4060,6 +4060,69 @@
         }
       }
     },
+    "/api/v1/analytics/operating-review": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Analytics Operating Review",
+        "description": "Deterministic FinOps operating review pack with optional GenAI weekly narrative.",
+        "operationId": "analytics_operating_review_api_v1_analytics_operating_review_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cloud_provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Cloud Provider"
+            }
+          },
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 24,
+              "minimum": 1,
+              "default": 12,
+              "title": "Months"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Analytics Operating Review Api V1 Analytics Operating Review Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/analytics/tagging-coverage": {
       "get": {
         "tags": [
@@ -5842,6 +5905,53 @@
         ]
       }
     },
+    "/api/v1/analytics/kubernetes/opencost/auto-install": {
+      "post": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Auto Install Opencost",
+        "description": "Install/upgrade Prometheus + OpenCost in current Kubernetes context on API host.",
+        "operationId": "auto_install_opencost_api_v1_analytics_kubernetes_opencost_auto_install_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenCostInstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenCostInstallResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/analytics/tag-quality": {
       "get": {
         "tags": [
@@ -6057,6 +6167,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/analytics/kubernetes/provider-catalog": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Get Kubernetes Provider Catalog",
+        "description": "List provider regions and node shapes/sizes for K8s cluster planning.",
+        "operationId": "get_kubernetes_provider_catalog_api_v1_analytics_kubernetes_provider_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesProviderCatalogResponse"
                 }
               }
             }
@@ -9108,6 +9245,116 @@
         ],
         "title": "KubernetesOptimizationRecommendation"
       },
+      "KubernetesProviderCatalogEntry": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Regions"
+          },
+          "node_types": {
+            "items": {
+              "$ref": "#/components/schemas/KubernetesProviderNodeType"
+            },
+            "type": "array",
+            "title": "Node Types"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "source",
+          "configured",
+          "regions",
+          "node_types",
+          "message"
+        ],
+        "title": "KubernetesProviderCatalogEntry"
+      },
+      "KubernetesProviderCatalogResponse": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "providers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/KubernetesProviderCatalogEntry"
+            },
+            "type": "object",
+            "title": "Providers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "providers"
+        ],
+        "title": "KubernetesProviderCatalogResponse"
+      },
+      "KubernetesProviderNodeType": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "monthly_cost_usd": {
+            "type": "number",
+            "title": "Monthly Cost Usd"
+          },
+          "vcpu": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vcpu"
+          },
+          "memory_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Gib"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "live"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "monthly_cost_usd"
+        ],
+        "title": "KubernetesProviderNodeType"
+      },
       "KubernetesTeamCost": {
         "properties": {
           "team": {
@@ -9462,6 +9709,99 @@
         ],
         "title": "NotificationDestinationsResponse"
       },
+      "OpenCostInstallRequest": {
+        "properties": {
+          "kube_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kube Context"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace",
+            "default": "opencost"
+          },
+          "prometheus_namespace": {
+            "type": "string",
+            "title": "Prometheus Namespace",
+            "default": "prometheus-system"
+          },
+          "skip_prometheus_install": {
+            "type": "boolean",
+            "title": "Skip Prometheus Install",
+            "default": false
+          },
+          "expose_port": {
+            "type": "integer",
+            "title": "Expose Port",
+            "default": 9003
+          }
+        },
+        "type": "object",
+        "title": "OpenCostInstallRequest"
+      },
+      "OpenCostInstallResponse": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "installed",
+              "already_installed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "api_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Url"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "prometheus_namespace": {
+            "type": "string",
+            "title": "Prometheus Namespace"
+          },
+          "command_log": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Command Log"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "status",
+          "message",
+          "namespace",
+          "prometheus_namespace"
+        ],
+        "title": "OpenCostInstallResponse"
+      },
       "OpenCostNamespaceCost": {
         "properties": {
           "namespace": {
@@ -9484,6 +9824,34 @@
           "share_percent"
         ],
         "title": "OpenCostNamespaceCost"
+      },
+      "OpenCostPodCost": {
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "pod_name": {
+            "type": "string",
+            "title": "Pod Name"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          },
+          "share_percent": {
+            "type": "number",
+            "title": "Share Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "namespace",
+          "pod_name",
+          "cost_usd",
+          "share_percent"
+        ],
+        "title": "OpenCostPodCost"
       },
       "OpenCostSyncRequest": {
         "properties": {
@@ -9542,6 +9910,13 @@
             },
             "type": "array",
             "title": "Namespaces"
+          },
+          "pods": {
+            "items": {
+              "$ref": "#/components/schemas/OpenCostPodCost"
+            },
+            "type": "array",
+            "title": "Pods"
           }
         },
         "type": "object",
@@ -10745,6 +11120,96 @@
           "action": {
             "type": "string",
             "title": "Action"
+          },
+          "evidence_source": {
+            "type": "string",
+            "title": "Evidence Source",
+            "default": "synthetic"
+          },
+          "analysis_points": {
+            "type": "integer",
+            "title": "Analysis Points",
+            "default": 0
+          },
+          "trend_slope_usd": {
+            "type": "number",
+            "title": "Trend Slope Usd",
+            "default": 0.0
+          },
+          "trend_percent": {
+            "type": "number",
+            "title": "Trend Percent",
+            "default": 0.0
+          },
+          "latest_monthly_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Monthly Cost Usd"
+          },
+          "peak_monthly_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Monthly Cost Usd"
+          },
+          "top_regions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Top Regions"
+          },
+          "regional_breakdown": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Regional Breakdown"
+          },
+          "resource_console_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Console Url"
+          },
+          "last_observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Observed At"
+          },
+          "risk_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Note"
           }
         },
         "type": "object",

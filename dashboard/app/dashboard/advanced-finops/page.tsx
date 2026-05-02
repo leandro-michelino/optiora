@@ -11,6 +11,7 @@ import {
   fetchCrossProviderComparison,
   fetchAnomalyIntelligence,
   fetchChargebackSummary,
+  fetchFinOpsOperatingReview,
 } from '@/lib/api'
 import {
   DecisionRecommendationResponse,
@@ -21,6 +22,7 @@ import {
   CrossProviderComparisonResponse,
   AnomalyIntelligenceResponse,
   ChargebackSummaryResponse,
+  FinOpsOperatingReviewResponse,
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -64,6 +66,7 @@ export default function AdvancedFinOpsPage() {
   const [crossProvider, setCrossProvider] = useState<CrossProviderComparisonResponse | null>(null)
   const [anomalyIntel, setAnomalyIntel] = useState<AnomalyIntelligenceResponse | null>(null)
   const [chargeback, setChargeback] = useState<ChargebackSummaryResponse | null>(null)
+  const [operatingReview, setOperatingReview] = useState<FinOpsOperatingReviewResponse | null>(null)
 
   const pushToast = useCallback((title: string, detail: string, kind: ToastKind = 'info') => {
     const id = Date.now() + Math.floor(Math.random() * 1000)
@@ -82,7 +85,7 @@ export default function AdvancedFinOpsPage() {
     setLoadingTagQuality(true)
     setLoadingDecision(true)
     setLoadingFederation(true)
-    const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes] = await Promise.allSettled([
+    const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes, opRes] = await Promise.allSettled([
       fetchTagQualityScore('all'),
       fetchDecisionGradeRecommendations({ top_n: 8, provider: 'all', min_monthly_savings: 10 }),
       fetchFederatedCosts({ provider: 'all', include_regions: true }),
@@ -91,6 +94,7 @@ export default function AdvancedFinOpsPage() {
       fetchCrossProviderComparison(),
       fetchAnomalyIntelligence('all'),
       fetchChargebackSummary('all'),
+      fetchFinOpsOperatingReview('all', 12),
     ])
 
     if (tagRes.status === 'fulfilled') {
@@ -125,6 +129,7 @@ export default function AdvancedFinOpsPage() {
     if (cpRes.status === 'fulfilled') setCrossProvider(cpRes.value)
     if (aiRes.status === 'fulfilled') setAnomalyIntel(aiRes.value)
     if (cbRes.status === 'fulfilled') setChargeback(cbRes.value)
+    if (opRes.status === 'fulfilled') setOperatingReview(opRes.value)
 
     if (tagRes.status === 'rejected' && decRes.status === 'rejected' && fedRes.status === 'rejected') {
       setError('Failed to load advanced FinOps data.')
@@ -193,8 +198,8 @@ export default function AdvancedFinOpsPage() {
             <Card>
               <CardContent className="p-4">
                 <p className="text-xs text-slate-500">Auto-Remediation</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">Off</p>
-                <p className="text-sm text-slate-500">Temporarily disabled</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">Guardrailed</p>
+                <p className="text-sm text-slate-500">Dry-run by default</p>
               </CardContent>
             </Card>
           </div>
@@ -315,9 +320,9 @@ export default function AdvancedFinOpsPage() {
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                  Automatic remediation actions are temporarily disabled.
+                  Non-dry-run remediation execution requires ENABLE_AUTO_REMEDIATION=true.
                 </div>
-                <p className="text-sm text-slate-500">Rightsizing and optimization recommendations remain available as read-only guidance.</p>
+                <p className="text-sm text-slate-500">Dry-run planning remains active with guardrails, and rightsizing recommendations remain fully available.</p>
               </CardContent>
             </Card>
           </div>
@@ -334,7 +339,7 @@ export default function AdvancedFinOpsPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <p className="text-xs text-slate-500">Overall Coverage</p>
-                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{taggingCoverage.overall_coverage_percent.toFixed(1)}%</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{taggingCoverage.coverage_percent.toFixed(1)}%</p>
                       </div>
                       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <p className="text-xs text-slate-500">Allocation Readiness</p>
@@ -342,7 +347,7 @@ export default function AdvancedFinOpsPage() {
                       </div>
                     </div>
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/30">
-                      <p className="font-medium text-amber-800 dark:text-amber-200">Untagged Spend: {fmt(taggingCoverage.untagged_spend_usd)}</p>
+                      <p className="font-medium text-amber-800 dark:text-amber-200">Untagged Spend: {fmt(taggingCoverage.untagged_spend_monthly_usd)}</p>
                       {taggingCoverage.critical_tag_gaps.length > 0 && (
                         <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Critical gaps: {taggingCoverage.critical_tag_gaps.join(', ')}</p>
                       )}
@@ -367,7 +372,7 @@ export default function AdvancedFinOpsPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <p className="text-xs text-slate-500">Monthly CO₂e</p>
-                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{sustainability.total_carbon_kg_co2e_monthly.toFixed(0)} kg</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{sustainability.total_kg_co2e_monthly.toFixed(0)} kg</p>
                       </div>
                       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <p className="text-xs text-slate-500">Sustainability Score</p>
@@ -375,10 +380,10 @@ export default function AdvancedFinOpsPage() {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      {sustainability.provider_footprints.map(pf => (
+                      {sustainability.provider_emissions.map(pf => (
                         <div key={pf.provider} className="flex justify-between text-sm rounded border border-slate-200 px-2 py-1 dark:border-slate-700">
                           <span className="text-slate-700 dark:text-slate-300 uppercase">{pf.provider}</span>
-                          <span className="font-medium text-slate-900 dark:text-white">{pf.carbon_kg_co2e_monthly.toFixed(1)} kg CO₂e/mo</span>
+                          <span className="font-medium text-slate-900 dark:text-white">{pf.kg_co2e_monthly.toFixed(1)} kg CO₂e/mo</span>
                         </div>
                       ))}
                     </div>
@@ -402,17 +407,17 @@ export default function AdvancedFinOpsPage() {
                 {crossProvider ? (
                   <div className="space-y-3">
                     <div className="rounded-lg border border-slate-200 p-2 text-xs text-center dark:border-slate-700">
-                      HHI Concentration: <span className="font-bold">{crossProvider.hhi_concentration_score.toFixed(2)}</span>
+                      HHI Concentration: <span className="font-bold">{crossProvider.concentration_hhi.toFixed(2)}</span>
                       {' · '}<span className="capitalize">{crossProvider.concentration_risk}</span> risk
                     </div>
-                    {crossProvider.provider_health_scores.map(p => (
+                    {crossProvider.providers.map(p => (
                       <div key={p.provider} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium uppercase text-slate-900 dark:text-white">{p.provider}</span>
                           <span className="text-xs text-slate-500">Health: {p.health_score.toFixed(0)}/100</span>
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          Share: {p.cost_share_percent.toFixed(1)}% · Waste: {p.waste_rate_percent.toFixed(1)}% · Commitment: {p.commitment_coverage_percent.toFixed(0)}%
+                          Share: {p.share_percent.toFixed(1)}% · Waste: {p.waste_rate_percent.toFixed(1)}% · Commitment: {p.commitment_coverage_percent.toFixed(0)}%
                         </div>
                       </div>
                     ))}
@@ -436,11 +441,11 @@ export default function AdvancedFinOpsPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <p className="text-xs text-slate-500">Detected Anomalies</p>
-                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{anomalyIntel.total_anomalies_detected}</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{anomalyIntel.anomaly_count}</p>
                       </div>
                       <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <p className="text-xs text-slate-500">Annualised Risk</p>
-                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{fmt(anomalyIntel.annualized_risk_usd)}</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">{fmt(anomalyIntel.unresolved_critical_annual_risk_usd)}</p>
                       </div>
                     </div>
                     <div className="max-h-64 space-y-2 overflow-y-auto">
@@ -448,9 +453,9 @@ export default function AdvancedFinOpsPage() {
                         <div key={i} className="rounded border border-slate-200 px-2 py-2 text-xs dark:border-slate-700">
                           <div className="flex justify-between">
                             <span className="font-medium text-slate-800 dark:text-slate-200">{a.service} ({a.provider.toUpperCase()})</span>
-                            {a.escalation_recommended && <Badge variant="outline" className="text-red-600 border-red-300 rounded-md">Escalate</Badge>}
+                            {a.severity === 'critical' && <Badge variant="outline" className="text-red-600 border-red-300 rounded-md">Escalate</Badge>}
                           </div>
-                          <p className="text-slate-500 mt-0.5">{a.root_cause_pattern} · {fmt(a.estimated_monthly_impact_usd)}/mo</p>
+                          <p className="text-slate-500 mt-0.5">{a.root_cause.hypothesis} · {fmt(Math.abs(a.change_usd))}/mo</p>
                         </div>
                       ))}
                     </div>
@@ -475,11 +480,11 @@ export default function AdvancedFinOpsPage() {
                   <div className="grid grid-cols-3 gap-3">
                     <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                       <p className="text-xs text-slate-500">Allocated</p>
-                      <p className="text-xl font-bold text-slate-900 dark:text-white">{fmt(chargeback.allocated_spend_usd)}</p>
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">{fmt(chargeback.total_allocated_usd)}</p>
                     </div>
                     <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                       <p className="text-xs text-slate-500">Unallocated</p>
-                      <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{fmt(chargeback.unallocated_spend_usd)}</p>
+                      <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{fmt(chargeback.unallocated_usd)}</p>
                     </div>
                     <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                       <p className="text-xs text-slate-500">Coverage</p>
@@ -493,16 +498,16 @@ export default function AdvancedFinOpsPage() {
                           <th className="pb-2 text-left text-xs text-slate-500 font-medium">Team</th>
                           <th className="pb-2 text-right text-xs text-slate-500 font-medium">Spend</th>
                           <th className="pb-2 text-right text-xs text-slate-500 font-medium">Share</th>
-                          <th className="pb-2 text-left text-xs text-slate-500 font-medium">Top Providers</th>
+                          <th className="pb-2 text-left text-xs text-slate-500 font-medium">Provider</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {chargeback.team_allocations.map(t => (
-                          <tr key={t.team}>
+                        {chargeback.allocations.map((t, idx) => (
+                          <tr key={`${t.team}-${t.provider}-${idx}`}>
                             <td className="py-1.5 text-slate-900 dark:text-white font-medium">{t.team}</td>
                             <td className="py-1.5 text-right text-slate-700 dark:text-slate-300">{fmt(t.allocated_spend_usd)}</td>
                             <td className="py-1.5 text-right text-slate-500">{t.share_percent.toFixed(1)}%</td>
-                            <td className="py-1.5 text-slate-500 uppercase text-xs">{t.top_providers.join(', ')}</td>
+                            <td className="py-1.5 text-slate-500 uppercase text-xs">{t.provider}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -514,6 +519,47 @@ export default function AdvancedFinOpsPage() {
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">Loading chargeback summary...</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+              <CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" />Weekly FinOps Operating Review</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {operatingReview ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs text-slate-500">Risk Score</p>
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">{operatingReview.summary.risk_score.toFixed(0)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs text-slate-500">Waste / Month</p>
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">{fmt(operatingReview.summary.estimated_waste_usd)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs text-slate-500">Spend at Risk</p>
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">{fmt(operatingReview.summary.spend_at_risk_usd)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <p className="text-xs text-slate-500">Budget Breach</p>
+                      <p className="text-xl font-bold text-slate-900 dark:text-white">{(operatingReview.summary.average_budget_breach_probability * 100).toFixed(1)}%</p>
+                    </div>
+                  </div>
+                  {operatingReview.genai_narrative ? (
+                    <p className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs italic text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
+                      {operatingReview.genai_narrative}
+                    </p>
+                  ) : (
+                    <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300">
+                      GenAI prompt fallback is available in this response when OCI GenAI is not configured.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Loading operating review...</p>
               )}
             </CardContent>
           </Card>

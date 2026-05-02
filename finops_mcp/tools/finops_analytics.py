@@ -2114,6 +2114,249 @@ def build_optimization_portfolio(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_finops_operating_review(params: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic weekly operating review pack with GenAI-ready context."""
+    current_monthly = _safe_float(params.get("current_monthly_spend"), 0.0)
+    budget_monthly = _safe_float(params.get("budget_monthly"), 0.0)
+    cost_breakdown = params.get("cost_breakdown") or {}
+    providers = _provider_inputs(cost_breakdown)
+
+    analytics_result = params.get("analytics_result")
+    if not isinstance(analytics_result, dict):
+        analytics_result = build_analytics(
+            {
+                "cloud_provider": params.get("cloud_provider", "all"),
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+                "anomalies": params.get("anomalies", 0),
+                "monthly_savings": params.get("monthly_savings", 0),
+                "budget_monthly": budget_monthly,
+            }
+        )
+
+    waste_result = params.get("waste_result")
+    if not isinstance(waste_result, dict):
+        waste_result = build_cloud_waste_analysis(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+            }
+        )
+
+    efficiency_result = params.get("efficiency_result")
+    if not isinstance(efficiency_result, dict):
+        efficiency_result = build_cost_efficiency_score(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+                "waste_rate_percent": (analytics_result.get("unit_metrics") or {}).get(
+                    "estimated_waste_rate_percent", 18.0
+                ),
+                "anomaly_density_per_10k": (analytics_result.get("unit_metrics") or {}).get(
+                    "anomaly_density_per_10k", 8.0
+                ),
+                "budget_utilization_percent": (analytics_result.get("unit_metrics") or {}).get(
+                    "budget_utilization_percent", 85.0
+                ),
+            }
+        )
+
+    commitment_gap_result = params.get("commitment_gap_result")
+    if not isinstance(commitment_gap_result, dict):
+        commitment_gap_result = build_commitment_gap_analysis(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+            }
+        )
+
+    tagging_result = params.get("tagging_result")
+    if not isinstance(tagging_result, dict):
+        tagging_result = build_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+            }
+        )
+
+    chargeback_result = params.get("chargeback_result")
+    if not isinstance(chargeback_result, dict):
+        chargeback_result = build_chargeback_summary(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+            }
+        )
+
+    forecast_result = params.get("forecast_result")
+    if not isinstance(forecast_result, dict):
+        forecast_result = build_forecast(
+            {
+                "months": int(params.get("months", 12) or 12),
+                "cloud_provider": params.get("cloud_provider", "all"),
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+                "historical_monthly_spend": params.get("historical_monthly_spend", []),
+                "budget_monthly": budget_monthly,
+                "fallback_monthly_spend": params.get("fallback_monthly_spend", 0),
+            }
+        )
+
+    recommendation_rows = params.get("recommendations") or []
+    if not isinstance(recommendation_rows, list):
+        recommendation_rows = []
+    ranked_actions = sorted(
+        [row for row in recommendation_rows if isinstance(row, dict)],
+        key=lambda row: _safe_float(row.get("savings_monthly_usd"), 0.0),
+        reverse=True,
+    )
+    top_actions = ranked_actions[:5]
+
+    budget_guardrails = forecast_result.get("budget_guardrails") or {}
+    breach_probability = _safe_float(budget_guardrails.get("average_breach_probability"), 0.0)
+    coverage_gap = _safe_float(tagging_result.get("coverage_gap_percent"), 0.0)
+    unallocated_pct = _safe_float(chargeback_result.get("unallocated_percent"), 0.0)
+    efficiency_score = _safe_float(efficiency_result.get("overall_score"), 0.0)
+    risk_score = _safe_float(analytics_result.get("risk_score"), 0.0)
+    cost_velocity = forecast_result.get("cost_velocity_pct_mom")
+    commitment_annual = _safe_float(commitment_gap_result.get("total_annual_opportunity_usd"), 0.0)
+    waste_monthly = _safe_float(waste_result.get("total_estimated_waste_usd"), 0.0)
+    spend_at_risk = _safe_float(analytics_result.get("spend_at_risk_usd"), 0.0)
+    budget_utilization = (
+        (current_monthly / budget_monthly * 100.0) if budget_monthly > 0 else None
+    )
+
+    risk_register = []
+    if breach_probability >= 0.35:
+        risk_register.append(
+            {
+                "risk": "Budget breach pressure",
+                "severity": "high",
+                "metric": "avg_breach_probability",
+                "value": round(breach_probability, 4),
+                "owner": "FinOps",
+            }
+        )
+    if coverage_gap >= 15:
+        risk_register.append(
+            {
+                "risk": "Tagging governance gap",
+                "severity": "medium",
+                "metric": "coverage_gap_percent",
+                "value": round(coverage_gap, 1),
+                "owner": "Platform",
+            }
+        )
+    if unallocated_pct >= 12:
+        risk_register.append(
+            {
+                "risk": "Chargeback leakage",
+                "severity": "medium",
+                "metric": "unallocated_percent",
+                "value": round(unallocated_pct, 1),
+                "owner": "FinOps",
+            }
+        )
+    if _safe_float(cost_velocity, 0.0) >= 4:
+        risk_register.append(
+            {
+                "risk": "Spend acceleration",
+                "severity": "medium",
+                "metric": "cost_velocity_pct_mom",
+                "value": round(_safe_float(cost_velocity, 0.0), 2),
+                "owner": "App Team",
+            }
+        )
+
+    execution_plan = [
+        {
+            "workstream": "Optimization",
+            "owner": "Platform",
+            "priority": "P1",
+            "objective": "Execute top deterministic rightsizing and commitment actions",
+            "target_monthly_savings_usd": round(
+                sum(_safe_float(row.get("savings_monthly_usd"), 0.0) for row in top_actions[:3]), 2
+            ),
+        },
+        {
+            "workstream": "Governance",
+            "owner": "FinOps",
+            "priority": "P1",
+            "objective": "Reduce unallocated and untagged spend coverage gaps",
+            "target_monthly_savings_usd": round(max(waste_monthly * 0.08, 0.0), 2),
+        },
+        {
+            "workstream": "Forecast Risk",
+            "owner": "Procurement",
+            "priority": "P2",
+            "objective": "Mitigate downside risk and improve budget confidence",
+            "target_monthly_savings_usd": round(max(spend_at_risk * 0.12, 0.0), 2),
+        },
+    ]
+
+    provider_risk = sorted(
+        (
+            {
+                "provider": provider,
+                "monthly_spend_usd": round(cost, 2),
+                "share_percent": round(cost / max(current_monthly, 1.0) * 100, 1),
+            }
+            for provider, cost in providers.items()
+        ),
+        key=lambda row: row["monthly_spend_usd"],
+        reverse=True,
+    )
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "summary": {
+            "current_monthly_spend_usd": round(current_monthly, 2),
+            "budget_monthly_usd": round(budget_monthly, 2) if budget_monthly > 0 else 0.0,
+            "budget_utilization_percent": round(budget_utilization, 1) if budget_utilization is not None else None,
+            "risk_score": round(risk_score, 1),
+            "efficiency_score": round(efficiency_score, 1),
+            "estimated_waste_usd": round(waste_monthly, 2),
+            "spend_at_risk_usd": round(spend_at_risk, 2),
+            "cost_velocity_pct_mom": round(_safe_float(cost_velocity, 0.0), 2) if cost_velocity is not None else None,
+            "commitment_opportunity_annual_usd": round(commitment_annual, 2),
+            "average_budget_breach_probability": round(breach_probability, 4),
+            "coverage_gap_percent": round(coverage_gap, 1),
+            "unallocated_percent": round(unallocated_pct, 1),
+        },
+        "provider_mix": provider_risk,
+        "top_actions": top_actions,
+        "risk_register": risk_register,
+        "execution_plan": execution_plan,
+        "deterministic_inputs": {
+            "analytics": analytics_result,
+            "waste": waste_result,
+            "efficiency": efficiency_result,
+            "commitment_gap": commitment_gap_result,
+            "tagging_coverage": tagging_result,
+            "chargeback_summary": chargeback_result,
+            "forecast_quality": forecast_result.get("forecast_quality"),
+            "budget_guardrails": budget_guardrails,
+        },
+        "genai_context": {
+            "current_monthly_spend_usd": round(current_monthly, 2),
+            "budget_monthly_usd": round(budget_monthly, 2) if budget_monthly > 0 else 0.0,
+            "total_estimated_waste_usd": round(waste_monthly, 2),
+            "spend_at_risk_usd": round(spend_at_risk, 2),
+            "risk_score": round(risk_score, 1),
+            "maturity_level": analytics_result.get("maturity_level", "walk"),
+            "grade": efficiency_result.get("grade", "C"),
+            "cost_velocity_pct_mom": (
+                round(_safe_float(cost_velocity, 0.0), 2) if cost_velocity is not None else None
+            ),
+            "budget_guardrails": budget_guardrails,
+            "coverage_gap_percent": round(coverage_gap, 1),
+            "unallocated_percent": round(unallocated_pct, 1),
+            "total_annual_opportunity_usd": round(commitment_annual, 2),
+            "top_opportunities": top_actions,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Async wrappers (called by api.py endpoints)
 # ---------------------------------------------------------------------------
@@ -2160,6 +2403,10 @@ async def get_commitment_gap_analysis(params: dict[str, Any]) -> str:
 
 async def get_optimization_portfolio(params: dict[str, Any]) -> str:
     return json.dumps(build_optimization_portfolio(params))
+
+
+async def get_finops_operating_review(params: dict[str, Any]) -> str:
+    return json.dumps(build_finops_operating_review(params))
 
 
 async def get_forecast_what_if(params: dict[str, Any]) -> str:

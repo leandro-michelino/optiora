@@ -5502,6 +5502,144 @@ async def analytics_optimization_portfolio(
     return result
 
 
+@router.get("/analytics/operating-review")
+async def analytics_operating_review(
+    cloud_provider: str = "all",
+    months: int = Query(default=12, ge=1, le=24),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Deterministic FinOps operating review pack with optional GenAI weekly narrative."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+        months=18,
+    )
+
+    analytics_result = _safe_json_load(
+        await finops_analytics.get_analytics(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "anomalies": 0,
+                "monthly_savings": 0,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            }
+        ),
+        {},
+    )
+    waste_result = _safe_json_load(
+        await finops_analytics.get_cloud_waste_analysis(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    efficiency_result = _safe_json_load(
+        await finops_analytics.get_cost_efficiency_score(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "waste_rate_percent": analytics_result.get("unit_metrics", {}).get(
+                    "estimated_waste_rate_percent", 18.0
+                ),
+                "anomaly_density_per_10k": analytics_result.get("unit_metrics", {}).get(
+                    "anomaly_density_per_10k", 8.0
+                ),
+                "budget_utilization_percent": analytics_result.get("unit_metrics", {}).get(
+                    "budget_utilization_percent", 85.0
+                ),
+            }
+        ),
+        {},
+    )
+    commitment_gap_result = _safe_json_load(
+        await finops_analytics.get_commitment_gap_analysis(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    tagging_result = _safe_json_load(
+        await finops_analytics.get_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    chargeback_result = _safe_json_load(
+        await finops_analytics.get_chargeback_summary(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    forecast_result = _safe_json_load(
+        await finops_analytics.get_forecast(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                "fallback_monthly_spend": 0,
+            }
+        ),
+        {},
+    )
+    recommendation_rows = await _deterministic_recommendations(
+        cloud_provider=cloud_provider,
+        current_monthly_spend=context["total_cost"],
+        cost_breakdown=context["breakdown"],
+    )
+
+    result = _safe_json_load(
+        await finops_analytics.get_finops_operating_review(
+            {
+                "cloud_provider": cloud_provider,
+                "months": months,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                "historical_monthly_spend": historical_monthly_spend,
+                "analytics_result": analytics_result,
+                "waste_result": waste_result,
+                "efficiency_result": efficiency_result,
+                "commitment_gap_result": commitment_gap_result,
+                "tagging_result": tagging_result,
+                "chargeback_result": chargeback_result,
+                "forecast_result": forecast_result,
+                "recommendations": recommendation_rows,
+            }
+        ),
+        {},
+    )
+
+    narrative, prompt = genai_advisor.generate_finops_operating_review(
+        result.get("genai_context") or {}
+    )
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/analytics/tagging-coverage")
 async def analytics_tagging_coverage(
     cloud_provider: str = "all",
@@ -5524,10 +5662,13 @@ async def analytics_tagging_coverage(
     narrative, prompt = genai_advisor.generate_tagging_strategy(
         {
             "current_monthly_spend_usd": context["total_cost"],
-            "coverage_percent": result.get("overall_coverage_percent", 0),
-            "untagged_spend_usd": result.get("untagged_spend_usd", 0),
+            "coverage_percent": result.get("coverage_percent", 0),
+            "grade": result.get("grade", "C"),
+            "coverage_gap_percent": result.get("coverage_gap_percent", 0),
+            "untagged_spend_annual_usd": result.get("untagged_spend_annual_usd", 0),
             "critical_tag_gaps": result.get("critical_tag_gaps", []),
             "allocation_readiness_score": result.get("allocation_readiness_score", 0),
+            "enforcement_recommendations": result.get("enforcement_recommendations", []),
         }
     )
     result["genai_narrative"] = narrative
@@ -5558,10 +5699,14 @@ async def analytics_sustainability(
     narrative, prompt = genai_advisor.generate_sustainability_narrative(
         {
             "current_monthly_spend_usd": context["total_cost"],
-            "total_carbon_kg_co2e_monthly": result.get("total_carbon_kg_co2e_monthly", 0),
+            "total_kg_co2e_monthly": result.get("total_kg_co2e_monthly", 0),
+            "total_tonnes_co2e_annual": result.get("total_tonnes_co2e_annual", 0),
+            "current_renewable_energy_percent": result.get("current_renewable_energy_percent", 0),
             "sustainability_score": result.get("sustainability_score", 0),
-            "provider_footprints": result.get("provider_footprints", []),
-            "reduction_opportunities": result.get("reduction_opportunities", []),
+            "sustainability_grade": result.get("sustainability_grade", "C"),
+            "provider_emissions": result.get("provider_emissions", []),
+            "reduction_opportunities": result.get("reduction_opportunities", {}),
+            "recommendations": result.get("recommendations", []),
         }
     )
     result["genai_narrative"] = narrative
@@ -5591,9 +5736,12 @@ async def analytics_cross_provider_comparison(
     narrative, prompt = genai_advisor.generate_cross_provider_comparison_brief(
         {
             "current_monthly_spend_usd": context["total_cost"],
-            "provider_health_scores": result.get("provider_health_scores", []),
-            "hhi_concentration_score": result.get("hhi_concentration_score", 0),
+            "total_monthly_spend_usd": result.get("total_monthly_spend_usd", context["total_cost"]),
+            "best_performing_provider": result.get("best_performing_provider"),
+            "lowest_health_provider": result.get("lowest_health_provider"),
             "arbitrage_opportunities": result.get("arbitrage_opportunities", []),
+            "concentration_risk": result.get("concentration_risk", "medium"),
+            "providers": result.get("providers", []),
         }
     )
     result["genai_narrative"] = narrative
@@ -5626,7 +5774,6 @@ async def analytics_anomaly_intelligence(
         alerts_payload,
         {
             "current_monthly_spend_usd": context["total_cost"],
-            "annualized_risk_usd": result.get("annualized_risk_usd", 0),
         },
     )
     result["genai_narrative"] = narrative
@@ -5656,10 +5803,13 @@ async def analytics_chargeback_summary(
     )
     narrative, prompt = genai_advisor.generate_chargeback_narrative(
         {
-            "current_monthly_spend_usd": context["total_cost"],
-            "allocated_spend_usd": result.get("allocated_spend_usd", 0),
-            "unallocated_spend_usd": result.get("unallocated_spend_usd", 0),
-            "team_allocations": result.get("team_allocations", []),
+            "total_monthly_spend_usd": result.get("total_monthly_spend_usd", context["total_cost"]),
+            "allocation_coverage_percent": result.get("allocation_coverage_percent", 0),
+            "unallocated_usd": result.get("unallocated_usd", 0),
+            "unallocated_percent": result.get("unallocated_percent", 0),
+            "top_spenders": result.get("top_spenders", []),
+            "team_count": result.get("team_count", 0),
+            "model": result.get("model", "showback"),
         }
     )
     result["genai_narrative"] = narrative
@@ -5705,6 +5855,7 @@ async def api_info() -> Dict[str, Any]:
             "cost_attribution": True,
             "commitment_optimization": True,
             "optimization_portfolio": True,
+            "operating_review_pack": True,
             "maturity_assessment": True,
             "unit_economics": True,
             "anomaly_scoring": True,
@@ -10077,10 +10228,15 @@ async def run_auto_remediation_loop(
 ) -> RemediationLoopResponse:
     """Safe automation loop with guardrails for auto-remediation actions."""
     _require_management_role(membership, "auto-remediation")
-    raise HTTPException(
-        status_code=503,
-        detail="Auto-remediation is temporarily disabled.",
-    )
+    config = Config()
+    if not payload.dry_run and not config.enable_auto_remediation:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Auto-remediation execution is disabled. "
+                "Use dry_run=true or set ENABLE_AUTO_REMEDIATION=true."
+            ),
+        )
 
     candidates = list(payload.candidates)
     if not candidates:

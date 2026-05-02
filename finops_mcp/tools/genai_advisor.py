@@ -33,7 +33,7 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 _OCI_GENAI_ENDPOINT = os.getenv("OCI_GENAI_ENDPOINT", "")
-_OCI_GENAI_MODEL = os.getenv("OCI_GENAI_MODEL", "meta.llama-3-70b-instruct")
+_OCI_GENAI_MODEL = os.getenv("OCI_GENAI_MODEL", "meta.llama-3.3-70b-instruct")
 _OCI_COMPARTMENT_ID = os.getenv("OCI_GENAI_COMPARTMENT_ID", "").strip() or os.getenv(
     "OCI_COMPARTMENT_OCID", ""
 )

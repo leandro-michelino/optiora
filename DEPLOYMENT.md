@@ -229,7 +229,7 @@ NEXT_PUBLIC_ENABLE_AUTH=false
 PUBLIC_WORKSPACE_NAME=OptiOra Public Workspace
 PUBLIC_WORKSPACE_EMAIL=public@optiora.local
 OCI_GENAI_ENDPOINT=https://inference.generativeai.uk-london-1.oci.oraclecloud.com
-OCI_GENAI_MODEL=meta.llama-3-70b-instruct
+OCI_GENAI_MODEL=meta.llama-3.3-70b-instruct
 OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
 # Optional GenAI-specific compartment; overrides OCI_COMPARTMENT_OCID for GenAI calls.
 OCI_GENAI_COMPARTMENT_ID=ocid1.compartment.oc1..<genai_compartment_ocid>
@@ -246,6 +246,8 @@ PASSWORD_RESET_RETURN_TOKEN=false
 PASSWORD_RESET_TOKEN_MINUTES=30
 ENABLE_SCAN_SCHEDULER=false
 SCAN_SCHEDULER_INTERVAL_MINUTES=60
+# Auto-remediation execution gate. Keep false unless explicitly approved.
+ENABLE_AUTO_REMEDIATION=false
 RETENTION_ENABLED=false
 RETENTION_HOT_MONTHS=3
 RETENTION_RUN_INTERVAL_HOURS=24
