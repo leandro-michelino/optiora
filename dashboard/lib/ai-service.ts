@@ -392,6 +392,7 @@ Keep structure and line breaks. Do not add or remove recommendations.
 Text:
 ${text}`,
       [],
+      { mode: 'translation', targetLanguage: lang },
     );
     return sanitizeText(translated) || text;
   } catch (error) {
@@ -459,12 +460,38 @@ function matchesResourceFocus(
 
 function isResourceHotspotQuestion(message: string): boolean {
   const q = message.toLowerCase();
-  return (
-    q.includes('costly resource') ||
+  const expensiveIntent =
     q.includes('most costly') ||
     q.includes('most expensive') ||
     q.includes('top expensive') ||
     q.includes('highest cost') ||
+    q.includes('what costs the most') ||
+    q.includes('costs the most') ||
+    q.includes('expensive') ||
+    q.includes('mais caro') ||
+    q.includes('mais cara') ||
+    q.includes('más caro') ||
+    q.includes('más cara') ||
+    q.includes('mas caro') ||
+    q.includes('mas cara');
+
+  const resourceTarget =
+    q.includes('resource') ||
+    q.includes('service') ||
+    q.includes('database') ||
+    q.includes('db') ||
+    q.includes('serverless') ||
+    q.includes('storage') ||
+    q.includes('network') ||
+    q.includes('produto') ||
+    q.includes('product') ||
+    q.includes('produto de nuvem') ||
+    q.includes('cloud product') ||
+    q.includes('banco de dados');
+
+  return (
+    (expensiveIntent && resourceTarget) ||
+    q.includes('costly resource') ||
     q.includes('which resource costs') ||
     q.includes('expensive resource') ||
     q.includes('most expensive service') ||
@@ -472,9 +499,7 @@ function isResourceHotspotQuestion(message: string): boolean {
     q.includes('most expensive database') ||
     q.includes('most expensive serverless') ||
     q.includes('most expensive storage') ||
-    q.includes('most expensive network') ||
-    q.includes('what costs the most') ||
-    q.includes('costs the most')
+    q.includes('most expensive network')
   );
 }
 
@@ -997,7 +1022,18 @@ function signRequest(
   };
 }
 
-async function callOCIGenAI(prompt: string, history: ConversationEntry[]): Promise<string> {
+type GenAICallMode = 'assistant' | 'translation';
+
+interface GenAICallOptions {
+  mode?: GenAICallMode;
+  targetLanguage?: SupportedLanguage;
+}
+
+async function callOCIGenAI(
+  prompt: string,
+  history: ConversationEntry[],
+  options: GenAICallOptions = {},
+): Promise<string> {
   const endpoint = required('OCI_GENAI_ENDPOINT', env('OCI_GENAI_ENDPOINT'));
   const model = required('OCI_GENAI_MODEL', env('OCI_GENAI_MODEL'));
   required('OCI_REGION', env('OCI_REGION'));
@@ -1005,12 +1041,14 @@ async function callOCIGenAI(prompt: string, history: ConversationEntry[]): Promi
   const userOcid = required('OCI_USER_OCID', env('OCI_USER_OCID'));
   const fingerprint = required('OCI_FINGERPRINT', env('OCI_FINGERPRINT'));
   const keyPem = resolvePrivateKeyPem();
+  const mode = options.mode ?? 'assistant';
+  const targetLanguage: SupportedLanguage = options.targetLanguage ?? 'en';
 
   const host = new URL(endpoint).host;
   const path = `/20231130/actions/chat`; // OCI Generative AI Chat Inference path
 
-  // System prompt constrains model to cloud services + FinOps.
-  const systemPrompt = `You are OptiOra Cloud & FinOps AI Assistant.
+  // System prompts by call mode.
+  const assistantPrompt = `You are OptiOra Cloud & FinOps AI Assistant.
 
 SCOPE: Answer ONLY questions about cloud services and cloud operations for AWS, Azure, GCP, and OCI, including:
 - architecture, networking, compute, storage, databases, kubernetes, serverless, security, reliability, and troubleshooting
@@ -1021,7 +1059,13 @@ REFUSE to answer about:
 - legal, HR, medical, investment advice
 - non-cloud topics
 
-If customer data is available in context, use it. If not, clearly state assumptions and provide best-practice guidance.`;
+If customer data is available in context, use it. If not, clearly state assumptions and provide best-practice guidance.
+Always answer in ${LANGUAGE_NAMES[targetLanguage]}.`;
+  const translationPrompt = `You are a precise technical translator for cloud and FinOps content.
+Translate exactly to ${LANGUAGE_NAMES[targetLanguage]}.
+Preserve all numbers, percentages, currencies, OCIDs, IDs, and URLs exactly.
+Do not add explanations.`;
+  const systemPrompt = mode === 'translation' ? translationPrompt : assistantPrompt;
 
   const payload = {
     compartmentId: required('OCI_COMPARTMENT_OCID', env('OCI_COMPARTMENT_OCID')),
@@ -1032,7 +1076,7 @@ If customer data is available in context, use it. If not, clearly state assumpti
       { role: 'user', content: [{ type: 'text', text: prompt }] }
     ],
     maxTokens: 800,
-    temperature: 0.2,
+    temperature: mode === 'translation' ? 0 : 0.2,
     topP: 0.9,
     frequencyPenalty: 0,
     presencePenalty: 0
@@ -1100,7 +1144,10 @@ export async function askCostQuestion(
       return localizeScopeReason(validation.reason, preferredLanguage);
     }
     if (!isDeterministicFinopsQuestion(message)) {
-      const direct = await callOCIGenAI(message, conversationHistory);
+      const direct = await callOCIGenAI(message, conversationHistory, {
+        mode: 'assistant',
+        targetLanguage: preferredLanguage,
+      });
       return await localizeResponseText(direct, preferredLanguage);
     }
     try {
