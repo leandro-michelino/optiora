@@ -32,6 +32,14 @@ function confidenceColor(c: string) {
   return { high: 'text-emerald-600 dark:text-emerald-400', medium: 'text-amber-600 dark:text-amber-400', low: 'text-rose-600 dark:text-rose-400' }[c] ?? ''
 }
 
+function effortColor(e: string) {
+  return {
+    low: 'text-emerald-600 dark:text-emerald-400',
+    medium: 'text-amber-600 dark:text-amber-400',
+    high: 'text-rose-600 dark:text-rose-400',
+  }[e] ?? 'text-slate-500'
+}
+
 function providerColor(p: string) {
   return {
     aws: 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950/30 dark:text-orange-300',
@@ -55,8 +63,62 @@ function UtilBar({ label, value }: { label: string; value: number | null }) {
   )
 }
 
+function utilizationHealth(value: number | null): string {
+  if (value === null || value === undefined) return 'n/a'
+  if (value < 20) return 'very low'
+  if (value < 40) return 'low'
+  if (value < 70) return 'moderate'
+  return 'healthy'
+}
+
+function implementationSteps(rec: RightsizingRecommendation): string[] {
+  if (rec.action === 'downsize') {
+    return [
+      `Capture baseline performance for ${rec.resource_name} (CPU, memory, latency) for 7 days.`,
+      `Apply right-size change from ${rec.current_size} to ${rec.recommended_size} in a maintenance window.`,
+      'Observe workload for one full business cycle and watch for throttling or saturation alerts.',
+      'Lock in the change and update capacity guardrails/autoscaling thresholds.',
+    ]
+  }
+  if (rec.action === 'terminate') {
+    return [
+      `Confirm dependency ownership for ${rec.resource_name} and verify no active traffic.`,
+      'Take snapshot/backup and set a short hold period before deletion.',
+      'Terminate the resource and monitor error budgets for 24-48h.',
+      'Close the action after cost delta appears in billing export.',
+    ]
+  }
+  if (rec.action === 'reserve') {
+    return [
+      `Validate usage stability for ${rec.resource_name} over at least 14-30 days.`,
+      'Select term/payment option matching finance policy and flexibility needs.',
+      'Purchase reservation/commitment and map coverage to target workload.',
+      'Track realized discount versus baseline on the next billing cycles.',
+    ]
+  }
+  return [
+    `Evaluate modernization target replacing ${rec.current_size}.`,
+    'Run benchmark/A-B canary with production-like traffic.',
+    'Migrate progressively with observability and rollback readiness.',
+    'Finalize cutover and remove legacy footprint.',
+  ]
+}
+
+function rollbackPlan(rec: RightsizingRecommendation): string {
+  if (rec.action === 'terminate') {
+    return 'Restore from latest snapshot/backup and reattach dependencies if regression is detected.'
+  }
+  if (rec.action === 'reserve') {
+    return 'Keep a mixed on-demand baseline and shift only stable capacity first.'
+  }
+  return `Revert to ${rec.current_size} and restore previous autoscaling/limits if SLO degradation appears.`
+}
+
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
   const [expanded, setExpanded] = useState(false)
+  const monthlyDeltaPct = rec.current_monthly_cost_usd > 0
+    ? ((rec.current_monthly_cost_usd - rec.projected_monthly_cost_usd) / rec.current_monthly_cost_usd) * 100
+    : 0
   return (
     <Card className="rounded-xl hover:shadow-md transition-shadow">
       <CardContent className="p-5">
@@ -68,9 +130,11 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
                 <Badge className={`rounded-md border text-xs ${providerColor(rec.provider)}`}>{rec.provider.toUpperCase()}</Badge>
                 <Badge className={`rounded-md border text-xs ${actionColor(rec.action)}`}>{rec.action}</Badge>
                 <span className={`text-xs font-medium ${confidenceColor(rec.confidence)}`}>{rec.confidence} confidence</span>
+                <span className={`text-xs font-medium ${effortColor(rec.effort)}`}>effort: {rec.effort}</span>
               </div>
               <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{rec.resource_name}</p>
               <p className="text-xs text-slate-400 font-mono">{rec.resource_id} · {rec.resource_type} · {rec.region}</p>
+              <p className="text-xs text-slate-500 mt-0.5">account: {rec.account_id || 'n/a'}</p>
             </div>
             <div className="text-right shrink-0">
               <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{fmt(rec.monthly_savings_usd)}<span className="text-xs text-slate-400">/mo</span></p>
@@ -99,10 +163,51 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
             {expanded ? 'Hide detail ▲' : 'Show reason ▼'}
           </button>
           {expanded && (
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-1">
-              <p><strong>Reason:</strong> {rec.reason}</p>
-              <p><strong>Effort:</strong> {rec.effort}</p>
-              <p><strong>Account:</strong> {rec.account_id || '—'}</p>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-3">
+              <div>
+                <p className="font-semibold text-slate-800 dark:text-slate-200 mb-1">Recommendation rationale</p>
+                <p>{rec.reason}</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2">
+                  <p className="text-slate-500">Current monthly cost</p>
+                  <p className="font-semibold text-slate-900 dark:text-white">{fmt(rec.current_monthly_cost_usd)}</p>
+                </div>
+                <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2">
+                  <p className="text-slate-500">Projected monthly cost</p>
+                  <p className="font-semibold text-slate-900 dark:text-white">{fmt(rec.projected_monthly_cost_usd)}</p>
+                </div>
+                <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2">
+                  <p className="text-slate-500">Monthly savings rate</p>
+                  <p className="font-semibold text-emerald-600 dark:text-emerald-400">{monthlyDeltaPct.toFixed(1)}%</p>
+                </div>
+                <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2">
+                  <p className="text-slate-500">Annualized opportunity</p>
+                  <p className="font-semibold text-slate-900 dark:text-white">{fmt(rec.annual_savings_usd)}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2 space-y-1">
+                <p className="font-semibold text-slate-800 dark:text-slate-200">Utilization interpretation</p>
+                <p>CPU: {rec.cpu_utilization_avg_percent?.toFixed(1) ?? 'n/a'}% ({utilizationHealth(rec.cpu_utilization_avg_percent)})</p>
+                <p>Memory: {rec.memory_utilization_avg_percent?.toFixed(1) ?? 'n/a'}% ({utilizationHealth(rec.memory_utilization_avg_percent)})</p>
+              </div>
+
+              <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2">
+                <p className="font-semibold text-slate-800 dark:text-slate-200 mb-1">Execution steps</p>
+                <ol className="list-decimal pl-4 space-y-1">
+                  {implementationSteps(rec).map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+
+              <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2 space-y-1">
+                <p className="font-semibold text-slate-800 dark:text-slate-200">Validation and rollback</p>
+                <p>Validation window: monitor SLOs and utilization for 24-72h after change.</p>
+                <p>Rollback plan: {rollbackPlan(rec)}</p>
+              </div>
             </div>
           )}
         </div>
