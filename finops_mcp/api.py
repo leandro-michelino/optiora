@@ -12454,7 +12454,13 @@ async def analytics_vm_utilization_hotspots(
     membership=Depends(get_current_membership),
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Top VM hotspots by CPU/memory and best-effort proxies for disk/network."""
+    """Top VM hotspots by CPU/memory and best-effort proxies for disk/network.
+
+    Uses connected-provider rightsizing/telemetry signals across all providers when
+    available. When explicit CPU/memory telemetry is missing, returns a deterministic
+    cross-provider proxy ranking based on latest monthly cost profile so callers still
+    get a usable top-N response.
+    """
     rightsizing = await get_rightsizing_recommendations(
         provider=provider,
         min_savings=0.0,
@@ -12515,8 +12521,26 @@ async def analytics_vm_utilization_hotspots(
         if rec.memory_utilization_avg_percent is not None
     ]
 
-    # Proxy fallback for disk/network when explicit telemetry is unavailable.
+    # Proxy fallback when explicit telemetry is unavailable.
     # We use latest monthly cost among VM-like resources as a pressure proxy.
+    cpu_proxy = [
+        _to_item(
+            rec,
+            "cpu_proxy_index",
+            float(rec.latest_monthly_cost_usd or rec.current_monthly_cost_usd or 0.0),
+            "proxy_from_cost_profile",
+        )
+        for rec in vm_recs
+    ]
+    memory_proxy = [
+        _to_item(
+            rec,
+            "memory_proxy_index",
+            float(rec.latest_monthly_cost_usd or rec.current_monthly_cost_usd or 0.0),
+            "proxy_from_cost_profile",
+        )
+        for rec in vm_recs
+    ]
     disk_proxy = [
         _to_item(
             rec,
@@ -12538,24 +12562,32 @@ async def analytics_vm_utilization_hotspots(
 
     cpu_items.sort(key=lambda item: float(item["metric_value"]), reverse=True)
     memory_items.sort(key=lambda item: float(item["metric_value"]), reverse=True)
+    cpu_proxy.sort(key=lambda item: float(item["metric_value"]), reverse=True)
+    memory_proxy.sort(key=lambda item: float(item["metric_value"]), reverse=True)
     disk_proxy.sort(key=lambda item: float(item["metric_value"]), reverse=True)
     net_proxy.sort(key=lambda item: float(item["metric_value"]), reverse=True)
+
+    cpu_source = "telemetry_or_provider_signal" if cpu_items else "proxy_from_cost_profile"
+    memory_source = "telemetry_or_provider_signal" if memory_items else "proxy_from_cost_profile"
+    top_cpu = cpu_items[:limit] if cpu_items else cpu_proxy[:limit]
+    top_memory = memory_items[:limit] if memory_items else memory_proxy[:limit]
 
     return {
         "generated_at": _utcnow().isoformat() + "Z",
         "provider": provider,
         "metric_sources": {
-            "cpu": "telemetry_or_provider_signal" if cpu_items else "none",
-            "memory": "telemetry_or_provider_signal" if memory_items else "none",
+            "cpu": cpu_source,
+            "memory": memory_source,
             "disk_io": "proxy_from_cost_profile",
             "network_bandwidth": "proxy_from_cost_profile",
         },
-        "top_cpu": cpu_items[:limit],
-        "top_memory": memory_items[:limit],
+        "top_cpu": top_cpu,
+        "top_memory": top_memory,
         "top_disk_io": disk_proxy[:limit],
         "top_network_bandwidth": net_proxy[:limit],
         "notes": [
-            "CPU and memory rankings use available provider/rightsizing telemetry when present.",
+            "CPU and memory rankings use connected-provider telemetry when available.",
+            "When native CPU/memory telemetry is unavailable, rankings fall back to a deterministic cost-profile proxy.",
             "Disk I/O and network bandwidth use a cost-profile proxy when explicit metrics are not available.",
             "For exact telemetry, connect provider monitoring feeds (CloudWatch, Azure Monitor, Cloud Monitoring, OCI Monitoring).",
         ],

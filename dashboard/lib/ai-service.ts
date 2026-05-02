@@ -140,6 +140,47 @@ interface VMUtilizationHotspotResponseLite {
   notes?: string[];
 }
 
+let lastProviderRefreshAttemptMs = 0;
+const PROVIDER_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+
+async function postJsonSafe(url: string, body: Record<string, unknown> = {}): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function triggerLiveProviderMetricsRefresh(reason: string): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastProviderRefreshAttemptMs < PROVIDER_REFRESH_COOLDOWN_MS) {
+    return false;
+  }
+  lastProviderRefreshAttemptMs = now;
+
+  const apiBase = resolveBackendApiBase();
+  const [schedulerRun, scanStart] = await Promise.all([
+    postJsonSafe(`${apiBase}/api/v1/scanning/scheduler/run-now`),
+    postJsonSafe(`${apiBase}/api/v1/scanning/start`, {
+      providers: ['aws', 'azure', 'gcp', 'oci'],
+      target_accounts: [],
+      reason,
+    }),
+  ]);
+
+  // Give provider connectors a short head start before retrying the query path.
+  if (schedulerRun || scanStart) {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    return true;
+  }
+  return false;
+}
+
 // GenAI scope validation (client-side)
 const FINOPS_KEYWORDS = new Set([
   "cost", "budget", "spend", "billing", "invoice", "pricing", "rate",
@@ -407,6 +448,16 @@ interface ResourceFocus {
   terms: string[];
 }
 
+const QUERY_TOKEN_STOPWORDS = new Set([
+  'what', 'which', 'who', 'how', 'much', 'is', 'are', 'the', 'a', 'an', 'of', 'for', 'in', 'on', 'to',
+  'do', 'does', 'did', 'we', 'our', 'your', 'and', 'or', 'with', 'without', 'many', 'one', 'any',
+  'most', 'highest', 'expensive', 'cost', 'costs', 'costly', 'spend', 'spending',
+  'qual', 'quais', 'que', 'mais', 'maior', 'custo', 'custos', 'gasto', 'gastos',
+  'cuál', 'cual', 'más', 'caro', 'cara', 'coste', 'costos',
+  'resource', 'resources', 'service', 'services', 'cloud', 'produto', 'product',
+  'tenho', 'have', 'i', 'my', 'me', 'you',
+]);
+
 const RESOURCE_FOCUS_CATALOG: ResourceFocus[] = [
   { key: 'database', label: 'database', terms: ['database', 'db', 'rds', 'aurora', 'postgres', 'mysql', 'sql', 'dynamodb', 'cosmos', 'spanner', 'redis'] },
   { key: 'serverless', label: 'serverless', terms: ['serverless', 'lambda', 'function', 'functions', 'function app', 'cloud function', 'cloud run', 'fargate'] },
@@ -422,6 +473,38 @@ const RESOURCE_FOCUS_CATALOG: ResourceFocus[] = [
 
 function includesAny(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
+}
+
+function extractQueryTokens(message: string): string[] {
+  const raw = String(message || '').toLowerCase().match(/[a-z0-9][a-z0-9._+/-]{1,}/g) || [];
+  return raw.filter((token) => token.length >= 3 && !QUERY_TOKEN_STOPWORDS.has(token));
+}
+
+function matchesQueryTokens(
+  item: {
+    resource_name?: string;
+    resource_id?: string;
+    resource_type?: string;
+    service?: string;
+    reason?: string;
+    action?: string;
+    provider?: string;
+  },
+  tokens: string[],
+): boolean {
+  if (tokens.length === 0) return false;
+  const haystack = [
+    sanitizeText(item.resource_name),
+    sanitizeText(item.resource_id),
+    sanitizeText(item.resource_type),
+    sanitizeText(item.service),
+    sanitizeText(item.reason),
+    sanitizeText(item.action),
+    sanitizeText(item.provider),
+  ]
+    .join(' ')
+    .toLowerCase();
+  return tokens.some((token) => haystack.includes(token));
 }
 
 function detectResourceFocus(message: string): ResourceFocus | null {
@@ -463,8 +546,11 @@ function isResourceHotspotQuestion(message: string): boolean {
   const expensiveIntent =
     q.includes('most costly') ||
     q.includes('most expensive') ||
+    q.includes('largest') ||
+    q.includes('biggest') ||
     q.includes('top expensive') ||
     q.includes('highest cost') ||
+    q.includes('highest usage') ||
     q.includes('what costs the most') ||
     q.includes('costs the most') ||
     q.includes('expensive') ||
@@ -473,9 +559,19 @@ function isResourceHotspotQuestion(message: string): boolean {
     q.includes('más caro') ||
     q.includes('más cara') ||
     q.includes('mas caro') ||
-    q.includes('mas cara');
+    q.includes('mas cara') ||
+    q.includes('maior custo') ||
+    q.includes('maior gasto') ||
+    q.includes('highest spend') ||
+    q.includes('mais alto') ||
+    q.includes('más alto') ||
+    q.includes('mayor');
 
   const resourceTarget =
+    q.includes('vm') ||
+    q.includes('virtual machine') ||
+    q.includes('instance') ||
+    q.includes('compute') ||
     q.includes('resource') ||
     q.includes('service') ||
     q.includes('database') ||
@@ -496,6 +592,8 @@ function isResourceHotspotQuestion(message: string): boolean {
     q.includes('expensive resource') ||
     q.includes('most expensive service') ||
     q.includes('highest spend service') ||
+    q.includes('largest database') ||
+    q.includes('biggest database') ||
     q.includes('most expensive database') ||
     q.includes('most expensive serverless') ||
     q.includes('most expensive storage') ||
@@ -503,11 +601,81 @@ function isResourceHotspotQuestion(message: string): boolean {
   );
 }
 
+function isResourceCountQuestion(message: string): boolean {
+  const q = message.toLowerCase();
+  const countIntent =
+    q.includes('how many') ||
+    q.includes('number of') ||
+    q.includes('count of') ||
+    q.includes('total of') ||
+    q.includes('quantos') ||
+    q.includes('quantas') ||
+    q.includes('numero de') ||
+    q.includes('número de') ||
+    q.includes('cuantos') ||
+    q.includes('cuantas') ||
+    q.includes('cuántos') ||
+    q.includes('cuántas') ||
+    q.includes('cantidad de') ||
+    q.includes('combien') ||
+    q.includes('wieviele') ||
+    q.includes('wie viele') ||
+    q.includes('quanti') ||
+    q.includes('quante');
+
+  const resourceIntent =
+    q.includes('resource') ||
+    q.includes('resources') ||
+    q.includes('service') ||
+    q.includes('services') ||
+    q.includes('database') ||
+    q.includes('db') ||
+    q.includes('vm') ||
+    q.includes('instance') ||
+    q.includes('serverless') ||
+    q.includes('storage') ||
+    q.includes('network') ||
+    q.includes('cloud product') ||
+    q.includes('produto de nuvem') ||
+    q.includes('banco de dados') ||
+    detectResourceFocus(message) !== null;
+
+  return countIntent && resourceIntent;
+}
+
+function isVMCostHotspotQuestion(message: string): boolean {
+  const q = message.toLowerCase();
+  const hasVmTerm =
+    q.includes('vm') ||
+    q.includes('virtual machine') ||
+    q.includes('instance') ||
+    q.includes('compute');
+  const hasCostTerm =
+    q.includes('cost') ||
+    q.includes('costs') ||
+    q.includes('custo') ||
+    q.includes('custos') ||
+    q.includes('gasto') ||
+    q.includes('gastos');
+  const hasRankingTerm =
+    q.includes('highest') ||
+    q.includes('most') ||
+    q.includes('top') ||
+    q.includes('maior') ||
+    q.includes('mais caro') ||
+    q.includes('mais cara') ||
+    q.includes('más caro') ||
+    q.includes('más cara');
+  return hasVmTerm && hasCostTerm && hasRankingTerm;
+}
+
 function isDeterministicFinopsQuestion(message: string): boolean {
   const q = message.toLowerCase();
   return (
     q.includes('cost') ||
+    q.includes('costs') ||
     q.includes('spend') ||
+    q.includes('spending') ||
     q.includes('budget') ||
     q.includes('forecast') ||
     q.includes('waste') ||
@@ -520,7 +688,16 @@ function isDeterministicFinopsQuestion(message: string): boolean {
     q.includes('showback') ||
     q.includes('commitment') ||
     q.includes('roadmap') ||
-    q.includes('executive')
+    q.includes('executive') ||
+    q.includes('custo') ||
+    q.includes('custos') ||
+    q.includes('gasto') ||
+    q.includes('gastos') ||
+    q.includes('orcamento') ||
+    q.includes('orçamento') ||
+    q.includes('presupuesto') ||
+    q.includes('costos') ||
+    q.includes('gasto')
   );
 }
 
@@ -589,6 +766,21 @@ function detectVMMetricFocus(message: string): VMMetricFocus {
   return 'all';
 }
 
+function detectRequestedTopLimit(message: string, fallback = 1, max = 10): number {
+  const q = message.toLowerCase();
+  const topMatch = q.match(/\btop\s+(\d{1,2})\b/);
+  if (topMatch) {
+    const parsed = Number(topMatch[1]);
+    if (Number.isFinite(parsed) && parsed >= 1) return Math.min(max, Math.max(1, parsed));
+  }
+  const firstNumber = q.match(/\b(\d{1,2})\b/);
+  if (firstNumber) {
+    const parsed = Number(firstNumber[1]);
+    if (Number.isFinite(parsed) && parsed >= 1 && q.includes('cpu')) return Math.min(max, Math.max(1, parsed));
+  }
+  return Math.min(max, Math.max(1, fallback));
+}
+
 function summarizeResourceLabel(item: {
   resource_name?: string;
   resource_id?: string;
@@ -617,7 +809,7 @@ function summarizeVMLabel(item: VMUtilizationHotspotItemLite): string {
   return `${name} (${provider}, ${region})`;
 }
 
-async function buildResourceLifecycleReply(message: string): Promise<string | null> {
+async function buildResourceLifecycleReply(message: string, allowRefresh = true): Promise<string | null> {
   const apiBase = resolveBackendApiBase();
   try {
     const res = await fetch(
@@ -627,7 +819,15 @@ async function buildResourceLifecycleReply(message: string): Promise<string | nu
     if (!res.ok) return null;
     const payload = (await res.json()) as ResourceIntelligenceResponseLite;
     const top = payload?.matched_resource;
-    if (!top) return null;
+    if (!top) {
+      if (allowRefresh) {
+        const refreshed = await triggerLiveProviderMetricsRefresh('resource_lifecycle_query');
+        if (refreshed) {
+          return buildResourceLifecycleReply(message, false);
+        }
+      }
+      return null;
+    }
 
     const resourceLabel = summarizeResourceLabel({
       resource_name: top.resource_name,
@@ -675,16 +875,23 @@ async function buildResourceLifecycleReply(message: string): Promise<string | nu
     return lines.join('\n\n');
   } catch (error) {
     console.warn('Resource lifecycle lookup failed:', error);
+    if (allowRefresh) {
+      const refreshed = await triggerLiveProviderMetricsRefresh('resource_lifecycle_query');
+      if (refreshed) {
+        return buildResourceLifecycleReply(message, false);
+      }
+    }
     return null;
   }
 }
 
-async function buildVMUtilizationReply(message: string): Promise<string | null> {
+async function buildVMUtilizationReply(message: string, allowRefresh = true): Promise<string | null> {
   const apiBase = resolveBackendApiBase();
   const focus = detectVMMetricFocus(message);
+  const requestedLimit = detectRequestedTopLimit(message, focus === 'all' ? 3 : 1, 10);
   try {
     const res = await fetch(
-      `${apiBase}/api/v1/analytics/vm-utilization-hotspots?provider=all&limit=5`,
+      `${apiBase}/api/v1/analytics/vm-utilization-hotspots?provider=all&limit=${requestedLimit}`,
       { method: 'GET' },
     );
     if (!res.ok) return null;
@@ -694,7 +901,15 @@ async function buildVMUtilizationReply(message: string): Promise<string | null> 
     const topMemory = Array.isArray(payload?.top_memory) ? payload.top_memory : [];
     const topDisk = Array.isArray(payload?.top_disk_io) ? payload.top_disk_io : [];
     const topNet = Array.isArray(payload?.top_network_bandwidth) ? payload.top_network_bandwidth : [];
-    if (topCpu.length + topMemory.length + topDisk.length + topNet.length === 0) return null;
+    if (topCpu.length + topMemory.length + topDisk.length + topNet.length === 0) {
+      if (allowRefresh) {
+        const refreshed = await triggerLiveProviderMetricsRefresh('vm_utilization_query');
+        if (refreshed) {
+          return buildVMUtilizationReply(message, false);
+        }
+      }
+      return null;
+    }
 
     const summarizeLine = (item: VMUtilizationHotspotItemLite, metricLabel: string, unit: string): string => {
       const metricValue = Number.isFinite(Number(item.metric_value))
@@ -704,10 +919,26 @@ async function buildVMUtilizationReply(message: string): Promise<string | null> 
     };
 
     if (focus === 'cpu' && topCpu.length > 0) {
-      return `Highest VM CPU utilization is ${summarizeLine(topCpu[0], 'CPU', '%')}.`;
+      const source = sanitizeText(payload.metric_sources?.cpu) || 'unknown';
+      const metricLabel = source.includes('proxy') ? 'CPU pressure proxy index' : 'CPU';
+      const metricUnit = source.includes('proxy') ? '' : '%';
+      if (requestedLimit > 1) {
+        return `Top ${requestedLimit} VM CPU consumers across connected providers (provider=all, source=${source}):\n${topCpu
+          .slice(0, requestedLimit)
+          .map((item, idx) => `${idx + 1}. ${summarizeLine(item, metricLabel, metricUnit)}`)
+          .join('\n')}`;
+      }
+      return `Highest VM CPU utilization across connected providers is ${summarizeLine(topCpu[0], metricLabel, metricUnit)} (source=${source}).`;
     }
     if (focus === 'memory' && topMemory.length > 0) {
-      return `Highest VM memory utilization is ${summarizeLine(topMemory[0], 'memory', '%')}.`;
+      const source = sanitizeText(payload.metric_sources?.memory) || 'unknown';
+      if (requestedLimit > 1) {
+        return `Top ${requestedLimit} VM memory consumers across connected providers (provider=all, source=${source}):\n${topMemory
+          .slice(0, requestedLimit)
+          .map((item, idx) => `${idx + 1}. ${summarizeLine(item, 'memory', '%')}`)
+          .join('\n')}`;
+      }
+      return `Highest VM memory utilization across connected providers is ${summarizeLine(topMemory[0], 'memory', '%')} (source=${source}).`;
     }
     if (focus === 'disk_io' && topDisk.length > 0) {
       const source = sanitizeText(payload.metric_sources?.disk_io);
@@ -732,13 +963,20 @@ async function buildVMUtilizationReply(message: string): Promise<string | null> 
     return lines.join('\n\n');
   } catch (error) {
     console.warn('VM utilization hotspot lookup failed:', error);
+    if (allowRefresh) {
+      const refreshed = await triggerLiveProviderMetricsRefresh('vm_utilization_query');
+      if (refreshed) {
+        return buildVMUtilizationReply(message, false);
+      }
+    }
     return null;
   }
 }
 
-async function buildResourceHotspotReply(message: string): Promise<string | null> {
+async function buildResourceHotspotReply(message: string, allowRefresh = true): Promise<string | null> {
   const apiBase = resolveBackendApiBase();
   const focus = detectResourceFocus(message);
+  const queryTokens = extractQueryTokens(message);
   const q = message.toLowerCase();
   const wantsServiceView = q.includes('service');
 
@@ -754,8 +992,11 @@ async function buildResourceHotspotReply(message: string): Promise<string | null
       const sorted = recs
         .slice()
         .sort((a, b) => toSafeNumber(b.current_monthly_cost_usd) - toSafeNumber(a.current_monthly_cost_usd));
+      const tokenMatched = queryTokens.length > 0
+        ? sorted.filter((item) => matchesQueryTokens(item, queryTokens))
+        : [];
       const focused = focus ? sorted.filter((item) => matchesResourceFocus(item, focus)) : sorted;
-      const candidates = focus ? focused : sorted;
+      const candidates = tokenMatched.length > 0 ? tokenMatched : (focus ? focused : sorted);
       if (candidates.length > 0) {
         const top = candidates[0];
         const lines: string[] = [];
@@ -803,8 +1044,11 @@ async function buildResourceHotspotReply(message: string): Promise<string | null
       const sorted = items
         .slice()
         .sort((a, b) => toSafeNumber(b.cost_usd) - toSafeNumber(a.cost_usd));
+      const tokenMatched = queryTokens.length > 0
+        ? sorted.filter((item) => matchesQueryTokens(item, queryTokens))
+        : [];
       const focused = focus ? sorted.filter((item) => matchesResourceFocus(item, focus)) : sorted;
-      const candidates = focus ? focused : sorted;
+      const candidates = tokenMatched.length > 0 ? tokenMatched : (focus ? focused : sorted);
       if (candidates.length > 0) {
         const top = candidates[0];
         const next = candidates.slice(1, 4);
@@ -831,7 +1075,7 @@ async function buildResourceHotspotReply(message: string): Promise<string | null
   }
 
   // Third choice: service-level hotspots for non-compute resources.
-  if (focus || wantsServiceView) {
+  if (focus || wantsServiceView || queryTokens.length > 0) {
     try {
       const focusParam = focus ? `&focus=${encodeURIComponent(focus.key)}` : "";
       let serviceRes = await fetch(
@@ -843,15 +1087,31 @@ async function buildResourceHotspotReply(message: string): Promise<string | null
         let items = Array.isArray(payload?.items) ? payload.items : [];
         let usedGenericFallback = false;
 
-        if (focus && items.length === 0) {
+        if ((focus || queryTokens.length > 0) && items.length === 0) {
           serviceRes = await fetch(
-            `${apiBase}/api/v1/analytics/service-hotspots?period=month&cloud_provider=all&limit=8`,
+            `${apiBase}/api/v1/analytics/service-hotspots?period=month&cloud_provider=all&limit=30`,
             { method: 'GET' },
           );
           if (serviceRes.ok) {
             payload = (await serviceRes.json()) as ServiceHotspotResponseLite;
             items = Array.isArray(payload?.items) ? payload.items : [];
             usedGenericFallback = items.length > 0;
+          }
+        }
+
+        if (queryTokens.length > 0 && items.length > 0) {
+          const tokenMatches = items.filter((item) =>
+            matchesQueryTokens(
+              {
+                service: item.service,
+                provider: item.provider,
+              },
+              queryTokens,
+            ),
+          );
+          if (tokenMatches.length > 0) {
+            items = tokenMatches;
+            usedGenericFallback = false;
           }
         }
 
@@ -888,6 +1148,225 @@ async function buildResourceHotspotReply(message: string): Promise<string | null
     }
   }
 
+  if (queryTokens.length > 0) {
+    if (allowRefresh) {
+      const refreshed = await triggerLiveProviderMetricsRefresh('resource_hotspot_query');
+      if (refreshed) {
+        const retry = await buildResourceHotspotReply(message, false);
+        if (retry) return retry;
+      }
+    }
+    return `I attempted a live provider metrics refresh, but still could not find matched spend data for the requested cloud product/service (${queryTokens.join(', ')}).\n\nTry next:\n1. Confirm the exact provider service label in billing exports.\n2. Ask for top services by provider so we can map naming.\n3. Verify the provider account/region is connected and has recent cost data.`;
+  }
+
+  return null;
+}
+
+async function buildResourceCountReply(message: string, allowRefresh = true): Promise<string | null> {
+  const apiBase = resolveBackendApiBase();
+  const focus = detectResourceFocus(message);
+  const queryTokens = extractQueryTokens(message);
+
+  try {
+    const inventoryRes = await fetch(
+      `${apiBase}/api/v1/inventory/resources?provider=all&limit=1000&offset=0`,
+      { method: 'GET' },
+    );
+    if (inventoryRes.ok) {
+      const payload = (await inventoryRes.json()) as ResourceInventoryResponseLite & {
+        total_resources?: number;
+        total_cost_usd?: number;
+      };
+      const allItems = Array.isArray(payload?.items) ? payload.items : [];
+      const tokenMatched = queryTokens.length > 0
+        ? allItems.filter((item) => matchesQueryTokens(item, queryTokens))
+        : [];
+      const focused = focus ? allItems.filter((item) => matchesResourceFocus(item, focus)) : allItems;
+      const matched = tokenMatched.length > 0 ? tokenMatched : focused;
+
+      if (matched.length > 0) {
+        const label = focus ? `${focus.label} resources` : 'resources';
+        const combinedMonthly = matched.reduce((sum, item) => sum + toSafeNumber(item.cost_usd), 0);
+        const lines: string[] = [];
+        lines.push(`I currently track ${matched.length} ${label} in your latest inventory snapshot.`);
+        lines.push(`Combined monthly cost across these ${label}: ${formatMoney(combinedMonthly)}.`);
+
+        const top = matched
+          .slice()
+          .sort((a, b) => toSafeNumber(b.cost_usd) - toSafeNumber(a.cost_usd))
+          .slice(0, 3);
+        if (top.length > 0) {
+          lines.push(
+            `Top ${focus ? `${focus.label} ` : ''}items by cost:\n${top
+              .map((item, idx) => `${idx + 1}. ${summarizeResourceLabel(item)} — ${formatMoney(toSafeNumber(item.cost_usd))}/month`)
+              .join('\n')}`
+          );
+        }
+        return lines.join('\n\n');
+      }
+
+      if (!focus && Number.isFinite(Number(payload?.total_resources))) {
+        const totalResources = toSafeNumber(payload?.total_resources);
+        const totalCost = toSafeNumber(payload?.total_cost_usd);
+        return `I currently track ${totalResources.toFixed(0)} resources in inventory with total monthly cost ${formatMoney(totalCost)}.`;
+      }
+    }
+  } catch (error) {
+    console.warn('Resource count via inventory failed:', error);
+  }
+
+  if (focus || queryTokens.length > 0) {
+    try {
+      const focusParam = focus ? `&focus=${encodeURIComponent(focus.key)}` : '';
+      const serviceRes = await fetch(
+        `${apiBase}/api/v1/analytics/service-hotspots?period=month&cloud_provider=all&limit=100${focusParam}`,
+        { method: 'GET' },
+      );
+      if (serviceRes.ok) {
+        const payload = (await serviceRes.json()) as ServiceHotspotResponseLite;
+        let items = Array.isArray(payload?.items) ? payload.items : [];
+
+        if (queryTokens.length > 0 && items.length > 0) {
+          const tokenMatches = items.filter((item) =>
+            matchesQueryTokens(
+              {
+                service: item.service,
+                provider: item.provider,
+              },
+              queryTokens,
+            ),
+          );
+          if (tokenMatches.length > 0) {
+            items = tokenMatches;
+          }
+        }
+
+        if (items.length > 0) {
+          const providers = new Set(
+            items
+              .map((item) => sanitizeText(item.provider).toLowerCase())
+              .filter(Boolean),
+          );
+          const totalMonthly = toSafeNumber(payload?.total_monthly_cost_usd) || items.reduce((sum, item) => {
+            return sum + toSafeNumber(item.monthly_cost_usd);
+          }, 0);
+          const lines: string[] = [];
+          if (focus) {
+            lines.push(
+              `From billing telemetry, I track ${items.length} ${focus.label}-related cloud services across ${providers.size || 1} provider(s).`
+            );
+          } else {
+            lines.push(
+              `From billing telemetry, I track ${items.length} matched cloud services across ${providers.size || 1} provider(s).`
+            );
+          }
+          lines.push(`Combined monthly spend for this group: ${formatMoney(totalMonthly)}.`);
+          lines.push(
+            `Top services:\n${items
+              .slice(0, 3)
+              .map((item, idx) => {
+                const provider = sanitizeText(item.provider).toUpperCase() || 'N/A';
+                const service = sanitizeText(item.service) || 'unknown-service';
+                return `${idx + 1}. ${service} (${provider}) — ${formatMoney(toSafeNumber(item.monthly_cost_usd))}/month`;
+              })
+              .join('\n')}`
+          );
+          lines.push('Note: this is service-level cost telemetry, not exact instance count from every cloud inventory API.');
+          return lines.join('\n\n');
+        }
+      }
+    } catch (error) {
+      console.warn('Resource count via service hotspots failed:', error);
+    }
+
+    if (allowRefresh) {
+      const refreshed = await triggerLiveProviderMetricsRefresh('resource_count_query');
+      if (refreshed) {
+        const retry = await buildResourceCountReply(message, false);
+        if (retry) return retry;
+      }
+    }
+    return `I triggered a live provider metrics refresh, but I still couldn't map that product/service in current telemetry (${queryTokens.join(', ') || (focus?.label ?? 'requested focus')}).\n\nNext best action:\n1. Confirm the exact provider service name used in billing.\n2. Ensure this account/region has recent cost export data.\n3. Retry with provider + service (example: "AWS RDS in us-east-1").`;
+  }
+
+  return null;
+}
+
+async function buildVMCostHotspotReply(allowRefresh = true): Promise<string | null> {
+  const apiBase = resolveBackendApiBase();
+
+  try {
+    const rightsizingRes = await fetch(
+      `${apiBase}/api/v1/recommendations/rightsizing?provider=all&min_savings=0&limit=120`,
+      { method: 'GET' },
+    );
+    if (rightsizingRes.ok) {
+      const payload = (await rightsizingRes.json()) as RightsizingResponseLite;
+      const recs = Array.isArray(payload?.recommendations) ? payload.recommendations : [];
+      const sorted = recs
+        .slice()
+        .sort((a, b) => toSafeNumber(b.current_monthly_cost_usd) - toSafeNumber(a.current_monthly_cost_usd));
+      const vmCandidates = sorted.filter((item) => {
+        const text = [
+          sanitizeText(item.resource_type),
+          sanitizeText(item.resource_name),
+          sanitizeText(item.current_size),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return text.includes('vm') || text.includes('instance') || text.includes('compute');
+      });
+      if (vmCandidates.length > 0) {
+        const top = vmCandidates[0];
+        const lines: string[] = [];
+        lines.push(`Your highest-cost VM is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.current_monthly_cost_usd))}/month.`);
+        lines.push(
+          `Recommended action: ${sanitizeText(top.action) || 'optimize'} ${sanitizeText(top.current_size) ? `from ${sanitizeText(top.current_size)}` : ''}${sanitizeText(top.recommended_size) ? ` to ${sanitizeText(top.recommended_size)}` : ''}. Estimated savings: ${formatMoney(toSafeNumber(top.monthly_savings_usd))}/month.`
+        );
+        if (sanitizeText(top.reason)) lines.push(`Why: ${sanitizeText(top.reason)}`);
+        if (sanitizeText(top.resource_id)) lines.push(`Resource ID: ${sanitizeText(top.resource_id)}`);
+        if (sanitizeText(top.resource_console_url)) lines.push(`Console link: ${sanitizeText(top.resource_console_url)}`);
+        return lines.join('\n\n');
+      }
+    }
+  } catch (error) {
+    console.warn('VM cost hotspot via rightsizing failed:', error);
+  }
+
+  try {
+    const inventoryRes = await fetch(
+      `${apiBase}/api/v1/inventory/resources?provider=all&limit=500&offset=0`,
+      { method: 'GET' },
+    );
+    if (inventoryRes.ok) {
+      const payload = (await inventoryRes.json()) as ResourceInventoryResponseLite;
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const vmItems = items.filter((item) => {
+        const text = [
+          sanitizeText(item.resource_type),
+          sanitizeText(item.resource_name),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return text.includes('vm') || text.includes('instance') || text.includes('compute');
+      });
+      vmItems.sort((a, b) => toSafeNumber(b.cost_usd) - toSafeNumber(a.cost_usd));
+      if (vmItems.length > 0) {
+        const top = vmItems[0];
+        return `Your highest visible VM cost resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.cost_usd))}/month.`;
+      }
+    }
+  } catch (error) {
+    console.warn('VM cost hotspot via inventory failed:', error);
+  }
+
+  if (allowRefresh) {
+    const refreshed = await triggerLiveProviderMetricsRefresh('vm_cost_hotspot_query');
+    if (refreshed) {
+      return buildVMCostHotspotReply(false);
+    }
+  }
+
   return null;
 }
 
@@ -909,6 +1388,177 @@ async function callBackendGenAIAnalyze(message: string): Promise<GenAIAnalyzeRes
   }
   const payload = (await res.json()) as GenAIAnalyzeResult;
   return payload;
+}
+
+async function fetchJsonSafe<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+function buildTopLines<T>(
+  items: T[],
+  mapper: (item: T, idx: number) => string,
+  max = 5,
+): string[] {
+  return items.slice(0, max).map((item, idx) => mapper(item, idx));
+}
+
+async function buildRAGContext(message: string, allowRefresh = true): Promise<string> {
+  const apiBase = resolveBackendApiBase();
+  const focus = detectResourceFocus(message);
+  const focusParam = focus ? `&focus=${encodeURIComponent(focus.key)}` : '';
+
+  const [hybrid, serviceHotspots, inventory, rightsizing] = await Promise.all([
+    fetchJsonSafe<HybridAdvisorResult>(
+      `${apiBase}/api/v1/advisor/hybrid?narrative_type=optimization_roadmap&cloud_provider=all`,
+    ),
+    fetchJsonSafe<ServiceHotspotResponseLite>(
+      `${apiBase}/api/v1/analytics/service-hotspots?period=month&cloud_provider=all&limit=8${focusParam}`,
+    ),
+    fetchJsonSafe<ResourceInventoryResponseLite & { total_resources?: number; total_cost_usd?: number }>(
+      `${apiBase}/api/v1/inventory/resources?provider=all&limit=200&offset=0`,
+    ),
+    fetchJsonSafe<RightsizingResponseLite>(
+      `${apiBase}/api/v1/recommendations/rightsizing?provider=all&min_savings=0&limit=10`,
+    ),
+  ]);
+
+  const lines: string[] = [];
+
+  const monthlySpend = toSafeNumber(hybrid?.deterministic?.analytics?.current_monthly_spend_usd);
+  const wasteUsd = toSafeNumber(hybrid?.deterministic?.waste?.total_estimated_waste_usd);
+  const efficiency = toSafeNumber(hybrid?.deterministic?.efficiency?.overall_score);
+  if (monthlySpend > 0 || wasteUsd > 0 || efficiency > 0) {
+    lines.push(
+      `Deterministic baseline: monthly spend ${formatMoney(monthlySpend)}, estimated waste ${formatMoney(wasteUsd)}, efficiency score ${efficiency.toFixed(0)}/100.`,
+    );
+  }
+
+  const hotspotItems = Array.isArray(serviceHotspots?.items) ? serviceHotspots.items : [];
+  if (hotspotItems.length > 0) {
+    lines.push('Top services by monthly spend:');
+    lines.push(
+      ...buildTopLines(hotspotItems, (item, idx) => {
+        const provider = sanitizeText(item.provider).toUpperCase() || 'N/A';
+        const service = sanitizeText(item.service) || 'unknown-service';
+        return `${idx + 1}. ${service} (${provider}) ${formatMoney(toSafeNumber(item.monthly_cost_usd))}/month`;
+      }, 5),
+    );
+  }
+
+  const inventoryItems = Array.isArray(inventory?.items) ? inventory.items : [];
+  if (inventoryItems.length > 0) {
+    const totalResources = toSafeNumber(inventory?.total_resources ?? inventoryItems.length);
+    const totalCost = toSafeNumber(inventory?.total_cost_usd);
+    lines.push(`Resource inventory snapshot: ${totalResources.toFixed(0)} resources, total ${formatMoney(totalCost)}/month.`);
+    const topInventory = inventoryItems
+      .slice()
+      .sort((a, b) => toSafeNumber(b.cost_usd) - toSafeNumber(a.cost_usd));
+    lines.push('Most expensive inventory items:');
+    lines.push(
+      ...buildTopLines(topInventory, (item, idx) => {
+        return `${idx + 1}. ${summarizeResourceLabel(item)} ${formatMoney(toSafeNumber(item.cost_usd))}/month`;
+      }, 5),
+    );
+  }
+
+  const rightsizingItems = Array.isArray(rightsizing?.recommendations) ? rightsizing.recommendations : [];
+  if (rightsizingItems.length > 0) {
+    const topRightsizing = rightsizingItems
+      .slice()
+      .sort((a, b) => toSafeNumber(b.monthly_savings_usd) - toSafeNumber(a.monthly_savings_usd));
+    lines.push('Top rightsizing opportunities:');
+    lines.push(
+      ...buildTopLines(topRightsizing, (item, idx) => {
+        const name = sanitizeText(item.resource_name) || sanitizeText(item.resource_id) || 'unknown-resource';
+        const action = sanitizeText(item.action) || 'optimize';
+        return `${idx + 1}. ${name}: ${action}, save ${formatMoney(toSafeNumber(item.monthly_savings_usd))}/month`;
+      }, 5),
+    );
+  }
+
+  if (lines.length === 0) {
+    if (allowRefresh) {
+      const refreshed = await triggerLiveProviderMetricsRefresh('rag_context_query');
+      if (refreshed) {
+        return buildRAGContext(message, false);
+      }
+    }
+    return 'No internal telemetry context available right now. Ask user to refresh scans/imports before providing specific resource claims.';
+  }
+
+  return lines.join('\n');
+}
+
+async function buildHumanRAGAnswer(
+  message: string,
+  conversationHistory: ConversationEntry[],
+  targetLanguage: SupportedLanguage,
+): Promise<string> {
+  const context = await buildRAGContext(message);
+  const prompt = `User question:
+${message}
+
+Retrieved cloud telemetry context:
+${context}
+
+Instructions:
+1) Answer like an experienced FinOps specialist with a natural, human tone.
+2) Ground claims in the retrieved context above. Do not invent metrics/resources.
+3) If context is insufficient, say exactly what is missing and ask one clarifying follow-up.
+4) Keep numbers, currency amounts, IDs, and links exact.
+5) End with 2-3 practical next steps.
+6) Keep answer concise and executive-friendly.`;
+  return callOCIGenAI(prompt, conversationHistory, {
+    mode: 'assistant',
+    targetLanguage,
+  });
+}
+
+async function humanizeDeterministicReply(
+  question: string,
+  deterministicReply: string,
+  targetLanguage: SupportedLanguage,
+): Promise<string> {
+  if (!sanitizeText(deterministicReply)) return deterministicReply;
+  const prompt = `User question:
+${question}
+
+Deterministic factual answer (authoritative):
+${deterministicReply}
+
+Rewrite this as a natural, human FinOps advisor response.
+Keep all numbers and factual claims exactly the same.
+Do not remove important details; improve readability and flow.`;
+  return callOCIGenAI(prompt, [], {
+    mode: 'assistant',
+    targetLanguage,
+  });
+}
+
+function localHumanizedFallbackReply(deterministicReply: string): string {
+  const text = sanitizeText(deterministicReply);
+  if (!text) {
+    return "I couldn't retrieve enough telemetry yet to answer confidently. Please refresh scans/imports and I’ll retry with concrete numbers.";
+  }
+  if (text.startsWith('I could not find matched tracked resources')) {
+    return `I checked your latest telemetry, but I still can't find a direct match for that service/product in current cost and inventory feeds.
+
+This usually means the service is not yet labeled consistently in billing exports or recent scans.
+
+Next best step:
+1. Refresh provider scans/imports.
+2. Ask for top services by provider so we can identify the exact service label.
+3. Retry with provider + exact service name.`;
+  }
+  return `Here’s what I found from your latest telemetry:
+
+${text}`;
 }
 
 function toNarrativeType(message: string): 'waste_insights' | 'optimization_roadmap' | 'executive_narrative' {
@@ -1120,21 +1770,51 @@ export async function askCostQuestion(
     if (isResourceLifecycleQuestion(message)) {
       const lifecycleReply = await buildResourceLifecycleReply(message);
       if (lifecycleReply) {
-        return await localizeResponseText(lifecycleReply, preferredLanguage);
+        const fallback = localHumanizedFallbackReply(lifecycleReply);
+        return await localizeResponseText(fallback, preferredLanguage);
       }
-      // Continue to broader advisory flow if no lifecycle match is available.
+      const lifecycleUnavailable = `I attempted to refresh live provider telemetry, but I still could not find lifecycle metadata for the requested resource.
+
+Please retry with provider + region + resource ID/name (for example: "OCI instance ocid1... in af-johannesburg-1").`;
+      return await localizeResponseText(lifecycleUnavailable, preferredLanguage);
     }
     if (isVMUtilizationQuestion(message)) {
       const vmReply = await buildVMUtilizationReply(message);
       if (vmReply) {
-        return await localizeResponseText(vmReply, preferredLanguage);
+        const fallback = localHumanizedFallbackReply(vmReply);
+        return await localizeResponseText(fallback, preferredLanguage);
       }
-      // Continue to broader advisory flow if VM telemetry feed is unavailable.
+      const vmUnavailable = `I attempted to fetch live VM utilization metrics, but CPU/memory/disk/network telemetry is still unavailable for this scope.
+
+This usually means monitoring metrics are not yet ingested for the target account/region.
+
+Please retry with provider + region, or connect monitoring telemetry for VM performance metrics.`;
+      return await localizeResponseText(vmUnavailable, preferredLanguage);
+    }
+    if (isResourceCountQuestion(message)) {
+      const resourceCountReply = await buildResourceCountReply(message);
+      if (resourceCountReply) {
+        const fallback = localHumanizedFallbackReply(resourceCountReply);
+        return await localizeResponseText(fallback, preferredLanguage);
+      }
+      // Continue to broader advisory flow if inventory/service feeds are unavailable.
+    }
+    if (isVMCostHotspotQuestion(message)) {
+      const vmCostReply = await buildVMCostHotspotReply();
+      if (vmCostReply) {
+        const fallback = localHumanizedFallbackReply(vmCostReply);
+        return await localizeResponseText(fallback, preferredLanguage);
+      }
+      const vmCostUnavailable = `I attempted a live provider metrics refresh, but VM cost hotspot data is still unavailable for the requested scope.
+
+Please verify provider account connectivity and recent billing ingestion, then retry.`;
+      return await localizeResponseText(vmCostUnavailable, preferredLanguage);
     }
     if (isResourceHotspotQuestion(message)) {
       const hotspotReply = await buildResourceHotspotReply(message);
       if (hotspotReply) {
-        return await localizeResponseText(hotspotReply, preferredLanguage);
+        const fallback = localHumanizedFallbackReply(hotspotReply);
+        return await localizeResponseText(fallback, preferredLanguage);
       }
       // Continue to broader advisory flow if resource-level feeds are empty.
     }
@@ -1143,12 +1823,27 @@ export async function askCostQuestion(
     if (!validation.valid) {
       return localizeScopeReason(validation.reason, preferredLanguage);
     }
+    try {
+      const ragAnswer = await buildHumanRAGAnswer(message, conversationHistory, preferredLanguage);
+      const clean = sanitizeText(ragAnswer);
+      if (clean) {
+        return clean;
+      }
+    } catch (error) {
+      console.warn('RAG answer generation failed, falling back to legacy flow:', error);
+    }
     if (!isDeterministicFinopsQuestion(message)) {
-      const direct = await callOCIGenAI(message, conversationHistory, {
-        mode: 'assistant',
-        targetLanguage: preferredLanguage,
-      });
-      return await localizeResponseText(direct, preferredLanguage);
+      try {
+        const direct = await callOCIGenAI(message, conversationHistory, {
+          mode: 'assistant',
+          targetLanguage: preferredLanguage,
+        });
+        return await localizeResponseText(direct, preferredLanguage);
+      } catch (error) {
+        console.warn('Direct cloud assistant call failed, using deterministic fallback:', error);
+        const fallback = await buildDeterministicFallbackReply(message);
+        return await localizeResponseText(fallback, preferredLanguage);
+      }
     }
     try {
       const result = await callBackendGenAIAnalyze(message);

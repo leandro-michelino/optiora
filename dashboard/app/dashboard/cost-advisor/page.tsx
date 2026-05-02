@@ -57,6 +57,8 @@ export default function CostAdvisorPage() {
   const [hybridLoading, setHybridLoading] = useState(false);
   const [hybridError, setHybridError] = useState<string | null>(null);
   const [narrativeType, setNarrativeType] = useState<NarrativeType>('optimization_roadmap');
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [lastUserPrompt, setLastUserPrompt] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hybridRequestIdRef = useRef(0);
 
@@ -101,35 +103,48 @@ export default function CostAdvisorPage() {
   }, [loadHybrid]);
 
   const handleSendMessage = async () => {
-    if (!input.trim()) return;
+    const prompt = input.trim();
+    if (!prompt || loading) return;
+    setChatError(null);
 
     // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
+      content: prompt,
       timestamp: new Date(),
     };
 
+    const historyForRequest = [...messages, userMessage];
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
+    setLastUserPrompt(prompt);
     setLoading(true);
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+
       // Call your backend API that uses OCI GenAI
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
-          message: input,
-          conversationHistory: messages.map((m) => ({
+          message: prompt,
+          conversationHistory: historyForRequest.map((m) => ({
             role: m.role,
             content: m.content,
           })),
         }),
       });
+      clearTimeout(timeout);
 
-      if (!response.ok) throw new Error('Failed to get response');
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        const detail = typeof payload?.message === 'string' ? payload.message : '';
+        throw new Error(detail || 'Failed to get response');
+      }
 
       const data = await response.json();
 
@@ -143,12 +158,16 @@ export default function CostAdvisorPage() {
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Error:', error);
+      const message =
+        error instanceof Error && error.name === 'AbortError'
+          ? 'The request timed out after 90 seconds. Please try again.'
+          : "I'm having trouble connecting to the AI service. Please try again in a moment.";
+      setChatError(message);
       // Fallback response
       const fallbackMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content:
-          "I'm having trouble connecting to the AI service. Please try again in a moment.",
+        content: message,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, fallbackMessage]);
@@ -159,6 +178,61 @@ export default function CostAdvisorPage() {
 
   const handleSuggestion = (suggestion: string) => {
     setInput(suggestion);
+  };
+
+  const handleRetry = () => {
+    if (!loading && lastUserPrompt) {
+      setInput(lastUserPrompt);
+    }
+  };
+
+  const handleClearChat = () => {
+    setMessages([
+      {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content:
+          "Chat reset. Ask any FinOps question about your cloud services, and I'll answer using current telemetry.",
+        timestamp: new Date(),
+      },
+    ]);
+    setInput('');
+    setChatError(null);
+  };
+
+  const handleExportChat = () => {
+    const transcript = messages
+      .map((m) => `[${m.timestamp.toISOString()}] ${m.role.toUpperCase()}: ${m.content}`)
+      .join('\n\n');
+    const blob = new Blob([transcript], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `cost-advisor-chat-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleShareChat = async () => {
+    const transcript = messages
+      .slice(-8)
+      .map((m) => `${m.role === 'user' ? 'User' : 'Advisor'}: ${m.content}`)
+      .join('\n');
+    const shareText = `OptiOra Cost Advisor highlights:\n${transcript}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'OptiOra Cost Advisor',
+          text: shareText,
+          url: window.location.href,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(shareText);
+      setChatError('Chat summary copied to clipboard.');
+    } catch {
+      setChatError('Unable to share automatically. Please copy from Export Chat.');
+    }
   };
 
   return (
@@ -340,7 +414,12 @@ export default function CostAdvisorPage() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSendMessage();
+                }
+              }}
               placeholder="Ask about your cloud costs..."
               className="flex-1 px-4 py-3 border border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
               disabled={loading}
@@ -357,16 +436,43 @@ export default function CostAdvisorPage() {
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
             💡 Tip: Be specific about which cloud providers or services you want to focus on
           </p>
+          {chatError && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+              <span>{chatError}</span>
+              {lastUserPrompt ? (
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  className="font-medium underline underline-offset-2"
+                  disabled={loading}
+                >
+                  Retry last question
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Action Buttons */}
       <div className="flex gap-3 justify-end">
-        <button className="px-4 py-2 flex items-center gap-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+        <button
+          onClick={handleClearChat}
+          className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+        >
+          Clear Chat
+        </button>
+        <button
+          onClick={handleExportChat}
+          className="px-4 py-2 flex items-center gap-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+        >
           <Download className="w-4 h-4" />
           Export Chat
         </button>
-        <button className="px-4 py-2 flex items-center gap-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+        <button
+          onClick={() => void handleShareChat()}
+          className="px-4 py-2 flex items-center gap-2 border border-slate-300 dark:border-slate-600 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+        >
           <Share2 className="w-4 h-4" />
           Share
         </button>
