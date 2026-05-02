@@ -60,17 +60,22 @@ function required(name: string, value: string | undefined): string {
   return value;
 }
 
+function env(name: string): string | undefined {
+  const value = (process.env as Record<string, string | undefined>)[name];
+  return typeof value === 'string' ? value : undefined;
+}
+
 function normalizePrivateKeyPem(rawValue: string): string {
   return rawValue.replace(/\\n/g, '\n').trim();
 }
 
 function resolvePrivateKeyPem(): string {
-  const inlineKey = process.env.OCI_PRIVATE_KEY?.trim();
+  const inlineKey = env('OCI_PRIVATE_KEY')?.trim();
   if (inlineKey) {
     return normalizePrivateKeyPem(inlineKey);
   }
 
-  const configuredPath = process.env.OCI_PRIVATE_KEY_PATH?.trim();
+  const configuredPath = env('OCI_PRIVATE_KEY_PATH')?.trim();
   if (configuredPath) {
     const expandedPath = configuredPath.startsWith('~/')
       ? `${os.homedir()}${configuredPath.slice(1)}`
@@ -79,6 +84,55 @@ function resolvePrivateKeyPem(): string {
   }
 
   throw new Error('OCI_PRIVATE_KEY or OCI_PRIVATE_KEY_PATH is not configured');
+}
+
+function resolveBackendApiBase(): string {
+  // Route handlers run server-side on the same VM as the API service.
+  // Use loopback to avoid public TLS/self-signed certificate issues.
+  if (typeof window === 'undefined') {
+    return 'http://127.0.0.1:8000';
+  }
+  const configured = env('NEXT_PUBLIC_API_URL')?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, '');
+  }
+  return 'http://127.0.0.1:8000';
+}
+
+function pickAnalysisType(message: string): string {
+  const q = message.toLowerCase();
+  if (q.includes('budget') || q.includes('risk')) return 'budget_risk';
+  if (q.includes('anomal')) return 'anomaly';
+  if (q.includes('tag')) return 'tagging_strategy';
+  if (q.includes('sustain')) return 'sustainability_narrative';
+  if (q.includes('rightsiz')) return 'rightsizing_brief';
+  if (q.includes('roadmap') || q.includes('plan')) return 'optimization_roadmap';
+  if (q.includes('executive')) return 'executive_narrative';
+  return 'optimization';
+}
+
+async function callBackendGenAIFallback(message: string): Promise<string> {
+  const analysisType = pickAnalysisType(message);
+  const apiBase = resolveBackendApiBase();
+  const res = await fetch(`${apiBase}/api/v1/genai/analyze`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      analysis_type: analysisType,
+      cloud_provider: 'all',
+      period: 'month',
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Backend GenAI analyze failed (${res.status}): ${detail}`);
+  }
+  const payload = await res.json();
+  const text = String(payload?.narrative || payload?.prompt || '').trim();
+  if (!text) {
+    throw new Error('Backend GenAI analyze returned empty narrative/prompt');
+  }
+  return text;
 }
 
 // Minimal HTTP request signer for OCI (private key + fingerprint).
@@ -128,12 +182,12 @@ function signRequest(
 }
 
 async function callOCIGenAI(prompt: string, history: ConversationEntry[]): Promise<string> {
-  const endpoint = required('OCI_GENAI_ENDPOINT', process.env.OCI_GENAI_ENDPOINT);
-  const model = required('OCI_GENAI_MODEL', process.env.OCI_GENAI_MODEL);
-  required('OCI_REGION', process.env.OCI_REGION);
-  const tenancyOcid = required('OCI_TENANCY_OCID', process.env.OCI_TENANCY_OCID);
-  const userOcid = required('OCI_USER_OCID', process.env.OCI_USER_OCID);
-  const fingerprint = required('OCI_FINGERPRINT', process.env.OCI_FINGERPRINT);
+  const endpoint = required('OCI_GENAI_ENDPOINT', env('OCI_GENAI_ENDPOINT'));
+  const model = required('OCI_GENAI_MODEL', env('OCI_GENAI_MODEL'));
+  required('OCI_REGION', env('OCI_REGION'));
+  const tenancyOcid = required('OCI_TENANCY_OCID', env('OCI_TENANCY_OCID'));
+  const userOcid = required('OCI_USER_OCID', env('OCI_USER_OCID'));
+  const fingerprint = required('OCI_FINGERPRINT', env('OCI_FINGERPRINT'));
   const keyPem = resolvePrivateKeyPem();
 
   const host = new URL(endpoint).host;
@@ -157,7 +211,7 @@ REFUSE to answer about:
 Provide specific metrics and actionable recommendations using customer data.`;
 
   const payload = {
-    compartmentId: required('OCI_COMPARTMENT_OCID', process.env.OCI_COMPARTMENT_OCID),
+    compartmentId: required('OCI_COMPARTMENT_OCID', env('OCI_COMPARTMENT_OCID')),
     modelId: model,
     messages: [
       { role: 'user', content: [{ type: 'text', text: systemPrompt }] },
@@ -209,7 +263,8 @@ export async function askCostQuestion(
     if (!validation.valid) {
       throw new Error(validation.reason);
     }
-    return await callOCIGenAI(message, conversationHistory);
+    void conversationHistory;
+    return await callBackendGenAIFallback(message);
   } catch (error) {
     console.error('OCI GenAI error:', error);
     if (error instanceof Error) {

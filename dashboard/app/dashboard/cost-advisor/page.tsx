@@ -49,6 +49,7 @@ export default function CostAdvisorPage() {
     { emoji: '📊', text: 'Analyze my cost trends' },
     { emoji: '💰', text: 'How can I reduce my AWS spend?' },
     { emoji: '🎯', text: 'Reserved instances strategy' },
+    { emoji: '☁️', text: 'What workloads can I save money moving to OCI?' },
     { emoji: '⚡', text: 'Cost optimization quick wins' },
   ];
 
