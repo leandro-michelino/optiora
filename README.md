@@ -104,7 +104,10 @@ The dashboard is the presentation layer. The FastAPI backend is the control plan
 OptiOra uses OCI GenAI not only for forecast narration, but also for:
 
 - spend narratives
+- multilingual responses (language inferred from user query, preserving FinOps numbers/IDs)
 - anomaly explanation and alert triage
+- resource lifecycle Q&A (best-effort owner/creator and observed cost since first-seen data)
+- VM utilization hotspot Q&A (top CPU, memory, disk-I/O proxy, and network-bandwidth proxy)
 - optimization briefs and 30/60/90-day roadmaps
 - maturity narratives
 - budget-risk summaries
@@ -184,6 +187,9 @@ Important: `localhost` is resolved on the OptiOra API server, not your browser m
 - `GET /api/v1/analytics/tagging-coverage`
 - `GET /api/v1/analytics/sustainability`
 - `GET /api/v1/analytics/cross-provider-comparison`
+- `GET /api/v1/analytics/service-hotspots`
+- `GET /api/v1/analytics/resource-intelligence`
+- `GET /api/v1/analytics/vm-utilization-hotspots`
 - `GET /api/v1/analytics/anomaly-intelligence`
 - `GET /api/v1/analytics/chargeback-summary`
 - `GET /api/v1/analytics/scorecards`

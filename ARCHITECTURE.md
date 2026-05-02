@@ -36,6 +36,8 @@ Current as of May 2026.
 | - Costs, anomalies, recs        /api/v1/costs|anomalies|recs  |
 | - Forecasting and diagnostics   /api/v1/forecast*             |
 | - Deep analytics                /api/v1/analytics/*           |
+| - Resource intelligence         /api/v1/analytics/resource-intelligence |
+| - VM utilization hotspots       /api/v1/analytics/vm-utilization-hotspots |
 | - Operating review pack         /api/v1/analytics/operating-review |
 | - Hybrid advisor                /api/v1/advisor/hybrid        |
 | - GenAI narratives              /api/v1/genai/*               |
@@ -101,6 +103,9 @@ finops_mcp/tools/finops_analytics.py
         +-- Core analytics
         |   - build_analytics()
         |   - build_cost_attribution()
+        |   - /api/v1/analytics/service-hotspots (cross-service ranking)
+        |   - /api/v1/analytics/resource-intelligence (owner/creator and observed lifecycle cost)
+        |   - /api/v1/analytics/vm-utilization-hotspots (CPU/memory + disk/network proxy ranking)
         |   - build_commitment_optimization()
         |   - build_maturity_assessment()
         |   - build_unit_economics()

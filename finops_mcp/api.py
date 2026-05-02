@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import os
+import re
 import configparser
 import tempfile
 import base64
@@ -5750,6 +5751,395 @@ async def analytics_cross_provider_comparison(
     return result
 
 
+_SERVICE_FOCUS_TERMS: Dict[str, List[str]] = {
+    "database": ["database", "db", "rds", "aurora", "postgres", "mysql", "sql", "dynamodb", "cosmos", "spanner", "redis"],
+    "serverless": ["serverless", "lambda", "function", "functions", "cloud run", "fargate", "function app"],
+    "storage": ["storage", "bucket", "blob", "disk", "volume", "object storage", "ebs", "efs", "s3"],
+    "network": ["network", "load balancer", "egress", "bandwidth", "nat", "gateway", "cdn"],
+    "analytics": ["analytics", "bigquery", "redshift", "athena", "emr", "databricks", "warehouse"],
+    "cache": ["cache", "redis", "memcached", "elasticache"],
+    "messaging": ["queue", "pubsub", "kafka", "event hub", "service bus", "sqs", "sns"],
+    "ai-ml": ["ai", "ml", "machine learning", "gpu", "inference", "training", "bedrock", "vertex", "openai", "genai"],
+    "compute": ["compute", "vm", "virtual machine", "instance", "ec2", "node"],
+    "kubernetes": ["kubernetes", "k8s", "pod", "namespace", "cluster", "gke", "aks", "eks"],
+}
+
+
+def _service_matches_focus(service_name: str, focus: Optional[str]) -> bool:
+    if not focus:
+        return True
+    focus_key = str(focus).strip().lower()
+    if not focus_key:
+        return True
+    service_l = str(service_name or "").strip().lower()
+    terms = _SERVICE_FOCUS_TERMS.get(focus_key)
+    if terms:
+        return any(term in service_l for term in terms)
+    return focus_key in service_l
+
+
+@router.get("/analytics/service-hotspots")
+async def analytics_service_hotspots(
+    period: str = "month",
+    cloud_provider: str = "all",
+    focus: Optional[str] = None,
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Top costly cloud services across providers (deterministic, non-GenAI)."""
+    _ = current_user
+    providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
+    providers = [p for p in providers if p in {"aws", "azure", "gcp", "oci"}]
+    capped_limit = max(1, min(limit, 100))
+
+    diagnostics = {
+        d.provider: bool(d.configured)
+        for d in _provider_diagnostics()
+    }
+
+    imported_rows = _get_imported_cost_rows(
+        db,
+        _organization_id_for_membership(membership),
+        _customer_id_for_org(membership),
+        cloud_provider,
+    )
+
+    def add_item(bucket: Dict[tuple[str, str], Dict[str, Any]], provider_key: str, service_name: str, cost: float, source: str) -> None:
+        key = (provider_key, service_name)
+        if key not in bucket:
+            bucket[key] = {
+                "provider": provider_key,
+                "service": service_name,
+                "monthly_cost_usd": 0.0,
+                "source": source,
+            }
+        bucket[key]["monthly_cost_usd"] += float(cost or 0.0)
+
+    service_map: Dict[tuple[str, str], Dict[str, Any]] = {}
+
+    for provider in providers:
+        used_live = False
+        if diagnostics.get(provider, False):
+            summary = await _cost_summary_for_provider(provider, period)
+            if "error" not in summary:
+                used_live = True
+                for row in summary.get("top_services", []):
+                    if not isinstance(row, dict):
+                        continue
+                    service_name = str(
+                        row.get("service")
+                        or row.get("name")
+                        or row.get("service_name")
+                        or "unknown-service"
+                    ).strip() or "unknown-service"
+                    cost = float(
+                        row.get("cost_usd")
+                        or row.get("cost")
+                        or row.get("amount")
+                        or 0.0
+                    )
+                    if cost <= 0:
+                        continue
+                    add_item(service_map, provider, service_name, cost, "live_provider_api")
+
+        if used_live:
+            continue
+
+        for row in imported_rows:
+            row_provider = str(getattr(row, "provider", "") or "").strip().lower()
+            if row_provider != provider:
+                continue
+            service_name = str(getattr(row, "service_name", "") or "").strip() or "imported-service"
+            cost = float(getattr(row, "cost_usd", 0.0) or 0.0)
+            if cost <= 0:
+                continue
+            add_item(service_map, provider, service_name, cost, "csv_import")
+
+    items = list(service_map.values())
+    if focus:
+        items = [item for item in items if _service_matches_focus(str(item.get("service", "")), focus)]
+
+    items.sort(key=lambda item: float(item.get("monthly_cost_usd", 0.0) or 0.0), reverse=True)
+    items = items[:capped_limit]
+    for item in items:
+        item["monthly_cost_usd"] = round(float(item.get("monthly_cost_usd", 0.0) or 0.0), 2)
+
+    return {
+        "generated_at": _utcnow().isoformat() + "Z",
+        "period": period,
+        "cloud_provider": cloud_provider,
+        "focus": focus.strip().lower() if isinstance(focus, str) and focus.strip() else None,
+        "total_monthly_cost_usd": round(sum(float(item.get("monthly_cost_usd", 0.0) or 0.0) for item in items), 2),
+        "items": items,
+    }
+
+
+_RESOURCE_QUERY_STOPWORDS = {
+    "who", "created", "create", "creator", "owner", "owned", "by",
+    "how", "much", "cost", "costed", "since", "when", "was", "is", "the",
+    "resource", "service", "cloud", "environment", "in", "for", "of", "to",
+    "qual", "quem", "criou", "criado", "quanto", "custa", "custou", "desde",
+    "quien", "creo", "creó", "cuanto", "cuánto", "cuesta", "costó", "desde",
+}
+
+
+def _resource_query_tokens(raw_query: str) -> List[str]:
+    tokens = re.findall(r"[a-z0-9][a-z0-9._:/-]{1,}", str(raw_query or "").lower())
+    return [
+        token
+        for token in tokens
+        if token not in _RESOURCE_QUERY_STOPWORDS and len(token) >= 3
+    ]
+
+
+def _best_effort_owner_from_payload(payload: Any) -> Optional[str]:
+    if isinstance(payload, dict):
+        keys = [
+            "created_by",
+            "createdBy",
+            "creator",
+            "owner",
+            "owner_email",
+            "provisioned_by",
+            "requested_by",
+            "user",
+            "principal",
+        ]
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        # nested patterns
+        for nested_key in ("tags", "labels", "metadata"):
+            nested = payload.get(nested_key)
+            nested_owner = _best_effort_owner_from_payload(nested)
+            if nested_owner:
+                return nested_owner
+    return None
+
+
+@router.get("/analytics/resource-intelligence")
+async def analytics_resource_intelligence(
+    query: str,
+    cloud_provider: str = "all",
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Best-effort resource intelligence: owner/creator, first seen, and observed cost since first sighting."""
+    _ = current_user
+    org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    providers = {"aws", "azure", "gcp", "oci"}
+
+    requested_provider = str(cloud_provider or "all").strip().lower()
+    provider_filter = None if requested_provider == "all" else requested_provider
+
+    raw_tokens = _resource_query_tokens(query)
+    token_set = set(raw_tokens)
+
+    imported_rows = _get_imported_cost_rows(
+        db,
+        organization_id=org_id,
+        customer_id=customer_id,
+        cloud_provider=provider_filter or "all",
+    )
+
+    account_query = db.query(ProviderAccount).filter(
+        ProviderAccount.organization_id == org_id,
+        ProviderAccount.customer_id == customer_id,
+        ProviderAccount.is_active.is_(True),
+    )
+    if provider_filter:
+        account_query = account_query.filter(ProviderAccount.provider == provider_filter)
+    accounts = account_query.all()
+
+    snapshots_query = db.query(ProviderAccountSnapshot).filter(
+        ProviderAccountSnapshot.organization_id == org_id,
+        ProviderAccountSnapshot.customer_id == customer_id,
+    )
+    snapshots = snapshots_query.all()
+
+    snapshots_by_account: Dict[int, Dict[str, Any]] = {}
+    for snap in snapshots:
+        bucket = snapshots_by_account.setdefault(
+            int(snap.provider_account_id),
+            {
+                "observed_total_cost_usd": 0.0,
+                "first_seen_at": None,
+                "last_seen_at": None,
+                "latest_monthly_cost_usd": 0.0,
+                "latest_seen_at": None,
+            },
+        )
+        current_cost = float(snap.direct_cost_usd or 0.0)
+        bucket["observed_total_cost_usd"] += current_cost
+        captured = snap.captured_at
+        if captured:
+            if bucket["first_seen_at"] is None or captured < bucket["first_seen_at"]:
+                bucket["first_seen_at"] = captured
+            if bucket["last_seen_at"] is None or captured > bucket["last_seen_at"]:
+                bucket["last_seen_at"] = captured
+            if bucket["latest_seen_at"] is None or captured >= bucket["latest_seen_at"]:
+                bucket["latest_seen_at"] = captured
+                bucket["latest_monthly_cost_usd"] = current_cost
+
+    imported_cost_by_account: Dict[str, float] = {}
+    imported_first_last_by_account: Dict[str, Dict[str, Optional[datetime]]] = {}
+    imported_service_buckets: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+
+    for row in imported_rows:
+        provider = str(getattr(row, "provider", "") or "").strip().lower()
+        if provider_filter and provider != provider_filter:
+            continue
+        if provider not in providers:
+            continue
+        cost = float(getattr(row, "cost_usd", 0.0) or 0.0)
+        account_identifier = str(getattr(row, "account_identifier", "") or "").strip()
+        service_name = str(getattr(row, "service_name", "") or "").strip() or "imported-service"
+        region = str(getattr(row, "region", "") or "").strip() or "global"
+        tags = _safe_json_load(getattr(row, "tags_json", None) or "{}", {})
+        owner_guess = _best_effort_owner_from_payload(tags)
+
+        first_seen = getattr(row, "period_start", None) or getattr(row, "created_at", None)
+        last_seen = getattr(row, "period_end", None) or getattr(row, "created_at", None)
+
+        if account_identifier:
+            imported_cost_by_account[account_identifier] = imported_cost_by_account.get(account_identifier, 0.0) + cost
+            bucket = imported_first_last_by_account.setdefault(
+                account_identifier,
+                {"first_seen_at": None, "last_seen_at": None},
+            )
+            if first_seen and (bucket["first_seen_at"] is None or first_seen < bucket["first_seen_at"]):
+                bucket["first_seen_at"] = first_seen
+            if last_seen and (bucket["last_seen_at"] is None or last_seen > bucket["last_seen_at"]):
+                bucket["last_seen_at"] = last_seen
+
+        service_key = (provider, service_name, account_identifier)
+        service_bucket = imported_service_buckets.setdefault(
+            service_key,
+            {
+                "provider": provider,
+                "resource_type": "imported-service",
+                "resource_id": account_identifier or f"{provider}:{service_name}",
+                "resource_name": service_name,
+                "region": region,
+                "owner_or_creator": owner_guess,
+                "created_at": first_seen,
+                "first_seen_at": first_seen,
+                "last_seen_at": last_seen,
+                "observed_total_cost_usd": 0.0,
+                "latest_monthly_cost_usd": 0.0,
+                "source": "csv_import",
+            },
+        )
+        service_bucket["observed_total_cost_usd"] += cost
+        service_bucket["latest_monthly_cost_usd"] += cost
+        if owner_guess and not service_bucket.get("owner_or_creator"):
+            service_bucket["owner_or_creator"] = owner_guess
+        if first_seen and (service_bucket.get("first_seen_at") is None or first_seen < service_bucket["first_seen_at"]):
+            service_bucket["first_seen_at"] = first_seen
+        if last_seen and (service_bucket.get("last_seen_at") is None or last_seen > service_bucket["last_seen_at"]):
+            service_bucket["last_seen_at"] = last_seen
+        if first_seen and (service_bucket.get("created_at") is None or first_seen < service_bucket["created_at"]):
+            service_bucket["created_at"] = first_seen
+
+    candidates: List[Dict[str, Any]] = []
+    for account in accounts:
+        provider = str(account.provider or "").strip().lower()
+        if provider_filter and provider != provider_filter:
+            continue
+        metadata = _safe_json_load(account.metadata_json or "{}", {})
+        snapshot_stats = snapshots_by_account.get(account.id, {})
+        imported_cost = imported_cost_by_account.get(account.account_identifier, 0.0)
+        imported_seen = imported_first_last_by_account.get(account.account_identifier, {})
+        first_seen = snapshot_stats.get("first_seen_at") or imported_seen.get("first_seen_at") or account.created_at
+        last_seen = snapshot_stats.get("last_seen_at") or imported_seen.get("last_seen_at") or account.updated_at
+        owner_guess = _best_effort_owner_from_payload(metadata)
+        candidate = {
+            "provider": provider,
+            "resource_type": account.account_type or "cloud-account",
+            "resource_id": account.account_identifier,
+            "resource_name": account.account_name,
+            "region": account.native_region or "global",
+            "owner_or_creator": owner_guess,
+            "created_at": account.created_at,
+            "first_seen_at": first_seen,
+            "last_seen_at": last_seen,
+            "observed_total_cost_usd": float(snapshot_stats.get("observed_total_cost_usd", 0.0)) + float(imported_cost),
+            "latest_monthly_cost_usd": float(snapshot_stats.get("latest_monthly_cost_usd", 0.0)),
+            "source": "provider_accounts",
+        }
+        candidates.append(candidate)
+
+    candidates.extend(imported_service_buckets.values())
+
+    def _score(item: Dict[str, Any]) -> float:
+        if not token_set:
+            return 0.0
+        haystack = " ".join(
+            [
+                str(item.get("resource_id") or ""),
+                str(item.get("resource_name") or ""),
+                str(item.get("resource_type") or ""),
+                str(item.get("provider") or ""),
+                str(item.get("region") or ""),
+            ]
+        ).lower()
+        return float(sum(1 for token in token_set if token in haystack))
+
+    for item in candidates:
+        item["match_score"] = _score(item)
+        item["observed_total_cost_usd"] = round(float(item.get("observed_total_cost_usd", 0.0) or 0.0), 2)
+        item["latest_monthly_cost_usd"] = round(float(item.get("latest_monthly_cost_usd", 0.0) or 0.0), 2)
+
+    matched = [c for c in candidates if c.get("match_score", 0.0) > 0] if token_set else candidates
+    if not matched:
+        matched = candidates
+    matched.sort(
+        key=lambda item: (
+            float(item.get("match_score", 0.0)),
+            float(item.get("observed_total_cost_usd", 0.0)),
+            float(item.get("latest_monthly_cost_usd", 0.0)),
+        ),
+        reverse=True,
+    )
+
+    top = matched[0] if matched else None
+    alternatives = matched[1:4] if len(matched) > 1 else []
+
+    def _serialize(item: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "provider": item.get("provider"),
+            "resource_type": item.get("resource_type"),
+            "resource_id": item.get("resource_id"),
+            "resource_name": item.get("resource_name"),
+            "region": item.get("region"),
+            "owner_or_creator": item.get("owner_or_creator"),
+            "created_at": item.get("created_at").isoformat() if isinstance(item.get("created_at"), datetime) else item.get("created_at"),
+            "first_seen_at": item.get("first_seen_at").isoformat() if isinstance(item.get("first_seen_at"), datetime) else item.get("first_seen_at"),
+            "last_seen_at": item.get("last_seen_at").isoformat() if isinstance(item.get("last_seen_at"), datetime) else item.get("last_seen_at"),
+            "observed_total_cost_usd": round(float(item.get("observed_total_cost_usd", 0.0) or 0.0), 2),
+            "latest_monthly_cost_usd": round(float(item.get("latest_monthly_cost_usd", 0.0) or 0.0), 2),
+            "source": item.get("source"),
+            "match_score": float(item.get("match_score", 0.0) or 0.0),
+        }
+
+    return {
+        "generated_at": _utcnow().isoformat() + "Z",
+        "query": query,
+        "cloud_provider": cloud_provider,
+        "matched_resource": _serialize(top) if top else None,
+        "alternatives": [_serialize(item) for item in alternatives],
+        "notes": [
+            "Owner/creator is best-effort from provider metadata and imported tags.",
+            "Observed total cost is measured from available snapshots/imported history, not absolute cloud lifetime billing.",
+        ],
+    }
+
+
 @router.get("/analytics/anomaly-intelligence")
 async def analytics_anomaly_intelligence(
     cloud_provider: str = "all",
@@ -5891,6 +6281,7 @@ async def api_info() -> Dict[str, Any]:
             "unit_economics_cockpit": True,
             "scorecards": True,
             "resource_inventory": True,
+            "service_hotspots": True,
             "kubernetes_cost_allocation": True,
             "virtual_tagging": True,
             "rightsizing_resource_level": True,
@@ -12033,6 +12424,142 @@ async def get_rightsizing_recommendations(
         total_annual_savings_usd=round(total_monthly * 12, 2),
         recommendations=recommendations_out,
     )
+
+
+def _is_vm_like_resource(rec: RightsizingRecommendation) -> bool:
+    label = " ".join([
+        str(rec.resource_type or ""),
+        str(rec.resource_name or ""),
+        str(rec.current_size or ""),
+    ]).lower()
+    vm_terms = [
+        "vm",
+        "virtual machine",
+        "instance",
+        "compute",
+        "node",
+        "ec2",
+        "gke",
+        "eks",
+        "aks",
+    ]
+    return any(term in label for term in vm_terms)
+
+
+@router.get("/analytics/vm-utilization-hotspots")
+async def analytics_vm_utilization_hotspots(
+    provider: str = "all",
+    limit: int = Query(5, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
+    membership=Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Top VM hotspots by CPU/memory and best-effort proxies for disk/network."""
+    rightsizing = await get_rightsizing_recommendations(
+        provider=provider,
+        min_savings=0.0,
+        limit=200,
+        current_user=current_user,
+        membership=membership,
+        db=db,
+    )
+    vm_recs = [rec for rec in rightsizing.recommendations if _is_vm_like_resource(rec)]
+    if not vm_recs:
+        return {
+            "generated_at": _utcnow().isoformat() + "Z",
+            "provider": provider,
+            "metric_sources": {
+                "cpu": "none",
+                "memory": "none",
+                "disk_io": "none",
+                "network_bandwidth": "none",
+            },
+            "top_cpu": [],
+            "top_memory": [],
+            "top_disk_io": [],
+            "top_network_bandwidth": [],
+            "notes": [
+                "No VM-like resources available yet. Run provider scans and rightsizing sync first.",
+            ],
+        }
+
+    def _to_item(
+        rec: RightsizingRecommendation,
+        metric_name: str,
+        metric_value: float,
+        metric_source: str,
+    ) -> Dict[str, Any]:
+        return {
+            "resource_id": rec.resource_id,
+            "resource_name": rec.resource_name,
+            "provider": rec.provider,
+            "region": rec.region,
+            "resource_type": rec.resource_type,
+            "metric": metric_name,
+            "metric_value": round(float(metric_value or 0.0), 2),
+            "metric_source": metric_source,
+            "current_monthly_cost_usd": round(float(rec.current_monthly_cost_usd or 0.0), 2),
+            "owner_hint": None,
+            "resource_console_url": rec.resource_console_url,
+            "last_observed_at": rec.last_observed_at,
+        }
+
+    cpu_items = [
+        _to_item(rec, "cpu_utilization_percent", float(rec.cpu_utilization_avg_percent or 0.0), "telemetry_or_provider_signal")
+        for rec in vm_recs
+        if rec.cpu_utilization_avg_percent is not None
+    ]
+    memory_items = [
+        _to_item(rec, "memory_utilization_percent", float(rec.memory_utilization_avg_percent or 0.0), "telemetry_or_provider_signal")
+        for rec in vm_recs
+        if rec.memory_utilization_avg_percent is not None
+    ]
+
+    # Proxy fallback for disk/network when explicit telemetry is unavailable.
+    # We use latest monthly cost among VM-like resources as a pressure proxy.
+    disk_proxy = [
+        _to_item(
+            rec,
+            "disk_io_proxy_index",
+            float(rec.latest_monthly_cost_usd or rec.current_monthly_cost_usd or 0.0),
+            "proxy_from_cost_profile",
+        )
+        for rec in vm_recs
+    ]
+    net_proxy = [
+        _to_item(
+            rec,
+            "network_bandwidth_proxy_index",
+            float(rec.latest_monthly_cost_usd or rec.current_monthly_cost_usd or 0.0),
+            "proxy_from_cost_profile",
+        )
+        for rec in vm_recs
+    ]
+
+    cpu_items.sort(key=lambda item: float(item["metric_value"]), reverse=True)
+    memory_items.sort(key=lambda item: float(item["metric_value"]), reverse=True)
+    disk_proxy.sort(key=lambda item: float(item["metric_value"]), reverse=True)
+    net_proxy.sort(key=lambda item: float(item["metric_value"]), reverse=True)
+
+    return {
+        "generated_at": _utcnow().isoformat() + "Z",
+        "provider": provider,
+        "metric_sources": {
+            "cpu": "telemetry_or_provider_signal" if cpu_items else "none",
+            "memory": "telemetry_or_provider_signal" if memory_items else "none",
+            "disk_io": "proxy_from_cost_profile",
+            "network_bandwidth": "proxy_from_cost_profile",
+        },
+        "top_cpu": cpu_items[:limit],
+        "top_memory": memory_items[:limit],
+        "top_disk_io": disk_proxy[:limit],
+        "top_network_bandwidth": net_proxy[:limit],
+        "notes": [
+            "CPU and memory rankings use available provider/rightsizing telemetry when present.",
+            "Disk I/O and network bandwidth use a cost-profile proxy when explicit metrics are not available.",
+            "For exact telemetry, connect provider monitoring feeds (CloudWatch, Azure Monitor, Cloud Monitoring, OCI Monitoring).",
+        ],
+    }
 
 
 async def run_scheduled_scans_once(requested_organization_id: Optional[int] = None) -> Dict[str, Any]:
