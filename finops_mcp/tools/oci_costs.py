@@ -2,29 +2,14 @@
 
 import json
 import logging
-from typing import Any, Dict, List
-from datetime import datetime, timedelta, timezone
 import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
+
 from finops_mcp.config import Config
 
 logger = logging.getLogger(__name__)
 config = Config()
-
-
-def _compartment_list(tenancy_id: str) -> List[str]:
-    """Return the list of compartment OCIDs to scan.
-
-    Combines the tenancy root with any extra compartment OCIDs from the
-    ``OCI_COMPARTMENT_IDS`` environment variable.  The tenancy OCID always
-    comes first so it acts as the top-level rollup node.
-    """
-    ids: List[str] = [tenancy_id]
-    raw = os.environ.get("OCI_COMPARTMENT_IDS", config.oci_compartment_ids or "")
-    for part in raw.split(","):
-        ocid = part.strip()
-        if ocid and ocid != tenancy_id and ocid not in ids:
-            ids.append(ocid)
-    return ids
 
 
 async def get_cost_summary(params: dict[str, Any]) -> str:
@@ -48,8 +33,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             logger.warning("OCI SDK not available")
             return json.dumps({"error": "OCI SDK not available", "cloud_provider": "oci"})
 
-        # Calculate date range
-        end_date = datetime.now(timezone.utc).replace(tzinfo=None).date()
+        # Calculate date range (UTC boundaries with zeroed time).
+        end_date = datetime.now(timezone.utc).date()
         if period == "day":
             start_date = end_date - timedelta(days=1)
         elif period == "week":
@@ -60,86 +45,80 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             start_date = end_date - timedelta(days=365)
 
         from oci.usage_api import models
+        start_ts = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+        end_ts = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
 
-        compartments = _compartment_list(tenancy_id)
+        request = models.RequestSummarizedUsagesDetails(
+            tenant_id=tenancy_id,
+            time_usage_started=start_ts,
+            time_usage_ended=end_ts,
+            granularity="DAILY",
+            group_by=["service"],
+        )
+        region_request = models.RequestSummarizedUsagesDetails(
+            tenant_id=tenancy_id,
+            time_usage_started=start_ts,
+            time_usage_ended=end_ts,
+            granularity="DAILY",
+            group_by=["region"],
+        )
+
+        def _request_usage(client_config: Dict[str, Any], details: Any):
+            client = UsageapiClient(client_config)
+            return client.request_summarized_usages(
+                request_summarized_usages_details=details
+            )
+
+        used_region = str(oci_config.get("region") or "")
+        try:
+            response = _request_usage(oci_config, request)
+            region_response = _request_usage(oci_config, region_request)
+        except Exception as usage_exc:
+            usage_text = str(usage_exc).lower()
+            if "home region" not in usage_text:
+                raise
+            identity_client = oci.identity.IdentityClient(oci_config)
+            subscriptions = identity_client.list_region_subscriptions(
+                tenancy_id=tenancy_id
+            ).data
+            home_region = next(
+                (
+                    str(sub.region_name)
+                    for sub in subscriptions
+                    if bool(getattr(sub, "is_home_region", False))
+                ),
+                "",
+            )
+            if not home_region:
+                raise
+            retry_config = dict(oci_config)
+            retry_config["region"] = home_region
+            response = _request_usage(retry_config, request)
+            region_response = _request_usage(retry_config, region_request)
+            used_region = home_region
+
         total_cost = 0.0
         services: Dict[str, float] = {}
         regions: Dict[str, float] = {}
-        account_breakdown: List[Dict[str, Any]] = []
 
-        for compartment_id in compartments:
-            compartment_total = 0.0
-            scope_type = "tenancy" if compartment_id == tenancy_id else "compartment"
-
-            request = models.RequestSummarizedUsagesDetails(
-                tenant_id=tenancy_id,
-                compartment_id=compartment_id if compartment_id != tenancy_id else None,
-                time_usage_started=datetime.combine(start_date, datetime.min.time()),
-                time_usage_ended=datetime.combine(end_date, datetime.max.time()),
-                granularity="DAILY",
-                group_by=["service"],
+        for item in (response.data.items or []):
+            service_name = (
+                getattr(item, "service", None)
+                or (item.tags.get("service") if item.tags else None)
+                or "Unknown"
             )
-            region_request = models.RequestSummarizedUsagesDetails(
-                tenant_id=tenancy_id,
-                compartment_id=compartment_id if compartment_id != tenancy_id else None,
-                time_usage_started=datetime.combine(start_date, datetime.min.time()),
-                time_usage_ended=datetime.combine(end_date, datetime.max.time()),
-                granularity="DAILY",
-                group_by=["region"],
+            cost = float(item.computed_amount or 0)
+            services[service_name] = services.get(service_name, 0) + cost
+            total_cost += cost
+
+        for item in (region_response.data.items or []):
+            region_name = (
+                getattr(item, "region", None)
+                or (item.tags.get("region") if item.tags else None)
+                or "global"
             )
-            compartment_regions: Dict[str, float] = {}
-
-            try:
-                response = usage_client.request_summarized_usages(request)
-                for item in response.data.items:
-                    service_name = (
-                        getattr(item, "service", None)
-                        or (item.tags.get("service") if item.tags else None)
-                        or "Unknown"
-                    )
-                    cost = float(item.computed_amount or 0)
-                    services[service_name] = services.get(service_name, 0) + cost
-                    compartment_total += cost
-                    total_cost += cost
-
-                region_response = usage_client.request_summarized_usages(region_request)
-                for item in region_response.data.items:
-                    region_name = (
-                        getattr(item, "region", None)
-                        or (item.tags.get("region") if item.tags else None)
-                        or "global"
-                    )
-                    cost = float(item.computed_amount or 0)
-                    regions[region_name] = regions.get(region_name, 0.0) + cost
-                    compartment_regions[region_name] = compartment_regions.get(region_name, 0.0) + cost
-
-                account_breakdown.append(
-                    {
-                        "scope_type": scope_type,
-                        "scope_id": compartment_id,
-                        "scope_name": compartment_id,
-                        "parent_scope_id": tenancy_id if scope_type == "compartment" else None,
-                        "parent_scope_type": "tenancy" if scope_type == "compartment" else None,
-                        "total_cost_usd": round(compartment_total, 2),
-                        "region_breakdown": [
-                            {"region": r, "cost_usd": round(c, 2)}
-                            for r, c in sorted(compartment_regions.items(), key=lambda x: x[1], reverse=True)
-                        ],
-                    }
-                )
-            except Exception as compartment_exc:
-                logger.warning("OCI compartment %s scan error: %s", compartment_id, compartment_exc)
-                account_breakdown.append(
-                    {
-                        "scope_type": scope_type,
-                        "scope_id": compartment_id,
-                        "scope_name": compartment_id,
-                        "parent_scope_id": tenancy_id if scope_type == "compartment" else None,
-                        "parent_scope_type": "tenancy" if scope_type == "compartment" else None,
-                        "total_cost_usd": 0.0,
-                        "error": str(compartment_exc),
-                    }
-                )
+            cost = float(item.computed_amount or 0)
+            regions[region_name] = regions.get(region_name, 0.0) + cost
 
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
         top_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -154,7 +133,21 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                 "region_breakdown": [
                     {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
                 ],
-                "account_breakdown": account_breakdown,
+                "account_breakdown": [
+                    {
+                        "scope_type": "tenancy",
+                        "scope_id": tenancy_id,
+                        "scope_name": tenancy_id,
+                        "parent_scope_id": None,
+                        "parent_scope_type": None,
+                        "total_cost_usd": round(total_cost, 2),
+                        "region_breakdown": [
+                            {"region": region, "cost_usd": round(cost, 2)}
+                            for region, cost in top_regions
+                        ],
+                    }
+                ],
+                "usage_region": used_region or None,
                 "currency": "USD",
                 "cloud_provider": "oci",
             }
