@@ -7,6 +7,7 @@ import {
   fetchImportedCostSummary,
   fetchProviderDiagnostics,
   fetchRecommendationsStrict,
+  fetchRightsizingRecommendations,
 } from '@/lib/api'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
@@ -15,6 +16,7 @@ import {
   ImportedCostSummaryResponse,
   ProviderDiagnostic,
   RecommendationResponse,
+  RightsizingRecommendation,
 } from '@/lib/types'
 
 interface RecommendationState {
@@ -25,6 +27,7 @@ interface RecommendationState {
   health: ApiHealth | null
   importedSummary: ImportedCostSummaryResponse | null
   diagnostics: ProviderDiagnostic[]
+  rightsizingTop: RightsizingRecommendation[]
   loaded: boolean
   error: string | null
 }
@@ -51,6 +54,7 @@ export default function RecommendationsPage() {
     health: null,
     importedSummary: null,
     diagnostics: [],
+    rightsizingTop: [],
     loaded: false,
     error: null,
   })
@@ -59,11 +63,12 @@ export default function RecommendationsPage() {
   useEffect(() => {
     async function loadRecommendations() {
       setLoading(true)
-      const [response, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+      const [response, importedResult, healthResult, diagnosticsResult, rightsizingResult] = await Promise.allSettled([
         fetchRecommendationsStrict({ limit: state.limit, offset: state.offset }),
         fetchImportedCostSummary(),
         fetchApiHealth(),
         fetchProviderDiagnostics(),
+        fetchRightsizingRecommendations({ limit: 6, min_savings: 50 }),
       ])
 
       setState((current) => ({
@@ -75,6 +80,10 @@ export default function RecommendationsPage() {
         health: healthResult.status === 'fulfilled' ? healthResult.value : null,
         importedSummary: importedResult.status === 'fulfilled' ? importedResult.value : null,
         diagnostics: diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [],
+        rightsizingTop:
+          rightsizingResult.status === 'fulfilled'
+            ? rightsizingResult.value.recommendations || []
+            : [],
         loaded: response.status === 'fulfilled',
         error:
           response.status === 'rejected'
@@ -125,7 +134,65 @@ export default function RecommendationsPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+            <div className="font-semibold">Resource-level optimization details</div>
+            <div className="mt-1">
+              This tab shows prioritized recommendation themes. Per-resource actions are listed in
+              {' '}
+              <a href="/dashboard/rightsizing" className="underline font-medium">Rightsizing</a>
+              {' '}
+              and
+              {' '}
+              <a href="/dashboard/inventory" className="underline font-medium">Cloud Resources</a>.
+            </div>
+          </div>
+
+          {state.rightsizingTop.length > 0 && (
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Top Resource Candidates</h3>
+                <a href="/dashboard/rightsizing" className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+                  View full rightsizing list
+                </a>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                      <th className="py-2 pr-3">Resource</th>
+                      <th className="py-2 pr-3">Provider</th>
+                      <th className="py-2 pr-3">Action</th>
+                      <th className="py-2 pr-3">Size Change</th>
+                      <th className="py-2 text-right">Savings / mo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {state.rightsizingTop.map((row) => (
+                      <tr key={`${row.provider}-${row.resource_id}`} className="border-b border-slate-100 dark:border-slate-800">
+                        <td className="py-2 pr-3">
+                          <div className="font-medium text-slate-900 dark:text-white">{row.resource_name}</div>
+                          <div className="font-mono text-xs text-slate-500 dark:text-slate-400">{row.resource_id}</div>
+                        </td>
+                        <td className="py-2 pr-3 uppercase text-slate-700 dark:text-slate-200">{row.provider}</td>
+                        <td className="py-2 pr-3 capitalize text-slate-700 dark:text-slate-200">{row.action}</td>
+                        <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">
+                          <span className="font-mono text-xs">{row.current_size}</span>
+                          {' '}→{' '}
+                          <span className="font-mono text-xs">{row.recommended_size}</span>
+                        </td>
+                        <td className="py-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                          ${row.monthly_savings_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4">
           {state.items.map((rec) => (
             <div
               key={rec.id}
@@ -171,6 +238,7 @@ export default function RecommendationsPage() {
               </div>
             </div>
           ))}
+          </div>
         </div>
       )}
     </div>
