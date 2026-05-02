@@ -1375,6 +1375,20 @@ export interface RightsizingRecommendation {
   confidence: 'high' | 'medium' | 'low'
   effort: 'low' | 'medium' | 'high'
   action: 'downsize' | 'terminate' | 'reserve' | 'modernize'
+  evidence_source: string
+  analysis_points: number
+  trend_slope_usd: number
+  trend_percent: number
+  latest_monthly_cost_usd: number | null
+  peak_monthly_cost_usd: number | null
+  top_regions: string[]
+  regional_breakdown: Array<{
+    region: string
+    monthly_cost_usd: number
+    share_percent: number
+  }>
+  last_observed_at: string | null
+  risk_note: string | null
 }
 
 export interface RightsizingResponse {

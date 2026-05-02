@@ -10151,6 +10151,16 @@ class RightsizingRecommendation(BaseModel):
     confidence: str   # "high" | "medium" | "low"
     effort: str       # "low" | "medium" | "high"
     action: str       # "downsize" | "terminate" | "reserve" | "modernize"
+    evidence_source: str = "synthetic"
+    analysis_points: int = 0
+    trend_slope_usd: float = 0.0
+    trend_percent: float = 0.0
+    latest_monthly_cost_usd: Optional[float] = None
+    peak_monthly_cost_usd: Optional[float] = None
+    top_regions: List[str] = Field(default_factory=list)
+    regional_breakdown: List[Dict[str, Any]] = Field(default_factory=list)
+    last_observed_at: Optional[str] = None
+    risk_note: Optional[str] = None
 
 
 class RightsizingResponse(BaseModel):
@@ -10206,6 +10216,40 @@ _ACTION_SAVINGS_RATES: Dict[str, float] = {
     "reserve":   0.37,   # typical 1yr No-Upfront RI discount vs on-demand
     "modernize": 0.30,   # newer gen typically 10-30% cheaper at same perf
 }
+
+
+def _extract_size_from_account_metadata(account: Any, provider: str) -> str:
+    raw_meta = getattr(account, "metadata_json", "{}") or "{}"
+    try:
+        metadata = json.loads(raw_meta)
+    except Exception:
+        metadata = {}
+    candidates = [
+        metadata.get("instance_shape"),
+        metadata.get("shape"),
+        metadata.get("current_shape"),
+        metadata.get("vm_size"),
+        metadata.get("machine_type"),
+        metadata.get("resource_shape"),
+    ]
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return next(iter(_DOWNSIZE_MAP.get(provider, {"compute": "smaller-compute"})))
+
+
+def _recommended_size_for_action(provider: str, action: str, current_size: str) -> str:
+    size_map = _DOWNSIZE_MAP.get(provider, {})
+    if action == "terminate":
+        return "N/A — terminate"
+    if action == "reserve":
+        return f"{current_size} (Reserved 1yr)"
+    if action == "modernize":
+        modern = size_map.get(current_size)
+        return modern or f"newer-gen-{current_size}"
+    down = size_map.get(current_size)
+    return down or f"smaller-{current_size}"
 
 
 # ---------------------------------------------------------------------------
@@ -10404,6 +10448,7 @@ def _trend_slope(values: List[float]) -> float:
 def _rightsizing_from_snapshot_trends(
     snapshots_by_account: Dict[int, List[Any]],
     account_map: Dict[int, Any],
+    top_regions_by_account: Dict[int, List[tuple[str, float]]],
     min_savings: float,
 ) -> List[RightsizingRecommendation]:
     """Derive rightsizing signals from multi-scan cost history without external APIs."""
@@ -10498,21 +10543,27 @@ def _rightsizing_from_snapshot_trends(
         if monthly_savings < min_savings:
             continue
 
-        # Look up a plausible downsize target from the static map
-        size_map = _DOWNSIZE_MAP.get(prov, {})
-        current_size = next(iter(size_map), f"{prov}-instance")
-        recommended_size = size_map.get(current_size, f"smaller-{current_size}")
-        if action == "terminate":
-            recommended_size = "N/A — terminate"
-        elif action == "reserve":
-            recommended_size = f"{current_size} (Reserved 1yr)"
-        elif action == "modernize":
-            recommended_size = _DOWNSIZE_MAP.get(prov, {}).get(
-                current_size, f"newer-gen-{current_size}"
-            )
+        trend_pct = round((slope / avg_cost) * 100, 2) if avg_cost > 0 else 0.0
+        current_size = _extract_size_from_account_metadata(acct, prov)
+        recommended_size = _recommended_size_for_action(prov, action, current_size)
+        top_regions = top_regions_by_account.get(acct_id, [])
+        top_region_names = [r for r, _ in top_regions[:3]]
+        regional_breakdown = []
+        for region_name, region_cost in top_regions[:4]:
+            share = round((region_cost / avg_cost) * 100, 2) if avg_cost > 0 else 0.0
+            regional_breakdown.append({
+                "region": region_name,
+                "monthly_cost_usd": round(region_cost, 2),
+                "share_percent": share,
+            })
 
         type_labels = {"aws": "EC2 Instance", "azure": "Virtual Machine",
                        "gcp": "Compute Instance", "oci": "OCI Compute"}
+        risk_note = None
+        if total_anomalies > 0:
+            risk_note = f"{total_anomalies} anomalies detected across history — validate performance before applying changes."
+        elif action in {"downsize", "modernize"} and n_points < 3:
+            risk_note = "Limited history points; apply with canary rollout."
 
         out.append(RightsizingRecommendation(
             resource_id=f"{prov}-acct-{acct_id}",
@@ -10533,7 +10584,64 @@ def _rightsizing_from_snapshot_trends(
             confidence=confidence,
             effort=effort,
             action=action,
+            evidence_source="cost_trend_analysis",
+            analysis_points=n_points,
+            trend_slope_usd=round(slope, 4),
+            trend_percent=trend_pct,
+            latest_monthly_cost_usd=round(latest_cost, 2),
+            peak_monthly_cost_usd=round(max(costs), 2) if costs else None,
+            top_regions=top_region_names,
+            regional_breakdown=regional_breakdown,
+            last_observed_at=snaps_sorted[-1].captured_at.isoformat() if snaps_sorted[-1].captured_at else None,
+            risk_note=risk_note,
         ))
+
+        # Add region-level recommendations for top-cost regions to increase actionability.
+        # This keeps the same evidence source, but scopes savings to concrete hotspots.
+        if top_regions and action in {"downsize", "modernize", "reserve"}:
+            for rank, (region_name, region_cost) in enumerate(top_regions[:3], start=1):
+                region_monthly_savings = round(region_cost * savings_rate, 2)
+                if region_monthly_savings < min_savings:
+                    continue
+                region_current_size = current_size
+                region_target_size = _recommended_size_for_action(prov, action, region_current_size)
+                out.append(RightsizingRecommendation(
+                    resource_id=f"{prov}-acct-{acct_id}-region-{region_name}",
+                    resource_name=f"{(acct.account_name or acct.account_identifier)} · {region_name}",
+                    resource_type=f"{type_labels.get(prov, 'Compute Instance')} (regional segment)",
+                    provider=prov,
+                    region=region_name,
+                    account_id=acct.account_identifier,
+                    current_size=region_current_size,
+                    recommended_size=region_target_size,
+                    current_monthly_cost_usd=round(region_cost, 2),
+                    projected_monthly_cost_usd=round(region_cost * (1 - savings_rate), 2),
+                    monthly_savings_usd=region_monthly_savings,
+                    annual_savings_usd=round(region_monthly_savings * 12, 2),
+                    cpu_utilization_avg_percent=None,
+                    memory_utilization_avg_percent=None,
+                    reason=(
+                        f"Top regional spend segment #{rank} in {region_name} "
+                        f"(${region_cost:.2f}/mo) follows the account-level {action} signal."
+                    ),
+                    confidence="high" if confidence == "high" else "medium",
+                    effort=effort,
+                    action=action,
+                    evidence_source="cost_trend_analysis_region",
+                    analysis_points=n_points,
+                    trend_slope_usd=round(slope, 4),
+                    trend_percent=trend_pct,
+                    latest_monthly_cost_usd=round(region_cost, 2),
+                    peak_monthly_cost_usd=round(region_cost, 2),
+                    top_regions=[region_name],
+                    regional_breakdown=[{
+                        "region": region_name,
+                        "monthly_cost_usd": round(region_cost, 2),
+                        "share_percent": 100.0,
+                    }],
+                    last_observed_at=snaps_sorted[-1].captured_at.isoformat() if snaps_sorted[-1].captured_at else None,
+                    risk_note="Regional optimization segment derived from latest allocation snapshot.",
+                ))
     return out
 
 
@@ -10735,9 +10843,33 @@ async def get_rightsizing_recommendations(
             for snap in snap_rows:
                 snapshots_by_account.setdefault(snap.provider_account_id, []).append(snap)
 
+            # Build latest region-cost hotspots per account from allocation snapshots.
+            alloc_rows = (
+                db.query(CostAllocationSnapshot)
+                .filter(
+                    CostAllocationSnapshot.provider_account_id.in_(list(account_map.keys())),
+                    CostAllocationSnapshot.organization_id == org_id,
+                    CostAllocationSnapshot.customer_id == customer_id,
+                )
+                .order_by(CostAllocationSnapshot.captured_at.desc())
+                .limit(2000)
+                .all()
+            )
+            latest_scan_by_account: Dict[int, str] = {}
+            top_regions_by_account: Dict[int, List[tuple[str, float]]] = {}
+            for row in alloc_rows:
+                acct_id = int(row.provider_account_id)
+                if acct_id not in latest_scan_by_account:
+                    latest_scan_by_account[acct_id] = str(row.scan_id or "")
+                if str(row.scan_id or "") != latest_scan_by_account[acct_id]:
+                    continue
+                top_regions_by_account.setdefault(acct_id, []).append((str(row.region or "global"), float(row.cost_usd or 0.0)))
+            for acct_id, regions in top_regions_by_account.items():
+                top_regions_by_account[acct_id] = sorted(regions, key=lambda item: item[1], reverse=True)[:6]
+
             total_analyzed = len(snap_rows)
             tier3 = _rightsizing_from_snapshot_trends(
-                snapshots_by_account, account_map, min_savings
+                snapshots_by_account, account_map, top_regions_by_account, min_savings
             )
             if tier3:
                 recommendations_out = tier3

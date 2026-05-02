@@ -18,6 +18,12 @@ function fmtK(n: number) {
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`
   return fmt(n)
 }
+function fmtDate(v: string | null) {
+  if (!v) return 'n/a'
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return v
+  return d.toLocaleString()
+}
 
 function actionColor(action: string) {
   return {
@@ -115,7 +121,7 @@ function rollbackPlan(rec: RightsizingRecommendation): string {
 }
 
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const monthlyDeltaPct = rec.current_monthly_cost_usd > 0
     ? ((rec.current_monthly_cost_usd - rec.projected_monthly_cost_usd) / rec.current_monthly_cost_usd) * 100
     : 0
@@ -150,6 +156,63 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
             <span className="text-xs text-slate-400 ml-auto">{fmt(rec.current_monthly_cost_usd)} → {fmt(rec.projected_monthly_cost_usd)}</span>
           </div>
 
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2 text-xs">
+              <p className="text-slate-500">Evidence</p>
+              <p className="font-medium text-slate-800 dark:text-slate-200">
+                {rec.evidence_source.replace(/_/g, ' ')} · {rec.analysis_points} points
+              </p>
+              <p className="text-slate-500 mt-0.5">
+                Trend: {rec.trend_percent >= 0 ? '+' : ''}{rec.trend_percent.toFixed(2)}% ({fmt(rec.trend_slope_usd)}/period)
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2 text-xs">
+              <p className="text-slate-500">Observed</p>
+              <p className="font-medium text-slate-800 dark:text-slate-200">{fmtDate(rec.last_observed_at)}</p>
+              <p className="text-slate-500 mt-0.5">
+                Latest: {rec.latest_monthly_cost_usd !== null ? fmt(rec.latest_monthly_cost_usd) : 'n/a'} · Peak: {rec.peak_monthly_cost_usd !== null ? fmt(rec.peak_monthly_cost_usd) : 'n/a'}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2 text-xs">
+            <p className="text-slate-500">Why this is recommended</p>
+            <p className="font-medium text-slate-800 dark:text-slate-200 line-clamp-2">{rec.reason}</p>
+          </div>
+
+          {(rec.regional_breakdown?.length ?? 0) > 0 && (
+            <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2 text-xs">
+              <p className="text-slate-500 mb-1">Regional cost breakdown</p>
+              <div className="space-y-1">
+                {(rec.regional_breakdown ?? []).slice(0, 4).map((row) => (
+                  <div key={`${rec.resource_id}-${row.region}`} className="flex items-center justify-between">
+                    <span className="text-slate-700 dark:text-slate-200">{row.region}</span>
+                    <span className="text-slate-600 dark:text-slate-300">
+                      {fmt(row.monthly_cost_usd)} ({row.share_percent.toFixed(1)}%)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {rec.top_regions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-xs text-slate-500 mr-1">Top regions:</span>
+              {rec.top_regions.slice(0, 4).map((region) => (
+                <Badge key={region} variant="outline" className="rounded-md text-[11px]">
+                  {region}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          {rec.risk_note && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+              {rec.risk_note}
+            </div>
+          )}
+
           {/* Utilization bars */}
           {(rec.cpu_utilization_avg_percent !== null || rec.memory_utilization_avg_percent !== null) && (
             <div className="space-y-1">
@@ -160,7 +223,7 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
 
           {/* Expand button */}
           <button onClick={() => setExpanded(e => !e)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline text-left">
-            {expanded ? 'Hide detail ▲' : 'Show reason ▼'}
+            {expanded ? 'Hide full details ▲' : 'Show full details ▼'}
           </button>
           {expanded && (
             <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-3">
