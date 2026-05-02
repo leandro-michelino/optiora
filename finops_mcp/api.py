@@ -13,6 +13,8 @@ import io
 import json
 import logging
 import os
+import configparser
+import tempfile
 import base64
 import binascii
 import hashlib
@@ -31,7 +33,7 @@ try:
 except ImportError:
     _OPENPYXL_AVAILABLE = False
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -1242,6 +1244,37 @@ def _require_management_role(membership: UserOrganization, action: str) -> None:
     )
 
 
+def _normalize_oci_profile(profile: Optional[str]) -> str:
+    normalized = str(profile or "DEFAULT").strip() or "DEFAULT"
+    if normalized.startswith("[") and normalized.endswith("]") and len(normalized) > 2:
+        normalized = normalized[1:-1].strip() or "DEFAULT"
+    return normalized
+
+
+def _oci_uploaded_credentials_dir(customer_id: str) -> str:
+    base_dir = os.getenv(
+        "OCI_UPLOADED_CREDENTIAL_DIR",
+        "/opt/optiora/.runtime/cloud-credentials",
+    )
+    target_dir = os.path.abspath(os.path.join(base_dir, customer_id, "oci"))
+    try:
+        os.makedirs(target_dir, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(target_dir, 0o700)
+        except OSError:
+            pass
+        return target_dir
+    except OSError:
+        fallback_base = os.path.join(tempfile.gettempdir(), "optiora-cloud-credentials")
+        fallback_dir = os.path.abspath(os.path.join(fallback_base, customer_id, "oci"))
+        os.makedirs(fallback_dir, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(fallback_dir, 0o700)
+        except OSError:
+            pass
+        return fallback_dir
+
+
 def _resolve_customer_id(
     current_user: User,
     membership: UserOrganization,
@@ -1394,6 +1427,95 @@ async def validate_credentials(
     except Exception as exc:
         logger.exception("Credential validation failed")
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/credentials/oci/upload-files")
+async def upload_oci_credential_files(
+    profile: str = Form("DEFAULT"),
+    config_file: UploadFile = File(...),
+    private_key_file: Optional[UploadFile] = File(None),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> Dict[str, Any]:
+    """Upload OCI config/key files to the API host for test-only credential checks."""
+    _require_management_role(membership, "OCI credential file upload")
+    customer_id = _resolve_customer_id(current_user, membership, None)
+    normalized_profile = _normalize_oci_profile(profile)
+
+    if config_file is None or not (config_file.filename or "").strip():
+        raise HTTPException(status_code=400, detail="config_file is required")
+
+    config_bytes = await config_file.read()
+    if not config_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded OCI config file is empty")
+    if len(config_bytes) > 1024 * 1024:
+        raise HTTPException(status_code=400, detail="OCI config file is too large (max 1 MiB)")
+
+    try:
+        config_text = config_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="OCI config file must be UTF-8 text",
+        ) from exc
+
+    parser = configparser.RawConfigParser()
+    parser.optionxform = str
+    try:
+        parser.read_string(config_text)
+    except configparser.Error as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid OCI config format: {exc}") from exc
+
+    sections = parser.sections()
+    if not sections:
+        raise HTTPException(status_code=400, detail="OCI config file has no profile sections")
+    if normalized_profile not in sections:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Profile '{normalized_profile}' was not found in uploaded OCI config. "
+                f"Available profiles: {', '.join(sections)}"
+            ),
+        )
+
+    target_dir = _oci_uploaded_credentials_dir(customer_id)
+    token = uuid4().hex[:12]
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    config_path = os.path.join(target_dir, f"oci-config-{timestamp}-{token}.ini")
+    key_path = ""
+
+    if private_key_file and (private_key_file.filename or "").strip():
+        key_bytes = await private_key_file.read()
+        if not key_bytes:
+            raise HTTPException(status_code=400, detail="Uploaded OCI private key file is empty")
+        if len(key_bytes) > 256 * 1024:
+            raise HTTPException(status_code=400, detail="OCI private key file is too large (max 256 KiB)")
+        key_path = os.path.join(target_dir, f"oci-key-{timestamp}-{token}.pem")
+        with open(key_path, "wb") as fh:
+            fh.write(key_bytes)
+        try:
+            os.chmod(key_path, 0o600)
+        except OSError:
+            pass
+        parser.set(normalized_profile, "key_file", key_path)
+
+    with open(config_path, "w", encoding="utf-8") as fh:
+        parser.write(fh, space_around_delimiters=False)
+    try:
+        os.chmod(config_path, 0o600)
+    except OSError:
+        pass
+
+    return {
+        "status": "success",
+        "message": "OCI credential files uploaded to API host for test usage.",
+        "customer_id": customer_id,
+        "profile": normalized_profile,
+        "config_file": config_path,
+        "key_file": key_path or None,
+        "profiles_available": sections,
+        "test_only": True,
+    }
 
 
 @router.post("/credentials/add")

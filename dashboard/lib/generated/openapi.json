@@ -482,6 +482,55 @@
         ]
       }
     },
+    "/api/v1/credentials/oci/upload-files": {
+      "post": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Upload Oci Credential Files",
+        "description": "Upload OCI config/key files to the API host for test-only credential checks.",
+        "operationId": "upload_oci_credential_files_api_v1_credentials_oci_upload_files_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_oci_credential_files_api_v1_credentials_oci_upload_files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Oci Credential Files Api V1 Credentials Oci Upload Files Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/credentials/add": {
       "post": {
         "tags": [
@@ -6947,7 +6996,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -6961,7 +7010,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -6970,6 +7019,37 @@
           "file"
         ],
         "title": "Body_upload_cost_csv_api_v1_imports_costs_csv_post"
+      },
+      "Body_upload_oci_credential_files_api_v1_credentials_oci_upload_files_post": {
+        "properties": {
+          "profile": {
+            "type": "string",
+            "title": "Profile",
+            "default": "DEFAULT"
+          },
+          "config_file": {
+            "type": "string",
+            "format": "binary",
+            "title": "Config File"
+          },
+          "private_key_file": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "binary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Key File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config_file"
+        ],
+        "title": "Body_upload_oci_credential_files_api_v1_credentials_oci_upload_files_post"
       },
       "BusinessMappingRuleListResponse": {
         "properties": {
@@ -7438,8 +7518,7 @@
               "type": "number"
             },
             "type": "object",
-            "title": "Service Breakdown",
-            "default": {}
+            "title": "Service Breakdown"
           }
         },
         "type": "object",
@@ -11841,13 +11920,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

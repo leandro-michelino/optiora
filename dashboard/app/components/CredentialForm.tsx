@@ -50,7 +50,7 @@ const PROVIDER_HELP = {
   oci: {
     summary: 'OptiOra reads OCI cost and usage data via the Usage API using the local OCI CLI config file on the server.',
     steps: [
-      'Install the OCI CLI on the server: bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)"',
+      'Install the OCI CLI on the server using Oracle Linux packages (`dnf`) from Oracle repositories.',
       'Run oci setup config and follow the prompts — this creates ~/.oci/config.',
       'The user/API key must have the policy: Allow group <YourGroup> to read usage-reports in tenancy.',
       'Enter the config path as it exists on the API server (default: ~/.oci/config), not a browser/local-machine-only path.',
@@ -93,6 +93,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingOciFiles, setUploadingOciFiles] = useState(false);
   const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid' | 'saved'>('idle');
   const [validationMessage, setValidationMessage] = useState('');
 
@@ -118,6 +119,8 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
     config_file: '~/.oci/config',
     profile: 'DEFAULT'
   });
+  const [ociConfigUpload, setOciConfigUpload] = useState<File | null>(null);
+  const [ociKeyUpload, setOciKeyUpload] = useState<File | null>(null);
 
   const currentCredentials = () =>
     selectedProvider === 'aws' ? awsForm :
@@ -193,6 +196,55 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
       setValidationMessage(err instanceof Error ? err.message : 'An error occurred while saving.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleUploadOciFiles = async () => {
+    if (!selectedProvider || selectedProvider !== 'oci') {
+      setValidationStatus('invalid');
+      setValidationMessage('Select OCI first before uploading files.');
+      return;
+    }
+    if (!ociConfigUpload) {
+      setValidationStatus('invalid');
+      setValidationMessage('Choose an OCI config file to upload.');
+      return;
+    }
+
+    setUploadingOciFiles(true);
+    try {
+      const formData = new FormData();
+      formData.append('profile', ociForm.profile || 'DEFAULT');
+      formData.append('config_file', ociConfigUpload);
+      if (ociKeyUpload) {
+        formData.append('private_key_file', ociKeyUpload);
+      }
+
+      const res = await authorizedFetch(backendUrl('/api/v1/credentials/oci/upload-files'), {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.detail || 'Failed to upload OCI files.');
+      }
+
+      const uploadedProfile = String(data?.profile || ociForm.profile || 'DEFAULT');
+      const uploadedConfigPath = String(data?.config_file || ociForm.config_file || '~/.oci/config');
+      setOciForm({
+        config_file: uploadedConfigPath,
+        profile: uploadedProfile,
+      });
+      setValidationStatus('valid');
+      setValidationMessage(
+        `OCI files uploaded to server path ${uploadedConfigPath}. You can now click Test Connection.`
+      );
+    } catch (err) {
+      setValidationStatus('invalid');
+      setValidationMessage(err instanceof Error ? err.message : 'Unexpected error while uploading OCI files.');
+    } finally {
+      setUploadingOciFiles(false);
     }
   };
 
@@ -398,6 +450,37 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   placeholder="DEFAULT"
                   className="w-full px-3 py-2 border rounded-md"
                 />
+              </div>
+              <div className="rounded-md border border-slate-200 bg-white p-3 space-y-3">
+                <p className="text-xs text-slate-600">
+                  Optional for test environments: upload OCI config/private-key files to the server VM and use those server paths as the credential source.
+                </p>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Upload OCI Config File</label>
+                  <input
+                    type="file"
+                    accept=".ini,.cfg,.config,text/plain"
+                    onChange={e => setOciConfigUpload(e.target.files?.[0] ?? null)}
+                    className="w-full text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Upload OCI Private Key (optional)</label>
+                  <input
+                    type="file"
+                    accept=".pem,.key,text/plain"
+                    onChange={e => setOciKeyUpload(e.target.files?.[0] ?? null)}
+                    className="w-full text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUploadOciFiles}
+                  disabled={uploadingOciFiles || !ociConfigUpload}
+                  className="px-3 py-2 border border-slate-400 text-slate-700 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                >
+                  {uploadingOciFiles ? 'Uploading…' : 'Upload OCI Files To Server'}
+                </button>
               </div>
             </div>
           )}

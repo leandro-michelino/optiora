@@ -124,6 +124,7 @@ Notes:
 
 - The script reports configured/missing state for AWS, Azure, GCP, and OCI.
 - OCI validation normalizes bracketed profiles (`[JNB]` -> `JNB`) and auto-retries Usage API calls in tenancy home region when needed.
+- OCI test-only server file upload can be exercised with `POST /api/v1/credentials/oci/upload-files` (multipart form: `profile`, `config_file`, optional `private_key_file`), then validated through `POST /api/v1/credentials/validate`.
 
 Auth smoke flow:
 

@@ -821,6 +821,20 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     })
   }
 
+  async function post_api_v1_credentials_oci_upload_files(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/credentials/oci/upload-files"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'POST',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
   async function post_api_v1_credentials_validate(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/credentials/validate"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
@@ -1984,6 +1998,7 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     get_api_v1_costs,
     get_api_v1_credentials,
     post_api_v1_credentials_add,
+    post_api_v1_credentials_oci_upload_files,
     post_api_v1_credentials_validate,
     delete_api_v1_credentials_by_provider,
     get_api_v1_dashboard_anomalies,

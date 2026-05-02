@@ -273,6 +273,13 @@ DATABASE_URL=postgresql+psycopg2://optiora_user:your_secure_db_password@postgres
 - Use `OCI_PRIVATE_KEY` only when you intentionally need to inject the PEM inline with literal `\n` escapes.
 - Enable `RETENTION_ENABLED` only after `OCI_ARCHIVE_BUCKET` and `OCI_ARCHIVE_NAMESPACE` point to the Object Storage archive bucket created by Terraform.
 
+OCI credential file source policy:
+
+- OptiOra validates OCI credentials from files that exist on the API host filesystem; browser-local paths are not readable by the backend.
+- Preferred persistent path: provision `~/.oci/config` (and key file) directly on the VM with owner `optiora` and mode `600`.
+- Test-only path: use `POST /api/v1/credentials/oci/upload-files` from the dashboard OCI form to upload config/key files into the server runtime credential directory; then validate using the returned server `config_file` path.
+- Avoid committing OCI config/key files to git or embedding private keys in docs/scripts.
+
 Optional hardened deployment later:
 
 ```env
@@ -367,6 +374,7 @@ set +a
 4. For OCI:
    - `OCI_CONFIG_FILE` must exist on the backend host filesystem.
    - Profile names must be plain section names (`JNB`), not bracketed (`[JNB]`).
+   - When needed for test workflows, use `POST /api/v1/credentials/oci/upload-files` and validate with the returned server path.
    - Usage API may require tenancy home-region routing; OptiOra now retries OCI usage validation against the home region automatically.
 5. Run runtime connectivity checks from the backend host:
 
