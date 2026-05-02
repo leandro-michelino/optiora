@@ -461,6 +461,15 @@
   when: optiora_install_nginx | bool
   notify: Reload nginx
 
+- name: Allow nginx to proxy upstream services (SELinux)
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+  when:
+    - optiora_install_nginx | bool
+    - ansible_selinux.status == "enabled"
+
 - name: Start and enable nginx
   ansible.builtin.systemd:
     name: nginx
