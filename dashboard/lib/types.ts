@@ -1135,6 +1135,16 @@ export interface OpenCostSyncResponse {
   pods?: OpenCostPodCost[]
 }
 
+export interface OpenCostInstallResponse {
+  generated_at: string
+  status: 'installed' | 'already_installed' | 'failed'
+  message: string
+  api_url?: string | null
+  namespace: string
+  prometheus_namespace: string
+  command_log: string[]
+}
+
 export interface WhiteLabelConfigResponse {
   brand_name: string
   logo_url?: string | null

@@ -55,6 +55,7 @@ import {
   KubernetesProviderCatalogResponse,
   KubernetesSummaryResponse,
   PartnerCustomerPortfolioResponse,
+  OpenCostInstallResponse,
   OpenCostSyncResponse,
   VirtualTagRulesResponse,
   VirtualTagRuleOut,
@@ -884,6 +885,19 @@ export async function syncOpenCostCosts(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export async function autoInstallOpenCost(payload?: {
+  kube_context?: string
+  namespace?: string
+  prometheus_namespace?: string
+  skip_prometheus_install?: boolean
+  expose_port?: number
+}): Promise<OpenCostInstallResponse> {
+  return requestJson<OpenCostInstallResponse>('/api/v1/analytics/kubernetes/opencost/auto-install', {
+    method: 'POST',
+    body: JSON.stringify(payload ?? {}),
+  }, { timeoutMs: 120000 })
 }
 
 export async function fetchPartnerCustomerPortfolio(): Promise<PartnerCustomerPortfolioResponse> {

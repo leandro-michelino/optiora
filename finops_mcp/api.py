@@ -19,6 +19,8 @@ import base64
 import binascii
 import hashlib
 import hmac
+import shutil
+import subprocess
 from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -1277,6 +1279,127 @@ def _oci_uploaded_credentials_dir(customer_id: str) -> str:
         return fallback_dir
 
 
+def _runtime_credentials_root(customer_id: str) -> str:
+    base_dir = os.getenv(
+        "RUNTIME_CREDENTIAL_DIR",
+        "/opt/optiora/.runtime/cloud-credentials",
+    )
+    target_dir = os.path.abspath(os.path.join(base_dir, customer_id))
+    try:
+        os.makedirs(target_dir, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(target_dir, 0o700)
+        except OSError:
+            pass
+        return target_dir
+    except OSError:
+        fallback_base = os.path.join(tempfile.gettempdir(), "optiora-runtime-credentials")
+        fallback_dir = os.path.abspath(os.path.join(fallback_base, customer_id))
+        os.makedirs(fallback_dir, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(fallback_dir, 0o700)
+        except OSError:
+            pass
+        return fallback_dir
+
+
+def _write_runtime_provider_credentials(
+    customer_id: str,
+    credential: CredentialInput,
+) -> Dict[str, Any]:
+    """Persist runtime credentials on host for live provider API operations."""
+    root = _runtime_credentials_root(customer_id)
+    provider = credential.provider
+    provider_dir = os.path.join(root, provider)
+    os.makedirs(provider_dir, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(provider_dir, 0o700)
+    except OSError:
+        pass
+
+    if provider == "aws":
+        payload = credential.model_dump()
+        runtime_payload = {
+            "access_key_id": str(payload.get("access_key_id") or ""),
+            "secret_access_key": str(payload.get("secret_access_key") or ""),
+            "region": str(payload.get("region") or "us-east-1"),
+        }
+        runtime_path = os.path.join(provider_dir, "runtime.json")
+        with open(runtime_path, "w", encoding="utf-8") as fh:
+            json.dump(runtime_payload, fh)
+        os.chmod(runtime_path, 0o600)
+        return {"provider": "aws", "runtime_file": runtime_path}
+
+    if provider == "azure":
+        payload = credential.model_dump()
+        runtime_payload = {
+            "subscription_id": str(payload.get("subscription_id") or ""),
+            "tenant_id": str(payload.get("tenant_id") or ""),
+            "client_id": str(payload.get("client_id") or ""),
+            "client_secret": str(payload.get("client_secret") or ""),
+        }
+        runtime_path = os.path.join(provider_dir, "runtime.json")
+        with open(runtime_path, "w", encoding="utf-8") as fh:
+            json.dump(runtime_payload, fh)
+        os.chmod(runtime_path, 0o600)
+        return {"provider": "azure", "runtime_file": runtime_path}
+
+    if provider == "gcp":
+        payload = credential.model_dump()
+        project_id = str(payload.get("project_id") or "")
+        service_account = payload.get("service_account_json")
+        if isinstance(service_account, str):
+            service_account = json.loads(service_account)
+        if not isinstance(service_account, dict):
+            service_account = {}
+        service_account_path = os.path.join(provider_dir, "service-account.json")
+        with open(service_account_path, "w", encoding="utf-8") as fh:
+            json.dump(service_account, fh)
+        os.chmod(service_account_path, 0o600)
+        runtime_path = os.path.join(provider_dir, "runtime.json")
+        with open(runtime_path, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "project_id": project_id,
+                    "service_account_file": service_account_path,
+                },
+                fh,
+            )
+        os.chmod(runtime_path, 0o600)
+        return {"provider": "gcp", "runtime_file": runtime_path, "service_account_file": service_account_path}
+
+    if provider == "oci":
+        payload = credential.model_dump()
+        runtime_payload = {
+            "config_file": str(payload.get("config_file") or ""),
+            "profile": _normalize_oci_profile(payload.get("profile")),
+        }
+        runtime_path = os.path.join(provider_dir, "runtime.json")
+        with open(runtime_path, "w", encoding="utf-8") as fh:
+            json.dump(runtime_payload, fh)
+        os.chmod(runtime_path, 0o600)
+        return {"provider": "oci", "runtime_file": runtime_path}
+
+    return {"provider": provider}
+
+
+def _load_runtime_provider_credentials(customer_id: str) -> Dict[str, Dict[str, Any]]:
+    root = _runtime_credentials_root(customer_id)
+    output: Dict[str, Dict[str, Any]] = {}
+    for provider in ("aws", "azure", "gcp", "oci"):
+        runtime_path = os.path.join(root, provider, "runtime.json")
+        if not os.path.isfile(runtime_path):
+            continue
+        try:
+            with open(runtime_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                output[provider] = data
+        except Exception:
+            continue
+    return output
+
+
 def _resolve_customer_id(
     current_user: User,
     membership: UserOrganization,
@@ -1551,12 +1674,17 @@ async def add_credentials(
             is_active=True,
             validation=validation,
         )
+        runtime = _write_runtime_provider_credentials(
+            customer_id=customer_id,
+            credential=credential,
+        )
         return {
             "status": "success",
             "message": f"{credential.provider.upper()} credentials stored",
             "provider": credential.provider,
             "customer_id": customer_id,
             "record": stored,
+            "runtime": runtime,
         }
     except HTTPException:
         raise
@@ -8328,6 +8456,13 @@ class OpenCostNamespaceCost(BaseModel):
     share_percent: float
 
 
+class OpenCostPodCost(BaseModel):
+    namespace: str
+    pod_name: str
+    cost_usd: float
+    share_percent: float
+
+
 class OpenCostSyncResponse(BaseModel):
     generated_at: str
     cluster_name: str
@@ -8336,6 +8471,25 @@ class OpenCostSyncResponse(BaseModel):
     total_cost_usd: float
     namespace_count: int
     namespaces: List[OpenCostNamespaceCost]
+    pods: List[OpenCostPodCost] = Field(default_factory=list)
+
+
+class OpenCostInstallRequest(BaseModel):
+    kube_context: Optional[str] = None
+    namespace: str = "opencost"
+    prometheus_namespace: str = "prometheus-system"
+    skip_prometheus_install: bool = False
+    expose_port: int = 9003
+
+
+class OpenCostInstallResponse(BaseModel):
+    generated_at: str
+    status: Literal["installed", "already_installed", "failed"]
+    message: str
+    api_url: Optional[str] = None
+    namespace: str
+    prometheus_namespace: str
+    command_log: List[str] = Field(default_factory=list)
 
 
 def _default_kubernetes_workloads(namespaces: List[str]) -> List[KubernetesWorkloadInput]:
@@ -8682,6 +8836,111 @@ def _white_label_config() -> WhiteLabelConfigResponse:
     )
 
 
+def _normalize_opencost_url(raw: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    return value.rstrip("/")
+
+
+def _flatten_opencost_entries(payload: Any) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict):
+                rows.append(item)
+            elif isinstance(item, list):
+                rows.extend(_flatten_opencost_entries(item))
+        return rows
+    if isinstance(payload, dict):
+        # OpenCost can return {data: {...}} with allocation map, or {data: [..]}
+        if isinstance(payload.get("data"), list):
+            rows.extend(_flatten_opencost_entries(payload.get("data")))
+        elif isinstance(payload.get("data"), dict):
+            for value in payload.get("data", {}).values():
+                if isinstance(value, dict):
+                    rows.append(value)
+        elif isinstance(payload.get("items"), list):
+            rows.extend(_flatten_opencost_entries(payload.get("items")))
+    return rows
+
+
+def _opencost_row_cost_usd(row: Dict[str, Any]) -> float:
+    for key in ("totalCost", "totalCostUsd", "cost", "total"):
+        value = row.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, dict):
+            numeric = [float(v) for v in value.values() if isinstance(v, (int, float))]
+            if numeric:
+                return float(sum(numeric))
+    return 0.0
+
+
+def _opencost_fetch_allocations(
+    api_url: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    aggregate: str,
+) -> List[Dict[str, Any]]:
+    import httpx
+
+    normalized_url = _normalize_opencost_url(api_url)
+    if not normalized_url:
+        raise ValueError("OpenCost URL is empty")
+    endpoint = f"{normalized_url}/api/v1/allocation"
+    params = {
+        "start": start_dt.date().isoformat(),
+        "end": end_dt.date().isoformat(),
+        "aggregate": aggregate,
+        "step": "1d",
+    }
+    with httpx.Client(timeout=45.0) as client:
+        resp = client.get(endpoint, params=params)
+        resp.raise_for_status()
+        payload = resp.json()
+    rows = _flatten_opencost_entries(payload)
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        properties = row.get("properties") if isinstance(row.get("properties"), dict) else {}
+        out.append(
+            {
+                "namespace": str(
+                    properties.get("namespace")
+                    or row.get("namespace")
+                    or "unknown"
+                ),
+                "pod": str(
+                    properties.get("pod")
+                    or row.get("pod")
+                    or ""
+                ),
+                "cost_usd": _opencost_row_cost_usd(row),
+            }
+        )
+    return [item for item in out if item["cost_usd"] > 0]
+
+
+def _run_command(
+    args: List[str],
+    command_log: List[str],
+    timeout: int = 180,
+) -> subprocess.CompletedProcess[str]:
+    command_log.append(f"$ {' '.join(args)}")
+    result = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    if result.stdout.strip():
+        command_log.append(result.stdout.strip())
+    if result.stderr.strip():
+        command_log.append(result.stderr.strip())
+    return result
+
+
 @router.get("/partner/customer-portfolio", response_model=PartnerCustomerPortfolioResponse)
 async def get_partner_customer_portfolio(
     current_user: User = Depends(get_current_user),
@@ -8829,23 +9088,17 @@ async def calculate_kubernetes_cluster_cost(
     """Estimate Kubernetes cluster cost allocation by namespace."""
     if payload.opencost_enabled and payload.opencost_url:
         try:
-            connector = ConnectorManager.get_connector(
-                ConnectorType.OPENCOST,
-                {
-                    "api_url": payload.opencost_url,
-                    "cluster_name": payload.cluster_name,
-                },
-            )
             start_date = _utcnow() - timedelta(days=payload.opencost_window_days)
-            costs = await connector.fetch_costs(start_date=start_date, end_date=_utcnow())
+            costs = _opencost_fetch_allocations(
+                api_url=payload.opencost_url,
+                start_dt=start_date,
+                end_dt=_utcnow(),
+                aggregate="namespace",
+            )
             namespace_totals: Dict[str, float] = {}
             for point in costs:
-                namespace = (
-                    point.metadata.get("namespace")
-                    or point.resource_id
-                    or "unknown"
-                )
-                namespace_totals[namespace] = namespace_totals.get(namespace, 0.0) + float(point.amount_usd or 0.0)
+                namespace = str(point.get("namespace") or "unknown")
+                namespace_totals[namespace] = namespace_totals.get(namespace, 0.0) + float(point.get("cost_usd") or 0.0)
 
             total_live_cost = round(sum(namespace_totals.values()), 2)
             if total_live_cost > 0 and namespace_totals:
@@ -8942,20 +9195,24 @@ async def sync_opencost_costs(
     """Fetch production OpenCost namespace allocation for a cluster."""
     _ = current_user
     _require_management_role(membership, "OpenCost sync")
-    connector = ConnectorManager.get_connector(
-        ConnectorType.OPENCOST,
-        {
-            "api_url": payload.api_url,
-            "cluster_name": payload.cluster_name,
-        },
-    )
     end_dt = _utcnow()
     start_dt = end_dt - timedelta(days=payload.window_days)
     try:
-        costs = await connector.fetch_costs(start_date=start_dt, end_date=end_dt)
+        namespace_costs = _opencost_fetch_allocations(
+            api_url=payload.api_url,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            aggregate="namespace",
+        )
+        pod_costs = _opencost_fetch_allocations(
+            api_url=payload.api_url,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            aggregate="namespace,pod",
+        )
     except Exception as exc:
         detail = str(exc)
-        if "OpenCost API unreachable" in detail:
+        if "Connection refused" in detail or "Failed to establish a new connection" in detail:
             detail = (
                 "OpenCost sync failed: OpenCost API unreachable. "
                 "Use an OpenCost URL reachable from the OptiOra API host "
@@ -8965,9 +9222,9 @@ async def sync_opencost_costs(
             detail = f"OpenCost sync failed: {detail}"
         raise HTTPException(status_code=502, detail=detail) from exc
     namespace_totals: Dict[str, float] = {}
-    for point in costs:
-        namespace = point.metadata.get("namespace") or point.resource_id or "unknown"
-        namespace_totals[namespace] = namespace_totals.get(namespace, 0.0) + float(point.amount_usd or 0.0)
+    for point in namespace_costs:
+        namespace = str(point.get("namespace") or "unknown")
+        namespace_totals[namespace] = namespace_totals.get(namespace, 0.0) + float(point.get("cost_usd") or 0.0)
 
     total_cost = round(sum(namespace_totals.values()), 2)
     rows = [
@@ -8978,15 +9235,208 @@ async def sync_opencost_costs(
         )
         for ns, cost in sorted(namespace_totals.items(), key=lambda x: x[1], reverse=True)
     ]
+    pod_rows_raw: List[OpenCostPodCost] = []
+    for item in pod_costs:
+        ns = str(item.get("namespace") or "unknown")
+        pod_name = str(item.get("pod") or "").strip() or "unknown-pod"
+        cost_usd = float(item.get("cost_usd") or 0.0)
+        if cost_usd <= 0:
+            continue
+        pod_rows_raw.append(
+            OpenCostPodCost(
+                namespace=ns,
+                pod_name=pod_name,
+                cost_usd=round(cost_usd, 2),
+                share_percent=0.0,
+            )
+        )
+    pod_total = sum(row.cost_usd for row in pod_rows_raw) or 0.0
+    pod_rows = [
+        OpenCostPodCost(
+            namespace=row.namespace,
+            pod_name=row.pod_name,
+            cost_usd=row.cost_usd,
+            share_percent=round((row.cost_usd / pod_total) * 100, 4) if pod_total > 0 else 0.0,
+        )
+        for row in sorted(pod_rows_raw, key=lambda item: item.cost_usd, reverse=True)
+    ]
 
     return OpenCostSyncResponse(
         generated_at=_utcnow().isoformat() + "Z",
         cluster_name=payload.cluster_name,
-        source=payload.api_url,
+        source=_normalize_opencost_url(payload.api_url),
         window_days=payload.window_days,
         total_cost_usd=total_cost,
         namespace_count=len(rows),
         namespaces=rows,
+        pods=pod_rows[:100],
+    )
+
+
+@router.post("/analytics/kubernetes/opencost/auto-install", response_model=OpenCostInstallResponse)
+async def auto_install_opencost(
+    payload: OpenCostInstallRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+) -> OpenCostInstallResponse:
+    """Install/upgrade Prometheus + OpenCost in current Kubernetes context on API host."""
+    _ = current_user
+    _require_management_role(membership, "OpenCost auto-install")
+    command_log: List[str] = []
+
+    kubectl_bin = shutil.which("kubectl")
+    helm_bin = shutil.which("helm")
+    if not kubectl_bin or not helm_bin:
+        missing = []
+        if not kubectl_bin:
+            missing.append("kubectl")
+        if not helm_bin:
+            missing.append("helm")
+        return OpenCostInstallResponse(
+            generated_at=_utcnow().isoformat() + "Z",
+            status="failed",
+            message=f"Missing required binaries on API host: {', '.join(missing)}",
+            api_url=None,
+            namespace=payload.namespace,
+            prometheus_namespace=payload.prometheus_namespace,
+            command_log=command_log,
+        )
+
+    context_args: List[str] = []
+    if payload.kube_context:
+        context_args = ["--context", payload.kube_context]
+
+    # Verify cluster access
+    probe = _run_command([kubectl_bin, *context_args, "get", "namespace"], command_log, timeout=60)
+    if probe.returncode != 0:
+        return OpenCostInstallResponse(
+            generated_at=_utcnow().isoformat() + "Z",
+            status="failed",
+            message="kubectl cannot access a Kubernetes cluster from this API host.",
+            api_url=None,
+            namespace=payload.namespace,
+            prometheus_namespace=payload.prometheus_namespace,
+            command_log=command_log,
+        )
+
+    # Ensure helm repos
+    _run_command([helm_bin, "repo", "add", "prometheus-community", "https://prometheus-community.github.io/helm-charts"], command_log, timeout=60)
+    _run_command([helm_bin, "repo", "add", "opencost-charts", "https://opencost.github.io/opencost-helm-chart"], command_log, timeout=60)
+    _run_command([helm_bin, "repo", "update"], command_log, timeout=120)
+
+    if not payload.skip_prometheus_install:
+        prom_cmd = [
+            helm_bin,
+            "upgrade",
+            "--install",
+            "prometheus",
+            "prometheus-community/prometheus",
+            "--namespace",
+            payload.prometheus_namespace,
+            "--create-namespace",
+            "--set",
+            "prometheus-pushgateway.enabled=false",
+            "--set",
+            "alertmanager.enabled=false",
+            "-f",
+            "https://raw.githubusercontent.com/opencost/opencost/develop/kubernetes/prometheus/extraScrapeConfigs.yaml",
+        ]
+        prom_result = _run_command(prom_cmd, command_log, timeout=420)
+        if prom_result.returncode != 0:
+            return OpenCostInstallResponse(
+                generated_at=_utcnow().isoformat() + "Z",
+                status="failed",
+                message="Prometheus install/upgrade failed.",
+                api_url=None,
+                namespace=payload.namespace,
+                prometheus_namespace=payload.prometheus_namespace,
+                command_log=command_log,
+            )
+
+    oc_cmd = [
+        helm_bin,
+        "upgrade",
+        "--install",
+        "opencost",
+        "opencost-charts/opencost",
+        "--namespace",
+        payload.namespace,
+        "--create-namespace",
+        "--set",
+        f"opencost.prometheus.internal.namespaceName={payload.prometheus_namespace}",
+        "--set",
+        "opencost.prometheus.internal.serviceName=prometheus-server",
+        "--set",
+        "opencost.prometheus.internal.port=80",
+    ]
+    oc_result = _run_command(oc_cmd, command_log, timeout=420)
+    if oc_result.returncode != 0:
+        return OpenCostInstallResponse(
+            generated_at=_utcnow().isoformat() + "Z",
+            status="failed",
+            message="OpenCost install/upgrade failed.",
+            api_url=None,
+            namespace=payload.namespace,
+            prometheus_namespace=payload.prometheus_namespace,
+            command_log=command_log,
+        )
+
+    svc_result = _run_command(
+        [
+            kubectl_bin,
+            *context_args,
+            "-n",
+            payload.namespace,
+            "get",
+            "svc",
+            "opencost",
+            "-o",
+            "jsonpath={.spec.ports[0].port}",
+        ],
+        command_log,
+        timeout=60,
+    )
+    service_port = "9003"
+    if svc_result.returncode == 0 and svc_result.stdout.strip():
+        service_port = svc_result.stdout.strip()
+    api_url = f"http://localhost:{payload.expose_port}"
+
+    # Refresh/replace local forwarder for API host consumption.
+    existing = _run_command(
+        ["/bin/sh", "-lc", "pkill -f 'kubectl.*port-forward.*svc/opencost' || true"],
+        command_log,
+        timeout=30,
+    )
+    _ = existing
+    port_forward_cmd = (
+        f"nohup {kubectl_bin} {' '.join(context_args)} -n {payload.namespace} "
+        f"port-forward svc/opencost {payload.expose_port}:{service_port} "
+        f">/tmp/opencost-port-forward.log 2>&1 &"
+    )
+    _run_command(["/bin/sh", "-lc", port_forward_cmd], command_log, timeout=30)
+
+    # Validate endpoint.
+    try:
+        _opencost_fetch_allocations(
+            api_url=api_url,
+            start_dt=_utcnow() - timedelta(days=1),
+            end_dt=_utcnow(),
+            aggregate="namespace",
+        )
+        status_value: Literal["installed", "already_installed", "failed"] = "installed"
+        message = "OpenCost is installed and reachable from OptiOra API host."
+    except Exception as exc:
+        status_value = "failed"
+        message = f"OpenCost install completed but API probe failed: {exc}"
+
+    return OpenCostInstallResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        status=status_value,
+        message=message,
+        api_url=api_url if status_value != "failed" else None,
+        namespace=payload.namespace,
+        prometheus_namespace=payload.prometheus_namespace,
+        command_log=command_log[-40:],
     )
 
 
@@ -9726,11 +10176,17 @@ async def run_auto_remediation_loop(
 @router.get("/analytics/kubernetes/provider-catalog", response_model=KubernetesProviderCatalogResponse)
 async def get_kubernetes_provider_catalog(
     current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
 ) -> KubernetesProviderCatalogResponse:
     """List provider regions and node shapes/sizes for K8s cluster planning."""
     _ = current_user
+    customer_id = _customer_id_for_org(membership)
     config = Config()
-    providers = build_kubernetes_provider_catalog(config)
+    runtime_credentials = _load_runtime_provider_credentials(customer_id)
+    providers = build_kubernetes_provider_catalog(
+        config,
+        runtime_credentials_by_provider=runtime_credentials,
+    )
     return KubernetesProviderCatalogResponse(
         generated_at=_utcnow().isoformat() + "Z",
         providers={name: KubernetesProviderCatalogEntry(**payload) for name, payload in providers.items()},

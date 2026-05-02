@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Box, Calculator, Info, Loader, RefreshCw } from 'lucide-react'
-import { fetchKubernetesSummary, calculateKubernetesClusterCost, fetchKubernetesProviderCatalog, syncOpenCostCosts } from '@/lib/api'
+import { fetchKubernetesSummary, calculateKubernetesClusterCost, fetchKubernetesProviderCatalog, syncOpenCostCosts, autoInstallOpenCost } from '@/lib/api'
 import {
   KubernetesSummaryResponse,
   KubernetesClusterCostResponse,
   KubernetesProviderCatalogEntry,
+  OpenCostInstallResponse,
   OpenCostSyncResponse,
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
@@ -111,6 +112,9 @@ export default function KubernetesPage() {
   const [opencostSyncLoading, setOpencostSyncLoading] = useState(false)
   const [opencostSyncError, setOpencostSyncError] = useState<string | null>(null)
   const [opencostSyncResult, setOpencostSyncResult] = useState<OpenCostSyncResponse | null>(null)
+  const [opencostInstallLoading, setOpencostInstallLoading] = useState(false)
+  const [opencostInstallResult, setOpencostInstallResult] = useState<OpenCostInstallResponse | null>(null)
+  const [opencostInstallError, setOpencostInstallError] = useState<string | null>(null)
   const [calcResult, setCalcResult] = useState<KubernetesClusterCostResponse | null>(null)
   const [calcLoading, setCalcLoading] = useState(false)
   const [calcError, setCalcError] = useState<string | null>(null)
@@ -212,6 +216,24 @@ export default function KubernetesPage() {
     }
   }
 
+  async function handleOpenCostAutoInstall() {
+    setOpencostInstallLoading(true)
+    setOpencostInstallError(null)
+    try {
+      const result = await autoInstallOpenCost({})
+      setOpencostInstallResult(result)
+      if (result.api_url) {
+        setOpencostUrl(result.api_url)
+        setOpencostEnabled(true)
+      }
+    } catch (err) {
+      setOpencostInstallResult(null)
+      setOpencostInstallError(err instanceof Error ? err.message : 'OpenCost auto-install failed')
+    } finally {
+      setOpencostInstallLoading(false)
+    }
+  }
+
   const podRows = opencostSyncResult?.pods || []
   const estimatedMonthlyCost = Number(form.node_count || 0) * Number(form.monthly_node_cost_usd || 0)
   const opencostOnLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(opencostUrl.trim())
@@ -256,6 +278,11 @@ export default function KubernetesPage() {
       {catalogMeta.error && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
           Provider catalog fallback active: {catalogMeta.error}
+        </div>
+      )}
+      {catalogMeta.fallbackProviders > 0 && !catalogMeta.error && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          {catalogMeta.fallbackProviders} provider catalog(s) are using fallback data. Reconnect provider credentials in Settings so Optiora can fetch live regions and shapes from provider APIs.
         </div>
       )}
 
@@ -662,6 +689,11 @@ export default function KubernetesPage() {
                   {opencostSyncError}
                 </div>
               )}
+              {opencostInstallError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                  {opencostInstallError}
+                </div>
+              )}
               {opencostOnLocalhost && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                   <div className="flex items-start gap-2">
@@ -672,10 +704,23 @@ export default function KubernetesPage() {
                   </div>
                 </div>
               )}
+              <Button type="button" variant="outline" className="w-full rounded-lg" onClick={() => void handleOpenCostAutoInstall()} disabled={opencostInstallLoading}>
+                {opencostInstallLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Auto-install & Wire OpenCost
+              </Button>
               <Button type="submit" className="w-full rounded-lg" disabled={opencostSyncLoading}>
                 {opencostSyncLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Sync OpenCost
               </Button>
+              {opencostInstallResult && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                  <p className="font-semibold">Auto-install status: {opencostInstallResult.status}</p>
+                  <p className="mt-1">{opencostInstallResult.message}</p>
+                  {opencostInstallResult.api_url && (
+                    <p className="mt-1 font-mono">API URL: {opencostInstallResult.api_url}</p>
+                  )}
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>

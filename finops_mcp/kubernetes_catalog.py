@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import Config
 from .credentials import CredentialValidator
@@ -120,16 +120,26 @@ def _catalog_from_fallback(provider: str, reason: str) -> Dict[str, Any]:
     }
 
 
-def _fetch_aws(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
-    if not (config.aws_access_key_id and config.aws_secret_access_key):
+def _fetch_aws(
+    config: Config,
+    runtime_credentials: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[str], List[Dict[str, Any]], str]:
+    runtime_credentials = runtime_credentials or {}
+    access_key_id = str(
+        runtime_credentials.get("access_key_id") or config.aws_access_key_id or ""
+    ).strip()
+    secret_access_key = str(
+        runtime_credentials.get("secret_access_key") or config.aws_secret_access_key or ""
+    ).strip()
+    region = str(runtime_credentials.get("region") or config.aws_region or "us-east-1").strip() or "us-east-1"
+    if not (access_key_id and secret_access_key):
         raise ValueError("AWS credentials are not configured")
     import boto3
 
-    region = str(config.aws_region or "us-east-1")
     ec2 = boto3.client(
         "ec2",
-        aws_access_key_id=config.aws_access_key_id,
-        aws_secret_access_key=config.aws_secret_access_key,
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
         region_name=region,
     )
 
@@ -171,26 +181,33 @@ def _fetch_aws(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
     return regions, rows, "Fetched from AWS EC2 APIs."
 
 
-def _fetch_azure(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
-    if not (
-        config.azure_subscription_id
-        and config.azure_tenant_id
-        and config.azure_client_id
-        and config.azure_client_secret
-    ):
+def _fetch_azure(
+    config: Config,
+    runtime_credentials: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[str], List[Dict[str, Any]], str]:
+    runtime_credentials = runtime_credentials or {}
+    subscription_id = str(
+        runtime_credentials.get("subscription_id") or config.azure_subscription_id or ""
+    ).strip()
+    tenant_id = str(runtime_credentials.get("tenant_id") or config.azure_tenant_id or "").strip()
+    client_id = str(runtime_credentials.get("client_id") or config.azure_client_id or "").strip()
+    client_secret = str(
+        runtime_credentials.get("client_secret") or config.azure_client_secret or ""
+    ).strip()
+    if not (subscription_id and tenant_id and client_id and client_secret):
         raise ValueError("Azure credentials are not configured")
 
     from azure.identity import ClientSecretCredential
     import httpx
 
     credential = ClientSecretCredential(
-        tenant_id=config.azure_tenant_id,
-        client_id=config.azure_client_id,
-        client_secret=config.azure_client_secret,
+        tenant_id=tenant_id,
+        client_id=client_id,
+        client_secret=client_secret,
     )
     token = credential.get_token("https://management.azure.com/.default").token
     headers = {"Authorization": f"Bearer {token}"}
-    subscription = config.azure_subscription_id
+    subscription = subscription_id
 
     with httpx.Client(timeout=30.0) as client:
         loc_resp = client.get(
@@ -238,9 +255,19 @@ def _fetch_azure(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
     return regions, rows, f"Fetched from Azure ARM APIs (sizes from {primary_region})."
 
 
-def _fetch_gcp(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
-    creds_path = str(config.google_application_credentials or "").strip()
-    project_id = str(config.gcp_project_id or "").strip()
+def _fetch_gcp(
+    config: Config,
+    runtime_credentials: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[str], List[Dict[str, Any]], str]:
+    runtime_credentials = runtime_credentials or {}
+    creds_path = str(
+        runtime_credentials.get("service_account_file")
+        or config.google_application_credentials
+        or ""
+    ).strip()
+    project_id = str(
+        runtime_credentials.get("project_id") or config.gcp_project_id or ""
+    ).strip()
     if not creds_path or not project_id:
         raise ValueError("GCP credentials are not configured")
     resolved_creds = os.path.abspath(os.path.expanduser(os.path.expandvars(creds_path)))
@@ -298,15 +325,21 @@ def _fetch_gcp(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
     return regions, rows, "Fetched from Google Compute Engine APIs."
 
 
-def _fetch_oci(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
-    if not config.oci_config_file:
+def _fetch_oci(
+    config: Config,
+    runtime_credentials: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[str], List[Dict[str, Any]], str]:
+    runtime_credentials = runtime_credentials or {}
+    config_file = str(runtime_credentials.get("config_file") or config.oci_config_file or "").strip()
+    profile = str(runtime_credentials.get("profile") or config.oci_profile or "DEFAULT").strip() or "DEFAULT"
+    if not config_file:
         raise ValueError("OCI config file is not configured")
 
     import oci
 
     resolved_config, resolved_profile = CredentialValidator._normalize_oci_inputs(
-        config_file=config.oci_config_file,
-        profile=config.oci_profile or "DEFAULT",
+        config_file=config_file,
+        profile=profile,
     )
     oci_config = oci.config.from_file(resolved_config, resolved_profile)
     tenancy_id = str(oci_config.get("tenancy") or "").strip()
@@ -356,7 +389,10 @@ def _fetch_oci(config: Config) -> Tuple[List[str], List[Dict[str, Any]], str]:
     return regions, rows, "Fetched from OCI Identity/Compute APIs."
 
 
-def build_kubernetes_provider_catalog(config: Config) -> Dict[str, Dict[str, Any]]:
+def build_kubernetes_provider_catalog(
+    config: Config,
+    runtime_credentials_by_provider: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """Return provider catalog entries with live API data or fallback metadata."""
     fetchers = {
         "aws": _fetch_aws,
@@ -368,8 +404,11 @@ def build_kubernetes_provider_catalog(config: Config) -> Dict[str, Dict[str, Any
 
     for provider in ("aws", "azure", "gcp", "oci"):
         fetcher = fetchers[provider]
+        runtime_credentials = (
+            (runtime_credentials_by_provider or {}).get(provider) or {}
+        )
         try:
-            regions, node_types_raw, message = fetcher(config)
+            regions, node_types_raw, message = fetcher(config, runtime_credentials)
             if not regions:
                 raise ValueError("Provider API returned no regions")
             node_types = _normalize_node_types(provider, node_types_raw)
@@ -388,4 +427,3 @@ def build_kubernetes_provider_catalog(config: Config) -> Dict[str, Dict[str, Any
             catalog[provider] = _catalog_from_fallback(provider, str(exc))
 
     return catalog
-
