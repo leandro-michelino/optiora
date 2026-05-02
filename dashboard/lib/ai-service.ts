@@ -80,8 +80,9 @@ const FINOPS_KEYWORDS = new Set([
   "cost", "budget", "spend", "billing", "invoice", "pricing", "rate",
   "savings", "optimization", "efficiency", "roi", "forecast", "trend",
   "anomaly", "alert", "threshold", "scaling", "rightsizing",
+  "vm", "virtual machine", "instance", "resource", "workload", "kubernetes", "pod", "node",
   "aws", "azure", "gcp", "oci", "ec2", "s3", "rds", "lambda",
-  "compute", "storage", "database", "network", "resource", "instance",
+  "compute", "storage", "database", "network",
 ]);
 
 const BLOCKED_PHRASES = new Set([
@@ -522,17 +523,19 @@ export async function askCostQuestion(
   conversationHistory: ConversationEntry[] = []
 ): Promise<string> {
   try {
-    const validation = validateQueryScope(message);
-    if (!validation.valid) {
-      throw new Error(validation.reason);
-    }
-    void conversationHistory;
     if (isResourceHotspotQuestion(message)) {
       const hotspotReply = await buildResourceHotspotReply();
       if (hotspotReply) {
         return hotspotReply;
       }
+      // Continue to broader advisory flow if resource-level feeds are empty.
     }
+
+    const validation = validateQueryScope(message);
+    if (!validation.valid) {
+      return validation.reason;
+    }
+    void conversationHistory;
     const result = await callBackendGenAIAnalyze(message);
     const narrative = sanitizeText(result?.narrative);
     if (narrative && !looksLikeSystemPrompt(narrative)) {

@@ -1,5 +1,7 @@
 # OptiOra Deployment Guide (OCI)
 
+Current as of May 2026.
+
 This repository deploys two services onto one OCI compute instance:
 
 - `optiora-api.service` -> FastAPI backend on `:8000`
@@ -20,6 +22,21 @@ Choose the path that matches your deployment style:
 
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
 
+## Deployment Execution Order
+
+For `./deploy/deploy-oci.sh full` (and menu option `1`), the execution order is:
+
+1. Validate local prerequisites and OCI credentials.
+2. Run Terraform `init`, `validate`, and `plan`.
+3. Optionally run Terraform `apply` (prompted).
+4. Create or reuse compute instance and ensure it is `RUNNING`.
+5. Attach extra block volume when enabled.
+6. Upload local source archive to the VM.
+7. Run Ansible provisioning (packages, venv, dashboard build, `.env`, systemd units, migrations).
+8. Run end-to-end verification (`tests/smoke_test_0_9.sh`).
+
+For `./deploy/deploy-oci.sh compute`, Terraform is skipped and the flow starts from step 4.
+
 ## Recommended End-to-End Setup (Interactive)
 
 Use the deploy script menu to run Terraform + Ansible in one guided flow:
@@ -39,13 +56,16 @@ What the deploy script does for a fresh environment:
 - creates and attaches an extra OCI block volume when enabled in `terraform.tfvars`
 - uploads the source archive and runs Ansible provisioning automatically
 - prints a deployment summary with dashboard/API URLs
+- auto-selects direct-port (`:3000/:8000`) or front-door (`:80/:443`) targets when running `verify`
 
 Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). That is the default in the example tfvars and the recommended production baseline.
 
 ## Prerequisites
 
 - OCI CLI installed and configured (`oci setup config`)
-- `OCI_COMPARTMENT_ID` exported (required for `deploy/deploy-oci.sh` quick path)
+- Deployment default compartment is pinned to:
+  `ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya`
+  (override only when needed with `OCI_COMPARTMENT_ID`)
 - SSH keypair available locally — **must be passphrase-free** (the deploy script calls `ssh-keygen -y -f` to validate the key, which cannot use ssh-agent). Create one with:
   ```bash
   ssh-keygen -t ed25519 -f ~/.ssh/optiora-deploy -N '' -C 'optiora-deploy'
@@ -56,6 +76,13 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
   export OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
   ```
 - outbound access from the VM to package registries and any cloud APIs you plan to call
+
+## Network and Access Control
+
+- Primary ingress control: OCI security list rules from Terraform (`laptop_cidr` + optional `allowed_public_ingress_cidrs`).
+- Current default host profile: `firewalld` is not managed/enforced by automation (`optiora_configure_firewall: false`).
+- Direct access mode (default): expose `:3000` and `:8000` through OCI security rules.
+- Optional web front-door mode: expose `:80`/`:443` and disable direct app ingress in Terraform.
 
 ## Local Preflight
 
@@ -76,13 +103,16 @@ npm run lint
 npm run build
 ```
 
+`npm run build` is pinned to webpack mode (`next build --webpack`) for stable
+builds across local and OCI runtime hosts.
+
 Optional Terraform baseline:
 
 ```bash
 terraform -chdir=../terraform init
 terraform -chdir=../terraform validate
 terraform -chdir=../terraform plan \
-  -var="compartment_id=<your_compartment_ocid>" \
+  -var="compartment_id=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya" \
   -var="region=uk-london-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
@@ -98,7 +128,7 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 
 ```bash
 export OCI_REGION=uk-london-1
-export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
+export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
@@ -114,7 +144,7 @@ OCI_TENANCY_OCID='ocid1.tenancy.oc1..<tenancy_ocid>' \
 OCI_FINGERPRINT='<api_key_fingerprint>' \
 OCI_PRIVATE_KEY_PATH="$HOME/.oci/oci_api_key.pem" \
 OCI_REGION='uk-london-1' \
-OCI_COMPARTMENT_ID='ocid1.compartment.oc1..<compartment_ocid>' \
+OCI_COMPARTMENT_ID='ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya' \
 OCI_IMAGE_COMPARTMENT_ID='ocid1.tenancy.oc1..<tenancy_ocid>' \
 OCI_SUBNET_ID='ocid1.subnet.oc1..<subnet_ocid>' \
 OCI_SSH_PUBLIC_KEY_PATH="$HOME/.ssh/optiora-deploy.pub" \
@@ -136,6 +166,7 @@ OCI_PROFILE='DEFAULT' \
 Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
 
 `./deploy/deploy-oci.sh verify` resolves the deployed instance IP and runs `tests/smoke_test_0_9.sh` against the live dashboard/API pair.
+The verify flow now checks GenAI contracts in both configured and fallback modes and auto-detects whether your environment is exposed via direct ports or front-door routing.
 
 The same script also manages the extra block volume. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
 
@@ -168,18 +199,19 @@ sudo systemctl status optiora-api
 sudo systemctl status optiora-dashboard
 ```
 
-## What The Deploy Script Fixes Automatically
+## What The Deploy Script Applies Automatically
 
-- creates `.env` from `.env.example` if missing
-- rewrites `FRONTEND_URL` to `http://<instance-ip>:3000`
-- rewrites `NEXT_PUBLIC_API_URL` to `http://<instance-ip>:8000`
-- replaces placeholder `SECRET_KEY` values with a generated secret
-- installs and updates dependencies with Oracle Linux `dnf` only
-- builds the dashboard after the remote env has been corrected
+- uploads your local workspace snapshot (no VM-side git clone)
+- runs Ansible provisioning on Oracle Linux
+- renders `/opt/optiora/.env` from Ansible template values (including `FRONTEND_URL`, `NEXT_PUBLIC_API_URL`, GenAI/runtime settings)
+- installs/updates backend and dashboard dependencies
+- builds the dashboard
+- installs/updates systemd units and reloads daemon
+- runs `alembic upgrade head`
+- restarts services and performs health checks
+- resolves GenAI credential/config inputs from exported env vars or local `.env` and injects runtime-safe values for backend narration
 
-Those rewrites matter because the dashboard is browser-executed; leaving `NEXT_PUBLIC_API_URL=http://localhost:8000` would break the deployed UI.
-
-The quick deploy path also runs `alembic upgrade head` on the VM before restarting services so schema changes from the current release are applied consistently.
+The Ansible-rendered `.env` values matter because the dashboard is browser-executed. A localhost API URL in deployed mode would break browser API calls.
 
 ## Command Reference
 
@@ -200,7 +232,7 @@ The quick deploy path also runs `alembic upgrade head` on the VM before restarti
 
 ```env
 OCI_REGION=uk-london-1
-OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
+OCI_COMPARTMENT_ID=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya
 OCI_IMAGE_COMPARTMENT_ID=ocid1.tenancy.oc1...   # set to your tenancy OCID
 OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex
@@ -230,7 +262,7 @@ PUBLIC_WORKSPACE_NAME=OptiOra Public Workspace
 PUBLIC_WORKSPACE_EMAIL=public@optiora.local
 OCI_GENAI_ENDPOINT=https://inference.generativeai.uk-london-1.oci.oraclecloud.com
 OCI_GENAI_MODEL=meta.llama-3.3-70b-instruct
-OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
+OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya
 # Optional GenAI-specific compartment; overrides OCI_COMPARTMENT_OCID for GenAI calls.
 OCI_GENAI_COMPARTMENT_ID=ocid1.compartment.oc1..<genai_compartment_ocid>
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..<tenancy_ocid>
@@ -270,7 +302,8 @@ DATABASE_URL=postgresql+psycopg2://optiora_user:your_secure_db_password@postgres
 
 `OCI_PRIVATE_KEY_PATH` is the preferred deployment option because it avoids fragile multiline env formatting.
 
-- For `deploy/deploy-oci.sh`, the script will copy the referenced local key file onto the VM and rewrite `OCI_PRIVATE_KEY_PATH` to the deployed path automatically.
+- For `deploy/deploy-oci.sh`, export `OCI_PRIVATE_KEY_PATH` before deployment so the script can copy the key to the VM and render a server-valid `OCI_PRIVATE_KEY_PATH` in runtime env.
+- If `OCI_CONFIG_FILE` is exported (or present in local `.env`) and points to a local file, `deploy/deploy-oci.sh` also uploads it and renders a server-valid `OCI_CONFIG_FILE` path in runtime env.
 - For Ansible-only provisioning, point `optiora_private_key_path` at a file path that exists on the target host.
 - Use `OCI_PRIVATE_KEY` only when you intentionally need to inject the PEM inline with literal `\n` escapes.
 - Enable `RETENTION_ENABLED` only after `OCI_ARCHIVE_BUCKET` and `OCI_ARCHIVE_NAMESPACE` point to the Object Storage archive bucket created by Terraform.
@@ -309,6 +342,17 @@ curl "http://<instance-ip>:8000/api/v1/forecast" | jq '.model, .forecast_summary
 curl "http://<instance-ip>:8000/api/v1/analytics" | jq '.risk_score, .maturity_score, .spend_at_risk_usd, .optimization_capacity_usd, .unit_metrics'
 ```
 
+GenAI validation (works for small/default/enterprise profiles and for direct/nginx exposure):
+
+```bash
+curl "http://<instance-ip>:8000/api/v1/advisor/hybrid?narrative_type=optimization_roadmap" \
+  | jq '.advisory.genai_configured, .advisory.fallback_mode, .advisory.prompt'
+curl -X POST "http://<instance-ip>:8000/api/v1/genai/analyze" \
+  -H "Content-Type: application/json" \
+  -d '{"analysis_type":"spend","context":{"current_monthly_spend_usd":1000,"estimated_monthly_waste_usd":120,"identified_monthly_savings_usd":80,"risk_score":32}}' \
+  | jq '.genai_configured, .fallback_mode, .prompt'
+```
+
 Optional scheduler smoke test (authenticated mode with owner/admin role):
 
 ```bash
@@ -331,6 +375,18 @@ SMOKE_CREDENTIAL_JSON='{"provider":"aws","access_key_id":"...","secret_access_ke
 ```
 
 When `SMOKE_CREDENTIAL_JSON` is provided, the verify flow also exercises credential validation, credential add, scan approval, scan start, history lookup, and diff export for that provider.
+
+If you run nginx-only exposure (`allow_direct_app_ingress=false`, `allow_web_ingress=true`), verify using front-door overrides:
+
+```bash
+HOST=http://<instance-ip> API_BASE=http://<instance-ip> DASHBOARD_BASE=http://<instance-ip> ./deploy/deploy-oci.sh verify
+```
+
+If HTTPS uses a self-signed certificate, run verification with:
+
+```bash
+SMOKE_CURL_INSECURE=true ./deploy/deploy-oci.sh verify
+```
 
 On the VM:
 
@@ -365,7 +421,7 @@ set +a
 ### Dashboard unreachable
 
 1. `sudo journalctl -u optiora-dashboard -n 100 --no-pager`
-2. Confirm `NEXT_PUBLIC_API_URL` in `/opt/optiora/.env` points to the VM public IP
+2. Confirm `NEXT_PUBLIC_API_URL` in `/opt/optiora/.env` points to a browser-reachable API URL (direct `:8000` or nginx front-door URL)
 3. Ensure `node -v` and `npm -v` work on the instance
 
 ### Live provider credential validation failures

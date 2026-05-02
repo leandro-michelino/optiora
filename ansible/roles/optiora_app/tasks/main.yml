@@ -289,6 +289,17 @@
   when: optiora_private_key_path | length > 0
   ignore_errors: true
 
+- name: Install OCI config file for GenAI/OCI SDK (from upload)
+  ansible.builtin.copy:
+    src: /tmp/optiora-oci-config
+    dest: "{{ optiora_oci_config_file }}"
+    owner: root
+    group: "{{ optiora_app_user }}"
+    mode: "0640"
+    remote_src: true
+  when: optiora_oci_config_file | length > 0
+  ignore_errors: true
+
 - name: Remove old venv if built with wrong Python version
   ansible.builtin.shell: |
     if [ -d "{{ optiora_app_dir }}/venv" ]; then

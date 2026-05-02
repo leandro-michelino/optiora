@@ -27,7 +27,8 @@ NC='\033[0m'
 # Configuration
 DEPLOYMENT_TYPE=${1:-"compute"}
 REGION=${OCI_REGION:-"uk-london-1"}
-COMPARTMENT_ID=${OCI_COMPARTMENT_ID:-}
+DEFAULT_COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya"
+COMPARTMENT_ID=${OCI_COMPARTMENT_ID:-$DEFAULT_COMPARTMENT_ID}
 INSTANCE_NAME=${OCI_INSTANCE_NAME:-"optiora-api"}
 SHAPE=${OCI_SHAPE:-"VM.Standard.E4.Flex"}
 OCPU_COUNT=${OCI_OCPU_COUNT:-"2"}
@@ -405,8 +406,9 @@ ${YELLOW}COMMANDS:${NC}
     destroy              Remove deployment (WARNING: irreversible)
     --help               Show this help message
 
-${YELLOW}REQUIRED ENV:${NC}
-    OCI_COMPARTMENT_ID   Target compartment OCID
+${YELLOW}DEFAULT TARGET:${NC}
+    OCI compartment: ${DEFAULT_COMPARTMENT_ID}
+    Override with OCI_COMPARTMENT_ID when needed.
 
 ${YELLOW}COMMON ENV:${NC}
     OCI_REGION                 Region (default: uk-london-1)
@@ -433,7 +435,7 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_GENAI_COMPARTMENT_ID   Optional GenAI-specific compartment OCID
 
 ${YELLOW}EXAMPLE:${NC}
-    export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
+    export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..override_if_needed
     export OCI_SUBNET_ID=ocid1.subnet.oc1...
     export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
     export OCI_PROFILE=DEFAULT
@@ -460,11 +462,10 @@ check_prerequisites() {
     log_success "OCI config found"
 
     if [ -z "$COMPARTMENT_ID" ]; then
-        log_error "OCI_COMPARTMENT_ID not set"
-        log_info "Set with: export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..xxxxx"
+        log_error "Compartment ID is empty after resolution"
         exit 1
     fi
-    log_success "Compartment ID configured"
+    log_success "Compartment ID configured: $COMPARTMENT_ID"
 
     if [ ! -f "${ROOT_DIR}/.env.example" ]; then
         log_error ".env.example not found in project root"
@@ -1058,9 +1059,35 @@ verify_deployment() {
         return 1
     fi
 
+    local direct_api="http://${public_ip}:8000"
+    local direct_dashboard="http://${public_ip}:3000"
+    local front_api="http://${public_ip}"
+    local front_dashboard="http://${public_ip}"
+    local selected_api=""
+    local selected_dashboard=""
+
+    if curl -fsS --max-time 8 "${direct_api}/health" >/dev/null 2>&1; then
+        selected_api="$direct_api"
+    elif curl -fsS --max-time 8 "${front_api}/health" >/dev/null 2>&1; then
+        selected_api="$front_api"
+    else
+        selected_api="$direct_api"
+    fi
+
+    if curl -fsS --max-time 8 "${direct_dashboard}/dashboard" >/dev/null 2>&1; then
+        selected_dashboard="$direct_dashboard"
+    elif curl -fsS --max-time 8 "${front_dashboard}/dashboard" >/dev/null 2>&1; then
+        selected_dashboard="$front_dashboard"
+    else
+        selected_dashboard="$direct_dashboard"
+    fi
+
+    log_info "Verification API base: ${selected_api}"
+    log_info "Verification dashboard base: ${selected_dashboard}"
+
     HOST="http://${public_ip}" \
-    API_BASE="http://${public_ip}:8000" \
-    DASHBOARD_BASE="http://${public_ip}:3000" \
+    API_BASE="${selected_api}" \
+    DASHBOARD_BASE="${selected_dashboard}" \
     bash "$(dirname "$0")/../tests/smoke_test_0_9.sh"
 }
 
@@ -1073,18 +1100,71 @@ run_ansible_playbook_for_instance() {
     local ssh_user
     local ssh_key
     local genai_key_path=""
+    local local_oci_key_path=""
+    local local_oci_config_file=""
+    local runtime_oci_config_file=""
+    local local_oci_profile=""
+    local genai_model=""
+    local genai_endpoint=""
 
     ssh_user="${OCI_ANSIBLE_USER:-$REMOTE_USER}"
     ssh_key="${OCI_ANSIBLE_SSH_KEY_PATH:-$RESOLVED_SSH_PRIVATE_KEY_PATH}"
     inv="$(mktemp -t optiora-inventory.XXXXXX).yml"
 
-    # Resolve OCI private key path for GenAI (env var > local .env file)
-    if [ -n "${OCI_PRIVATE_KEY_PATH:-}" ] && [ -f "${OCI_PRIVATE_KEY_PATH}" ]; then
+    # Resolve OCI private key path for GenAI (env var > local .env file).
+    local_oci_key_path="${OCI_PRIVATE_KEY_PATH:-}"
+    local_oci_config_file="${OCI_CONFIG_FILE:-}"
+    local_oci_profile="${OCI_PROFILE:-${OCI_CLI_PROFILE:-DEFAULT}}"
+    genai_model="${OCI_GENAI_MODEL:-}"
+    genai_endpoint="${OCI_GENAI_ENDPOINT:-}"
+
+    if [ -f "${ROOT_DIR}/.env" ]; then
+        if [ -z "$local_oci_key_path" ]; then
+            local_oci_key_path=$(grep '^OCI_PRIVATE_KEY_PATH=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
+            local_oci_key_path="${local_oci_key_path%\"}"
+            local_oci_key_path="${local_oci_key_path#\"}"
+        fi
+        if [ -z "$local_oci_config_file" ]; then
+            local_oci_config_file=$(grep '^OCI_CONFIG_FILE=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
+            local_oci_config_file="${local_oci_config_file%\"}"
+            local_oci_config_file="${local_oci_config_file#\"}"
+        fi
+        if [ -z "$genai_model" ]; then
+            genai_model=$(grep '^OCI_GENAI_MODEL=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
+            genai_model="${genai_model%\"}"
+            genai_model="${genai_model#\"}"
+        fi
+        if [ -z "$genai_endpoint" ]; then
+            genai_endpoint=$(grep '^OCI_GENAI_ENDPOINT=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
+            genai_endpoint="${genai_endpoint%\"}"
+            genai_endpoint="${genai_endpoint#\"}"
+        fi
+    fi
+
+    if [[ "$local_oci_key_path" == ~/* ]]; then
+        local_oci_key_path="${HOME}${local_oci_key_path#\~}"
+    fi
+    if [[ "$local_oci_config_file" == ~/* ]]; then
+        local_oci_config_file="${HOME}${local_oci_config_file#\~}"
+    fi
+
+    if [ -n "$local_oci_key_path" ] && [ -f "$local_oci_key_path" ]; then
         genai_key_path="/opt/optiora/oci_api_key.pem"
         log_info "Copying OCI API key to VM for GenAI use..."
         scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -i "$ssh_key" \
-            "$OCI_PRIVATE_KEY_PATH" "${ssh_user}@${public_ip}:/tmp/optiora-oci-api-key.pem"
+            "$local_oci_key_path" "${ssh_user}@${public_ip}:/tmp/optiora-oci-api-key.pem"
+    fi
+
+    if [ -n "$local_oci_config_file" ] && [ -f "$local_oci_config_file" ]; then
+        runtime_oci_config_file="/opt/optiora/oci_config"
+        log_info "Copying OCI config file to VM for GenAI/OCI SDK use..."
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i "$ssh_key" \
+            "$local_oci_config_file" "${ssh_user}@${public_ip}:/tmp/optiora-oci-config"
+    elif [ -n "$local_oci_config_file" ]; then
+        # Assume caller provided a path already valid on the VM.
+        runtime_oci_config_file="$local_oci_config_file"
     fi
 
     cat > "$inv" <<EOF
@@ -1096,19 +1176,23 @@ all:
           ansible_host: ${public_ip}
           ansible_user: ${ssh_user}
           ansible_ssh_private_key_file: ${ssh_key}
-          optiora_configure_firewall: true
+          optiora_configure_firewall: false
           optiora_firewall_expose_direct_services: true
           optiora_manage_source: true
           optiora_remote_archive: /tmp/optiora-deploy.tar.gz
           optiora_frontend_url: http://${public_ip}:3000
           optiora_api_url: http://${public_ip}:8000
           optiora_region: ${REGION}
+          optiora_genai_endpoint: "${genai_endpoint}"
+          optiora_genai_model: "${genai_model}"
           optiora_tenancy_ocid: "${OCI_TENANCY_OCID:-}"
           optiora_user_ocid: "${OCI_USER_OCID:-}"
           optiora_fingerprint: "${OCI_FINGERPRINT:-}"
           optiora_private_key_path: "${genai_key_path}"
           optiora_compartment_ocid: "${COMPARTMENT_ID:-}"
           optiora_genai_compartment_ocid: "${OCI_GENAI_COMPARTMENT_ID:-}"
+          optiora_oci_config_file: "${runtime_oci_config_file}"
+          optiora_oci_profile: "${local_oci_profile}"
 EOF
 
     if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then

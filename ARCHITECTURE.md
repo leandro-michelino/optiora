@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-Current as of April 2026.
+Current as of May 2026.
 
 ## Runtime Topology
 
@@ -9,7 +9,7 @@ Current as of April 2026.
 | End users      |
 +-------+--------+
         |
-        | HTTPS
+        | HTTPS (optional nginx front door) or direct app ports
         v
 +---------------------------------------------------------------+
 | Next.js dashboard, port 3000                                  |
@@ -72,6 +72,10 @@ Current as of April 2026.
 | - audit_logs                |
 +-----------------------------+
 ```
+
+Ingress control is enforced primarily at OCI security list level (`laptop_cidr`
+and optional `allowed_public_ingress_cidrs`). Host firewalld is currently disabled
+in the default deployment profile.
 
 ## Textual Diagram - Final Architecture
 
@@ -335,12 +339,44 @@ Ansible
   - service deployment
   - systemd units
   - health checks
+  - optional nginx/TLS front door
 
 Deploy script
   ./deploy/deploy-oci.sh menu|full|compute|status|verify
 
+Execution order (full/menu flow)
+  1) terraform init/validate/plan
+  2) optional terraform apply
+  3) create/start compute
+  4) attach extra block volume (when enabled)
+  5) upload local source archive
+  6) run ansible playbook
+  7) health verification
+
 Primary OCI region
   uk-london-1
+```
+
+## Deployment Size Profiles
+
+```text
+small profile
+  laptop -> deploy-oci.sh compute/full
+        -> single OCI VM
+        -> FastAPI + Next.js + SQLite
+        -> direct ingress (3000/8000) or optional nginx (80/443)
+
+medium profile
+  laptop -> deploy-oci.sh full
+        -> OCI network baseline + single VM + managed PostgreSQL
+        -> FastAPI + Next.js + PostgreSQL
+        -> direct ingress or nginx/TLS front door
+
+enterprise profile
+  laptop -> deploy-oci.sh full + policy hardening
+        -> OCI network baseline + single VM + managed PostgreSQL + scheduler
+        -> strict ingress CIDRs, optional web-only exposure, auth/RBAC enabled
+        -> FastAPI + Next.js + PostgreSQL + GenAI narrative overlays
 ```
 
 ## Configuration and Security Notes

@@ -12,6 +12,28 @@ logger = logging.getLogger(__name__)
 config = Config()
 
 
+def _compartment_list(tenancy_id: str) -> list[str]:
+    """Return tenancy plus optional OCI_COMPARTMENT_IDS values, deduplicated."""
+    compartments: list[str] = []
+    if tenancy_id.strip():
+        compartments.append(tenancy_id.strip())
+
+    raw_extra = os.getenv("OCI_COMPARTMENT_IDS", "")
+    if raw_extra.strip():
+        for value in raw_extra.split(","):
+            compartment_id = value.strip()
+            if compartment_id:
+                compartments.append(compartment_id)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for compartment_id in compartments:
+        if compartment_id not in seen:
+            seen.add(compartment_id)
+            deduped.append(compartment_id)
+    return deduped
+
+
 async def get_cost_summary(params: dict[str, Any]) -> str:
     """Get OCI cost summary for specified period using OCI Usage API."""
     try:

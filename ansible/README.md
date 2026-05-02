@@ -3,11 +3,13 @@
 Terraform stays limited to OCI infrastructure primitives: VCN, subnet, route table, internet gateway, and security list. Ansible owns host provisioning and application runtime configuration.
 
 Primary OCI region defaults to `uk-london-1` so the deployed stack can lean on OCI GenAI by default.
+Default compartment for Ansible-driven runtime values is pinned to:
+`ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya`.
 
 Preferred end-to-end path:
 
 ```bash
-./deploy/deploy-oci.sh full
+./deploy/deploy-oci.sh menu
 ```
 
 The single deploy script generates the temporary inventory, applies Terraform when requested, creates/attaches the extra OCI data volume when enabled, uploads the source archive, and then runs this playbook automatically.
@@ -75,7 +77,7 @@ Migrations are applied before the health checks so schema-changing releases come
 The playbook now applies host-level hardening defaults suitable for production VMs:
 
 - automatic security updates with `dnf-automatic`
-- baseline firewall policy (SSH + web ports, or API/UI direct ports when nginx is disabled)
+- optional host firewall policy (disabled by default in the current deploy profile; OCI security lists remain the primary ingress control)
 - kernel safety defaults (`tcp_syncookies`, reverse path filtering, swappiness)
 - elevated file descriptor limits for high-concurrency API/UI workloads
 - stricter systemd service confinement for API and dashboard
@@ -90,3 +92,9 @@ These are controlled via `ansible/group_vars/all.yml`:
 - `optiora_sysctl_vm_swappiness`
 - `optiora_limits_nofile_soft`
 - `optiora_limits_nofile_hard`
+
+Current defaults in `ansible/group_vars/all.yml`:
+
+- `optiora_install_nginx: false` (direct access mode)
+- `optiora_configure_firewall: false` (firewalld not managed/enforced)
+- `optiora_firewall_expose_direct_services: true` (used only when host firewall management is enabled)

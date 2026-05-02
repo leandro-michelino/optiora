@@ -7,7 +7,7 @@ This module currently does not provision OCI databases. If you extend it with OC
 Preferred operator flow is the interactive root setup wizard:
 
 ```bash
-./deploy/deploy-oci.sh full
+./deploy/deploy-oci.sh menu
 ```
 
 That flow manages Terraform variables and optional apply, then hands off to the same deploy script for compute creation, extra data volume attachment, and Ansible provisioning.
@@ -22,7 +22,7 @@ That flow manages Terraform variables and optional apply, then hands off to the 
   - `subnet-public-<project>-<env>-<region>-<suffix>`
 - ingress is restricted to `laptop_cidr` plus optional `allowed_public_ingress_cidrs`
 - outbound traffic is controlled by `egress_cidr`
-- compute bootstrap, packages, `.env`, builds, and systemd are handled by `../ansible`, including Oracle Linux / RHEL hosts
+- compute bootstrap, packages, `.env`, builds, and systemd are handled by `../ansible` on Oracle Linux hosts
 
 ## Defaults
 
@@ -55,7 +55,7 @@ If you want a more restrictive outbound policy, override `egress_cidr`.
 terraform init
 terraform validate
 terraform plan \
-  -var="compartment_id=<your_compartment_ocid>" \
+  -var="compartment_id=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya" \
   -var="region=uk-london-1" \
   -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32"
@@ -71,7 +71,7 @@ Example with restricted egress:
 
 ```bash
 terraform plan \
-  -var="compartment_id=<your_compartment_ocid>" \
+  -var="compartment_id=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya" \
   -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32" \
   -var="egress_cidr=<trusted-egress-cidr>"
@@ -111,7 +111,7 @@ terraform -chdir=terraform plan
 terraform -chdir=terraform apply
 ```
 
-`terraform apply` is intentionally not part of the default workflow unless explicitly requested. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning on either Debian-family or Oracle Linux / RHEL images. The Terraform apply output now ends with a next-step banner that points operators to the Ansible command, dashboard URL pattern, API URLs, and OCI GenAI endpoint for the chosen region.
+`terraform apply` is intentionally not forced in the default guided flow; `menu` and `full` explicitly ask for confirmation before apply. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning on Oracle Linux hosts. The Terraform apply output now ends with a next-step banner that points operators to the Ansible command, dashboard URL pattern, API URLs, and OCI GenAI endpoint for the chosen region.
 
 ## Topology
 

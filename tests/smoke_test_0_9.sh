@@ -9,6 +9,7 @@
 #   DASHBOARD_BASE=http://<instance-ip>:3000
 #   SMOKE_CREDENTIAL_JSON='{"provider":"aws",...}'
 #   SMOKE_SCAN_POLL_SECONDS=180
+#   SMOKE_CURL_INSECURE=true   # pass -k for self-signed HTTPS
 
 set -euo pipefail
 
@@ -17,10 +18,16 @@ API_BASE="${API_BASE:-${HOST}:8000}"
 DASHBOARD_BASE="${DASHBOARD_BASE:-${HOST}:3000}"
 SMOKE_CREDENTIAL_JSON="${SMOKE_CREDENTIAL_JSON:-}"
 SMOKE_SCAN_POLL_SECONDS="${SMOKE_SCAN_POLL_SECONDS:-180}"
+SMOKE_CURL_INSECURE="${SMOKE_CURL_INSECURE:-false}"
 TMP_DIR="$(mktemp -d)"
 PASS=0
 FAIL=0
 SKIP=0
+
+CURL_OPTS=(-sS)
+if [ "$SMOKE_CURL_INSECURE" = "true" ]; then
+    CURL_OPTS+=(-k)
+fi
 
 cleanup() {
     rm -rf "$TMP_DIR"
@@ -47,11 +54,11 @@ _skip() {
 }
 
 _http_status() {
-    curl -sS -o /dev/null -w "%{http_code}" "$@"
+    curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "$@"
 }
 
 _http_body() {
-    curl -sS "$@"
+    curl "${CURL_OPTS[@]}" "$@"
 }
 
 _json_get() {
@@ -133,7 +140,7 @@ _request_json_status() {
     local method="$1"
     local url="$2"
     local payload="$3"
-    curl -sS -o /dev/null -w "%{http_code}" \
+    curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" \
         -X "$method" \
         -H "Content-Type: application/json" \
         -d "$payload" \
@@ -144,7 +151,7 @@ _request_json_body() {
     local method="$1"
     local url="$2"
     local payload="$3"
-    curl -sS \
+    curl "${CURL_OPTS[@]}" \
         -X "$method" \
         -H "Content-Type: application/json" \
         -d "$payload" \
@@ -156,7 +163,7 @@ _request_json_once() {
     local url="$2"
     local payload="$3"
     local response_file="$4"
-    curl -sS \
+    curl "${CURL_OPTS[@]}" \
         -o "$response_file" \
         -w "%{http_code}" \
         -X "$method" \
@@ -305,6 +312,62 @@ ai_status=$(_request_json_status "POST" "${DASHBOARD_BASE}/api/ai/chat" '{"messa
 [ "$ai_status" = "200" ] \
     && _check "POST /api/ai/chat returns 200" "ok" \
     || _check "POST /api/ai/chat returns 200" "HTTP $ai_status"
+
+info_body=$(_http_body "${API_BASE}/api/v1/info")
+if python3 - "$info_body" <<'PY'
+import json
+import sys
+data = json.loads(sys.argv[1])
+value = data.get("features", {}).get("genai_backend_narration")
+sys.exit(0 if isinstance(value, bool) else 1)
+PY
+then
+    _check "/api/v1/info exposes genai_backend_narration flag" "ok"
+else
+    _check "/api/v1/info exposes genai_backend_narration flag" "body: $info_body"
+fi
+
+hybrid_body=$(_http_body "${API_BASE}/api/v1/advisor/hybrid?narrative_type=optimization_roadmap")
+if python3 - "$hybrid_body" <<'PY'
+import json
+import sys
+d = json.loads(sys.argv[1])
+advisory = d.get("advisory", {})
+ok = (
+    isinstance(d.get("deterministic"), dict)
+    and isinstance(advisory.get("genai_configured"), bool)
+    and isinstance(advisory.get("fallback_mode"), bool)
+    and bool(advisory.get("prompt"))
+    and (bool(advisory.get("narrative")) or advisory.get("fallback_mode") is True)
+)
+sys.exit(0 if ok else 1)
+PY
+then
+    _check "GET /api/v1/advisor/hybrid returns deterministic+advisory GenAI contract" "ok"
+else
+    _check "GET /api/v1/advisor/hybrid returns deterministic+advisory GenAI contract" "body: $hybrid_body"
+fi
+
+analyze_body=$(_request_json_body "POST" "${API_BASE}/api/v1/genai/analyze" \
+    '{"analysis_type":"spend","context":{"current_monthly_spend_usd":1000,"estimated_monthly_waste_usd":120,"identified_monthly_savings_usd":80,"risk_score":32}}')
+if python3 - "$analyze_body" <<'PY'
+import json
+import sys
+d = json.loads(sys.argv[1])
+ok = (
+    d.get("analysis_type") == "spend"
+    and isinstance(d.get("genai_configured"), bool)
+    and isinstance(d.get("fallback_mode"), bool)
+    and bool(d.get("prompt"))
+    and (bool(d.get("narrative")) or d.get("fallback_mode") is True)
+)
+sys.exit(0 if ok else 1)
+PY
+then
+    _check "POST /api/v1/genai/analyze supports configured and fallback modes" "ok"
+else
+    _check "POST /api/v1/genai/analyze supports configured and fallback modes" "body: $analyze_body"
+fi
 
 echo ""
 echo "--- 6. FinOps Analytics endpoints ---"

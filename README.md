@@ -47,6 +47,26 @@ FastAPI backend
   +--> OCI Generative AI
 ```
 
+## Deployment Profiles
+
+```text
+small (default)
+  - single OCI VM
+  - SQLite runtime DB
+  - direct ports (3000/8000) or optional nginx front door
+  - best for PoC and controlled pilot
+
+medium
+  - single OCI VM + managed PostgreSQL
+  - optional nginx/TLS front door
+  - recommended for internal production with moderate concurrency
+
+enterprise
+  - OCI VM runtime with managed PostgreSQL, stricter ingress rules,
+    optional scheduler automation, and hardened auth/RBAC posture
+  - recommended for multi-team production and partner portfolio operations
+```
+
 ## Textual Diagram - Final Architecture
 
 The dashboard is the presentation layer. The FastAPI backend is the control plane and system of record for cost ingestion, forecasting, analytics, rightsizing, alerts, exports, and business mapping. Cost data arrives from live cloud-provider APIs or imported CSV files. Deterministic analytics in `finops_mcp/tools/finops_analytics.py` calculate spend, risk, savings, efficiency, and forecast outcomes. OCI Generative AI is then used for narratives such as executive summaries, anomaly explanations, roadmap generation, tagging strategy, sustainability commentary, chargeback summaries, and multi-cloud comparison briefs.
@@ -283,7 +303,23 @@ Alternative operations:
 ./deploy/deploy-oci.sh verify
 ```
 
+When testing HTTPS with a self-signed certificate, run:
+
+```bash
+SMOKE_CURL_INSECURE=true ./deploy/deploy-oci.sh verify
+```
+
 Primary OCI region for hosting and GenAI inference: `uk-london-1`
+
+Default deployment mode is direct service exposure on `:3000` (dashboard) and
+`:8000` (API), with ingress restricted at OCI security-list level. Host
+firewalld is disabled by default in the current automation profile.
+
+Optional nginx front-door mode (ports `80/443`) is supported through Ansible
+variables (`optiora_install_nginx`, `optiora_enable_tls`, `optiora_domain`).
+
+GenAI deployment note:
+- `deploy/deploy-oci.sh` resolves GenAI credential inputs from exported env vars and local `.env` (when present), injects runtime-safe OCI paths into Ansible, and `verify` now validates GenAI contracts in both configured and fallback modes.
 
 ## Verification
 
@@ -300,6 +336,10 @@ npm run test:e2e
 
 terraform -chdir=../terraform validate
 ```
+
+`npm run build` is pinned to `next build --webpack` for deterministic builds
+across local, CI, and OCI deployment hosts. Use `npm run build:turbopack` only
+for explicit Turbopack validation.
 
 ## Workspace Cleanup
 

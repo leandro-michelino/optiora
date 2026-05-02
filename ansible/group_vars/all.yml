@@ -7,13 +7,13 @@ optiora_python_bin: python3.11
 optiora_node_major: 20
 optiora_region: uk-london-1
 optiora_genai_endpoint: "https://inference.generativeai.uk-london-1.oci.oraclecloud.com"
-optiora_genai_model: "meta.llama-3-70b-instruct"
+optiora_genai_model: "meta.llama-3.3-70b-instruct"
 # OCI credentials for GenAI (overridden at deploy time from OCI env vars)
 optiora_tenancy_ocid: ""
 optiora_user_ocid: ""
 optiora_fingerprint: ""
-optiora_compartment_ocid: ""
-optiora_genai_compartment_ocid: ""
+optiora_compartment_ocid: "ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya"
+optiora_genai_compartment_ocid: "ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya"
 optiora_frontend_url: "http://{{ ansible_host }}:{{ optiora_dashboard_port }}"
 optiora_api_url: "http://{{ ansible_host }}:{{ optiora_api_port }}"
 optiora_install_nginx: false
@@ -44,7 +44,7 @@ optiora_health_delay: 5
 # ── VM hardening defaults ──────────────────────────────────────────────────
 optiora_vm_hardening: true
 optiora_auto_security_updates: true
-optiora_configure_firewall: true
+optiora_configure_firewall: false
 optiora_ssh_port: 22
 # Keep direct dashboard/API ports reachable by default when nginx is disabled.
 optiora_firewall_expose_direct_services: true
