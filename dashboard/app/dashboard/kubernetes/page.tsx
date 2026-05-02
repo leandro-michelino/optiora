@@ -12,20 +12,55 @@ function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-const defaultForm = {
-  cluster_name: 'production',
-  provider: 'oci',
-  region: 'uk-london-1',
-  node_count: 5,
-  node_type: 'VM.Standard.E4.Flex',
-  monthly_node_cost_usd: 120,
+type KubernetesProvider = 'aws' | 'azure' | 'gcp' | 'oci'
+
+type ProviderProfile = {
+  regions: string[]
+  nodeTypes: Array<{ value: string; monthlyCost: number }>
 }
 
-const providerPresets: Record<string, { region: string; node_type: string; monthly_node_cost_usd: number }> = {
-  aws: { region: 'us-east-1', node_type: 'm5.xlarge', monthly_node_cost_usd: 150 },
-  azure: { region: 'eastus', node_type: 'Standard_D4s_v5', monthly_node_cost_usd: 155 },
-  gcp: { region: 'us-central1', node_type: 'n2-standard-4', monthly_node_cost_usd: 145 },
-  oci: { region: 'uk-london-1', node_type: 'VM.Standard.E4.Flex', monthly_node_cost_usd: 120 },
+const providerProfiles: Record<KubernetesProvider, ProviderProfile> = {
+  aws: {
+    regions: ['us-east-1', 'us-west-2', 'eu-west-1'],
+    nodeTypes: [
+      { value: 'm5.xlarge', monthlyCost: 150 },
+      { value: 'm6i.xlarge', monthlyCost: 165 },
+      { value: 'c6i.xlarge', monthlyCost: 145 },
+    ],
+  },
+  azure: {
+    regions: ['eastus', 'westeurope', 'uksouth'],
+    nodeTypes: [
+      { value: 'Standard_D4s_v5', monthlyCost: 155 },
+      { value: 'Standard_D8s_v5', monthlyCost: 290 },
+      { value: 'Standard_F4s_v2', monthlyCost: 148 },
+    ],
+  },
+  gcp: {
+    regions: ['us-central1', 'europe-west1', 'europe-west2'],
+    nodeTypes: [
+      { value: 'n2-standard-4', monthlyCost: 145 },
+      { value: 'e2-standard-4', monthlyCost: 120 },
+      { value: 'c3-standard-4', monthlyCost: 190 },
+    ],
+  },
+  oci: {
+    regions: ['uk-london-1', 'eu-frankfurt-1', 'us-ashburn-1'],
+    nodeTypes: [
+      { value: 'VM.Standard.E4.Flex', monthlyCost: 120 },
+      { value: 'VM.Standard.E5.Flex', monthlyCost: 135 },
+      { value: 'VM.Standard.A1.Flex', monthlyCost: 95 },
+    ],
+  },
+}
+
+const defaultForm = {
+  cluster_name: 'production',
+  provider: 'oci' as KubernetesProvider,
+  region: providerProfiles.oci.regions[0],
+  node_count: 5,
+  node_type: providerProfiles.oci.nodeTypes[0].value,
+  monthly_node_cost_usd: providerProfiles.oci.nodeTypes[0].monthlyCost,
 }
 
 export default function KubernetesPage() {
@@ -103,6 +138,13 @@ export default function KubernetesPage() {
   const podRows = opencostSyncResult?.pods || []
   const estimatedMonthlyCost = Number(form.node_count || 0) * Number(form.monthly_node_cost_usd || 0)
   const opencostOnLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(opencostUrl.trim())
+  const selectedProviderProfile = providerProfiles[form.provider]
+  const regionOptions = selectedProviderProfile.regions.includes(form.region)
+    ? [...selectedProviderProfile.regions]
+    : [form.region, ...selectedProviderProfile.regions]
+  const nodeTypeOptions = selectedProviderProfile.nodeTypes.some((option) => option.value === form.node_type)
+    ? [...selectedProviderProfile.nodeTypes]
+    : [{ value: form.node_type, monthlyCost: Number(form.monthly_node_cost_usd || 0) }, ...selectedProviderProfile.nodeTypes]
 
   return (
     <div className="space-y-8">
@@ -193,40 +235,55 @@ export default function KubernetesPage() {
                   <select
                     value={form.provider}
                     onChange={e => {
-                      const provider = e.target.value
-                      const preset = providerPresets[provider]
+                      const provider = e.target.value as KubernetesProvider
+                      const profile = providerProfiles[provider]
+                      const defaultNode = profile.nodeTypes[0]
                       setForm((current) => ({
                         ...current,
                         provider,
-                        region: preset?.region ?? current.region,
-                        node_type: preset?.node_type ?? current.node_type,
-                        monthly_node_cost_usd: preset?.monthly_node_cost_usd ?? current.monthly_node_cost_usd,
+                        region: profile.regions[0] ?? current.region,
+                        node_type: defaultNode?.value ?? current.node_type,
+                        monthly_node_cost_usd: defaultNode?.monthlyCost ?? current.monthly_node_cost_usd,
                       }))
                     }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
                   >
-                    {['aws', 'azure', 'gcp', 'oci'].map(p => (
-                      <option key={p} value={p}>{p.toUpperCase()}</option>
+                    {(Object.keys(providerProfiles) as KubernetesProvider[]).map((provider) => (
+                      <option key={provider} value={provider}>{provider.toUpperCase()}</option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Region</label>
-                  <input
-                    type="text"
+                  <select
                     value={form.region}
                     onChange={e => handleFormChange('region', e.target.value)}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
+                  >
+                    {regionOptions.map((region) => (
+                      <option key={region} value={region}>{region}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Node Type</label>
-                  <input
-                    type="text"
+                  <select
                     value={form.node_type}
-                    onChange={e => handleFormChange('node_type', e.target.value)}
+                    onChange={e => {
+                      const nodeType = e.target.value
+                      const matched = selectedProviderProfile.nodeTypes.find((option) => option.value === nodeType)
+                      setForm((current) => ({
+                        ...current,
+                        node_type: nodeType,
+                        monthly_node_cost_usd: matched?.monthlyCost ?? current.monthly_node_cost_usd,
+                      }))
+                    }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
+                  >
+                    {nodeTypeOptions.map((nodeType) => (
+                      <option key={nodeType.value} value={nodeType.value}>{nodeType.value}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Node Count</label>

@@ -231,16 +231,29 @@ export default function OperationsPage() {
     weekly_summary_enabled: true,
   })
 
+  const supportedProviders = state.info?.supported_providers || ['aws', 'azure', 'gcp', 'oci']
+  const visibleProviders = useMemo(() => {
+    const providers = new Set<string>()
+    state.credentials.forEach((credential) => providers.add(credential.provider))
+    state.providerDiagnostics
+      .filter((diagnostic) => diagnostic.configured)
+      .forEach((diagnostic) => providers.add(diagnostic.provider))
+
+    if (providers.size === 0) {
+      supportedProviders.forEach((provider) => providers.add(provider))
+    }
+    return Array.from(providers).filter((provider) => supportedProviders.includes(provider))
+  }, [state.credentials, state.providerDiagnostics, supportedProviders])
+
   const connectedProviders = useMemo(
-    () => state.credentials.filter((credential) => credential.is_valid),
-    [state.credentials],
+    () => state.credentials.filter((credential) => credential.is_valid && visibleProviders.includes(credential.provider)),
+    [state.credentials, visibleProviders],
   )
   const runtimeProviders = useMemo(
-    () => state.providerDiagnostics.filter((item) => item.configured),
-    [state.providerDiagnostics],
+    () => state.providerDiagnostics.filter((item) => item.configured && visibleProviders.includes(item.provider)),
+    [state.providerDiagnostics, visibleProviders],
   )
 
-  const supportedProviders = state.info?.supported_providers || ['aws', 'azure', 'gcp', 'oci']
   const scanApproved = state.permission?.state === 'approved' || state.permission?.state === 'running'
   const dataSourceStatus = buildLiveDataSourceStatus({
     health: state.health,
@@ -560,14 +573,14 @@ export default function OperationsPage() {
         />
         <CapabilityCard
           title="Providers"
-          value={`${connectedProviders.length}/${supportedProviders.length}`}
+          value={`${connectedProviders.length}/${visibleProviders.length}`}
           detail="Validated credential submissions"
           ok={connectedProviders.length > 0}
           icon={Cloud}
         />
         <CapabilityCard
           title="Runtime Access"
-          value={`${runtimeProviders.length}/${supportedProviders.length}`}
+          value={`${runtimeProviders.length}/${visibleProviders.length}`}
           detail="Backend providers configured for live data"
           ok={runtimeProviders.length > 0}
           icon={Network}
@@ -600,7 +613,7 @@ export default function OperationsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {supportedProviders.map((provider) => {
+                {visibleProviders.map((provider) => {
                   const credential = state.credentials.find((item) => item.provider === provider)
                   const diagnostic = state.providerDiagnostics.find((item) => item.provider === provider)
                   const valid = Boolean(credential?.is_valid)
