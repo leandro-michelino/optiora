@@ -221,7 +221,11 @@ export async function fetchRecommendationsStrict(query: ListQuery = {}): Promise
 }
 
 export async function fetchApiHealth(): Promise<ApiHealth> {
-  return requestJson<ApiHealth>('/health', {}, { authenticated: false, timeoutMs: 5000 })
+  try {
+    return await requestJson<ApiHealth>('/health', {}, { authenticated: false, timeoutMs: 8000 })
+  } catch {
+    return requestJson<ApiHealth>('/api/v1/health', {}, { authenticated: false, timeoutMs: 10000 })
+  }
 }
 
 export async function fetchApiInfo(): Promise<ApiInfo> {

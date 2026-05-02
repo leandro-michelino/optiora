@@ -331,7 +331,7 @@ export default function OperationsPage() {
       dailyAlertSummary: dailySummaryResult.status === 'fulfilled' ? dailySummaryResult.value : null,
       weeklyAlertSummary: weeklySummaryResult.status === 'fulfilled' ? weeklySummaryResult.value : null,
       error:
-        health.status === 'rejected'
+        health.status === 'rejected' && info.status === 'rejected'
           ? 'Backend health check failed. Verify API service and NEXT_PUBLIC_API_URL.'
           : null,
     }))
