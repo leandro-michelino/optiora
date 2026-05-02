@@ -19,6 +19,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -10159,6 +10160,7 @@ class RightsizingRecommendation(BaseModel):
     peak_monthly_cost_usd: Optional[float] = None
     top_regions: List[str] = Field(default_factory=list)
     regional_breakdown: List[Dict[str, Any]] = Field(default_factory=list)
+    resource_console_url: Optional[str] = None
     last_observed_at: Optional[str] = None
     risk_note: Optional[str] = None
 
@@ -10250,6 +10252,77 @@ def _recommended_size_for_action(provider: str, action: str, current_size: str) 
         return modern or f"newer-gen-{current_size}"
     down = size_map.get(current_size)
     return down or f"smaller-{current_size}"
+
+
+def _rightsizing_console_url(
+    provider: str,
+    resource_id: str,
+    region: str,
+    account_id: str,
+    resource_type: str,
+) -> Optional[str]:
+    prov = str(provider or "").strip().lower()
+    rid = str(resource_id or "").strip()
+    rgn = str(region or "").strip()
+    acct = str(account_id or "").strip()
+    rtype = str(resource_type or "").strip().lower()
+    safe_region = rgn if rgn and rgn.lower() not in {"global", "unknown", "n/a"} else ""
+
+    if prov == "aws":
+        region_part = safe_region or "us-east-1"
+        if rid.startswith("i-"):
+            return (
+                f"https://{region_part}.console.aws.amazon.com/ec2/home"
+                f"?region={quote(region_part, safe='')}"
+                f"#InstanceDetails:instanceId={quote(rid, safe='')}"
+            )
+        if rid.startswith("vol-"):
+            return (
+                f"https://{region_part}.console.aws.amazon.com/ec2/home"
+                f"?region={quote(region_part, safe='')}"
+                f"#VolumeDetails:volumeId={quote(rid, safe='')}"
+            )
+        return (
+            f"https://{region_part}.console.aws.amazon.com/ec2/home"
+            f"?region={quote(region_part, safe='')}#Instances:"
+        )
+
+    if prov == "azure":
+        if rid.startswith("/subscriptions/"):
+            return f"https://portal.azure.com/#resource{rid}/overview"
+        return "https://portal.azure.com/#view/HubsExtension/BrowseAllResources"
+
+    if prov == "gcp":
+        if rid.startswith("projects/") and "/zones/" in rid and "/instances/" in rid:
+            parts = rid.split("/")
+            # projects/{project}/zones/{zone}/instances/{name}
+            if len(parts) >= 6:
+                project = parts[1]
+                zone = parts[3]
+                name = parts[5]
+                return (
+                    "https://console.cloud.google.com/compute/instancesDetail/zones/"
+                    f"{quote(zone, safe='')}/instances/{quote(name, safe='')}"
+                    f"?project={quote(project, safe='')}"
+                )
+        project = acct if acct and not acct.startswith("ocid1.") else ""
+        if project:
+            return f"https://console.cloud.google.com/compute/instances?project={quote(project, safe='')}"
+        return "https://console.cloud.google.com/compute/instances"
+
+    if prov == "oci":
+        if rid.startswith("ocid1.instance."):
+            url = f"https://cloud.oracle.com/compute/instances/{quote(rid, safe='')}"
+            return f"{url}?region={quote(safe_region, safe='')}" if safe_region else url
+        if rid.startswith("ocid1."):
+            # Generic OCI resource deep-link by OCID via global search.
+            url = f"https://cloud.oracle.com/search?search={quote(rid, safe='')}"
+            return f"{url}&region={quote(safe_region, safe='')}" if safe_region else url
+        # Account-level signal: link to compute inventory in selected region.
+        base = "https://cloud.oracle.com/compute/instances"
+        return f"{base}?region={quote(safe_region, safe='')}" if safe_region else base
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -10396,7 +10469,7 @@ def _rightsizing_from_azure_advisor(
 
             confidence = "high" if impact == "high" else "medium" if impact == "medium" else "low"
             out.append(RightsizingRecommendation(
-                resource_id=short_id,
+                resource_id=resource_id or short_id,
                 resource_name=props.get("resourceName") or short_id,
                 resource_type="Virtual Machine",
                 provider="azure",
@@ -10972,6 +11045,18 @@ async def get_rightsizing_recommendations(
         recommendations_out = [
             r for r in recommendations_out if r.monthly_savings_usd >= min_savings
         ]
+
+    # ── Attach direct console links (best effort) ───────────────────────────
+    for rec in recommendations_out:
+        if rec.resource_console_url:
+            continue
+        rec.resource_console_url = _rightsizing_console_url(
+            provider=rec.provider,
+            resource_id=rec.resource_id,
+            region=rec.region,
+            account_id=rec.account_id,
+            resource_type=rec.resource_type,
+        )
 
     # ── Sort by monthly savings desc, apply limit ────────────────────────────
     recommendations_out.sort(key=lambda r: r.monthly_savings_usd, reverse=True)

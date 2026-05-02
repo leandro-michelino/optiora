@@ -1387,6 +1387,7 @@ export interface RightsizingRecommendation {
     monthly_cost_usd: number
     share_percent: number
   }>
+  resource_console_url: string | null
   last_observed_at: string | null
   risk_note: string | null
 }

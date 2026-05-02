@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, ArrowRight, CheckCircle, DollarSign, Loader, RefreshCw, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle, DollarSign, ExternalLink, Loader, RefreshCw, Zap } from 'lucide-react'
 import { fetchRightsizingRecommendations } from '@/lib/api'
 import { RightsizingResponse, RightsizingRecommendation } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
@@ -53,6 +53,29 @@ function providerColor(p: string) {
     gcp: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
     oci: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300',
   }[p] ?? 'border-slate-200 bg-slate-50 text-slate-600'
+}
+
+function resourceConsoleUrl(rec: RightsizingRecommendation): string | null {
+  if (rec.resource_console_url) return rec.resource_console_url
+
+  const region = (rec.region || '').trim()
+  const normalizedRegion = region && !['global', 'unknown', 'n/a'].includes(region.toLowerCase()) ? region : ''
+  if (rec.provider === 'aws') {
+    const awsRegion = normalizedRegion || 'us-east-1'
+    return `https://${awsRegion}.console.aws.amazon.com/ec2/home?region=${encodeURIComponent(awsRegion)}#Instances:`
+  }
+  if (rec.provider === 'azure') {
+    return 'https://portal.azure.com/#view/HubsExtension/BrowseAllResources'
+  }
+  if (rec.provider === 'gcp') {
+    return 'https://console.cloud.google.com/compute/instances'
+  }
+  if (rec.provider === 'oci') {
+    return normalizedRegion
+      ? `https://cloud.oracle.com/compute/instances?region=${encodeURIComponent(normalizedRegion)}`
+      : 'https://cloud.oracle.com/compute/instances'
+  }
+  return null
 }
 
 function UtilBar({ label, value }: { label: string; value: number | null }) {
@@ -122,6 +145,7 @@ function rollbackPlan(rec: RightsizingRecommendation): string {
 
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
   const [expanded, setExpanded] = useState(true)
+  const consoleUrl = resourceConsoleUrl(rec)
   const monthlyDeltaPct = rec.current_monthly_cost_usd > 0
     ? ((rec.current_monthly_cost_usd - rec.projected_monthly_cost_usd) / rec.current_monthly_cost_usd) * 100
     : 0
@@ -141,6 +165,17 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
               <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{rec.resource_name}</p>
               <p className="text-xs text-slate-400 font-mono">{rec.resource_id} · {rec.resource_type} · {rec.region}</p>
               <p className="text-xs text-slate-500 mt-0.5">account: {rec.account_id || 'n/a'}</p>
+              {consoleUrl && (
+                <a
+                  href={consoleUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  Open resource in cloud console
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
             </div>
             <div className="text-right shrink-0">
               <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{fmt(rec.monthly_savings_usd)}<span className="text-xs text-slate-400">/mo</span></p>
