@@ -6,8 +6,12 @@ function browserDefaultApiUrl(): string {
   if (typeof window === "undefined") {
     return "http://localhost:8000";
   }
-  // Prefer same-origin in browser contexts (reverse proxy / container safe).
+  // In direct-service deployments, dashboard usually runs on :3000 while API runs on :8000.
   // Explicit NEXT_PUBLIC_API_URL still overrides this default.
+  if (window.location.port === "3000") {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  // Otherwise prefer same-origin (reverse proxy / container safe).
   return window.location.origin;
 }
 

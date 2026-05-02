@@ -8930,7 +8930,16 @@ async def sync_opencost_costs(
     try:
         costs = await connector.fetch_costs(start_date=start_dt, end_date=end_dt)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"OpenCost sync failed: {str(exc)}") from exc
+        detail = str(exc)
+        if "OpenCost API unreachable" in detail:
+            detail = (
+                "OpenCost sync failed: OpenCost API unreachable. "
+                "Use an OpenCost URL reachable from the OptiOra API host "
+                "(not a browser-only localhost endpoint)."
+            )
+        else:
+            detail = f"OpenCost sync failed: {detail}"
+        raise HTTPException(status_code=502, detail=detail) from exc
     namespace_totals: Dict[str, float] = {}
     for point in costs:
         namespace = point.metadata.get("namespace") or point.resource_id or "unknown"
