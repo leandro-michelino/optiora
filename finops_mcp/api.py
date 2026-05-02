@@ -1839,7 +1839,7 @@ async def approve_scanning(
         customer_id = _resolve_customer_id(current_user, membership, approval.customer_id)
         approved = scanning_manager.approve_scanning(
             customer_id=customer_id,
-            auto_remediate=approval.auto_remediate,
+            auto_remediate=False,
             scan_frequency=approval.scan_frequency,
             notification_email=approval.notification_email,
             monthly_budget_usd=approval.monthly_budget_usd,
@@ -10077,6 +10077,10 @@ async def run_auto_remediation_loop(
 ) -> RemediationLoopResponse:
     """Safe automation loop with guardrails for auto-remediation actions."""
     _require_management_role(membership, "auto-remediation")
+    raise HTTPException(
+        status_code=503,
+        detail="Auto-remediation is temporarily disabled.",
+    )
 
     candidates = list(payload.candidates)
     if not candidates:

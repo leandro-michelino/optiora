@@ -662,7 +662,7 @@ export default function OperationsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span>Auto remediate</span>
-                <span>{state.permission?.auto_remediate ? 'Enabled' : 'Disabled'}</span>
+                <span>Temporarily disabled</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Providers</span>

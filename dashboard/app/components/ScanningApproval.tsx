@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle, Clock, Settings, Play } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock, Play } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface ScanningApprovalProps {
@@ -62,7 +62,7 @@ const ScanningApproval: React.FC<ScanningApprovalProps> = ({ providers, onApprov
           <div className="space-y-2 text-sm">
             <p><strong>Providers:</strong> {providers.join(', ').toUpperCase()}</p>
             <p><strong>Frequency:</strong> {config.scan_frequency}</p>
-            <p><strong>Auto-remediate:</strong> {config.auto_remediate ? 'Enabled' : 'Disabled'}</p>
+            <p><strong>Auto-remediate:</strong> Temporarily disabled</p>
             <p><strong>Notifications:</strong> {config.notification_email}</p>
             <p><strong>Budget guardrail:</strong> {config.monthly_budget_usd > 0 ? `$${config.monthly_budget_usd.toLocaleString()}` : 'Not set'}</p>
           </div>
@@ -105,12 +105,6 @@ const ScanningApproval: React.FC<ScanningApprovalProps> = ({ providers, onApprov
                 <span className="text-lg">🔍</span>
                 <span><strong>Usage analytics:</strong> Read-only access to usage and performance metrics</span>
               </li>
-              {config.auto_remediate && (
-                <li className="flex items-start gap-2">
-                  <span className="text-lg">⚙️</span>
-                  <span><strong>Auto-remediation:</strong> Write access to execute cost optimization actions (if enabled below)</span>
-                </li>
-              )}
             </ul>
           </div>
 
@@ -154,23 +148,13 @@ const ScanningApproval: React.FC<ScanningApprovalProps> = ({ providers, onApprov
           {/* Auto-Remediate */}
           <div>
             <label className="block text-sm font-medium mb-3">Automatic Optimization</label>
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <input
-                type="checkbox"
-                id="auto_remediate"
-                checked={config.auto_remediate}
-                onChange={e => setConfig({...config, auto_remediate: e.target.checked})}
-                className="w-4 h-4"
-              />
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg opacity-80">
               <div className="flex-1">
-                <label htmlFor="auto_remediate" className="font-medium text-sm block">
-                  Allow automatic cost optimization
-                </label>
+                <p className="font-medium text-sm block">Automatic cost optimization is temporarily disabled</p>
                 <p className="text-xs text-gray-600">
-                  OptiOra will execute recommended cost-saving actions automatically
+                  Scans and recommendations remain available; no automatic changes are executed.
                 </p>
               </div>
-              <Settings className="w-4 h-4 text-gray-400" />
             </div>
           </div>
 

@@ -6,7 +6,6 @@ import {
   fetchDecisionGradeRecommendations,
   fetchFederatedCosts,
   fetchTagQualityScore,
-  runAutoRemediationLoop,
   fetchTaggingCoverage,
   fetchSustainabilityMetrics,
   fetchCrossProviderComparison,
@@ -16,7 +15,6 @@ import {
 import {
   DecisionRecommendationResponse,
   FederationCostResponse,
-  RemediationLoopResponse,
   TagQualityScoreResponse,
   TaggingCoverageResponse,
   SustainabilityResponse,
@@ -48,19 +46,16 @@ interface ToastMessage {
 
 export default function AdvancedFinOpsPage() {
   const [loading, setLoading] = useState(true)
-  const [runningLoop, setRunningLoop] = useState(false)
   const [loadingTagQuality, setLoadingTagQuality] = useState(false)
   const [loadingDecision, setLoadingDecision] = useState(false)
   const [loadingFederation, setLoadingFederation] = useState(false)
   const [tagQualityError, setTagQualityError] = useState<string | null>(null)
   const [decisionError, setDecisionError] = useState<string | null>(null)
   const [federationError, setFederationError] = useState<string | null>(null)
-  const [loopError, setLoopError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [tagQuality, setTagQuality] = useState<TagQualityScoreResponse | null>(null)
   const [decision, setDecision] = useState<DecisionRecommendationResponse | null>(null)
   const [federation, setFederation] = useState<FederationCostResponse | null>(null)
-  const [loopResult, setLoopResult] = useState<RemediationLoopResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // New analytics state
@@ -137,26 +132,6 @@ export default function AdvancedFinOpsPage() {
     setLoading(false)
   }, [pushToast])
 
-  async function runDryRunLoop() {
-    setRunningLoop(true)
-    setLoopError(null)
-    try {
-      const result = await runAutoRemediationLoop({
-        dry_run: true,
-        max_actions_per_run: 15,
-        max_total_impact_usd: 1500,
-        require_approval_above_usd: 250,
-      })
-      setLoopResult(result)
-      pushToast('Dry-run completed', `${result.planned_count} actions planned`, 'success')
-    } catch {
-      setLoopError('Failed to run remediation dry-run.')
-      pushToast('Dry-run failed', 'Could not execute guardrailed dry-run.', 'error')
-    } finally {
-      setRunningLoop(false)
-    }
-  }
-
   useEffect(() => {
     void load()
   }, [load])
@@ -173,7 +148,7 @@ export default function AdvancedFinOpsPage() {
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2">Advanced FinOps Console</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
-            Unified view of tag completeness scoring, decision-grade optimization ranking, multi-account federation, and safe remediation loops.
+            Unified view of tag completeness scoring, decision-grade optimization ranking, and multi-account federation insights.
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} className="rounded-lg">
@@ -217,9 +192,9 @@ export default function AdvancedFinOpsPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-slate-500">Dry-run Planned Impact</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{fmt(loopResult?.total_planned_impact_usd || 0)}</p>
-                <p className="text-sm text-slate-500">{loopResult?.planned_count || 0} planned actions</p>
+                <p className="text-xs text-slate-500">Auto-Remediation</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">Off</p>
+                <p className="text-sm text-slate-500">Temporarily disabled</p>
               </CardContent>
             </Card>
           </div>
@@ -336,34 +311,13 @@ export default function AdvancedFinOpsPage() {
 
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-                <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Safe Auto-Remediation Loop</CardTitle>
+                <CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Auto-Remediation</CardTitle>
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
-                <Button className="w-full rounded-lg" onClick={() => void runDryRunLoop()} disabled={runningLoop}>
-                  {runningLoop ? 'Running dry-run...' : 'Run Guardrailed Dry-run'}
-                </Button>
-                {loopError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                    {loopError}
-                  </div>
-                )}
-                {loopResult ? (
-                  <div className="space-y-2 text-sm">
-                    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                      Planned: {loopResult.planned_count} · Requires approval: {loopResult.requires_approval_count} · Skipped: {loopResult.skipped_count}
-                    </div>
-                    <div className="max-h-64 space-y-2 overflow-y-auto">
-                      {loopResult.decisions.map((d) => (
-                        <div key={d.action_id} className="rounded border border-slate-200 px-2 py-1 text-xs dark:border-slate-700">
-                          <p className="font-medium text-slate-800 dark:text-slate-200">{d.action_id} · {d.status}</p>
-                          <p className="text-slate-500">{d.reason}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-500">Run the dry-run to preview guardrailed remediation decisions.</p>
-                )}
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  Automatic remediation actions are temporarily disabled.
+                </div>
+                <p className="text-sm text-slate-500">Rightsizing and optimization recommendations remain available as read-only guidance.</p>
               </CardContent>
             </Card>
           </div>
