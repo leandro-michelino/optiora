@@ -652,6 +652,18 @@ export default function KubernetesPage() {
             <CardTitle>OpenCost Namespace/Pod Breakdown</CardTitle>
           </CardHeader>
           <CardContent className="pt-5">
+            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+              <p className="font-semibold">How to use OpenCost</p>
+              <ol className="mt-2 list-decimal space-y-1 pl-4">
+                <li>Install OpenCost in the Kubernetes cluster you want to measure (or click <strong>Auto-install &amp; Wire OpenCost</strong>).</li>
+                <li>Set an OpenCost API URL that is reachable from the OptiOra API server VM.</li>
+                <li>If OpenCost runs on the same VM as OptiOra, use <code>http://localhost:9003</code>.</li>
+                <li>If OpenCost runs on another host/cluster endpoint, use <code>http://&lt;host-or-lb&gt;:9003</code>, then click <strong>Sync OpenCost</strong>.</li>
+              </ol>
+              <p className="mt-2 text-[11px] text-blue-700 dark:text-blue-300">
+                Note: <code>localhost</code> is always resolved on the OptiOra API VM, not in your browser.
+              </p>
+            </div>
             <form onSubmit={(e) => void handleOpenCostSync(e)} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">OpenCost URL</label>

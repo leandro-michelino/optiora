@@ -6,6 +6,7 @@ Falls back to curated defaults if credentials or permissions are missing.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -265,22 +266,43 @@ def _fetch_gcp(
         or config.google_application_credentials
         or ""
     ).strip()
+    service_account_json = runtime_credentials.get("service_account_json")
+    service_account_info: Optional[Dict[str, Any]] = None
+    if isinstance(service_account_json, str):
+        try:
+            parsed = json.loads(service_account_json)
+            if isinstance(parsed, dict):
+                service_account_info = parsed
+        except Exception:
+            service_account_info = None
+    elif isinstance(service_account_json, dict):
+        service_account_info = service_account_json
     project_id = str(
         runtime_credentials.get("project_id") or config.gcp_project_id or ""
     ).strip()
-    if not creds_path or not project_id:
-        raise ValueError("GCP credentials are not configured")
-    resolved_creds = os.path.abspath(os.path.expanduser(os.path.expandvars(creds_path)))
-    if not os.path.isfile(resolved_creds):
-        raise ValueError(f"GCP credentials file not found: {resolved_creds}")
+    if not project_id and isinstance(service_account_info, dict):
+        project_id = str(service_account_info.get("project_id") or "").strip()
+    if not project_id:
+        raise ValueError("GCP project_id is not configured")
 
     from google.oauth2 import service_account
     from google.auth.transport.requests import AuthorizedSession
 
-    credentials = service_account.Credentials.from_service_account_file(
-        resolved_creds,
-        scopes=["https://www.googleapis.com/auth/cloud-platform"],
-    )
+    if creds_path:
+        resolved_creds = os.path.abspath(os.path.expanduser(os.path.expandvars(creds_path)))
+        if not os.path.isfile(resolved_creds):
+            raise ValueError(f"GCP credentials file not found: {resolved_creds}")
+        credentials = service_account.Credentials.from_service_account_file(
+            resolved_creds,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+    elif service_account_info:
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+    else:
+        raise ValueError("GCP credentials are not configured")
     session = AuthorizedSession(credentials)
     session.timeout = 30.0
 

@@ -146,6 +146,9 @@ function rollbackPlan(rec: RightsizingRecommendation): string {
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
   const [expanded, setExpanded] = useState(true)
   const consoleUrl = resourceConsoleUrl(rec)
+  const aggregateScope = rec.resource_type.toLowerCase().includes('aggregate')
+    || rec.evidence_source.includes('cost_trend')
+    || rec.evidence_source.includes('imported')
   const monthlyDeltaPct = rec.current_monthly_cost_usd > 0
     ? ((rec.current_monthly_cost_usd - rec.projected_monthly_cost_usd) / rec.current_monthly_cost_usd) * 100
     : 0
@@ -163,7 +166,7 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
                 <span className={`text-xs font-medium ${effortColor(rec.effort)}`}>effort: {rec.effort}</span>
               </div>
               <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{rec.resource_name}</p>
-              <p className="text-xs text-slate-400 font-mono">{rec.resource_id} · {rec.resource_type} · {rec.region}</p>
+              <p className="text-xs text-slate-400 font-mono break-all">{rec.resource_id} · {rec.resource_type} · {rec.region}</p>
               <p className="text-xs text-slate-500 mt-0.5">account: {rec.account_id || 'n/a'}</p>
               {consoleUrl && (
                 <a
@@ -175,6 +178,15 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
                   Open resource in cloud console
                   <ExternalLink className="h-3 w-3" />
                 </a>
+              )}
+              {aggregateScope && (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  Scope is account/regional aggregate. Pick exact resource targets before executing changes.
+                  {' '}
+                  <a href={`/dashboard/inventory?provider=${encodeURIComponent(rec.provider)}&region=${encodeURIComponent(rec.region)}`} className="underline hover:no-underline">
+                    Open inventory filtered to this scope
+                  </a>
+                </div>
               )}
             </div>
             <div className="text-right shrink-0">
@@ -457,7 +469,7 @@ export default function RightsizingPage() {
             </p>
           )}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map(rec => <RecCard key={rec.resource_id} rec={rec} />)}
+            {filtered.map(rec => <RecCard key={`${rec.provider}-${rec.resource_id}-${rec.region}-${rec.action}`} rec={rec} />)}
           </div>
         </>
       ) : (

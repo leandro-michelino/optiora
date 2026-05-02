@@ -116,6 +116,17 @@ OptiOra uses OCI GenAI not only for forecast narration, but also for:
 - OCI managed database services should use `BYOL` license model by default when that option is available
 - optional data retention archives cold cost rows to OCI Object Storage before purging them from the database
 
+## OpenCost Quick Start
+
+Use OpenCost when you want real Kubernetes namespace and pod cost allocation instead of modeled splits.
+
+1. Install OpenCost in the target Kubernetes cluster (or use `POST /api/v1/analytics/kubernetes/opencost/auto-install`).
+2. In the Kubernetes dashboard page, set OpenCost URL and click **Sync OpenCost**.
+3. If OpenCost runs on the same VM as OptiOra API, use `http://localhost:9003`.
+4. If OpenCost runs elsewhere, use a URL reachable from the OptiOra API host, such as `http://<host-or-lb>:9003`.
+
+Important: `localhost` is resolved on the OptiOra API server, not your browser machine.
+
 ## Core API Surface
 
 ### Core platform

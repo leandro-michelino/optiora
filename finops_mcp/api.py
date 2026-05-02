@@ -1400,6 +1400,57 @@ def _load_runtime_provider_credentials(customer_id: str) -> Dict[str, Dict[str, 
     return output
 
 
+def _merge_runtime_with_stored_credentials(
+    runtime_credentials: Dict[str, Dict[str, Any]],
+    stored_rows: List["CredentialRecord"],
+) -> Dict[str, Dict[str, Any]]:
+    """Merge runtime files with validated stored credentials for live provider catalog fetching."""
+    merged: Dict[str, Dict[str, Any]] = {
+        provider: dict(values or {})
+        for provider, values in (runtime_credentials or {}).items()
+        if isinstance(values, dict)
+    }
+    for row in stored_rows:
+        provider = str(getattr(row, "provider", "") or "").strip().lower()
+        if provider not in {"aws", "azure", "gcp", "oci"}:
+            continue
+        raw_json = str(getattr(row, "credential_json", "") or "").strip()
+        if not raw_json:
+            continue
+        try:
+            payload = json.loads(raw_json)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+
+        target = merged.setdefault(provider, {})
+        def _fill(key: str, value: Any) -> None:
+            if target.get(key):
+                return
+            text = value
+            if isinstance(value, str):
+                text = value.strip()
+            target[key] = text
+        if provider == "aws":
+            _fill("access_key_id", str(payload.get("access_key_id") or ""))
+            _fill("secret_access_key", str(payload.get("secret_access_key") or ""))
+            _fill("region", str(payload.get("region") or "us-east-1"))
+        elif provider == "azure":
+            _fill("subscription_id", str(payload.get("subscription_id") or ""))
+            _fill("tenant_id", str(payload.get("tenant_id") or ""))
+            _fill("client_id", str(payload.get("client_id") or ""))
+            _fill("client_secret", str(payload.get("client_secret") or ""))
+        elif provider == "gcp":
+            _fill("project_id", str(payload.get("project_id") or ""))
+            if "service_account_json" in payload and not target.get("service_account_json"):
+                target["service_account_json"] = payload.get("service_account_json")
+        elif provider == "oci":
+            _fill("config_file", str(payload.get("config_file") or ""))
+            _fill("profile", _normalize_oci_profile(payload.get("profile")))
+    return merged
+
+
 def _resolve_customer_id(
     current_user: User,
     membership: UserOrganization,
@@ -8897,8 +8948,28 @@ def _opencost_fetch_allocations(
     }
     with httpx.Client(timeout=45.0) as client:
         resp = client.get(endpoint, params=params)
-        resp.raise_for_status()
-        payload = resp.json()
+        content_type = str(resp.headers.get("content-type") or "").lower()
+        if resp.status_code >= 400:
+            if "text/html" in content_type:
+                raise ValueError(
+                    f"OpenCost endpoint returned HTTP {resp.status_code} HTML response. "
+                    "Verify the URL points to OpenCost API (for example http://<host>:9003), "
+                    "not the dashboard frontend route."
+                )
+            resp.raise_for_status()
+        if "text/html" in content_type:
+            preview = resp.text[:180].strip().replace("\n", " ")
+            raise ValueError(
+                "OpenCost endpoint returned HTML instead of JSON. "
+                f"Preview: {preview}"
+            )
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            preview = resp.text[:180].strip().replace("\n", " ")
+            raise ValueError(
+                f"OpenCost response is not valid JSON. Preview: {preview}"
+            ) from exc
     rows = _flatten_opencost_entries(payload)
     out: List[Dict[str, Any]] = []
     for row in rows:
@@ -10177,15 +10248,29 @@ async def run_auto_remediation_loop(
 async def get_kubernetes_provider_catalog(
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> KubernetesProviderCatalogResponse:
     """List provider regions and node shapes/sizes for K8s cluster planning."""
     _ = current_user
     customer_id = _customer_id_for_org(membership)
     config = Config()
     runtime_credentials = _load_runtime_provider_credentials(customer_id)
+    stored_rows = (
+        db.query(CredentialRecord)
+        .filter(
+            CredentialRecord.customer_id == customer_id,
+            CredentialRecord.is_valid.is_(True),
+            CredentialRecord.provider.in_(["aws", "azure", "gcp", "oci"]),
+        )
+        .all()
+    )
+    credentials_for_catalog = _merge_runtime_with_stored_credentials(
+        runtime_credentials,
+        stored_rows,
+    )
     providers = build_kubernetes_provider_catalog(
         config,
-        runtime_credentials_by_provider=runtime_credentials,
+        runtime_credentials_by_provider=credentials_for_catalog,
     )
     return KubernetesProviderCatalogResponse(
         generated_at=_utcnow().isoformat() + "Z",
@@ -10710,6 +10795,61 @@ def _recommended_size_for_action(provider: str, action: str, current_size: str) 
     return down or f"smaller-{current_size}"
 
 
+def _estimate_oci_instance_monthly_cost(
+    shape_name: str,
+    ocpus: Optional[float],
+    memory_gib: Optional[float],
+) -> float:
+    ocpu_value = float(ocpus or 0.0)
+    memory_value = float(memory_gib or 0.0)
+    if ocpu_value <= 0:
+        # Non-flex shape fallback estimate.
+        for token in shape_name.split("."):
+            try:
+                ocpu_value = float(token)
+                break
+            except ValueError:
+                continue
+    if memory_value <= 0:
+        memory_value = max(8.0, ocpu_value * 8.0) if ocpu_value > 0 else 16.0
+
+    estimated = (ocpu_value * 24.0) + (memory_value * 1.6)
+    shape_upper = str(shape_name or "").upper()
+    if ".A1." in shape_upper:
+        estimated *= 0.65
+    elif ".E5." in shape_upper:
+        estimated *= 1.10
+    elif ".E4." in shape_upper:
+        estimated *= 1.0
+    return round(max(25.0, estimated), 2)
+
+
+def _oci_rightsize_target(
+    shape_name: str,
+    ocpus: Optional[float],
+    memory_gib: Optional[float],
+) -> tuple[Optional[str], Optional[str], float]:
+    shape = str(shape_name or "").strip()
+    if not shape:
+        return None, None, 0.0
+
+    ocpu_value = float(ocpus or 0.0) if ocpus is not None else 0.0
+    memory_value = float(memory_gib or 0.0) if memory_gib is not None else 0.0
+    if ".Flex" in shape and ocpu_value > 1.0:
+        target_ocpu = round(max(1.0, ocpu_value * 0.5), 1)
+        baseline_memory = memory_value if memory_value > 0 else (ocpu_value * 8.0)
+        target_memory = round(max(8.0, baseline_memory * 0.65), 1)
+        current_size = f"{shape} ({ocpu_value:g} OCPU/{baseline_memory:g} GB)"
+        recommended_size = f"{shape} ({target_ocpu:g} OCPU/{target_memory:g} GB)"
+        savings_rate = round(min(0.6, max(0.25, 1.0 - (target_ocpu / max(ocpu_value, 0.1)))), 2)
+        return current_size, recommended_size, savings_rate
+
+    down_map = _DOWNSIZE_MAP.get("oci", {})
+    if shape in down_map:
+        return shape, down_map[shape], _ACTION_SAVINGS_RATES["downsize"]
+    return None, None, 0.0
+
+
 def _rightsizing_console_url(
     provider: str,
     resource_id: str,
@@ -10779,6 +10919,168 @@ def _rightsizing_console_url(
         return f"{base}?region={quote(safe_region, safe='')}" if safe_region else base
 
     return None
+
+
+def _rightsizing_from_oci_compute_inventory(
+    cred_json: Dict[str, Any],
+    min_savings: float,
+    limit: int = 120,
+) -> List[RightsizingRecommendation]:
+    """Derive per-instance OCI rightsizing opportunities from live compute inventory."""
+    try:
+        import oci
+    except Exception as exc:
+        logger.warning("OCI SDK unavailable for rightsizing inventory: %s", exc)
+        return []
+
+    config_file = str(cred_json.get("config_file") or "").strip()
+    profile = _normalize_oci_profile(cred_json.get("profile"))
+    if not config_file:
+        return []
+    try:
+        resolved_config, resolved_profile = CredentialValidator._normalize_oci_inputs(
+            config_file=config_file,
+            profile=profile,
+        )
+        oci_config = oci.config.from_file(resolved_config, resolved_profile)
+    except Exception as exc:
+        logger.warning("Unable to load OCI config for rightsizing inventory: %s", exc)
+        return []
+
+    tenancy_id = str(oci_config.get("tenancy") or "").strip()
+    region = str(oci_config.get("region") or "global").strip() or "global"
+    if not tenancy_id:
+        return []
+
+    client_timeout = (5, 20)
+    try:
+        identity = oci.identity.IdentityClient(oci_config, timeout=client_timeout)
+        compute = oci.core.ComputeClient(oci_config, timeout=client_timeout)
+    except Exception as exc:
+        logger.warning("Unable to initialize OCI clients for rightsizing inventory: %s", exc)
+        return []
+
+    root_compartment_override = str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip()
+    compartment_ids: List[str] = []
+    seen_compartments: set[str] = set()
+    if root_compartment_override:
+        compartment_ids.append(root_compartment_override)
+        seen_compartments.add(root_compartment_override)
+    if tenancy_id not in seen_compartments:
+        compartment_ids.append(tenancy_id)
+        seen_compartments.add(tenancy_id)
+    max_compartments = 20
+    try:
+        comp_response = oci.pagination.list_call_get_all_results(
+            identity.list_compartments,
+            compartment_id=tenancy_id,
+            compartment_id_in_subtree=True,
+            access_level="ACCESSIBLE",
+        )
+        for compartment in comp_response.data or []:
+            if len(compartment_ids) >= max_compartments:
+                break
+            lifecycle = str(getattr(compartment, "lifecycle_state", "") or "").upper()
+            comp_id = str(getattr(compartment, "id", "") or "").strip()
+            if not comp_id or lifecycle not in {"ACTIVE", ""}:
+                continue
+            if comp_id not in seen_compartments:
+                seen_compartments.add(comp_id)
+                compartment_ids.append(comp_id)
+    except Exception:
+        # Fall back to tenancy scope only.
+        pass
+
+    out: List[RightsizingRecommendation] = []
+    seen_instances: set[str] = set()
+    observed_at = _utcnow().isoformat()
+    for compartment_id in compartment_ids:
+        if len(out) >= limit:
+            break
+        try:
+            instances = oci.pagination.list_call_get_all_results(
+                compute.list_instances,
+                compartment_id=compartment_id,
+                limit=50,
+            ).data
+        except Exception:
+            continue
+        for instance in instances or []:
+            if len(out) >= limit:
+                break
+            instance_id = str(getattr(instance, "id", "") or "").strip()
+            if not instance_id or instance_id in seen_instances:
+                continue
+            seen_instances.add(instance_id)
+
+            lifecycle = str(getattr(instance, "lifecycle_state", "") or "").upper()
+            if lifecycle not in {"RUNNING", "STOPPED"}:
+                continue
+            shape = str(getattr(instance, "shape", "") or "").strip()
+            shape_config = getattr(instance, "shape_config", None)
+            ocpus = float(getattr(shape_config, "ocpus", 0.0) or 0.0) if shape_config else None
+            memory_gib = float(getattr(shape_config, "memory_in_gbs", 0.0) or 0.0) if shape_config else None
+            current_size, recommended_size, savings_rate = _oci_rightsize_target(shape, ocpus, memory_gib)
+            if not current_size or not recommended_size or savings_rate <= 0:
+                continue
+
+            current_monthly = _estimate_oci_instance_monthly_cost(shape, ocpus, memory_gib)
+            monthly_savings = round(current_monthly * savings_rate, 2)
+            if monthly_savings < min_savings:
+                continue
+            projected_monthly = round(max(current_monthly - monthly_savings, 0.0), 2)
+
+            display_name = str(getattr(instance, "display_name", "") or "").strip()
+            if not display_name:
+                display_name = instance_id
+
+            out.append(
+                RightsizingRecommendation(
+                    resource_id=instance_id,
+                    resource_name=display_name,
+                    resource_type="OCI Compute Instance",
+                    provider="oci",
+                    region=region,
+                    account_id=tenancy_id,
+                    current_size=current_size,
+                    recommended_size=recommended_size,
+                    current_monthly_cost_usd=current_monthly,
+                    projected_monthly_cost_usd=projected_monthly,
+                    monthly_savings_usd=monthly_savings,
+                    annual_savings_usd=round(monthly_savings * 12, 2),
+                    cpu_utilization_avg_percent=None,
+                    memory_utilization_avg_percent=None,
+                    reason=(
+                        "Live OCI instance inventory indicates this shape can be downsized. "
+                        "Validate CPU/memory utilization before applying in production."
+                    ),
+                    confidence="medium",
+                    effort="low",
+                    action="downsize",
+                    evidence_source="oci_compute_inventory",
+                    analysis_points=1,
+                    trend_slope_usd=0.0,
+                    trend_percent=0.0,
+                    latest_monthly_cost_usd=current_monthly,
+                    peak_monthly_cost_usd=current_monthly,
+                    top_regions=[region] if region else [],
+                    regional_breakdown=[{
+                        "region": region or "global",
+                        "monthly_cost_usd": current_monthly,
+                        "share_percent": 100.0,
+                    }],
+                    resource_console_url=_rightsizing_console_url(
+                        provider="oci",
+                        resource_id=instance_id,
+                        region=region,
+                        account_id=tenancy_id,
+                        resource_type="OCI Compute Instance",
+                    ),
+                    last_observed_at=observed_at,
+                    risk_note="Inventory-based recommendation: confirm workload headroom and autoscaling before resize.",
+                )
+            )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -11097,7 +11399,7 @@ def _rightsizing_from_snapshot_trends(
         out.append(RightsizingRecommendation(
             resource_id=f"{prov}-acct-{acct_id}",
             resource_name=acct.account_name or acct.account_identifier,
-            resource_type=type_labels.get(prov, "Compute Instance"),
+            resource_type=f"{type_labels.get(prov, 'Compute Instance')} (account aggregate)",
             provider=prov,
             region=acct.native_region or "global",
             account_id=acct.account_identifier,
@@ -11122,7 +11424,10 @@ def _rightsizing_from_snapshot_trends(
             top_regions=top_region_names,
             regional_breakdown=regional_breakdown,
             last_observed_at=snaps_sorted[-1].captured_at.isoformat() if snaps_sorted[-1].captured_at else None,
-            risk_note=risk_note,
+            risk_note=(
+                risk_note
+                or "Account-level recommendation. Use Resource Inventory and provider consoles to pick exact instances/volumes for execution."
+            ),
         ))
 
         # Add region-level recommendations for top-cost regions to increase actionability.
@@ -11263,7 +11568,7 @@ def _rightsizing_from_imported_costs(
         out.append(RightsizingRecommendation(
             resource_id=grp["resource_id"] or f"imported-{prov}-{acct_id}",
             resource_name=grp["account_name"],
-            resource_type=type_labels.get(prov, "Cloud Service"),
+            resource_type=f"{type_labels.get(prov, 'Cloud Service')} (imported aggregate)",
             provider=prov,
             region=grp["region"],
             account_id=acct_id,
@@ -11279,6 +11584,19 @@ def _rightsizing_from_imported_costs(
             confidence="medium",
             effort="low" if action in ("downsize", "terminate") else "medium",
             action=action,
+            evidence_source="imported_costs",
+            analysis_points=1,
+            trend_slope_usd=0.0,
+            trend_percent=0.0,
+            latest_monthly_cost_usd=round(cost, 2),
+            peak_monthly_cost_usd=round(cost, 2),
+            top_regions=[grp["region"]] if grp["region"] else [],
+            regional_breakdown=[{
+                "region": grp["region"] or "global",
+                "monthly_cost_usd": round(cost, 2),
+                "share_percent": 100.0,
+            }],
+            risk_note="Imported billing aggregate recommendation. Validate exact resource targets in provider console before changes.",
         ))
     return out
 
@@ -11342,6 +11660,32 @@ async def get_rightsizing_recommendations(
                 recommendations_out.extend(tier2)
                 data_source = "azure_advisor" if data_source == "synthetic" else "multi_provider_api"
                 total_analyzed += len(tier2) * 3
+
+    # ── Tier 2b: OCI live compute inventory (per-instance actionable scope) ──
+    if provider in {"all", "oci"}:
+        oci_row = (
+            db.query(CredentialRecord)
+            .filter(
+                CredentialRecord.customer_id == customer_id,
+                CredentialRecord.provider == "oci",
+                CredentialRecord.is_valid.is_(True),
+            )
+            .first()
+        )
+        if oci_row is not None:
+            try:
+                oci_cred_json: Dict[str, Any] = json.loads(oci_row.credential_json)
+            except Exception:
+                oci_cred_json = {}
+            if isinstance(oci_cred_json, dict):
+                tier2b = _rightsizing_from_oci_compute_inventory(oci_cred_json, min_savings, limit=max(120, limit))
+                if tier2b:
+                    recommendations_out.extend(tier2b)
+                    if data_source == "synthetic":
+                        data_source = "oci_compute_inventory"
+                    elif data_source not in {"multi_provider_api", "oci_compute_inventory"}:
+                        data_source = "multi_provider_api"
+                    total_analyzed += len(tier2b)
 
     # ── Tier 3: Cost-trend signal from scan snapshot history ────────────────
     if not recommendations_out:

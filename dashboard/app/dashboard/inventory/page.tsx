@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronRight, Filter, Loader, RefreshCw, Server, X } from 'lucide-react'
 import { fetchProviderAccountInventory, fetchResourceInventory } from '@/lib/api'
 import { ResourceInventoryResponse, ResourceInventoryItem, ProviderAccountInventoryResponse } from '@/lib/types'
@@ -205,6 +205,7 @@ function ResourceRow({
 }
 
 export default function InventoryPage() {
+  const didInitFromQuery = useRef(false)
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ResourceInventoryResponse | null>(null)
   const [accountInventory, setAccountInventory] = useState<ProviderAccountInventoryResponse | null>(null)
@@ -213,6 +214,22 @@ export default function InventoryPage() {
   const [regionFilter, setRegionFilter] = useState('')
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [drawerItem, setDrawerItem] = useState<ResourceInventoryItem | null>(null)
+
+  useEffect(() => {
+    if (didInitFromQuery.current) return
+    didInitFromQuery.current = true
+    const searchParams = new URLSearchParams(
+      typeof window !== 'undefined' ? window.location.search : '',
+    )
+    const providerParam = (searchParams.get('provider') || '').toLowerCase()
+    if (PROVIDERS.includes(providerParam)) {
+      setProvider(providerParam)
+    }
+    const regionParam = (searchParams.get('region') || '').trim()
+    if (regionParam) {
+      setRegionFilter(regionParam)
+    }
+  }, [])
 
   const accountMetadataLookup = useMemo(() => {
     const lookup: Record<string, Record<string, unknown>> = {}
