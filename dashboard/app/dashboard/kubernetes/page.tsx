@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Box, Calculator, Info, Loader, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Box, Calculator, Info, Loader, RefreshCw } from 'lucide-react'
 import { fetchKubernetesSummary, calculateKubernetesClusterCost, syncOpenCostCosts } from '@/lib/api'
 import { KubernetesSummaryResponse, KubernetesClusterCostResponse, OpenCostSyncResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
@@ -14,11 +14,18 @@ function fmt(n: number) {
 
 const defaultForm = {
   cluster_name: 'production',
-  provider: 'aws',
-  region: 'us-east-1',
+  provider: 'oci',
+  region: 'uk-london-1',
   node_count: 5,
-  node_type: 'm5.xlarge',
-  monthly_node_cost_usd: 150,
+  node_type: 'VM.Standard.E4.Flex',
+  monthly_node_cost_usd: 120,
+}
+
+const providerPresets: Record<string, { region: string; node_type: string; monthly_node_cost_usd: number }> = {
+  aws: { region: 'us-east-1', node_type: 'm5.xlarge', monthly_node_cost_usd: 150 },
+  azure: { region: 'eastus', node_type: 'Standard_D4s_v5', monthly_node_cost_usd: 155 },
+  gcp: { region: 'us-central1', node_type: 'n2-standard-4', monthly_node_cost_usd: 145 },
+  oci: { region: 'uk-london-1', node_type: 'VM.Standard.E4.Flex', monthly_node_cost_usd: 120 },
 }
 
 export default function KubernetesPage() {
@@ -33,6 +40,7 @@ export default function KubernetesPage() {
   const [opencostSyncResult, setOpencostSyncResult] = useState<OpenCostSyncResponse | null>(null)
   const [calcResult, setCalcResult] = useState<KubernetesClusterCostResponse | null>(null)
   const [calcLoading, setCalcLoading] = useState(false)
+  const [calcError, setCalcError] = useState<string | null>(null)
 
   async function loadSummary() {
     setLoading(true)
@@ -52,6 +60,7 @@ export default function KubernetesPage() {
   async function handleCalc(e: React.FormEvent) {
     e.preventDefault()
     setCalcLoading(true)
+    setCalcError(null)
     try {
       const res = await calculateKubernetesClusterCost({
         cluster_name: form.cluster_name,
@@ -65,6 +74,9 @@ export default function KubernetesPage() {
         opencost_window_days: opencostEnabled ? opencostWindowDays : undefined,
       })
       setCalcResult(res)
+    } catch (err) {
+      setCalcResult(null)
+      setCalcError(err instanceof Error ? err.message : 'Cluster cost calculation failed.')
     } finally {
       setCalcLoading(false)
     }
@@ -89,6 +101,8 @@ export default function KubernetesPage() {
   }
 
   const podRows = opencostSyncResult?.pods || []
+  const estimatedMonthlyCost = Number(form.node_count || 0) * Number(form.monthly_node_cost_usd || 0)
+  const opencostOnLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(opencostUrl.trim())
 
   return (
     <div className="space-y-8">
@@ -178,7 +192,17 @@ export default function KubernetesPage() {
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Provider</label>
                   <select
                     value={form.provider}
-                    onChange={e => handleFormChange('provider', e.target.value)}
+                    onChange={e => {
+                      const provider = e.target.value
+                      const preset = providerPresets[provider]
+                      setForm((current) => ({
+                        ...current,
+                        provider,
+                        region: preset?.region ?? current.region,
+                        node_type: preset?.node_type ?? current.node_type,
+                        monthly_node_cost_usd: preset?.monthly_node_cost_usd ?? current.monthly_node_cost_usd,
+                      }))
+                    }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
                   >
                     {['aws', 'azure', 'gcp', 'oci'].map(p => (
@@ -225,6 +249,13 @@ export default function KubernetesPage() {
                   />
                 </div>
               </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                Estimated baseline from inputs:
+                {' '}
+                <span className="font-semibold">{fmt(estimatedMonthlyCost)}</span>
+                {' '}
+                per month ({form.node_count} node(s) × {fmt(Number(form.monthly_node_cost_usd || 0))}).
+              </div>
 
               <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                 <label className="mb-3 flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -259,9 +290,20 @@ export default function KubernetesPage() {
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
                       />
                     </div>
+                    {opencostOnLocalhost && (
+                      <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                        <strong>Important:</strong> `localhost` is resolved on the OptiOra API server (not your laptop browser).
+                        Use this only if OpenCost is running on the same VM as OptiOra.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+              {calcError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                  {calcError}
+                </div>
+              )}
 
               <Button type="submit" disabled={calcLoading} className="w-full rounded-lg">
                 {calcLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
@@ -408,7 +450,10 @@ export default function KubernetesPage() {
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center min-h-[300px] text-slate-400">
               <Box className="h-12 w-12 mb-4" />
-              <p className="text-sm">Run the calculator to see namespace cost breakdown</p>
+              <p className="text-sm">Run the calculator to see namespace cost breakdown.</p>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Tip: select your provider first. Presets auto-fill region and node type for faster setup.
+              </p>
             </CardContent>
           </Card>
         )}
@@ -455,6 +500,16 @@ export default function KubernetesPage() {
               {opencostSyncError && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
                   {opencostSyncError}
+                </div>
+              )}
+              {opencostOnLocalhost && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      OpenCost URL uses localhost. This works only when OpenCost runs on the same OptiOra server VM.
+                    </span>
+                  </div>
                 </div>
               )}
               <Button type="submit" className="w-full rounded-lg" disabled={opencostSyncLoading}>
