@@ -2,8 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Box, Calculator, Info, Loader, RefreshCw } from 'lucide-react'
-import { fetchKubernetesSummary, calculateKubernetesClusterCost, syncOpenCostCosts } from '@/lib/api'
-import { KubernetesSummaryResponse, KubernetesClusterCostResponse, OpenCostSyncResponse } from '@/lib/types'
+import { fetchKubernetesSummary, calculateKubernetesClusterCost, fetchKubernetesProviderCatalog, syncOpenCostCosts } from '@/lib/api'
+import {
+  KubernetesSummaryResponse,
+  KubernetesClusterCostResponse,
+  KubernetesProviderCatalogEntry,
+  OpenCostSyncResponse,
+} from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,10 +21,12 @@ type KubernetesProvider = 'aws' | 'azure' | 'gcp' | 'oci'
 
 type ProviderProfile = {
   regions: string[]
-  nodeTypes: Array<{ value: string; monthlyCost: number }>
+  source?: string
+  message?: string
+  nodeTypes: Array<{ value: string; monthlyCost: number; vcpu?: number | null; memoryGiB?: number | null; source?: string }>
 }
 
-const providerProfiles: Record<KubernetesProvider, ProviderProfile> = {
+const fallbackProviderProfiles: Record<KubernetesProvider, ProviderProfile> = {
   aws: {
     regions: ['us-east-1', 'us-west-2', 'eu-west-1'],
     nodeTypes: [
@@ -54,18 +61,49 @@ const providerProfiles: Record<KubernetesProvider, ProviderProfile> = {
   },
 }
 
+function providerProfileFromCatalog(entry: KubernetesProviderCatalogEntry): ProviderProfile {
+  return {
+    regions: entry.regions,
+    source: entry.source,
+    message: entry.message,
+    nodeTypes: entry.node_types.map((nodeType) => ({
+      value: nodeType.value,
+      monthlyCost: nodeType.monthly_cost_usd,
+      vcpu: nodeType.vcpu,
+      memoryGiB: nodeType.memory_gib,
+      source: nodeType.source,
+    })),
+  }
+}
+
+function formatNodeTypeLabel(option: { value: string; vcpu?: number | null; memoryGiB?: number | null }): string {
+  const parts = [option.value]
+  if (option.vcpu) {
+    parts.push(`${option.vcpu} vCPU`)
+  }
+  if (option.memoryGiB) {
+    parts.push(`${option.memoryGiB} GiB`)
+  }
+  return parts.join(' · ')
+}
+
 const defaultForm = {
   cluster_name: 'production',
   provider: 'oci' as KubernetesProvider,
-  region: providerProfiles.oci.regions[0],
+  region: fallbackProviderProfiles.oci.regions[0],
   node_count: 5,
-  node_type: providerProfiles.oci.nodeTypes[0].value,
-  monthly_node_cost_usd: providerProfiles.oci.nodeTypes[0].monthlyCost,
+  node_type: fallbackProviderProfiles.oci.nodeTypes[0].value,
+  monthly_node_cost_usd: fallbackProviderProfiles.oci.nodeTypes[0].monthlyCost,
 }
 
 export default function KubernetesPage() {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<KubernetesSummaryResponse | null>(null)
+  const [providerProfiles, setProviderProfiles] = useState<Record<KubernetesProvider, ProviderProfile>>(fallbackProviderProfiles)
+  const [catalogMeta, setCatalogMeta] = useState<{ fetchedAt?: string; liveProviders: number; fallbackProviders: number; error?: string }>({
+    liveProviders: 0,
+    fallbackProviders: 4,
+  })
   const [form, setForm] = useState(defaultForm)
   const [opencostEnabled, setOpencostEnabled] = useState(false)
   const [opencostUrl, setOpencostUrl] = useState('http://localhost:9003')
@@ -86,7 +124,46 @@ export default function KubernetesPage() {
     }
   }
 
-  useEffect(() => { void loadSummary() }, [])
+  async function loadProviderCatalog() {
+    try {
+      const catalog = await fetchKubernetesProviderCatalog()
+      const mappedProfiles: Partial<Record<KubernetesProvider, ProviderProfile>> = {}
+      let liveProviders = 0
+      let fallbackProviders = 0
+      for (const provider of ['aws', 'azure', 'gcp', 'oci'] as KubernetesProvider[]) {
+        const entry = catalog.providers[provider]
+        if (!entry) {
+          mappedProfiles[provider] = fallbackProviderProfiles[provider]
+          fallbackProviders += 1
+          continue
+        }
+        mappedProfiles[provider] = providerProfileFromCatalog(entry)
+        if (entry.source === 'live') {
+          liveProviders += 1
+        } else {
+          fallbackProviders += 1
+        }
+      }
+      setProviderProfiles(mappedProfiles as Record<KubernetesProvider, ProviderProfile>)
+      setCatalogMeta({
+        fetchedAt: catalog.generated_at,
+        liveProviders,
+        fallbackProviders,
+      })
+    } catch (error) {
+      setProviderProfiles(fallbackProviderProfiles)
+      setCatalogMeta({
+        liveProviders: 0,
+        fallbackProviders: 4,
+        error: error instanceof Error ? error.message : 'Unable to load provider catalog.',
+      })
+    }
+  }
+
+  useEffect(() => {
+    void loadSummary()
+    void loadProviderCatalog()
+  }, [])
 
   function handleFormChange(key: keyof typeof defaultForm, value: string | number) {
     setForm(f => ({ ...f, [key]: value }))
@@ -144,7 +221,11 @@ export default function KubernetesPage() {
     : [form.region, ...selectedProviderProfile.regions]
   const nodeTypeOptions = selectedProviderProfile.nodeTypes.some((option) => option.value === form.node_type)
     ? [...selectedProviderProfile.nodeTypes]
-    : [{ value: form.node_type, monthlyCost: Number(form.monthly_node_cost_usd || 0) }, ...selectedProviderProfile.nodeTypes]
+    : [{
+      value: form.node_type,
+      monthlyCost: Number(form.monthly_node_cost_usd || 0),
+      source: 'manual',
+    }, ...selectedProviderProfile.nodeTypes]
 
   return (
     <div className="space-y-8">
@@ -153,16 +234,30 @@ export default function KubernetesPage() {
           <div className="mb-2 flex flex-wrap gap-2">
             <Badge variant="outline" className="rounded-md">Kubernetes Cost Allocation</Badge>
             <Badge variant="outline" className="rounded-md border-purple-300 bg-purple-50 text-purple-800 dark:bg-purple-950/30">OpenCost-Ready</Badge>
+            <Badge variant="outline" className="rounded-md border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30">
+              {catalogMeta.liveProviders}/4 providers live catalog
+            </Badge>
+            {catalogMeta.fallbackProviders > 0 && (
+              <Badge variant="outline" className="rounded-md border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/30">
+                {catalogMeta.fallbackProviders} fallback
+              </Badge>
+            )}
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2">Kubernetes Namespace Costs</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
             Estimate and break down Kubernetes cluster costs by namespace. OpenCost sync brings live namespace allocation, and the calculator models any cluster configuration.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void loadSummary()} className="rounded-lg">
+        <Button variant="outline" onClick={() => { void loadSummary(); void loadProviderCatalog() }} className="rounded-lg">
           <RefreshCw className="mr-2 h-4 w-4" />Refresh
         </Button>
       </div>
+
+      {catalogMeta.error && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          Provider catalog fallback active: {catalogMeta.error}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex min-h-[200px] items-center justify-center text-slate-500">
@@ -264,6 +359,9 @@ export default function KubernetesPage() {
                       <option key={region} value={region}>{region}</option>
                     ))}
                   </select>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Source: {selectedProviderProfile.source || 'fallback'}.
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Node Type</label>
@@ -281,9 +379,14 @@ export default function KubernetesPage() {
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
                   >
                     {nodeTypeOptions.map((nodeType) => (
-                      <option key={nodeType.value} value={nodeType.value}>{nodeType.value}</option>
+                      <option key={nodeType.value} value={nodeType.value}>{formatNodeTypeLabel(nodeType)}</option>
                     ))}
                   </select>
+                  {selectedProviderProfile.message && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {selectedProviderProfile.message}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Node Count</label>

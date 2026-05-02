@@ -1089,6 +1089,28 @@ export interface KubernetesSummaryResponse {
   opencost_docs: string
 }
 
+export interface KubernetesProviderNodeType {
+  value: string
+  monthly_cost_usd: number
+  vcpu?: number | null
+  memory_gib?: number | null
+  source: string
+}
+
+export interface KubernetesProviderCatalogEntry {
+  provider: string
+  source: string
+  configured: boolean
+  regions: string[]
+  node_types: KubernetesProviderNodeType[]
+  message: string
+}
+
+export interface KubernetesProviderCatalogResponse {
+  generated_at: string
+  providers: Record<string, KubernetesProviderCatalogEntry>
+}
+
 export interface OpenCostNamespaceCost {
   namespace: string
   cost_usd: number

@@ -100,6 +100,7 @@ from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, finops_analytics, recommendations
 from .tools import azure_costs, gcp_costs, oci_costs, genai_advisor
 from .retention import fetch_archived_period_summaries
+from .kubernetes_catalog import build_kubernetes_provider_catalog
 from . import __version__
 
 logger = logging.getLogger(__name__)
@@ -8292,6 +8293,28 @@ class KubernetesClusterCostResponse(BaseModel):
     opencost_integration: str
 
 
+class KubernetesProviderNodeType(BaseModel):
+    value: str
+    monthly_cost_usd: float
+    vcpu: Optional[float] = None
+    memory_gib: Optional[float] = None
+    source: str = "live"
+
+
+class KubernetesProviderCatalogEntry(BaseModel):
+    provider: str
+    source: str
+    configured: bool
+    regions: List[str]
+    node_types: List[KubernetesProviderNodeType]
+    message: str
+
+
+class KubernetesProviderCatalogResponse(BaseModel):
+    generated_at: str
+    providers: Dict[str, KubernetesProviderCatalogEntry]
+
+
 class OpenCostSyncRequest(BaseModel):
     api_url: str
     cluster_name: str
@@ -9696,6 +9719,20 @@ async def run_auto_remediation_loop(
         skipped_count=skipped_count,
         total_planned_impact_usd=round(planned_impact, 2),
         decisions=decisions,
+    )
+
+
+@router.get("/analytics/kubernetes/provider-catalog", response_model=KubernetesProviderCatalogResponse)
+async def get_kubernetes_provider_catalog(
+    current_user: User = Depends(get_current_user),
+) -> KubernetesProviderCatalogResponse:
+    """List provider regions and node shapes/sizes for K8s cluster planning."""
+    _ = current_user
+    config = Config()
+    providers = build_kubernetes_provider_catalog(config)
+    return KubernetesProviderCatalogResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        providers={name: KubernetesProviderCatalogEntry(**payload) for name, payload in providers.items()},
     )
 
 

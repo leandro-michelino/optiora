@@ -52,6 +52,7 @@ import {
   ScorecardsResponse,
   ResourceInventoryResponse,
   KubernetesClusterCostResponse,
+  KubernetesProviderCatalogResponse,
   KubernetesSummaryResponse,
   PartnerCustomerPortfolioResponse,
   OpenCostSyncResponse,
@@ -830,6 +831,10 @@ export async function fetchResourceInventory(params: {
 
 export async function fetchKubernetesSummary(): Promise<KubernetesSummaryResponse> {
   return requestJson<KubernetesSummaryResponse>('/api/v1/analytics/kubernetes/summary')
+}
+
+export async function fetchKubernetesProviderCatalog(): Promise<KubernetesProviderCatalogResponse> {
+  return requestJson<KubernetesProviderCatalogResponse>('/api/v1/analytics/kubernetes/provider-catalog')
 }
 
 export async function calculateKubernetesClusterCost(payload: {
