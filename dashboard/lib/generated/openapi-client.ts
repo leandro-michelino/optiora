@@ -359,6 +359,20 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     })
   }
 
+  async function get_api_v1_analytics_finops_intelligence(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/finops-intelligence"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
   async function get_api_v1_analytics_forecast_diagnostics(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/analytics/forecast-diagnostics"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
@@ -485,8 +499,36 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     })
   }
 
+  async function get_api_v1_analytics_resource_intelligence(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/resource-intelligence"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
   async function get_api_v1_analytics_scorecards(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/analytics/scorecards"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
+  async function get_api_v1_analytics_service_hotspots(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/service-hotspots"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
       resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
     }
@@ -576,6 +618,20 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     }
     return request({
       method: 'POST',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
+  async function get_api_v1_analytics_vm_utilization_hotspots(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/vm-utilization-hotspots"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
       path: resolvedPath,
       query: args.query,
       body: args.body,
@@ -1129,8 +1185,36 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     })
   }
 
+  async function post_api_v1_genai_rag_guidance(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/genai/rag-guidance"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'POST',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
   async function get_api_v1_health(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/health"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
+  async function get_api_v1_health_readiness(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/health/readiness"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
       resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
     }
@@ -2007,6 +2091,7 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     get_api_v1_analytics_commitment_optimization,
     get_api_v1_analytics_cross_provider_comparison,
     get_api_v1_analytics_efficiency_score,
+    get_api_v1_analytics_finops_intelligence,
     get_api_v1_analytics_forecast_diagnostics,
     post_api_v1_analytics_kubernetes_cluster_cost,
     post_api_v1_analytics_kubernetes_opencost_auto_install,
@@ -2016,13 +2101,16 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     get_api_v1_analytics_maturity,
     get_api_v1_analytics_operating_review,
     get_api_v1_analytics_optimization_portfolio,
+    get_api_v1_analytics_resource_intelligence,
     get_api_v1_analytics_scorecards,
+    get_api_v1_analytics_service_hotspots,
     get_api_v1_analytics_sustainability,
     get_api_v1_analytics_tag_quality,
     get_api_v1_analytics_tagging_coverage,
     get_api_v1_analytics_unit_economics,
     get_api_v1_analytics_unit_economics_cockpit,
     post_api_v1_analytics_unit_economics_metrics,
+    get_api_v1_analytics_vm_utilization_hotspots,
     get_api_v1_anomalies,
     post_api_v1_anomalies_external_aws,
     post_api_v1_anomalies_external_aws_replay,
@@ -2062,7 +2150,9 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     post_api_v1_forecast_what_if,
     post_api_v1_genai_analyze,
     post_api_v1_genai_copilot_pack,
+    post_api_v1_genai_rag_guidance,
     get_api_v1_health,
+    get_api_v1_health_readiness,
     post_api_v1_imports_costs_csv,
     post_api_v1_imports_costs_preview,
     get_api_v1_imports_costs_summary,

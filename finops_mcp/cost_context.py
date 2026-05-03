@@ -7,6 +7,10 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, Optional
 SUPPORTED_CONTEXT_PROVIDERS = ("aws", "azure", "gcp", "oci")
 
 
+class LiveDataPolicyError(RuntimeError):
+    """Raised when live-provider-only policy cannot be satisfied."""
+
+
 async def fetch_provider_cost_summary(
     provider: str,
     period: str,
@@ -87,29 +91,67 @@ async def build_live_cost_context(
     *,
     period: str = "month",
     cloud_provider: str = "all",
+    require_live_provider_data: bool = False,
     provider_diagnostics: Callable[[], Iterable[Any]],
     imported_cost_context_builder: Callable[[Any, Any, str], Optional[Dict[str, Any]]],
     cost_summary_for_provider: Callable[[str, str], Awaitable[Dict[str, Any]]],
 ) -> Dict[str, Any]:
-    providers = list(SUPPORTED_CONTEXT_PROVIDERS) if cloud_provider == "all" else [cloud_provider]
+    requested_providers = (
+        list(SUPPORTED_CONTEXT_PROVIDERS)
+        if cloud_provider == "all"
+        else [cloud_provider]
+    )
     configured_live_providers = {
         str(getattr(diagnostic, "provider", "")).strip().lower()
         for diagnostic in provider_diagnostics()
         if bool(getattr(diagnostic, "configured", False))
-        and str(getattr(diagnostic, "provider", "")).strip().lower() in providers
+        and str(getattr(diagnostic, "provider", "")).strip().lower() in requested_providers
     }
 
-    if not configured_live_providers:
+    if require_live_provider_data:
+        if cloud_provider == "all":
+            providers = [
+                provider
+                for provider in requested_providers
+                if provider in configured_live_providers
+            ]
+            if not providers:
+                raise LiveDataPolicyError(
+                    "Live provider data is required, but no providers are configured for runtime API access. "
+                    "Configure at least one provider (AWS/Azure/GCP/OCI) on this backend host, "
+                    "or set REQUIRE_LIVE_PROVIDER_DATA=false to allow imported CSV fallback."
+                )
+        else:
+            providers = requested_providers
+            if providers[0] not in configured_live_providers:
+                raise LiveDataPolicyError(
+                    f"Live provider data is required for '{providers[0]}', but runtime credentials are not configured. "
+                    "Configure provider credentials on this backend host, "
+                    "or set REQUIRE_LIVE_PROVIDER_DATA=false to allow imported CSV fallback."
+                )
+    else:
+        providers = requested_providers
+
+    if not configured_live_providers and not require_live_provider_data:
         imported_context = imported_cost_context_builder(membership, db, cloud_provider)
         if imported_context is not None:
             return imported_context
 
     breakdown: Dict[str, Dict[str, float]] = {}
     region_breakdown: Dict[str, float] = {}
+    provider_errors: Dict[str, str] = {}
+    successful_provider_calls = 0
     total_cost = 0.0
 
     for provider in providers:
         summary = await cost_summary_for_provider(provider, period)
+        if "error" in summary:
+            provider_errors[provider] = str(summary.get("error") or "Unknown provider error")
+            if not require_live_provider_data:
+                breakdown[provider] = {"cost": 0.0, "percentage": 0.0}
+            continue
+
+        successful_provider_calls += 1
         cost = float(summary.get("total_cost_usd", 0) or 0)
         total_cost += cost
         breakdown[provider] = {"cost": round(cost, 2), "percentage": 0.0}
@@ -125,14 +167,34 @@ async def build_live_cost_context(
                 1,
             )
 
-    return {
+    if require_live_provider_data and successful_provider_calls == 0:
+        provider_error_summary = ", ".join(
+            f"{provider}: {error}" for provider, error in sorted(provider_errors.items())
+        )
+        raise LiveDataPolicyError(
+            "Live provider data is required, but all provider API calls failed. "
+            f"Provider errors: {provider_error_summary or 'unknown'}"
+        )
+
+    response = {
         "period": period,
         "cloud_provider": cloud_provider,
         "total_cost": round(total_cost, 2),
         "breakdown": breakdown,
-        "source": "live_provider_api" if configured_live_providers else "live_backend",
+        "source": (
+            "live_provider_api_partial"
+            if require_live_provider_data and provider_errors
+            else "live_provider_api"
+            if configured_live_providers
+            else "live_backend"
+        ),
         "region_breakdown": [
             {"region": region, "cost_usd": round(cost, 2)}
             for region, cost in sorted(region_breakdown.items(), key=lambda item: item[1], reverse=True)
         ],
     }
+
+    if provider_errors:
+        response["provider_errors"] = provider_errors
+
+    return response

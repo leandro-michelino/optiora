@@ -80,24 +80,16 @@ def _linear_regression(values: list[float]) -> tuple[float, float]:
     return intercept, slope
 
 
-def _synthetic_history(
+def _real_history_series(
+    external_history: list[float],
     current_monthly: float,
-    months: int,
-    growth: float,
-    volatility: float,
-) -> list[float]:
-    """Backward-looking synthetic history to anchor regression — deterministic, no RNG."""
-    if current_monthly <= 0:
-        return [0.0 for _ in range(months)]
-    values: list[float] = []
-    for index in range(months):
-        age = months - index - 1
-        trend_factor = (1 + growth) ** (-age)
-        seasonal_factor = SEASONALITY[index % len(SEASONALITY)]
-        wave = math.sin((index + 1) * math.pi / 3) * volatility * 0.22
-        value = current_monthly * trend_factor * seasonal_factor * (1 + wave)
-        values.append(max(value, 0.0))
-    return values
+) -> tuple[list[float], str]:
+    """Return only observed history points; never fabricate back-history."""
+    if external_history:
+        return external_history[-18:], "cost_snapshots"
+    if current_monthly > 0:
+        return [current_monthly], "current_month_observation"
+    return [], "no_history"
 
 
 def _deterministic_random_sequence(seed_material: str, count: int) -> list[float]:
@@ -277,12 +269,7 @@ def build_forecast(params: dict[str, Any]) -> dict[str, Any]:
         _weighted_provider_metrics(providers, current_monthly)
     )
 
-    history_source = "cost_snapshots" if len(external_history) >= 6 else "synthetic"
-    history = (
-        external_history[-18:]
-        if history_source == "cost_snapshots"
-        else _synthetic_history(current_monthly, 12, weighted_growth, weighted_volatility)
-    )
+    history, history_source = _real_history_series(external_history, current_monthly)
     projected_baseline, _ = _project_baseline_series(
         history, months, weighted_growth, weighted_volatility
     )
@@ -818,12 +805,7 @@ def build_forecast_model_diagnostics(params: dict[str, Any]) -> dict[str, Any]:
     weighted_growth, weighted_volatility, weighted_commitment, provider_concentration = (
         _weighted_provider_metrics(providers, current_monthly)
     )
-    history_source = "cost_snapshots" if len(external_history) >= 6 else "synthetic"
-    history = (
-        external_history[-18:]
-        if history_source == "cost_snapshots"
-        else _synthetic_history(current_monthly, 12, weighted_growth, weighted_volatility)
-    )
+    history, history_source = _real_history_series(external_history, current_monthly)
 
     holdout = min(4, max(2, len(history) // 4)) if len(history) >= 8 else 0
     challenger_rows: list[dict[str, Any]] = []

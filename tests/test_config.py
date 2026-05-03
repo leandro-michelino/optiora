@@ -82,3 +82,72 @@ class ConfigTest(unittest.TestCase):
             requirements["oci"]["settings"],
             ["OCI_CONFIG_FILE", "OCI_PROFILE", "OCI_REGION"],
         )
+
+    def test_provider_diagnostic_requirements_support_alternative_scope_vars(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AZURE_SUBSCRIPTION_ID": "",
+                "AZURE_SUBSCRIPTION_IDS": "sub-a,sub-b",
+                "AZURE_MANAGEMENT_GROUP_ID": "",
+                "GCP_PROJECT_ID": "",
+                "GCP_PROJECT_IDS": "proj-a,proj-b",
+            },
+            clear=False,
+        ):
+            requirements = provider_diagnostic_requirements(Config())
+
+        self.assertEqual(
+            requirements["azure"]["settings"][0],
+            "AZURE_SUBSCRIPTION_ID|AZURE_SUBSCRIPTION_IDS|AZURE_MANAGEMENT_GROUP_ID",
+        )
+        self.assertEqual(requirements["azure"]["values"][0], "sub-a,sub-b")
+        self.assertEqual(requirements["gcp"]["settings"][1], "GCP_PROJECT_ID|GCP_PROJECT_IDS")
+        self.assertEqual(requirements["gcp"]["values"][1], "proj-a,proj-b")
+
+    def test_validate_allows_csv_mode_without_live_providers(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "REQUIRE_LIVE_PROVIDER_DATA": "false",
+                "AWS_ACCESS_KEY_ID": "",
+                "AWS_SECRET_ACCESS_KEY": "",
+                "AWS_ORGANIZATION_ROLE_ARNS": "",
+                "AZURE_SUBSCRIPTION_ID": "",
+                "AZURE_SUBSCRIPTION_IDS": "",
+                "AZURE_MANAGEMENT_GROUP_ID": "",
+                "AZURE_TENANT_ID": "",
+                "AZURE_CLIENT_ID": "",
+                "AZURE_CLIENT_SECRET": "",
+                "GOOGLE_APPLICATION_CREDENTIALS": "",
+                "GCP_PROJECT_ID": "",
+                "GCP_PROJECT_IDS": "",
+                "OCI_CONFIG_FILE": "",
+            },
+            clear=False,
+        ):
+            Config().validate()
+
+    def test_validate_rejects_no_live_providers_when_required(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "REQUIRE_LIVE_PROVIDER_DATA": "true",
+                "AWS_ACCESS_KEY_ID": "",
+                "AWS_SECRET_ACCESS_KEY": "",
+                "AWS_ORGANIZATION_ROLE_ARNS": "",
+                "AZURE_SUBSCRIPTION_ID": "",
+                "AZURE_SUBSCRIPTION_IDS": "",
+                "AZURE_MANAGEMENT_GROUP_ID": "",
+                "AZURE_TENANT_ID": "",
+                "AZURE_CLIENT_ID": "",
+                "AZURE_CLIENT_SECRET": "",
+                "GOOGLE_APPLICATION_CREDENTIALS": "",
+                "GCP_PROJECT_ID": "",
+                "GCP_PROJECT_IDS": "",
+                "OCI_CONFIG_FILE": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaises(ValueError):
+                Config().validate()

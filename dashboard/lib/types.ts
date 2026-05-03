@@ -257,7 +257,7 @@ export interface ForecastScenario {
 export interface ForecastResponse {
   generated_at: string
   forecast_months: number
-  history_source?: 'cost_snapshots' | 'synthetic' | string
+  history_source?: 'cost_snapshots' | 'current_month_observation' | 'no_history' | string
   history_coverage_months?: number
   current_monthly_spend_usd: number
   model: {
@@ -353,7 +353,7 @@ export interface ForecastModelDiagnosticRow {
 export interface ForecastModelDiagnosticsResponse {
   generated_at: string
   forecast_months: number
-  history_source: 'cost_snapshots' | 'synthetic' | string
+  history_source: 'cost_snapshots' | 'current_month_observation' | 'no_history' | string
   history_points: number
   data_quality_score: number
   champion_model: string

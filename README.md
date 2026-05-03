@@ -12,6 +12,7 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 - Runs deterministic forecasting and analytics for spend, risk, savings, and efficiency.
 - Supports operations workflows for scans, alerts, exports, and governance.
 - Uses OCI GenAI as an advisory overlay (narrative and prioritization), not as the source of truth for cost math.
+- Adds CSV-backed FinOps RAG retrieval for benchmark-guided narratives across forecasting, operations, governance, and commitment strategy.
 
 ## Architecture At A Glance
 
@@ -37,6 +38,7 @@ For the full topology and pipeline details, see [ARCHITECTURE.md](ARCHITECTURE.m
 - FinOps analytics: attribution, commitment analysis, waste decomposition, efficiency score, unit economics, scorecards.
 - Optimization and governance: rightsizing, virtual tags, chargeback/showback, business mapping, exports.
 - Operations: scan history/diff, alert lifecycle, routing policy simulation, freshness telemetry.
+- Intelligence layer: `/api/v1/analytics/finops-intelligence` and `/api/v1/genai/rag-guidance` for deterministic + RAG + GenAI workflows.
 - Kubernetes: OpenCost sync and namespace/workload/team/node-pool allocation views.
 
 ## Repository Layout

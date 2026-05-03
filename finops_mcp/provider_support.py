@@ -106,6 +106,13 @@ def run_credential_validation(credential: CredentialInput) -> CredentialStatus:
 
 
 def provider_diagnostic_requirements(config: Config) -> Dict[str, Dict[str, list[str] | list[Any]]]:
+    azure_scope_value = (
+        config.azure_subscription_id
+        or config.azure_subscription_ids
+        or config.azure_management_group_id
+    )
+    gcp_project_scope_value = config.gcp_project_id or config.gcp_project_ids
+
     return {
         "aws": {
             "settings": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"],
@@ -117,21 +124,24 @@ def provider_diagnostic_requirements(config: Config) -> Dict[str, Dict[str, list
         },
         "azure": {
             "settings": [
-                "AZURE_SUBSCRIPTION_ID",
+                "AZURE_SUBSCRIPTION_ID|AZURE_SUBSCRIPTION_IDS|AZURE_MANAGEMENT_GROUP_ID",
                 "AZURE_TENANT_ID",
                 "AZURE_CLIENT_ID",
                 "AZURE_CLIENT_SECRET",
             ],
             "values": [
-                config.azure_subscription_id,
+                azure_scope_value,
                 config.azure_tenant_id,
                 config.azure_client_id,
                 config.azure_client_secret,
             ],
         },
         "gcp": {
-            "settings": ["GOOGLE_APPLICATION_CREDENTIALS", "GCP_PROJECT_ID"],
-            "values": [config.google_application_credentials, config.gcp_project_id],
+            "settings": [
+                "GOOGLE_APPLICATION_CREDENTIALS",
+                "GCP_PROJECT_ID|GCP_PROJECT_IDS",
+            ],
+            "values": [config.google_application_credentials, gcp_project_scope_value],
         },
         "oci": {
             "settings": ["OCI_CONFIG_FILE", "OCI_PROFILE", "OCI_REGION"],

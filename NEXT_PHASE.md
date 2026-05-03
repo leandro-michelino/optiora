@@ -40,8 +40,12 @@ Recommended near-term order:
 1. SMTP notification integration with production-grade templates.
 2. Scheduled report delivery (weekly/monthly).
 3. FOCUS 1.0 export certification.
-4. Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring).
-5. SSO path (SAML/OIDC) and enterprise auth hardening.
+4. Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring). ✅ implemented in `GET /api/v1/recommendations/rightsizing`.
+5. Deeper deterministic + RAG-guided intelligence layer. ✅ implemented in:
+   - `GET /api/v1/analytics/finops-intelligence`
+   - `POST /api/v1/genai/rag-guidance`
+   - RAG-enriched GenAI prompts across forecasting, budget risk, commitment, tagging, sustainability, and operating reviews.
+6. SSO path (SAML/OIDC) and enterprise auth hardening.
 
 Additional backlog:
 

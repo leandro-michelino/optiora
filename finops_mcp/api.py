@@ -22,6 +22,7 @@ import hashlib
 import hmac
 import shutil
 import subprocess
+import time
 from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -51,6 +52,7 @@ from .notifications import (
     send_test_notification,
 )
 from .cost_context import (
+    LiveDataPolicyError,
     build_imported_cost_context,
     build_live_cost_context,
     fetch_provider_cost_summary,
@@ -102,7 +104,7 @@ from .orm_models import (
 )
 from .scanning import ScanningManager, ScanningState
 from .tools import anomalies, aws_costs, finops_analytics, recommendations
-from .tools import azure_costs, gcp_costs, oci_costs, genai_advisor
+from .tools import azure_costs, gcp_costs, oci_costs, genai_advisor, finops_rag
 from .retention import fetch_archived_period_summaries
 from .kubernetes_catalog import build_kubernetes_provider_catalog
 from . import __version__
@@ -176,6 +178,24 @@ def _trend_dimension_value(rec: ImportedCostRecord, view_by: str) -> str:
             or "unknown"
         ).strip() or "unknown"
     return (rec.provider or "imported").strip().lower() or "imported"
+
+
+def _rag_context_for_analysis(
+    *,
+    analysis_type: str,
+    cloud_provider: str,
+    context: Optional[Dict[str, Any]] = None,
+    top_k: int = 4,
+) -> Dict[str, Any]:
+    payload = finops_rag.retrieve_guidance(
+        analysis_type=analysis_type,
+        cloud_provider=cloud_provider,
+        context=context or {},
+        top_k=top_k,
+    )
+    if context is not None:
+        context["rag_brief"] = payload.get("rag_brief", "")
+    return payload
 
 
 class CredentialResponse(BaseModel):
@@ -1505,15 +1525,19 @@ async def _cost_context(
     period: str = "month",
     cloud_provider: str = "all",
 ) -> Dict[str, Any]:
-    return await build_live_cost_context(
-        membership,
-        db,
-        period=period,
-        cloud_provider=cloud_provider,
-        provider_diagnostics=_provider_diagnostics,
-        imported_cost_context_builder=_imported_cost_context,
-        cost_summary_for_provider=_cost_summary_for_provider,
-    )
+    try:
+        return await build_live_cost_context(
+            membership,
+            db,
+            period=period,
+            cloud_provider=cloud_provider,
+            require_live_provider_data=Config().require_live_provider_data,
+            provider_diagnostics=_provider_diagnostics,
+            imported_cost_context_builder=_imported_cost_context,
+            cost_summary_for_provider=_cost_summary_for_provider,
+        )
+    except LiveDataPolicyError as exc:
+        raise HTTPException(status_code=412, detail=str(exc))
 
 
 def _historical_monthly_spend_from_snapshots(
@@ -1572,6 +1596,24 @@ def _provider_diagnostics() -> List[ProviderDiagnostic]:
         values = detail["values"]
         missing = [setting for setting, value in zip(settings, values) if _setting_missing(value)]
         configured = not missing
+        if configured and provider == "gcp":
+            credentials_file = os.path.abspath(
+                os.path.expanduser(
+                    os.path.expandvars(str(config.google_application_credentials or ""))
+                )
+            )
+            if credentials_file and not os.path.isfile(credentials_file):
+                missing.append(
+                    f"GOOGLE_APPLICATION_CREDENTIALS file not found: {credentials_file}"
+                )
+                configured = False
+        if configured and provider == "oci":
+            oci_config_file = os.path.abspath(
+                os.path.expanduser(os.path.expandvars(str(config.oci_config_file or "")))
+            )
+            if oci_config_file and not os.path.isfile(oci_config_file):
+                missing.append(f"OCI_CONFIG_FILE file not found: {oci_config_file}")
+                configured = False
         diagnostics.append(
             ProviderDiagnostic(
                 provider=provider,
@@ -1958,6 +2000,26 @@ async def start_scan(
         providers_to_scan = scan_request.providers or permission["providers"]
         if not providers_to_scan:
             providers_to_scan = ["aws", "azure", "gcp", "oci"]
+        providers_to_scan = [str(provider or "").strip().lower() for provider in providers_to_scan if str(provider or "").strip()]
+        providers_to_scan = list(dict.fromkeys(providers_to_scan))
+        invalid_providers = [provider for provider in providers_to_scan if provider not in SUPPORTED_CLOUD_PROVIDERS]
+        if invalid_providers:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported provider(s): {', '.join(sorted(set(invalid_providers)))}",
+            )
+        if Config().require_live_provider_data:
+            diagnostics_map = {d.provider: bool(d.configured) for d in _provider_diagnostics()}
+            configured_targets = [provider for provider in providers_to_scan if diagnostics_map.get(provider, False)]
+            if not configured_targets:
+                raise HTTPException(
+                    status_code=412,
+                    detail=(
+                        "Live provider data is required, but none of the requested providers are configured "
+                        "for runtime API access on this backend host."
+                    ),
+                )
+            providers_to_scan = configured_targets
 
         scan_id = f"scan_{customer_id}_{int(_utcnow().timestamp())}"
         scanning_manager.create_scan_run(scan_id, customer_id, providers_to_scan)
@@ -4049,7 +4111,7 @@ async def _executive_summary_rows(
             ["Summary", "Spend At Risk USD", round(float(analytics.get("spend_at_risk_usd", 0.0) or 0.0), 2)],
             ["Summary", "Optimization Capacity USD", round(float(analytics.get("optimization_capacity_usd", 0.0) or 0.0), 2)],
             ["Summary", "Budget Utilization Percent", analytics.get("unit_metrics", {}).get("budget_utilization_percent", 0)],
-            ["Summary", "Forecast History Source", forecast.get("history_source", "synthetic")],
+            ["Summary", "Forecast History Source", forecast.get("history_source", "no_history")],
             ["Summary", "Forecast Backtest MAPE %", (forecast.get("backtesting") or {}).get("mape_percent")],
             ["Summary", "Forecast Backtest wMAPE %", (forecast.get("backtesting") or {}).get("wmape_percent")],
             ["Summary", "Average Breach Probability", (forecast.get("budget_guardrails") or {}).get("average_breach_probability")],
@@ -4678,9 +4740,16 @@ async def dashboard_forecast_model_diagnostics(
         ),
         {},
     )
-    narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(result)
+    rag_context = dict(result)
+    rag = _rag_context_for_analysis(
+        analysis_type="forecast_model_diagnostics",
+        cloud_provider=cloud_provider,
+        context=rag_context,
+    )
+    narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(rag_context)
     result["genai_narrative"] = narrative
     result["genai_prompt"] = prompt
+    result["rag"] = rag
     result["cost_context"] = context
     return result
 
@@ -4718,15 +4787,27 @@ async def analytics_forecast_diagnostics(
         ),
         {},
     )
+    rag_context = {
+        "budget_guardrails": result.get("budget_guardrails") or {},
+        "cost_velocity_pct_mom": result.get("cost_velocity_pct_mom"),
+        "forecast_quality": result.get("forecast_quality") or {},
+    }
+    rag = _rag_context_for_analysis(
+        analysis_type="budget_risk",
+        cloud_provider=cloud_provider,
+        context=rag_context,
+    )
     narrative, prompt = genai_advisor.generate_budget_risk_alert(
         result.get("budget_guardrails") or {},
         {
             "current_monthly_spend_usd": context["total_cost"],
             "cost_velocity_pct_mom": result.get("cost_velocity_pct_mom"),
+            "rag_brief": rag.get("rag_brief", ""),
         },
     )
     result["genai_narrative"] = narrative
     result["genai_prompt"] = prompt
+    result["rag"] = rag
     result["cost_context"] = context
     return result
 
@@ -4927,6 +5008,13 @@ class GenAICopilotPackRequest(BaseModel):
     ] = Field(default_factory=lambda: ["spend", "optimization_roadmap", "executive_narrative"])
 
 
+class RagGuidanceRequest(BaseModel):
+    analysis_type: str = "finops_operating_review"
+    cloud_provider: str = "all"
+    top_k: int = Field(default=4, ge=1, le=8)
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
 class HybridAdvisorResponse(BaseModel):
     generated_at: str
     cloud_provider: str
@@ -5116,6 +5204,11 @@ async def advisor_hybrid(
         "coverage_gap_percent": tagging_result.get("coverage_gap_percent", 0.0),
         "unallocated_percent": chargeback_result.get("unallocated_percent", 0.0),
     }
+    rag = _rag_context_for_analysis(
+        analysis_type=narrative_type,
+        cloud_provider=cloud_provider,
+        context=genai_context,
+    )
 
     narrative: Optional[str]
     prompt: str
@@ -5146,6 +5239,7 @@ async def advisor_hybrid(
             "narrative_type": narrative_type,
             "narrative": narrative,
             "prompt": prompt,
+            "rag": rag,
             "genai_configured": genai_advisor._is_configured(),
             "fallback_mode": narrative is None,
         },
@@ -5170,6 +5264,11 @@ async def genai_analyze(
     if not ctx.get("current_monthly_spend_usd"):
         cost_ctx = await _cost_context(membership, db, "month", "all")
         ctx.setdefault("current_monthly_spend_usd", cost_ctx.get("total_cost", 0))
+    rag = _rag_context_for_analysis(
+        analysis_type=request.analysis_type,
+        cloud_provider=str(ctx.get("cloud_provider", "all") or "all"),
+        context=ctx,
+    )
 
     narrative: Optional[str] = None
     prompt: str = ""
@@ -5218,8 +5317,40 @@ async def genai_analyze(
         "analysis_type": request.analysis_type,
         "narrative": narrative,
         "prompt": prompt,
+        "rag": rag,
         "genai_configured": genai_advisor._is_configured(),
         "fallback_mode": narrative is None,
+    }
+
+
+@router.post("/genai/rag-guidance")
+async def genai_rag_guidance(
+    request: RagGuidanceRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return retrieved FinOps guidance snippets for an analysis context."""
+    _ = current_user
+    context = dict(request.context or {})
+    if not context:
+        cost_ctx = await _cost_context(membership, db, "month", request.cloud_provider)
+        context = {
+            "current_monthly_spend_usd": float(cost_ctx.get("total_cost", 0.0) or 0.0),
+            "cost_breakdown": cost_ctx.get("breakdown") or {},
+        }
+
+    payload = finops_rag.retrieve_guidance(
+        analysis_type=request.analysis_type,
+        cloud_provider=request.cloud_provider,
+        context=context,
+        top_k=request.top_k,
+    )
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "analysis_type": request.analysis_type,
+        "cloud_provider": request.cloud_provider,
+        "rag": payload,
     }
 
 
@@ -5308,32 +5439,43 @@ async def genai_copilot_pack(
             "top_opportunities": commitment_gap_result.get("provider_gaps", []),
         }
     )
+    base_rag = _rag_context_for_analysis(
+        analysis_type="finops_operating_review",
+        cloud_provider=request.cloud_provider,
+        context=base_context,
+    )
 
     narratives: Dict[str, Dict[str, Any]] = {}
     requested = request.include or []
     for item in requested:
+        item_context = dict(base_context)
+        item_rag = _rag_context_for_analysis(
+            analysis_type=item,
+            cloud_provider=request.cloud_provider,
+            context=item_context,
+        )
         if item == "spend":
-            narrative, prompt = genai_advisor.generate_spend_narrative(base_context)
+            narrative, prompt = genai_advisor.generate_spend_narrative(item_context)
         elif item == "budget_risk":
             narrative, prompt = genai_advisor.generate_budget_risk_alert(
-                base_context.get("budget_guardrails", {}), base_context
+                item_context.get("budget_guardrails", {}), item_context
             )
         elif item == "waste_insights":
-            narrative, prompt = genai_advisor.generate_waste_insights(base_context)
+            narrative, prompt = genai_advisor.generate_waste_insights(item_context)
         elif item == "optimization_roadmap":
-            narrative, prompt = genai_advisor.generate_optimization_roadmap(base_context)
+            narrative, prompt = genai_advisor.generate_optimization_roadmap(item_context)
         elif item == "executive_narrative":
-            narrative, prompt = genai_advisor.generate_executive_narrative(base_context)
+            narrative, prompt = genai_advisor.generate_executive_narrative(item_context)
         elif item == "tagging_strategy":
-            narrative, prompt = genai_advisor.generate_tagging_strategy(base_context)
+            narrative, prompt = genai_advisor.generate_tagging_strategy(item_context)
         elif item == "sustainability_narrative":
-            narrative, prompt = genai_advisor.generate_sustainability_narrative(base_context)
+            narrative, prompt = genai_advisor.generate_sustainability_narrative(item_context)
         elif item == "chargeback_narrative":
-            narrative, prompt = genai_advisor.generate_chargeback_narrative(base_context)
+            narrative, prompt = genai_advisor.generate_chargeback_narrative(item_context)
         elif item == "rightsizing_brief":
-            narrative, prompt = genai_advisor.generate_rightsizing_brief(base_context)
+            narrative, prompt = genai_advisor.generate_rightsizing_brief(item_context)
         elif item == "vendor_negotiation_brief":
-            narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(base_context)
+            narrative, prompt = genai_advisor.generate_vendor_negotiation_brief(item_context)
         elif item == "forecast_model_diagnostics":
             historical_monthly_spend = _historical_monthly_spend_from_snapshots(
                 db=db,
@@ -5354,15 +5496,22 @@ async def genai_copilot_pack(
                 ),
                 {},
             )
-            narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(diagnostics_result)
+            diag_ctx = dict(diagnostics_result)
+            item_rag = _rag_context_for_analysis(
+                analysis_type="forecast_model_diagnostics",
+                cloud_provider=request.cloud_provider,
+                context=diag_ctx,
+            )
+            narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(diag_ctx)
         elif item == "finops_operating_review":
-            narrative, prompt = genai_advisor.generate_finops_operating_review(base_context)
+            narrative, prompt = genai_advisor.generate_finops_operating_review(item_context)
         else:
-            narrative, prompt = genai_advisor.generate_commitment_strategy(base_context)
+            narrative, prompt = genai_advisor.generate_commitment_strategy(item_context)
 
         narratives[item] = {
             "narrative": narrative,
             "prompt": prompt,
+            "rag": item_rag,
             "fallback_mode": narrative is None,
         }
 
@@ -5379,6 +5528,7 @@ async def genai_copilot_pack(
             "commitment_gap": commitment_gap_result,
             "tagging_coverage": tagging_result,
             "chargeback_summary": chargeback_result,
+            "rag": base_rag,
         },
         "narratives": narratives,
         "genai_configured": genai_advisor._is_configured(),
@@ -5631,14 +5781,228 @@ async def analytics_operating_review(
         ),
         {},
     )
-
-    narrative, prompt = genai_advisor.generate_finops_operating_review(
-        result.get("genai_context") or {}
+    genai_context = dict(result.get("genai_context") or {})
+    rag = _rag_context_for_analysis(
+        analysis_type="finops_operating_review",
+        cloud_provider=cloud_provider,
+        context=genai_context,
     )
+    narrative, prompt = genai_advisor.generate_finops_operating_review(genai_context)
     result["genai_narrative"] = narrative
     result["genai_prompt"] = prompt
+    result["rag"] = rag
     result["cost_context"] = context
     return result
+
+
+@router.get("/analytics/finops-intelligence")
+async def analytics_finops_intelligence(
+    focus: Literal[
+        "finops_operating_review",
+        "forecast_model_diagnostics",
+        "commitment_strategy",
+        "tagging_strategy",
+        "sustainability_narrative",
+        "executive_narrative",
+    ] = "finops_operating_review",
+    cloud_provider: str = "all",
+    months: int = Query(default=12, ge=1, le=24),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Deep FinOps intelligence: deterministic analytics + RAG + GenAI narrative."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+        months=18,
+    )
+
+    analytics_result = _safe_json_load(
+        await finops_analytics.get_analytics(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "anomalies": 0,
+                "monthly_savings": 0,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            }
+        ),
+        {},
+    )
+
+    deterministic: Dict[str, Any] = {}
+    genai_context: Dict[str, Any] = {}
+
+    if focus == "forecast_model_diagnostics":
+        deterministic = _safe_json_load(
+            await finops_analytics.get_forecast_model_diagnostics(
+                {
+                    "months": months,
+                    "cloud_provider": cloud_provider,
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                    "historical_monthly_spend": historical_monthly_spend,
+                    "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                    "fallback_monthly_spend": 0,
+                }
+            ),
+            {},
+        )
+        genai_context = dict(deterministic)
+        rag = _rag_context_for_analysis(
+            analysis_type="forecast_model_diagnostics",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        )
+        narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(genai_context)
+
+    elif focus == "commitment_strategy":
+        deterministic = _safe_json_load(
+            await finops_analytics.get_commitment_gap_analysis(
+                {
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                }
+            ),
+            {},
+        )
+        genai_context = {
+            "current_monthly_spend_usd": context["total_cost"],
+            "total_annual_opportunity_usd": deterministic.get("total_annual_opportunity_usd", 0.0),
+            "priority_provider": deterministic.get("priority_provider"),
+            "provider_gaps": deterministic.get("provider_gaps", []),
+        }
+        rag = _rag_context_for_analysis(
+            analysis_type="commitment_strategy",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        )
+        narrative, prompt = genai_advisor.generate_commitment_strategy(genai_context)
+
+    elif focus == "tagging_strategy":
+        deterministic = _safe_json_load(
+            await finops_analytics.get_tagging_coverage_analytics(
+                {
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                }
+            ),
+            {},
+        )
+        genai_context = dict(deterministic)
+        rag = _rag_context_for_analysis(
+            analysis_type="tagging_strategy",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        )
+        narrative, prompt = genai_advisor.generate_tagging_strategy(genai_context)
+
+    elif focus == "sustainability_narrative":
+        deterministic = _safe_json_load(
+            await finops_analytics.get_sustainability_metrics(
+                {
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                }
+            ),
+            {},
+        )
+        genai_context = dict(deterministic)
+        rag = _rag_context_for_analysis(
+            analysis_type="sustainability_narrative",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        )
+        narrative, prompt = genai_advisor.generate_sustainability_narrative(genai_context)
+
+    elif focus == "executive_narrative":
+        waste_result = _safe_json_load(
+            await finops_analytics.get_cloud_waste_analysis(
+                {
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                }
+            ),
+            {},
+        )
+        efficiency_result = _safe_json_load(
+            await finops_analytics.get_cost_efficiency_score(
+                {
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                    "waste_rate_percent": analytics_result.get("unit_metrics", {}).get(
+                        "estimated_waste_rate_percent", 18.0
+                    ),
+                    "anomaly_density_per_10k": analytics_result.get("unit_metrics", {}).get(
+                        "anomaly_density_per_10k", 8.0
+                    ),
+                    "budget_utilization_percent": analytics_result.get("unit_metrics", {}).get(
+                        "budget_utilization_percent", 85.0
+                    ),
+                }
+            ),
+            {},
+        )
+        deterministic = {
+            "analytics": analytics_result,
+            "waste": waste_result,
+            "efficiency": efficiency_result,
+        }
+        genai_context = dict(analytics_result)
+        genai_context.update(waste_result)
+        genai_context.update(efficiency_result)
+        genai_context["budget_monthly_usd"] = float(permission.get("monthly_budget_usd", 0.0) or 0.0)
+        rag = _rag_context_for_analysis(
+            analysis_type="executive_narrative",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        )
+        narrative, prompt = genai_advisor.generate_executive_narrative(genai_context)
+
+    else:
+        deterministic = _safe_json_load(
+            await finops_analytics.get_finops_operating_review(
+                {
+                    "cloud_provider": cloud_provider,
+                    "months": months,
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                    "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                    "historical_monthly_spend": historical_monthly_spend,
+                    "analytics_result": analytics_result,
+                }
+            ),
+            {},
+        )
+        genai_context = dict(deterministic.get("genai_context") or {})
+        rag = _rag_context_for_analysis(
+            analysis_type="finops_operating_review",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        )
+        narrative, prompt = genai_advisor.generate_finops_operating_review(genai_context)
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "focus": focus,
+        "cloud_provider": cloud_provider,
+        "deterministic": deterministic,
+        "rag": rag,
+        "advisory": {
+            "narrative": narrative,
+            "prompt": prompt,
+            "fallback_mode": narrative is None,
+            "genai_configured": genai_advisor._is_configured(),
+        },
+        "cost_context": context,
+    }
 
 
 @router.get("/analytics/tagging-coverage")
@@ -5790,6 +6154,7 @@ async def analytics_service_hotspots(
 ) -> Dict[str, Any]:
     """Top costly cloud services across providers (deterministic, non-GenAI)."""
     _ = current_user
+    require_live_provider_data = Config().require_live_provider_data
     providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
     providers = [p for p in providers if p in {"aws", "azure", "gcp", "oci"}]
     capped_limit = max(1, min(limit, 100))
@@ -5799,12 +6164,23 @@ async def analytics_service_hotspots(
         for d in _provider_diagnostics()
     }
 
-    imported_rows = _get_imported_cost_rows(
-        db,
-        _organization_id_for_membership(membership),
-        _customer_id_for_org(membership),
-        cloud_provider,
-    )
+    if require_live_provider_data and not any(diagnostics.get(provider, False) for provider in providers):
+        raise HTTPException(
+            status_code=412,
+            detail=(
+                "Live provider data is required, but none of the requested providers are configured "
+                "for runtime API access on this backend host."
+            ),
+        )
+
+    imported_rows = []
+    if not require_live_provider_data:
+        imported_rows = _get_imported_cost_rows(
+            db,
+            _organization_id_for_membership(membership),
+            _customer_id_for_org(membership),
+            cloud_provider,
+        )
 
     def add_item(bucket: Dict[tuple[str, str], Dict[str, Any]], provider_key: str, service_name: str, cost: float, source: str) -> None:
         key = (provider_key, service_name)
@@ -5847,15 +6223,16 @@ async def analytics_service_hotspots(
         if used_live:
             continue
 
-        for row in imported_rows:
-            row_provider = str(getattr(row, "provider", "") or "").strip().lower()
-            if row_provider != provider:
-                continue
-            service_name = str(getattr(row, "service_name", "") or "").strip() or "imported-service"
-            cost = float(getattr(row, "cost_usd", 0.0) or 0.0)
-            if cost <= 0:
-                continue
-            add_item(service_map, provider, service_name, cost, "csv_import")
+        if not require_live_provider_data:
+            for row in imported_rows:
+                row_provider = str(getattr(row, "provider", "") or "").strip().lower()
+                if row_provider != provider:
+                    continue
+                service_name = str(getattr(row, "service_name", "") or "").strip() or "imported-service"
+                cost = float(getattr(row, "cost_usd", 0.0) or 0.0)
+                if cost <= 0:
+                    continue
+                add_item(service_map, provider, service_name, cost, "csv_import")
 
     items = list(service_map.values())
     if focus:
@@ -6224,6 +6601,80 @@ async def health_check() -> Dict[str, Any]:
     }
 
 
+@router.get("/health/readiness")
+async def readiness_check() -> Dict[str, Any]:
+    """Deep readiness probe with database and provider runtime checks."""
+    cfg = Config()
+    now = _utcnow()
+    checks: Dict[str, Any] = {}
+    overall_status = "healthy"
+
+    db_started_at = time.perf_counter()
+    db_status = "healthy"
+    db_error: Optional[str] = None
+    organization_count = 0
+    try:
+        db = SessionLocal()
+        try:
+            organization_count = int(db.query(Organization).count())
+            _ = db.query(User.id).limit(1).first()
+        finally:
+            db.close()
+    except Exception as exc:
+        db_status = "unhealthy"
+        db_error = str(exc)
+        overall_status = "unhealthy"
+    checks["database"] = {
+        "status": db_status,
+        "latency_ms": round((time.perf_counter() - db_started_at) * 1000, 2),
+        "organization_count": organization_count,
+        "error": db_error,
+    }
+
+    diagnostics = _provider_diagnostics()
+    configured_providers = sorted([item.provider for item in diagnostics if item.configured])
+    missing_settings_by_provider = {
+        item.provider: item.missing_settings
+        for item in diagnostics
+        if not item.configured
+    }
+
+    if cfg.require_live_provider_data and not configured_providers:
+        providers_status = "unhealthy"
+        overall_status = "unhealthy"
+    elif configured_providers and len(configured_providers) == len(diagnostics):
+        providers_status = "healthy"
+    elif configured_providers:
+        providers_status = "degraded"
+        if overall_status == "healthy":
+            overall_status = "degraded"
+    else:
+        providers_status = "degraded"
+        if overall_status == "healthy":
+            overall_status = "degraded"
+
+    checks["providers"] = {
+        "status": providers_status,
+        "require_live_provider_data": bool(cfg.require_live_provider_data),
+        "configured_count": len(configured_providers),
+        "supported_count": len(diagnostics),
+        "configured_providers": configured_providers,
+        "missing_settings_by_provider": missing_settings_by_provider,
+    }
+    checks["runtime"] = {
+        "auth_enabled": bool(cfg.auth_enabled),
+        "scan_scheduler_enabled": bool(cfg.enable_scan_scheduler),
+        "retention_enabled": bool(cfg.retention_enabled),
+    }
+
+    return {
+        "status": overall_status,
+        "version": __version__,
+        "timestamp": now.isoformat(),
+        "checks": checks,
+    }
+
+
 @router.get("/info")
 async def api_info() -> Dict[str, Any]:
     return {
@@ -6261,6 +6712,9 @@ async def api_info() -> Dict[str, Any]:
             "genai_finops_operating_review": True,
             "genai_forecast_model_diagnostics": True,
             "genai_copilot_pack": True,
+            "genai_rag_guidance": True,
+            "finops_rag_retrieval": True,
+            "finops_intelligence_endpoint": True,
             "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,
             "audit_logging": True,
@@ -6286,6 +6740,8 @@ async def api_info() -> Dict[str, Any]:
             "virtual_tagging": True,
             "rightsizing_resource_level": True,
             "admin_diagnostics": True,
+            "readiness_endpoint": True,
+            "request_tracing": True,
             "pagination": True,
         },
     }
@@ -6348,11 +6804,16 @@ async def _run_cost_analysis(
         savings_identified = 0.0
         aggregated_cost_usd = 0.0
         now = _utcnow()
+        successful_providers: List[str] = []
+        provider_errors: Dict[str, str] = {}
+        require_live_provider_data = Config().require_live_provider_data
 
         for provider in providers:
             summary = await _cost_summary_for_provider(provider, "month")
             if "error" in summary:
+                provider_errors[provider] = str(summary.get("error") or "Unknown provider error")
                 continue
+            successful_providers.append(provider)
 
             total_cost = float(summary.get("total_cost_usd", 0) or 0)
             aggregated_cost_usd += total_cost
@@ -6614,6 +7075,15 @@ async def _run_cost_analysis(
                     else:
                         existing_link.parent_account_id = parent_account.id
                         existing_link.relationship_type = "contains"
+
+        if require_live_provider_data and not successful_providers:
+            error_summary = ", ".join(
+                f"{provider}: {error}" for provider, error in sorted(provider_errors.items())
+            ) or "No provider returned live data."
+            raise RuntimeError(
+                "Live provider data is required, but this scan could not fetch any provider data. "
+                f"Details: {error_summary}"
+            )
 
         permission = (
             db.query(ScanningPermissionRecord)
@@ -7985,6 +8455,8 @@ async def get_cost_trend(
 
     lookback = max(1, min(lookback, 18))
     org_id = _organization_id_for_membership(membership)
+    customer_id = _customer_id_for_org(membership)
+    require_live_provider_data = Config().require_live_provider_data
 
     summaries: List[CostPeriodSummary] = []
     archive_rows: List[Dict[str, Any]] = []
@@ -8076,6 +8548,75 @@ async def get_cost_trend(
             )
             for k in sorted(sorted_keys, key=lambda k: k[0])
         ]
+    elif require_live_provider_data:
+        if view_by != "provider":
+            return CostTrendResponse(
+                organization_id=org_id,
+                period_type=period_type,
+                lookback_periods=lookback,
+                view_by=view_by,
+                data_source="empty",
+                points=[],
+                provider_totals={},
+                dimension_totals={},
+                grand_total_usd=0.0,
+            )
+
+        snapshots_query = db.query(CostSnapshot).filter(CostSnapshot.customer_id == customer_id)
+        if provider:
+            snapshots_query = snapshots_query.filter(CostSnapshot.provider == provider.lower())
+        snapshots = (
+            snapshots_query
+            .order_by(CostSnapshot.captured_at.desc())
+            .limit(1000)
+            .all()
+        )
+        if not snapshots:
+            return CostTrendResponse(
+                organization_id=org_id,
+                period_type=period_type,
+                lookback_periods=lookback,
+                view_by=view_by,
+                data_source="empty",
+                points=[],
+                provider_totals={},
+                dimension_totals={},
+                grand_total_usd=0.0,
+            )
+
+        live_buckets: Dict[tuple[datetime, datetime, str], Dict[str, Any]] = {}
+        now = _utcnow()
+        for row in snapshots:
+            provider_key = str(row.provider or "unknown").strip().lower() or "unknown"
+            anchor = row.period_start or row.period_end or row.captured_at or now
+            pstart, pend = _compute_period_bucket(anchor, period_type)
+            key = (pstart, pend, provider_key)
+            bucket = live_buckets.setdefault(
+                key,
+                {
+                    "total": 0.0,
+                    "record_count": 0,
+                },
+            )
+            bucket["total"] += float(row.total_cost_usd or 0.0)
+            bucket["record_count"] += 1
+
+        sorted_keys = sorted(live_buckets.keys(), key=lambda item: item[0], reverse=True)[:lookback]
+        points = [
+            CostTrendPoint(
+                period_start=key[0].isoformat(),
+                period_end=key[1].isoformat(),
+                provider=key[2],
+                dimension_value=key[2],
+                total_cost_usd=round(float(live_buckets[key]["total"] or 0.0), 2),
+                mapped_cost_usd=0.0,
+                unmapped_cost_usd=round(float(live_buckets[key]["total"] or 0.0), 2),
+                record_count=int(live_buckets[key]["record_count"] or 0),
+                service_breakdown={},
+            )
+            for key in sorted(sorted_keys, key=lambda item: item[0])
+        ]
+        data_source = "cost_snapshots_live"
     else:
         records = (
             db.query(ImportedCostRecord)
@@ -11166,17 +11707,6 @@ async def preview_virtual_tags(
                 "environment": "",
             })
 
-    if not items:
-        # Synthetic demonstration data
-        demo = [
-            {"resource_id": "i-0abc123", "resource_name": "prod-api-server", "resource_type": "EC2 Instance", "provider": "aws", "region": "us-east-1", "service": "AmazonEC2", "account_id": "123456789012", "cost_usd": 312.50, "team": "platform", "environment": "production"},
-            {"resource_id": "i-0def456", "resource_name": "staging-worker", "resource_type": "EC2 Instance", "provider": "aws", "region": "us-west-2", "service": "AmazonEC2", "account_id": "123456789012", "cost_usd": 87.20, "team": "data", "environment": "staging"},
-            {"resource_id": "vm-prod-01", "resource_name": "azure-prod-vm", "resource_type": "Virtual Machine", "provider": "azure", "region": "eastus", "service": "Compute", "account_id": "sub-azure-001", "cost_usd": 198.00, "team": "platform", "environment": "production"},
-            {"resource_id": "disk-vol-01", "resource_name": "data-volume-large", "resource_type": "Managed Disk", "provider": "azure", "region": "westeurope", "service": "Storage", "account_id": "sub-azure-001", "cost_usd": 45.30, "team": "", "environment": ""},
-            {"resource_id": "gke-node-01", "resource_name": "gke-prod-node", "resource_type": "GKE Node", "provider": "gcp", "region": "us-central1", "service": "Kubernetes Engine", "account_id": "proj-gcp-001", "cost_usd": 256.80, "team": "infra", "environment": "production"},
-        ]
-        items = demo
-
     # Apply rules to each item
     preview: List[VirtualTagPreviewItem] = []
     tagged_count = 0
@@ -11222,7 +11752,6 @@ async def preview_virtual_tags(
 #  2. Azure Advisor      rightsizing recommendations    (real API)
 #  3. Cost-trend signal  analysis from snapshot history (deterministic)
 #  4. Imported CSV cost  signal analysis                (deterministic)
-#  [5. Synthetic examples — only when org has zero data at all]
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class RightsizingRecommendation(BaseModel):
@@ -11244,7 +11773,7 @@ class RightsizingRecommendation(BaseModel):
     confidence: str   # "high" | "medium" | "low"
     effort: str       # "low" | "medium" | "high"
     action: str       # "downsize" | "terminate" | "reserve" | "modernize"
-    evidence_source: str = "synthetic"
+    evidence_source: str = "unspecified"
     analysis_points: int = 0
     trend_slope_usd: float = 0.0
     trend_percent: float = 0.0
@@ -11310,6 +11839,63 @@ _ACTION_SAVINGS_RATES: Dict[str, float] = {
     "reserve":   0.37,   # typical 1yr No-Upfront RI discount vs on-demand
     "modernize": 0.30,   # newer gen typically 10-30% cheaper at same perf
 }
+
+
+def _series_mean(values: List[float]) -> Optional[float]:
+    cleaned = [float(v) for v in values if v is not None]
+    if not cleaned:
+        return None
+    return round(sum(cleaned) / len(cleaned), 2)
+
+
+def _estimate_monthly_cost_from_size(provider: str, size: str) -> float:
+    text = str(size or "").lower()
+    if not text:
+        return 120.0
+
+    # Coarse but deterministic estimate for rightsize ranking without price API calls.
+    if provider == "aws":
+        if "metal" in text or "12xlarge" in text or "16xlarge" in text:
+            return 1800.0
+        if "8xlarge" in text:
+            return 980.0
+        if "4xlarge" in text:
+            return 620.0
+        if "2xlarge" in text:
+            return 320.0
+        if "xlarge" in text:
+            return 180.0
+        if "large" in text:
+            return 110.0
+        if "medium" in text:
+            return 70.0
+        return 140.0
+
+    if provider == "azure":
+        if "16" in text:
+            return 760.0
+        if "8" in text:
+            return 390.0
+        if "4" in text:
+            return 210.0
+        if "2" in text:
+            return 120.0
+        return 170.0
+
+    if provider == "gcp":
+        if "standard-32" in text:
+            return 980.0
+        if "standard-16" in text:
+            return 520.0
+        if "standard-8" in text:
+            return 280.0
+        if "standard-4" in text:
+            return 160.0
+        if "standard-2" in text:
+            return 95.0
+        return 150.0
+
+    return 140.0
 
 
 def _extract_size_from_account_metadata(account: Any, provider: str) -> str:
@@ -11721,6 +12307,7 @@ def _rightsizing_from_aws_ce(
                 confidence=confidence,
                 effort=effort,
                 action=action,
+                evidence_source="aws_cost_explorer",
             ))
         return out
     except Exception as exc:
@@ -11796,11 +12383,457 @@ def _rightsizing_from_azure_advisor(
                 confidence=confidence,
                 effort="low",
                 action="downsize",
+                evidence_source="azure_advisor",
             ))
         return out
     except Exception as exc:
         logger.warning("Azure Advisor rightsizing API error (will fall through): %s", exc)
         return []
+
+
+# ---------------------------------------------------------------------------
+# Live utilization enrichers (CloudWatch / Azure Monitor / Cloud Monitoring)
+# ---------------------------------------------------------------------------
+
+def _aws_cloudwatch_metric_average(
+    cloudwatch_client: Any,
+    instance_id: str,
+    metric_name: str,
+    namespace: str = "AWS/EC2",
+    statistic: str = "Average",
+    period_seconds: int = 3600,
+    lookback_days: int = 14,
+) -> Optional[float]:
+    try:
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(days=max(1, int(lookback_days)))
+        response = cloudwatch_client.get_metric_statistics(
+            Namespace=namespace,
+            MetricName=metric_name,
+            Dimensions=[{"Name": "InstanceId", "Value": instance_id}],
+            StartTime=start_time,
+            EndTime=end_time,
+            Period=period_seconds,
+            Statistics=[statistic],
+        )
+        values = [
+            float(point.get(statistic))
+            for point in (response.get("Datapoints") or [])
+            if point.get(statistic) is not None
+        ]
+        return _series_mean(values)
+    except Exception:
+        return None
+
+
+def _enrich_aws_with_cloudwatch_utilization(
+    cred_json: Dict[str, Any],
+    recommendations_in: List[RightsizingRecommendation],
+) -> List[RightsizingRecommendation]:
+    if not recommendations_in:
+        return recommendations_in
+    try:
+        import boto3
+    except Exception:
+        return recommendations_in
+
+    region_default = str(cred_json.get("region") or "us-east-1")
+    clients: Dict[str, Any] = {}
+    for rec in recommendations_in:
+        if rec.provider != "aws":
+            continue
+        instance_id = str(rec.resource_id or "").strip()
+        if not instance_id.startswith("i-"):
+            continue
+        region = str(rec.region or "").strip().lower()
+        if not re.match(r"^[a-z]{2}-[a-z-]+-\d+$", region):
+            region = region_default
+        if region not in clients:
+            try:
+                clients[region] = boto3.client(
+                    "cloudwatch",
+                    aws_access_key_id=cred_json.get("access_key_id"),
+                    aws_secret_access_key=cred_json.get("secret_access_key"),
+                    region_name=region,
+                )
+            except Exception:
+                continue
+        cw_client = clients[region]
+        cpu = _aws_cloudwatch_metric_average(cw_client, instance_id, "CPUUtilization", "AWS/EC2")
+        memory = _aws_cloudwatch_metric_average(cw_client, instance_id, "mem_used_percent", "CWAgent")
+        if cpu is not None:
+            rec.cpu_utilization_avg_percent = round(cpu, 2)
+        if memory is not None:
+            rec.memory_utilization_avg_percent = round(memory, 2)
+        if cpu is not None or memory is not None:
+            rec.evidence_source = "aws_cloudwatch"
+            rec.last_observed_at = _utcnow().isoformat()
+    return recommendations_in
+
+
+def _rightsizing_from_aws_cloudwatch_inventory(
+    cred_json: Dict[str, Any],
+    min_savings: float,
+    limit: int = 120,
+) -> List[RightsizingRecommendation]:
+    try:
+        import boto3
+    except Exception:
+        return []
+
+    region = str(cred_json.get("region") or "us-east-1")
+    try:
+        ec2 = boto3.client(
+            "ec2",
+            aws_access_key_id=cred_json.get("access_key_id"),
+            aws_secret_access_key=cred_json.get("secret_access_key"),
+            region_name=region,
+        )
+        cloudwatch = boto3.client(
+            "cloudwatch",
+            aws_access_key_id=cred_json.get("access_key_id"),
+            aws_secret_access_key=cred_json.get("secret_access_key"),
+            region_name=region,
+        )
+    except Exception:
+        return []
+
+    out: List[RightsizingRecommendation] = []
+    try:
+        paginator = ec2.get_paginator("describe_instances")
+        for page in paginator.paginate(
+            Filters=[{"Name": "instance-state-name", "Values": ["running", "stopped"]}]
+        ):
+            for reservation in page.get("Reservations", []):
+                for instance in reservation.get("Instances", []):
+                    if len(out) >= limit:
+                        return out
+                    instance_id = str(instance.get("InstanceId") or "").strip()
+                    if not instance_id:
+                        continue
+                    instance_type = str(instance.get("InstanceType") or "unknown")
+                    state = str((instance.get("State") or {}).get("Name") or "running").lower()
+                    name = instance_id
+                    for tag in instance.get("Tags", []):
+                        if str(tag.get("Key") or "").lower() == "name":
+                            name = str(tag.get("Value") or "").strip() or instance_id
+                            break
+
+                    cpu = _aws_cloudwatch_metric_average(cloudwatch, instance_id, "CPUUtilization", "AWS/EC2")
+                    memory = _aws_cloudwatch_metric_average(cloudwatch, instance_id, "mem_used_percent", "CWAgent")
+                    if cpu is None and memory is None:
+                        continue
+
+                    if state == "stopped":
+                        action = "terminate"
+                        savings_rate = 1.0
+                        reason = "Instance is stopped and shows no active utilization load."
+                    elif (cpu or 0.0) <= 10.0 and (memory is None or memory <= 55.0):
+                        action = "downsize"
+                        savings_rate = 0.45 if (cpu or 0.0) <= 7.0 else 0.30
+                        reason = (
+                            f"CloudWatch average CPU {(cpu or 0.0):.1f}% and memory "
+                            f"{memory:.1f}% over lookback window indicate over-provisioning."
+                            if memory is not None
+                            else f"CloudWatch average CPU {(cpu or 0.0):.1f}% indicates over-provisioning."
+                        )
+                    else:
+                        continue
+
+                    current_monthly = _estimate_monthly_cost_from_size("aws", instance_type)
+                    monthly_savings = round(current_monthly * savings_rate, 2)
+                    if monthly_savings < min_savings:
+                        continue
+
+                    out.append(
+                        RightsizingRecommendation(
+                            resource_id=instance_id,
+                            resource_name=name,
+                            resource_type="EC2 Instance",
+                            provider="aws",
+                            region=region,
+                            account_id=str(instance.get("OwnerId") or cred_json.get("account_id") or "aws-account"),
+                            current_size=instance_type,
+                            recommended_size=_recommended_size_for_action("aws", action, instance_type),
+                            current_monthly_cost_usd=round(current_monthly, 2),
+                            projected_monthly_cost_usd=round(max(current_monthly - monthly_savings, 0.0), 2),
+                            monthly_savings_usd=monthly_savings,
+                            annual_savings_usd=round(monthly_savings * 12, 2),
+                            cpu_utilization_avg_percent=round(cpu, 2) if cpu is not None else None,
+                            memory_utilization_avg_percent=round(memory, 2) if memory is not None else None,
+                            reason=reason,
+                            confidence="high" if (cpu is not None and cpu <= 8.0) else "medium",
+                            effort="low",
+                            action=action,
+                            evidence_source="aws_cloudwatch",
+                            analysis_points=14,
+                            latest_monthly_cost_usd=round(current_monthly, 2),
+                            peak_monthly_cost_usd=round(current_monthly, 2),
+                            top_regions=[region],
+                            regional_breakdown=[{"region": region, "monthly_cost_usd": round(current_monthly, 2), "share_percent": 100.0}],
+                            resource_console_url=_rightsizing_console_url("aws", instance_id, region, "", "EC2 Instance"),
+                            last_observed_at=_utcnow().isoformat(),
+                        )
+                    )
+    except Exception as exc:
+        logger.warning("AWS CloudWatch rightsizing inventory error (will fall through): %s", exc)
+    return out
+
+
+def _azure_monitor_metric_average(
+    access_token: str,
+    resource_id: str,
+    metric_name: str,
+    lookback_days: int = 14,
+) -> Optional[float]:
+    end_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    start_dt = (end_dt - timedelta(days=max(1, int(lookback_days)))).replace(microsecond=0)
+    timespan = f"{start_dt.isoformat().replace('+00:00', 'Z')}/{end_dt.isoformat().replace('+00:00', 'Z')}"
+    url = f"https://management.azure.com{resource_id}/providers/microsoft.insights/metrics"
+    params = {
+        "api-version": "2023-10-01",
+        "metricnames": metric_name,
+        "timespan": timespan,
+        "interval": "PT1H",
+        "aggregation": "Average",
+    }
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        response = httpx.get(url, params=params, headers=headers, timeout=20)
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+        values: List[float] = []
+        for metric in payload.get("value", []):
+            for series in metric.get("timeseries", []):
+                for point in series.get("data", []):
+                    raw = point.get("average")
+                    if raw is not None:
+                        values.append(float(raw))
+        return _series_mean(values)
+    except Exception:
+        return None
+
+
+def _enrich_azure_with_monitor_utilization(
+    cred_json: Dict[str, Any],
+    recommendations_in: List[RightsizingRecommendation],
+) -> List[RightsizingRecommendation]:
+    if not recommendations_in:
+        return recommendations_in
+    try:
+        from azure.identity import ClientSecretCredential
+
+        credential = ClientSecretCredential(
+            tenant_id=cred_json["tenant_id"],
+            client_id=cred_json["client_id"],
+            client_secret=cred_json["client_secret"],
+        )
+        token = credential.get_token("https://management.azure.com/.default").token
+    except Exception:
+        return recommendations_in
+
+    for rec in recommendations_in:
+        if rec.provider != "azure":
+            continue
+        resource_id = str(rec.resource_id or "").strip()
+        if not resource_id.startswith("/subscriptions/"):
+            continue
+        cpu = _azure_monitor_metric_average(token, resource_id, "Percentage CPU")
+        available_memory = _azure_monitor_metric_average(token, resource_id, "Available Memory Percentage")
+        memory_used = None if available_memory is None else round(max(0.0, min(100.0, 100.0 - available_memory)), 2)
+
+        if cpu is not None:
+            rec.cpu_utilization_avg_percent = round(cpu, 2)
+        if memory_used is not None:
+            rec.memory_utilization_avg_percent = memory_used
+        if cpu is not None or memory_used is not None:
+            rec.evidence_source = "azure_monitor"
+            rec.last_observed_at = _utcnow().isoformat()
+    return recommendations_in
+
+
+def _gcp_monitoring_metric_average(
+    session: Any,
+    project_id: str,
+    instance_id: str,
+    metric_type: str,
+    lookback_days: int = 14,
+) -> Optional[float]:
+    end_dt = datetime.now(timezone.utc).replace(microsecond=0)
+    start_dt = (end_dt - timedelta(days=max(1, int(lookback_days)))).replace(microsecond=0)
+    filter_expr = (
+        f'metric.type = "{metric_type}" '
+        f'AND resource.type = "gce_instance" '
+        f'AND resource.labels.instance_id = "{instance_id}"'
+    )
+    params = {
+        "filter": filter_expr,
+        "interval.startTime": start_dt.isoformat().replace("+00:00", "Z"),
+        "interval.endTime": end_dt.isoformat().replace("+00:00", "Z"),
+        "aggregation.alignmentPeriod": "3600s",
+        "aggregation.perSeriesAligner": "ALIGN_MEAN",
+        "view": "FULL",
+        "pageSize": 100,
+    }
+    url = f"https://monitoring.googleapis.com/v3/projects/{project_id}/timeSeries"
+    try:
+        response = session.get(url, params=params, timeout=20)
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+        values: List[float] = []
+        for series in payload.get("timeSeries", []):
+            for point in series.get("points", []):
+                raw = (point.get("value") or {}).get("doubleValue")
+                if raw is None:
+                    raw = (point.get("value") or {}).get("int64Value")
+                if raw is not None:
+                    values.append(float(raw))
+        return _series_mean(values)
+    except Exception:
+        return None
+
+
+def _rightsizing_from_gcp_cloud_monitoring(
+    cred_json: Dict[str, Any],
+    min_savings: float,
+    limit: int = 120,
+) -> List[RightsizingRecommendation]:
+    try:
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import AuthorizedSession
+    except Exception:
+        return []
+
+    service_account_json = cred_json.get("service_account_json")
+    if isinstance(service_account_json, str):
+        try:
+            service_account_json = json.loads(service_account_json)
+        except Exception:
+            service_account_json = {}
+    if not isinstance(service_account_json, dict):
+        return []
+
+    project_id = str(cred_json.get("project_id") or service_account_json.get("project_id") or "").strip()
+    if not project_id:
+        return []
+
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_json,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        session = AuthorizedSession(credentials)
+    except Exception:
+        return []
+
+    out: List[RightsizingRecommendation] = []
+    try:
+        next_token = ""
+        while len(out) < limit:
+            params: Dict[str, Any] = {"maxResults": 200}
+            if next_token:
+                params["pageToken"] = next_token
+            list_url = f"https://compute.googleapis.com/compute/v1/projects/{project_id}/aggregated/instances"
+            response = session.get(list_url, params=params, timeout=30)
+            if response.status_code >= 400:
+                break
+            payload = response.json()
+            for scope_data in (payload.get("items") or {}).values():
+                for instance in scope_data.get("instances", []):
+                    if len(out) >= limit:
+                        break
+                    status = str(instance.get("status") or "RUNNING").upper()
+                    if status not in {"RUNNING", "TERMINATED", "STOPPED", "SUSPENDED"}:
+                        continue
+                    instance_id = str(instance.get("id") or "").strip()
+                    if not instance_id:
+                        continue
+                    zone_url = str(instance.get("zone") or "")
+                    zone = zone_url.split("/")[-1] if zone_url else "global"
+                    machine_type_url = str(instance.get("machineType") or "")
+                    machine_type = machine_type_url.split("/")[-1] if machine_type_url else "unknown"
+                    name = str(instance.get("name") or instance_id)
+                    cpu_ratio = _gcp_monitoring_metric_average(
+                        session,
+                        project_id,
+                        instance_id,
+                        "compute.googleapis.com/instance/cpu/utilization",
+                    )
+                    cpu_percent = None if cpu_ratio is None else round(cpu_ratio * 100.0, 2)
+                    memory_percent = _gcp_monitoring_metric_average(
+                        session,
+                        project_id,
+                        instance_id,
+                        "agent.googleapis.com/memory/percent_used",
+                    )
+                    if cpu_percent is None and memory_percent is None:
+                        continue
+
+                    if status in {"TERMINATED", "STOPPED", "SUSPENDED"}:
+                        action = "terminate"
+                        savings_rate = 1.0
+                        reason = "Instance is not running and has no active workload requirement."
+                    elif (cpu_percent or 0.0) <= 12.0 and (memory_percent is None or memory_percent <= 60.0):
+                        action = "downsize"
+                        savings_rate = 0.45 if (cpu_percent or 0.0) <= 8.0 else 0.30
+                        reason = (
+                            f"Cloud Monitoring average CPU {(cpu_percent or 0.0):.1f}% and memory "
+                            f"{memory_percent:.1f}% indicate over-provisioning."
+                            if memory_percent is not None
+                            else f"Cloud Monitoring average CPU {(cpu_percent or 0.0):.1f}% indicates over-provisioning."
+                        )
+                    else:
+                        continue
+
+                    current_monthly = _estimate_monthly_cost_from_size("gcp", machine_type)
+                    monthly_savings = round(current_monthly * savings_rate, 2)
+                    if monthly_savings < min_savings:
+                        continue
+
+                    out.append(
+                        RightsizingRecommendation(
+                            resource_id=f"projects/{project_id}/zones/{zone}/instances/{name}",
+                            resource_name=name,
+                            resource_type="GCE Instance",
+                            provider="gcp",
+                            region=zone,
+                            account_id=project_id,
+                            current_size=machine_type,
+                            recommended_size=_recommended_size_for_action("gcp", action, machine_type),
+                            current_monthly_cost_usd=round(current_monthly, 2),
+                            projected_monthly_cost_usd=round(max(current_monthly - monthly_savings, 0.0), 2),
+                            monthly_savings_usd=monthly_savings,
+                            annual_savings_usd=round(monthly_savings * 12, 2),
+                            cpu_utilization_avg_percent=cpu_percent,
+                            memory_utilization_avg_percent=round(memory_percent, 2) if memory_percent is not None else None,
+                            reason=reason,
+                            confidence="high" if (cpu_percent is not None and cpu_percent <= 8.0) else "medium",
+                            effort="low",
+                            action=action,
+                            evidence_source="gcp_cloud_monitoring",
+                            analysis_points=14,
+                            latest_monthly_cost_usd=round(current_monthly, 2),
+                            peak_monthly_cost_usd=round(current_monthly, 2),
+                            top_regions=[zone],
+                            regional_breakdown=[{"region": zone, "monthly_cost_usd": round(current_monthly, 2), "share_percent": 100.0}],
+                            resource_console_url=_rightsizing_console_url(
+                                provider="gcp",
+                                resource_id=f"projects/{project_id}/zones/{zone}/instances/{name}",
+                                region=zone,
+                                account_id=project_id,
+                                resource_type="GCE Instance",
+                            ),
+                            last_observed_at=_utcnow().isoformat(),
+                        )
+                    )
+            next_token = str(payload.get("nextPageToken") or "").strip()
+            if not next_token:
+                break
+    except Exception as exc:
+        logger.warning("GCP Cloud Monitoring rightsizing error (will fall through): %s", exc)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -12167,20 +13200,23 @@ async def get_rightsizing_recommendations(
 ):
     """Resource-level rightsizing recommendations.
 
-    Tries real provider APIs first (AWS CE, Azure Advisor), then falls back to
-    deterministic cost-trend analysis on scan history, then imported CSV signals,
-    and finally synthetic examples when no data exists at all.
+    Tries live provider signals first (AWS Cost Explorer + CloudWatch,
+    Azure Advisor + Azure Monitor, GCP Cloud Monitoring inventory), then
+    falls back to deterministic cost-trend analysis on scan history,
+    and imported CSV signals when CSV fallback is enabled.
+    No synthetic recommendation records are ever generated.
     """
     org_id = membership.organization_id
     customer_id = _customer_id_for_org(membership)
     now_str = _utcnow().isoformat()
+    require_live_provider_data = Config().require_live_provider_data
 
     recommendations_out: List[RightsizingRecommendation] = []
-    data_source = "synthetic"
+    data_source = "no_data_available"
     total_analyzed = 0
 
-    # ── Tier 1 + 2: Real provider APIs (when valid credentials are stored) ──
-    provider_filter = [provider] if provider != "all" else ["aws", "azure"]
+    # ── Tier 1 + 2: Real provider APIs and utilization telemetry ────────────
+    provider_filter = [provider] if provider != "all" else ["aws", "azure", "gcp"]
     for prov in provider_filter:
         cred_row = (
             db.query(CredentialRecord)
@@ -12201,16 +13237,40 @@ async def get_rightsizing_recommendations(
         if prov == "aws":
             tier1 = _rightsizing_from_aws_ce(cred_json, min_savings)
             if tier1:
+                tier1 = _enrich_aws_with_cloudwatch_utilization(cred_json, tier1)
                 recommendations_out.extend(tier1)
-                data_source = "aws_cost_explorer"
+                has_live_signals = any(
+                    (r.cpu_utilization_avg_percent is not None or r.memory_utilization_avg_percent is not None)
+                    for r in tier1
+                )
+                data_source = "aws_ce_cloudwatch" if has_live_signals else "aws_cost_explorer"
                 total_analyzed += len(tier1) * 4  # CE analyzes all instances
+            else:
+                tier1b = _rightsizing_from_aws_cloudwatch_inventory(cred_json, min_savings, limit=max(120, limit))
+                if tier1b:
+                    recommendations_out.extend(tier1b)
+                    data_source = "aws_cloudwatch_inventory" if data_source == "no_data_available" else "multi_provider_api"
+                    total_analyzed += len(tier1b)
 
         elif prov == "azure":
             tier2 = _rightsizing_from_azure_advisor(cred_json, min_savings)
             if tier2:
+                tier2 = _enrich_azure_with_monitor_utilization(cred_json, tier2)
                 recommendations_out.extend(tier2)
-                data_source = "azure_advisor" if data_source == "synthetic" else "multi_provider_api"
+                has_live_signals = any(
+                    (r.cpu_utilization_avg_percent is not None or r.memory_utilization_avg_percent is not None)
+                    for r in tier2
+                )
+                source_name = "azure_advisor_monitor" if has_live_signals else "azure_advisor"
+                data_source = source_name if data_source == "no_data_available" else "multi_provider_api"
                 total_analyzed += len(tier2) * 3
+
+        elif prov == "gcp":
+            tier2c = _rightsizing_from_gcp_cloud_monitoring(cred_json, min_savings, limit=max(120, limit))
+            if tier2c:
+                recommendations_out.extend(tier2c)
+                data_source = "gcp_cloud_monitoring" if data_source == "no_data_available" else "multi_provider_api"
+                total_analyzed += len(tier2c)
 
     # ── Tier 2b: OCI live compute inventory (per-instance actionable scope) ──
     if provider in {"all", "oci"}:
@@ -12232,7 +13292,7 @@ async def get_rightsizing_recommendations(
                 tier2b = _rightsizing_from_oci_compute_inventory(oci_cred_json, min_savings, limit=max(120, limit))
                 if tier2b:
                     recommendations_out.extend(tier2b)
-                    if data_source == "synthetic":
+                    if data_source == "no_data_available":
                         data_source = "oci_compute_inventory"
                     elif data_source not in {"multi_provider_api", "oci_compute_inventory"}:
                         data_source = "multi_provider_api"
@@ -12300,7 +13360,7 @@ async def get_rightsizing_recommendations(
                 data_source = "cost_trend_analysis"
 
     # ── Tier 4: Imported CSV cost-signal analysis ────────────────────────────
-    if not recommendations_out:
+    if not recommendations_out and not require_live_provider_data:
         imported = (
             db.query(ImportedCostRecord)
             .filter(ImportedCostRecord.organization_id == org_id)
@@ -12316,82 +13376,30 @@ async def get_rightsizing_recommendations(
                 recommendations_out = tier4
                 data_source = "imported_costs"
 
-    # ── Tier 5 (synthetic fallback — zero org data) ──────────────────────────
+    if not recommendations_out and require_live_provider_data:
+        return RightsizingResponse(
+            generated_at=now_str,
+            organization_id=org_id,
+            data_source="live_provider_api",
+            total_resources_analyzed=total_analyzed,
+            rightsizable_count=0,
+            total_monthly_savings_usd=0.0,
+            total_annual_savings_usd=0.0,
+            recommendations=[],
+        )
     if not recommendations_out:
-        data_source = "synthetic"
-        total_analyzed = 6
-        recommendations_out = [
-            RightsizingRecommendation(
-                resource_id="i-0a1b2c3d", resource_name="prod-api-server-01",
-                resource_type="EC2 Instance", provider="aws", region="us-east-1",
-                account_id="123456789012", current_size="m5.4xlarge",
-                recommended_size="m5.2xlarge",
-                current_monthly_cost_usd=614.40, projected_monthly_cost_usd=338.00,
-                monthly_savings_usd=276.40, annual_savings_usd=3316.80,
-                cpu_utilization_avg_percent=8.3, memory_utilization_avg_percent=22.1,
-                reason="CPU p95 < 15% over 30 days — downsize to m5.2xlarge (~45% savings)",
-                confidence="high", effort="low", action="downsize",
-            ),
-            RightsizingRecommendation(
-                resource_id="i-0e4f5a6b", resource_name="data-pipeline-worker",
-                resource_type="EC2 Instance", provider="aws", region="us-west-2",
-                account_id="123456789012", current_size="c5.2xlarge",
-                recommended_size="c5.xlarge",
-                current_monthly_cost_usd=248.64, projected_monthly_cost_usd=136.75,
-                monthly_savings_usd=111.89, annual_savings_usd=1342.68,
-                cpu_utilization_avg_percent=18.7, memory_utilization_avg_percent=31.2,
-                reason="CPU avg 18.7% over 30 days — downsize or convert to Savings Plan",
-                confidence="medium", effort="low", action="downsize",
-            ),
-            RightsizingRecommendation(
-                resource_id="vm-prod-eastus-02", resource_name="azure-backend-vm",
-                resource_type="Virtual Machine", provider="azure", region="eastus",
-                account_id="sub-azure-001", current_size="Standard_D8s_v3",
-                recommended_size="Standard_D4s_v3",
-                current_monthly_cost_usd=380.16, projected_monthly_cost_usd=209.09,
-                monthly_savings_usd=171.07, annual_savings_usd=2052.84,
-                cpu_utilization_avg_percent=12.5, memory_utilization_avg_percent=28.4,
-                reason="Azure Advisor: avg CPU 12.5% — downsize to D4s_v3 (45% cost reduction)",
-                confidence="high", effort="low", action="downsize",
-            ),
-            RightsizingRecommendation(
-                resource_id="disk-vol-orphan-03", resource_name="unattached-data-disk",
-                resource_type="Managed Disk", provider="azure", region="westeurope",
-                account_id="sub-azure-001", current_size="Premium_SSD_512GiB",
-                recommended_size="N/A — terminate",
-                current_monthly_cost_usd=92.16, projected_monthly_cost_usd=0.0,
-                monthly_savings_usd=92.16, annual_savings_usd=1105.92,
-                cpu_utilization_avg_percent=None, memory_utilization_avg_percent=None,
-                reason="Disk unattached for 47 days with no snapshots — terminate to eliminate cost",
-                confidence="high", effort="low", action="terminate",
-            ),
-            RightsizingRecommendation(
-                resource_id="n1-std-8-prod-gke", resource_name="gke-prod-node-pool",
-                resource_type="GKE Node", provider="gcp", region="us-central1",
-                account_id="proj-gcp-001", current_size="n1-standard-8",
-                recommended_size="n2-standard-4",
-                current_monthly_cost_usd=218.00, projected_monthly_cost_usd=152.60,
-                monthly_savings_usd=65.40, annual_savings_usd=784.80,
-                cpu_utilization_avg_percent=21.0, memory_utilization_avg_percent=38.5,
-                reason="Migrate to n2-standard-4 — newer gen, ~30% lower cost for same workload",
-                confidence="medium", effort="medium", action="modernize",
-            ),
-            RightsizingRecommendation(
-                resource_id="i-0f7g8h9i", resource_name="prod-batch-scheduler",
-                resource_type="EC2 Instance", provider="aws", region="eu-west-1",
-                account_id="123456789012", current_size="m5.2xlarge",
-                recommended_size="m5.2xlarge (Reserved 1yr)",
-                current_monthly_cost_usd=307.20, projected_monthly_cost_usd=193.54,
-                monthly_savings_usd=113.66, annual_savings_usd=1363.92,
-                cpu_utilization_avg_percent=34.1, memory_utilization_avg_percent=41.0,
-                reason="Steady-state workload over 6 months — 1yr No-Upfront RI saves ~37%",
-                confidence="high", effort="medium", action="reserve",
-            ),
-        ]
-        if provider != "all":
-            recommendations_out = [r for r in recommendations_out if r.provider == provider]
+        return RightsizingResponse(
+            generated_at=now_str,
+            organization_id=org_id,
+            data_source="no_data_available",
+            total_resources_analyzed=total_analyzed,
+            rightsizable_count=0,
+            total_monthly_savings_usd=0.0,
+            total_annual_savings_usd=0.0,
+            recommendations=[],
+        )
 
-    # ── Apply min_savings filter (synthetic tier skips it internally) ─────────
+    # ── Apply min_savings filter ──────────────────────────────────────────────
     if min_savings > 0:
         recommendations_out = [
             r for r in recommendations_out if r.monthly_savings_usd >= min_savings
@@ -12586,10 +13594,10 @@ async def analytics_vm_utilization_hotspots(
         "top_disk_io": disk_proxy[:limit],
         "top_network_bandwidth": net_proxy[:limit],
         "notes": [
-            "CPU and memory rankings use connected-provider telemetry when available.",
+            "CPU and memory rankings use connected-provider telemetry (CloudWatch, Azure Monitor, Cloud Monitoring) when available.",
             "When native CPU/memory telemetry is unavailable, rankings fall back to a deterministic cost-profile proxy.",
             "Disk I/O and network bandwidth use a cost-profile proxy when explicit metrics are not available.",
-            "For exact telemetry, connect provider monitoring feeds (CloudWatch, Azure Monitor, Cloud Monitoring, OCI Monitoring).",
+            "OCI and partial-provider scopes may still return proxy rankings until monitoring feeds are configured.",
         ],
     }
 

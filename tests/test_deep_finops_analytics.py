@@ -231,6 +231,37 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         self.assertIn("genai_prompt", data)
         self.assertIn("cost_context", data)
 
+    def test_09_rag_guidance_endpoint_returns_retrieved_docs(self) -> None:
+        resp = self.client.post(
+            "/api/v1/genai/rag-guidance",
+            json={
+                "analysis_type": "finops_operating_review",
+                "cloud_provider": "all",
+                "top_k": 4,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("rag", data)
+        rag = data["rag"]
+        self.assertGreaterEqual(rag.get("retrieved_count", 0), 1)
+        self.assertIn("retrieved_docs", rag)
+        self.assertTrue(rag.get("rag_brief"))
+
+    def test_10_finops_intelligence_endpoint_includes_rag_and_advisory(self) -> None:
+        resp = self.client.get(
+            "/api/v1/analytics/finops-intelligence?focus=commitment_strategy&cloud_provider=all&months=12",
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("deterministic", data)
+        self.assertIn("rag", data)
+        self.assertIn("advisory", data)
+        self.assertGreaterEqual(data["rag"].get("retrieved_count", 0), 1)
+        self.assertIn("prompt", data["advisory"])
+
 
 if __name__ == "__main__":
     unittest.main()

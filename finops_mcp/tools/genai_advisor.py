@@ -58,6 +58,20 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(default)
 
 
+def _with_rag(prompt: str, context: Optional[dict[str, Any]] = None) -> str:
+    """Append retrieved guidance snippets to a prompt when available."""
+    context = context or {}
+    rag_brief = str(context.get("rag_brief") or "").strip()
+    if not rag_brief:
+        return prompt
+    return (
+        f"{prompt}\n\n"
+        "Retrieved FinOps guidance context (RAG):\n"
+        f"{rag_brief}\n"
+        "Use this guidance to sharpen recommendations while preserving provided numeric values."
+    )
+
+
 def _is_configured() -> bool:
     """Return True if enough config is present to attempt an OCI GenAI call."""
     endpoint = _OCI_GENAI_ENDPOINT or _DEFAULT_ENDPOINT
@@ -270,6 +284,7 @@ def generate_spend_narrative(context: dict[str, Any]) -> tuple[Optional[str], st
         f"{budget_str}\n\n"
         f"Highlight the most important finding and the single best next action."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -307,6 +322,7 @@ def generate_waste_insights(context: dict[str, Any]) -> tuple[Optional[str], str
         f"Explain the most critical waste drivers and what to fix first for maximum ROI. "
         f"End with one specific, time-bound action the team should take this week."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -345,6 +361,7 @@ def generate_optimization_roadmap(context: dict[str, Any]) -> tuple[Optional[str
         f"Build the roadmap so that quick wins land in the first 30 days and structural changes "
         f"like commitment purchases land in 60-90 days."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -394,6 +411,7 @@ def generate_executive_narrative(context: dict[str, Any]) -> tuple[Optional[str]
         f"- P90 forecast scenario: ${p90_monthly:,.0f}/month\n"
         f"- {budget_str}"
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -419,6 +437,7 @@ def generate_anomaly_explanation(anomaly: dict[str, Any], context: dict[str, Any
         f"Monthly spend context: ${monthly:,.2f}/month total.\n\n"
         f"What likely caused this spike and what should the team check first?"
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -451,6 +470,7 @@ def generate_optimization_brief(context: dict[str, Any]) -> tuple[Optional[str],
         f"Top commitment opportunities: {opp_str}.\n\n"
         f"Write a brief that a CFO would find actionable. Include a clear ROI statement."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -474,6 +494,7 @@ def generate_maturity_narrative(assessment: dict[str, Any]) -> tuple[Optional[st
         f"What does this maturity level mean in practice, and what are the top 2 concrete steps "
         f"to advance to the next level?"
     )
+    prompt = _with_rag(prompt, assessment)
 
     if not _is_configured():
         return None, prompt
@@ -507,6 +528,7 @@ def generate_budget_risk_alert(guardrails: dict[str, Any], forecast_context: dic
         f"Budget level for 95% confidence: ${safe_budget:,.0f}/month.\n\n"
         f"Summarize the risk and recommend the single most impactful budget action."
     )
+    prompt = _with_rag(prompt, forecast_context)
 
     if not _is_configured():
         return None, prompt
@@ -548,6 +570,7 @@ def generate_commitment_strategy(context: dict[str, Any]) -> tuple[Optional[str]
         "Include: (1) which provider to act on first, (2) recommended 1-year vs 3-year "
         "mix, (3) guardrails for utilization and expiration risk, (4) one governance KPI."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -583,6 +606,7 @@ def generate_tagging_strategy(context: dict[str, Any]) -> tuple[Optional[str], s
         "Explain the business impact of poor tagging and give 2 concrete enforcement steps "
         "an engineer can implement this sprint."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -618,6 +642,7 @@ def generate_sustainability_narrative(context: dict[str, Any]) -> tuple[Optional
         f"renewable region selection.\n\n"
         f"Top recommendations:\n{recs_str}"
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -652,6 +677,7 @@ def generate_chargeback_narrative(context: dict[str, Any]) -> tuple[Optional[str
         f"Top spenders: {top_str}.\n\n"
         f"If unallocated > 15%, emphasise urgency. Otherwise focus on top-spender accountability."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -695,6 +721,7 @@ def generate_cross_provider_comparison_brief(context: dict[str, Any]) -> tuple[O
         f"Provider breakdown:\n{provider_str}\n\n"
         f"{arb_str}"
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -727,6 +754,7 @@ def generate_alert_triage(alerts: list[dict[str, Any]], context: dict[str, Any])
         f"{len(critical_alerts)} critical, {len(high_alerts)} high severity alerts.\n\n"
         f"Alerts:\n{alert_lines}"
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -766,6 +794,7 @@ def generate_rightsizing_brief(context: dict[str, Any]) -> tuple[Optional[str], 
         f"Top rightsizing candidates:\n{resource_lines}\n\n"
         "Highlight the highest-ROI candidate, execution risk, and testing approach."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -805,6 +834,7 @@ def generate_vendor_negotiation_brief(context: dict[str, Any]) -> tuple[Optional
         "Cover: leverage points, minimum ask on discount %, bundled services to request, "
         "SLA improvements, and a walk-away threshold."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -820,7 +850,7 @@ def generate_forecast_model_diagnostics(context: dict[str, Any]) -> tuple[Option
     champion = context.get("champion_model", "blended_regression")
     model_risk = context.get("model_risk_level", "medium")
     quality = context.get("data_quality_score", 0)
-    history_source = context.get("history_source", "synthetic")
+    history_source = context.get("history_source", "no_history")
     history_points = context.get("history_points", 0)
     drift = context.get("drift_signals", {})
     challengers = context.get("challenger_models", [])
@@ -844,6 +874,7 @@ def generate_forecast_model_diagnostics(context: dict[str, Any]) -> tuple[Option
         f"Drift signals: {drift}. "
         f"Challenger models: {challenger_summary}."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt
@@ -906,6 +937,7 @@ def generate_finops_operating_review(context: dict[str, Any]) -> tuple[Optional[
         f"Top actions:\n{top_actions_str}\n\n"
         "For each bullet, include one explicit owner role (FinOps, Platform, Procurement, or App Team)."
     )
+    prompt = _with_rag(prompt, context)
 
     if not _is_configured():
         return None, prompt

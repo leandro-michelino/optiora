@@ -245,7 +245,7 @@ export default function PredictiveAnalyticsPage() {
             <div className="card">
               <p className="text-sm text-slate-600 dark:text-slate-400">History Source</p>
               <p className="text-xl font-bold text-slate-900 dark:text-white capitalize">
-                {(forecast.history_source || 'synthetic').replace('_', ' ')}
+                {(forecast.history_source || 'no_history').replace('_', ' ')}
               </p>
             </div>
             <div className="card">

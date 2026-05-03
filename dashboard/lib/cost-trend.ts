@@ -7,25 +7,11 @@ export interface ChartCostTrendPoint {
   [provider: string]: string | number
 }
 
-const PROVIDERS = ['aws', 'azure', 'gcp', 'oci'] as const
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export function makeFallbackTrendData(costs: CostResponse | null): ChartCostTrendPoint[] {
-  const breakdown = costs?.breakdown || {}
-  const now = new Date()
-  const months = Array.from({ length: 6 }, (_, index) => {
-    const labelIndex = (now.getMonth() - 5 + index + 12) % 12
-    return MONTH_LABELS[labelIndex]
-  })
-
-  return months.map((month, index) => {
-    const growth = 0.84 + index * 0.032
-    const point: ChartCostTrendPoint = { month }
-    PROVIDERS.forEach((provider) => {
-      point[provider] = Math.round((breakdown[provider]?.cost || 0) * growth)
-    })
-    return point
-  })
+  void costs
+  return []
 }
 
 export function transformApiTrend(response: CostTrendResponse): ChartCostTrendPoint[] {

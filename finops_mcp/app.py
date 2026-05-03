@@ -4,7 +4,9 @@ import argparse
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -56,6 +58,15 @@ def _resolve_allowed_origins() -> list[str]:
 
     return sorted(origins)
 
+
+def _coerce_request_id(raw_request_id: str | None) -> str:
+    candidate = str(raw_request_id or "").strip()
+    if not candidate or len(candidate) > 128:
+        return uuid4().hex
+    if any(not (ch.isalnum() or ch in {"-", "_", "."}) for ch in candidate):
+        return uuid4().hex
+    return candidate
+
 # Create FastAPI app
 app = FastAPI(
     title="OptiOra API",
@@ -70,18 +81,40 @@ app.add_middleware(
     allow_origins=_resolve_allowed_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "X-Requested-With",
+        "X-Request-ID",
+    ],
+    expose_headers=["X-Request-ID", "X-Response-Time-Ms"],
 )
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = _coerce_request_id(request.headers.get("x-request-id"))
+    request.state.request_id = request_id
+    started_at = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Response-Time-Ms"] = f"{duration_ms:.2f}"
+    return response
+
 
 # Initialize database
 async def startup_event():
     """Initialize database on startup."""
     try:
+        cfg = Config()
+        cfg.validate()
         init_db()
-        if not Config().auth_enabled:
+        if not cfg.auth_enabled:
             ensure_public_workspace()
-        if Config().enable_scan_scheduler:
-            interval_seconds = max(300, Config().scan_scheduler_interval_minutes * 60)
+        if cfg.enable_scan_scheduler:
+            interval_seconds = max(300, cfg.scan_scheduler_interval_minutes * 60)
 
             async def _scheduler_loop():
                 while True:
@@ -96,7 +129,6 @@ async def startup_event():
             _scheduler_task = asyncio.create_task(_scheduler_loop())
             logger.info("Scheduled scan runner enabled (interval=%ss)", interval_seconds)
 
-        cfg = Config()
         if cfg.retention_enabled:
             retention_interval = max(3600, cfg.retention_run_interval_hours * 3600)
 
@@ -157,9 +189,10 @@ app.include_router(api_router)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error"},
+        content={"detail": "Internal server error", "request_id": request_id},
     )
 
 

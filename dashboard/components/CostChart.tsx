@@ -13,20 +13,7 @@ import { type ChartCostTrendPoint } from '@/lib/cost-trend'
 
 export type CostTrendPoint = ChartCostTrendPoint
 
-const defaultData: CostTrendPoint[] = [
-  { month: 'Jan', aws: 4200, azure: 2400, gcp: 1800, oci: 1200 },
-  { month: 'Feb', aws: 4500, azure: 2600, gcp: 1900, oci: 1300 },
-  { month: 'Mar', aws: 4800, azure: 2800, gcp: 2100, oci: 1400 },
-  { month: 'Apr', aws: 5100, azure: 3000, gcp: 2200, oci: 1500 },
-  { month: 'May', aws: 5200, azure: 3100, gcp: 2300, oci: 1550 },
-  { month: 'Jun', aws: 5400, azure: 3400, gcp: 2350, oci: 1500 },
-  { month: 'Jul', aws: 5600, azure: 3200, gcp: 2280, oci: 1480 },
-  { month: 'Aug', aws: 5200, azure: 3100, gcp: 2200, oci: 1450 },
-  { month: 'Sep', aws: 5300, azure: 3300, gcp: 2400, oci: 1500 },
-  { month: 'Oct', aws: 5400, azure: 3400, gcp: 2350, oci: 1520 },
-  { month: 'Nov', aws: 5500, azure: 3500, gcp: 2400, oci: 1550 },
-  { month: 'Dec', aws: 5800, azure: 3600, gcp: 2500, oci: 1600 },
-]
+const defaultData: CostTrendPoint[] = []
 
 const chartConfig = {
   aws:   { label: 'AWS',   color: '#f59e0b' },

@@ -1,7 +1,7 @@
 """Tests for the Resource-Level Rightsizing API endpoint.
 
 Covers:
-- GET /api/v1/recommendations/rightsizing   (no data — synthetic fallback)
+- GET /api/v1/recommendations/rightsizing   (real data source waterfall)
 - GET /api/v1/recommendations/rightsizing   (with imported CSV data)
 - provider filter parameter
 - min_savings filter parameter
@@ -58,7 +58,7 @@ class RightsizingTest(unittest.TestCase):
         cls.client = TestClient(app)
         cls.token = _register_and_login(cls.client)
         cls.headers = {"Authorization": f"Bearer {cls.token}"}
-        # Seed imported data so synthetic recommendations are generated
+        # Seed imported data so CSV-backed recommendations can be generated
         cls.client.post(
             "/api/v1/imports/costs/csv",
             files={"file": ("test.csv", _IMPORT_CSV, "text/csv")},
@@ -95,6 +95,13 @@ class RightsizingTest(unittest.TestCase):
         ):
             self.assertIn(field, data, f"missing top-level field: {field}")
         self.assertIsInstance(data["recommendations"], list)
+
+    def test_02a_no_synthetic_sources(self) -> None:
+        resp = self.client.get("/api/v1/recommendations/rightsizing", headers=self.headers)
+        data = resp.json()
+        self.assertNotEqual(data.get("data_source"), "synthetic")
+        for rec in data.get("recommendations", []):
+            self.assertNotEqual(rec.get("evidence_source"), "synthetic")
 
     def test_03_savings_are_non_negative(self) -> None:
         resp = self.client.get("/api/v1/recommendations/rightsizing", headers=self.headers)

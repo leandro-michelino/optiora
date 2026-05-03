@@ -351,7 +351,7 @@ export default function DashboardPage() {
         const hasArchive = resp.points.some((p) => new Date(p.period_start) < hotCutoff)
         setTrendFromArchive(hasArchive)
       } catch {
-        // Ignore; chart falls back to synthetic data
+        // Ignore; chart keeps an empty state until live trend data is available.
       }
     }
     void run()

@@ -220,8 +220,14 @@ class Config:
         )
         has_oci = bool(self.oci_config_file)
         if not any([has_aws, has_azure, has_gcp, has_oci]):
-            raise ValueError(
-                "At least one cloud provider must be configured for cost analysis (AWS, Azure, GCP, or OCI)"
+            if self.require_live_provider_data:
+                raise ValueError(
+                    "At least one cloud provider must be configured for live cost analysis "
+                    "(AWS, Azure, GCP, or OCI) because REQUIRE_LIVE_PROVIDER_DATA=true."
+                )
+            _logger.warning(
+                "No live cloud provider credentials configured. "
+                "Running in CSV-import mode because REQUIRE_LIVE_PROVIDER_DATA=false."
             )
         # Warn clearly about insecure runtime defaults
         _env = os.getenv("ENVIRONMENT", "development").strip().lower()

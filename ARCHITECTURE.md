@@ -240,6 +240,15 @@ Path F: Forecast diagnostics advisory
   /api/v1/analytics/forecast-diagnostics
       -> deterministic budget pressure and sensitivity
       -> GenAI budget-risk narrative context
+
+Path G: RAG-guided advisory
+  /api/v1/genai/rag-guidance
+      -> local FinOps benchmark catalog retrieval (CSV-backed)
+      -> ranked guidance snippets + sources
+  /api/v1/analytics/finops-intelligence
+      -> deterministic analytics block
+      -> retrieved guidance context injection
+      -> GenAI narrative with explicit retrieved context
 ```
 
 ## How GenAI Is Used Beyond Forecasting
@@ -328,7 +337,38 @@ Tier 1  Provider-native usage and rightsizing signals when available
 Tier 2  Provider inventory and configuration heuristics
 Tier 3  Snapshot trend analysis
 Tier 4  Imported CSV cost-signal analysis
-Tier 5  Synthetic fallback examples
+No synthetic recommendation tier
+If no eligible real signals exist: empty recommendation list with no_data_available source
+```
+
+## RAG Retrieval Pipeline
+
+```text
+Deterministic FinOps context
+  - forecast diagnostics
+  - budget guardrails
+  - commitment gaps
+  - tagging coverage
+  - operating review signals
+        |
+        v
+analysis_type + provider + context tokens
+        |
+        v
+finops_mcp/tools/finops_rag.py
+        |
+        +--> load finops_mcp/data/finops_rag_catalog.csv
+        +--> score entries by analysis/provider/token overlap
+        +--> return top guidance snippets + sources + rag_brief
+        |
+        v
+genai_advisor prompt composer
+        |
+        +--> deterministic numbers (source of truth)
+        +--> retrieved guidance context (RAG)
+        |
+        v
+OCI GenAI narrative (or prompt fallback when GenAI is disabled)
 ```
 
 ## Deployment Model

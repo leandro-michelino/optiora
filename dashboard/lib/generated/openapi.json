@@ -3807,6 +3807,55 @@
         ]
       }
     },
+    "/api/v1/genai/rag-guidance": {
+      "post": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Genai Rag Guidance",
+        "description": "Return retrieved FinOps guidance snippets for an analysis context.",
+        "operationId": "genai_rag_guidance_api_v1_genai_rag_guidance_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagGuidanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Genai Rag Guidance Api V1 Genai Rag Guidance Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/genai/copilot-pack": {
       "post": {
         "tags": [
@@ -4123,6 +4172,87 @@
         }
       }
     },
+    "/api/v1/analytics/finops-intelligence": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Analytics Finops Intelligence",
+        "description": "Deep FinOps intelligence: deterministic analytics + RAG + GenAI narrative.",
+        "operationId": "analytics_finops_intelligence_api_v1_analytics_finops_intelligence_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "focus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "finops_operating_review",
+                "forecast_model_diagnostics",
+                "commitment_strategy",
+                "tagging_strategy",
+                "sustainability_narrative",
+                "executive_narrative"
+              ],
+              "type": "string",
+              "default": "finops_operating_review",
+              "title": "Focus"
+            }
+          },
+          {
+            "name": "cloud_provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Cloud Provider"
+            }
+          },
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 24,
+              "minimum": 1,
+              "default": 12,
+              "title": "Months"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Analytics Finops Intelligence Api V1 Analytics Finops Intelligence Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/analytics/tagging-coverage": {
       "get": {
         "tags": [
@@ -4252,6 +4382,153 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/analytics/service-hotspots": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Analytics Service Hotspots",
+        "description": "Top costly cloud services across providers (deterministic, non-GenAI).",
+        "operationId": "analytics_service_hotspots_api_v1_analytics_service_hotspots_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "month",
+              "title": "Period"
+            }
+          },
+          {
+            "name": "cloud_provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Cloud Provider"
+            }
+          },
+          {
+            "name": "focus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Focus"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Analytics Service Hotspots Api V1 Analytics Service Hotspots Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/resource-intelligence": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Analytics Resource Intelligence",
+        "description": "Best-effort resource intelligence: owner/creator, first seen, and observed cost since first sighting.",
+        "operationId": "analytics_resource_intelligence_api_v1_analytics_resource_intelligence_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Query"
+            }
+          },
+          {
+            "name": "cloud_provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Cloud Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Analytics Resource Intelligence Api V1 Analytics Resource Intelligence Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/analytics/anomaly-intelligence": {
@@ -4403,6 +4680,30 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Health Check Api V1 Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/readiness": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Readiness Check",
+        "description": "Deep readiness probe with database and provider runtime checks.",
+        "operationId": "readiness_check_api_v1_health_readiness_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Readiness Check Api V1 Health Readiness Get"
                 }
               }
             }
@@ -6461,7 +6762,7 @@
           "api"
         ],
         "summary": "Get Rightsizing Recommendations",
-        "description": "Resource-level rightsizing recommendations.\n\nTries real provider APIs first (AWS CE, Azure Advisor), then falls back to\ndeterministic cost-trend analysis on scan history, then imported CSV signals,\nand finally synthetic examples when no data exists at all.",
+        "description": "Resource-level rightsizing recommendations.\n\nTries live provider signals first (AWS Cost Explorer + CloudWatch,\nAzure Advisor + Azure Monitor, GCP Cloud Monitoring inventory), then\nfalls back to deterministic cost-trend analysis on scan history,\nand imported CSV signals when CSV fallback is enabled.\nNo synthetic recommendation records are ever generated.",
         "operationId": "get_rightsizing_recommendations_api_v1_recommendations_rightsizing_get",
         "security": [
           {
@@ -6511,6 +6812,69 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RightsizingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/vm-utilization-hotspots": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Analytics Vm Utilization Hotspots",
+        "description": "Top VM hotspots by CPU/memory and best-effort proxies for disk/network.\n\nUses connected-provider rightsizing/telemetry signals across all providers when\navailable. When explicit CPU/memory telemetry is missing, returns a deterministic\ncross-provider proxy ranking based on latest monthly cost profile so callers still\nget a usable top-N response.",
+        "operationId": "analytics_vm_utilization_hotspots_api_v1_analytics_vm_utilization_hotspots_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Analytics Vm Utilization Hotspots Api V1 Analytics Vm Utilization Hotspots Get"
                 }
               }
             }
@@ -10579,6 +10943,34 @@
         ],
         "title": "ProviderDiagnostic"
       },
+      "RagGuidanceRequest": {
+        "properties": {
+          "analysis_type": {
+            "type": "string",
+            "title": "Analysis Type",
+            "default": "finops_operating_review"
+          },
+          "cloud_provider": {
+            "type": "string",
+            "title": "Cloud Provider",
+            "default": "all"
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "default": 4
+          },
+          "context": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "title": "RagGuidanceRequest"
+      },
       "RefreshTokenRequest": {
         "properties": {
           "refresh_token": {
@@ -11124,7 +11516,7 @@
           "evidence_source": {
             "type": "string",
             "title": "Evidence Source",
-            "default": "synthetic"
+            "default": "unspecified"
           },
           "analysis_points": {
             "type": "integer",

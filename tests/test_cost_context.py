@@ -5,6 +5,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from finops_mcp.cost_context import (
+    LiveDataPolicyError,
     build_imported_cost_context,
     build_live_cost_context,
     fetch_provider_cost_summary,
@@ -103,6 +104,33 @@ class CostContextHelperTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context["total_cost"], 25.0)
         self.assertEqual(context["breakdown"]["aws"]["percentage"], 100.0)
         self.assertEqual(len(context["region_breakdown"]), 1)
+
+    async def test_build_live_cost_context_enforces_live_provider_mode_when_not_configured(self) -> None:
+        with self.assertRaises(LiveDataPolicyError):
+            await build_live_cost_context(
+                SimpleNamespace(),
+                object(),
+                cloud_provider="aws",
+                require_live_provider_data=True,
+                provider_diagnostics=lambda: [SimpleNamespace(provider="aws", configured=False)],
+                imported_cost_context_builder=lambda membership, db, cloud_provider: {"source": "csv_import"},
+                cost_summary_for_provider=self._unused_cost_summary,
+            )
+
+    async def test_build_live_cost_context_enforces_live_provider_mode_on_provider_failures(self) -> None:
+        async def _failing_summary(provider: str, period: str):
+            return {"error": f"{provider} unavailable"}
+
+        with self.assertRaises(LiveDataPolicyError):
+            await build_live_cost_context(
+                SimpleNamespace(),
+                object(),
+                cloud_provider="aws",
+                require_live_provider_data=True,
+                provider_diagnostics=lambda: [SimpleNamespace(provider="aws", configured=True)],
+                imported_cost_context_builder=lambda membership, db, cloud_provider: None,
+                cost_summary_for_provider=_failing_summary,
+            )
 
     async def _unused_cost_summary(self, provider: str, period: str):
         self.fail(f"cost summary should not be called for {provider} {period}")

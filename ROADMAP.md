@@ -41,6 +41,7 @@
 - forecast champion/challenger model diagnostics with data quality, drift flags, and GenAI model-risk prompts
 - unit economics, scorecards, virtual tags, decision-grade recommendations, and resource-level rightsizing endpoints
 - alert lifecycle states, routing-policy simulator, destination tests/toggles/status, data freshness observability, and channel delivery telemetry
+- RAG-grounded intelligence workflows (`/api/v1/genai/rag-guidance`, `/api/v1/analytics/finops-intelligence`) with retrieved FinOps benchmark context injected into GenAI prompts
 
 ## Current Deployment Stance
 

@@ -35,6 +35,8 @@ Avoid using a Python `3.14` virtualenv for the backend test environment until th
 Regression tests:
 
 ```bash
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+# Optional (if pytest is installed)
 .venv/bin/python -m pytest -q
 ./scripts/check-animated-svg-routes.sh
 ```
@@ -99,6 +101,8 @@ Current backend coverage includes:
 - what-if timeline simulation
 - champion/challenger model diagnostics (`GET /api/v1/forecast/model-diagnostics`)
 - forecast diagnostics contract (`GET /api/v1/analytics/forecast-diagnostics`)
+- RAG guidance retrieval contract (`POST /api/v1/genai/rag-guidance`)
+- combined intelligence contract (`GET /api/v1/analytics/finops-intelligence`)
 - GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, vendor negotiation, and operating reviews
 
 **Kubernetes and partner portfolio** (`tests/test_kubernetes.py`, `tests/test_partner_portfolio.py`):
