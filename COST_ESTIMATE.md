@@ -1,64 +1,81 @@
 # Cost Estimate (Monthly, Full Capability)
 
-Current as of May 2026. Estimates assume OCI hosting with OptiOra's current feature set, including forecasting, deep analytics, operations policy controls, scheduler policy controls, admin diagnostics, export jobs, and OCI Generative AI.
+Current as of **May 3, 2026**.
+
+This estimate reflects the current OptiOra architecture and behavior:
+- OCI-hosted application plane (API + Dashboard).
+- Multi-cloud provider connectivity (AWS, Azure, GCP, OCI).
+- Real-time telemetry query paths for Cost Advisor (including cross-provider top-N operational queries).
+- GenAI + RAG style responses for advisory and narrative outputs.
 
 ## Assumptions
 
-- Region: `uk-london-1`
-- Runtime: one VM running backend + dashboard
-- Availability baseline: 24x7 (~730 hours/month)
-- Features enabled: analytics, rightsizing, virtual tags, operations lifecycle controls, executive reports, hybrid advisor, GenAI narratives/chat
-- Database policy:
-  - `Small`: SQLite on VM
-  - `Default` / `High Throughput`: PostgreSQL on OCI
-  - Optional enterprise path: Autonomous Database **BYOL** (license cost not included below)
+- Primary deployment region: `uk-london-1`.
+- Runtime: one VM running API + dashboard continuously (~730 hours/month).
+- Feature set enabled:
+  - FinOps analytics, rightsizing, forecasting, tagging, scorecards, exports.
+  - Scheduler + policy controls.
+  - Cost Advisor with provider refresh fallbacks and hybrid deterministic + GenAI flow.
+- Data model:
+  - `Small`: SQLite on VM.
+  - `Default` / `High Throughput`: PostgreSQL on OCI.
+- Cloud provider API access is enabled for connected accounts.
 
-## Cost Components
+## Cost Drivers
 
 ```text
-Compute VM (E4 Flex)         : OCPU + RAM-driven
-Boot / block storage         : baseline persistent disk
-Network egress               : workload-dependent
-Database                     : SQLite (small) or PostgreSQL (default/high)
-Operations controls          : low compute overhead (scheduler + policies)
-Logging / diagnostics        : low-to-moderate, retention dependent
-GenAI inference usage        : highly variable by prompt volume and model choice
-Optional Redis               : for distributed auth rate limiting at scale
+Compute + memory (VM)                 : baseline runtime cost
+Persistent storage (boot + data)      : DB files, exports, historical snapshots
+DB platform                            : SQLite / PostgreSQL / optional ADB BYOL
+Provider telemetry collection          : scan cadence and account count dependent
+Logging and retention                  : alert/events/history growth dependent
+GenAI + RAG inference                  : prompt volume and response size dependent
+Network egress                         : export/report/API payload dependent
 ```
 
-## Deployment Sizes (USD / month)
+## Deployment Profiles (USD / month)
 
-| Size | Infra shape guidance | Database approach | Core infra* | DB / PaaS | GenAI usage | Estimated total |
-|---|---|---:|---:|---:|---:|
-| Small | `1 OCPU / 4 GB` | SQLite on VM | 60-100 | 0 | 15-80 (light) | **75-180** |
-| Default | `2 OCPU / 8 GB` | PostgreSQL on OCI | 90-140 | 70-140 | 80-250 (medium) | **240-530** |
-| High Throughput | `4 OCPU / 16 GB` | PostgreSQL on OCI | 180-320 | 150-260 | 300-1200+ (heavy) | **630-1780+** |
+| Profile | Shape guidance | Database | Core infra* | Telemetry/ops | GenAI + RAG | Estimated total |
+|---|---|---|---:|---:|---:|---:|
+| Small | `1 OCPU / 4 GB` | SQLite on VM | 60-100 | 10-40 | 20-90 | **90-230** |
+| Default | `2 OCPU / 8 GB` | PostgreSQL | 90-150 | 40-120 | 100-320 | **230-590** |
+| High Throughput | `4 OCPU / 16 GB` | PostgreSQL | 180-340 | 120-320 | 350-1400+ | **650-2060+** |
 
-\* Core infra includes VM, storage, baseline logging, exports, scheduler policy execution overhead, and normal operational overhead.
+\* Core infra includes VM, base storage, baseline logs, scheduler overhead, and normal operational services.
 
-## Operations Add-Ons (Optional)
+## Real-Time Telemetry Multiplier
 
-- Redis-backed auth rate limiting (`REDIS_URL`): **+$15 to +$60** / month depending on tier and HA.
-- Increased archive/report volume (Object Storage + exports): **+$3 to +$25** / month for typical growth.
-- Notification-heavy workflows (email/webhook traffic): usually low, but can add modest egress/logging cost at high volume.
+Cost changes materially with scan/refresh frequency and account count:
+
+- Light cadence (scheduled, few manual refreshes): add ~`1.0x` telemetry baseline.
+- Medium cadence (hourly-ish operational checks): add ~`1.3x` telemetry baseline.
+- Heavy cadence (frequent manual “real-time” requests across many accounts): add ~`1.8x` to `2.5x` telemetry baseline.
+
+Practical effect:
+- Teams that use many live operational questions (for example, repeated top-N CPU/memory queries across providers) should budget closer to the **upper half** of each profile range.
+
+## Optional Add-Ons
+
+- Redis-backed rate limiting/session controls: **+$15 to +$60** / month.
+- Increased archive/export growth: **+$5 to +$35** / month.
+- Notification-heavy webhook/email patterns: usually low, but can add egress/log volume.
 
 ## Autonomous Database BYOL Note
 
-For enterprise deployments using Autonomous Database with **BYOL** (current default policy when license-model choice exists):
+If using Autonomous Database with BYOL:
+- Typical runtime delta vs small PostgreSQL footprint: **+$120 to +$280** / month.
+- Oracle DB license entitlement remains external to this estimate.
 
-- Runtime infrastructure delta is typically **+$120 to +$280** / month versus small PostgreSQL footprints (usage dependent).
-- Oracle database license entitlement is external to this estimate and must be budgeted separately.
+## Planning Baselines
 
-## Practical Planning Numbers
-
-- Default production profile (PostgreSQL + medium GenAI usage): **$240-$530 / month**.
-- Default + operations hardening add-ons (Redis + higher export volume): **$260-$615 / month**.
-- Small low-cost profile (SQLite on VM): **$75-$180 / month**.
+- Default production (PostgreSQL + medium telemetry + medium GenAI): **$230-$590 / month**.
+- Default with heavier real-time cross-provider usage: **$350-$850 / month**.
+- Small cost-conscious profile (SQLite + light telemetry): **$90-$230 / month**.
 
 ## Cost Control Recommendations
 
-1. Start at `2 OCPU / 8 GB` and tune after observing p95 API latency, scan duration, and dashboard response time.
-2. Track GenAI token/request volume closely; it remains the largest monthly cost swing.
-3. Use scheduler policies to power down non-production environments off-hours and reduce compute spend.
-4. Keep retention/archive windows aligned to compliance needs instead of defaulting to long high-volume history.
-5. Use Autonomous Database BYOL only when workload scale, HA, and governance requirements justify the uplift.
+1. Start with `2 OCPU / 8 GB`, then tune using actual scan duration, API p95 latency, and dashboard responsiveness.
+2. Cap manual live-refresh bursts in production workflows and rely on scheduler cadence where possible.
+3. Track GenAI request volume separately from deterministic analytics volume.
+4. Keep retention windows intentional (alerts, snapshots, exports) to avoid silent storage creep.
+5. Use proxy-based operational rankings only when native monitoring is unavailable, then connect provider monitoring to improve precision.
