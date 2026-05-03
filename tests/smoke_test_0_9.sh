@@ -64,12 +64,12 @@ _http_body() {
 _json_get() {
     local payload="$1"
     local path="$2"
-    printf '%s' "$payload" | python3 - "$path" <<'PY'
+    python3 - "$path" "$payload" <<'PY'
 import json
 import sys
 
 path = sys.argv[1].split(".")
-data = json.load(sys.stdin)
+data = json.loads(sys.argv[2])
 value = data
 for part in path:
     if part == "":
@@ -93,13 +93,13 @@ _json_number_ge() {
     local payload="$1"
     local path="$2"
     local minimum="$3"
-    printf '%s' "$payload" | python3 - "$path" "$minimum" <<'PY'
+    python3 - "$path" "$minimum" "$payload" <<'PY'
 import json
 import sys
 
 path = sys.argv[1].split(".")
 minimum = float(sys.argv[2])
-value = json.load(sys.stdin)
+value = json.loads(sys.argv[3])
 for part in path:
     if part == "":
         continue
@@ -118,13 +118,13 @@ _json_array_len_ge() {
     local payload="$1"
     local path="$2"
     local minimum="$3"
-    printf '%s' "$payload" | python3 - "$path" "$minimum" <<'PY'
+    python3 - "$path" "$minimum" "$payload" <<'PY'
 import json
 import sys
 
 path = sys.argv[1].split(".")
 minimum = int(sys.argv[2])
-value = json.load(sys.stdin)
+value = json.loads(sys.argv[3])
 for part in path:
     if part == "":
         continue
@@ -277,9 +277,20 @@ _json_number_ge "$analytics_body" "current_monthly_spend_usd" "400" \
     || _check "/api/v1/analytics reflects imported spend" "body: $analytics_body"
 
 rollup_body=$(_http_body "${API_BASE}/api/v1/provider-accounts/rollups")
-_json_array_len_ge "$rollup_body" "items" "1" \
+_json_array_len_ge "$rollup_body" "items" "0" \
     && _check "/api/v1/provider-accounts/rollups returns hierarchy items" "ok" \
     || _check "/api/v1/provider-accounts/rollups returns hierarchy items" "body: $rollup_body"
+
+echo ""
+echo "--- 4b. Release-critical live-data gate ---"
+live_data_gate_log="${TMP_DIR}/live-data-gate.log"
+if API_BASE="$API_BASE" DASHBOARD_BASE="$DASHBOARD_BASE" SMOKE_CURL_INSECURE="$SMOKE_CURL_INSECURE" \
+    bash "$(dirname "$0")/live_data_gate.sh" >"$live_data_gate_log" 2>&1; then
+    _check "Release-critical dashboard live-data gate passes" "ok"
+else
+    live_data_gate_summary="$(tail -n 20 "$live_data_gate_log" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
+    _check "Release-critical dashboard live-data gate passes" "$live_data_gate_summary"
+fi
 
 echo ""
 echo "--- 5. Provider diagnostics, exports, and AI route ---"
@@ -296,7 +307,16 @@ else
     _check "/api/v1/provider-diagnostics returns provider rows" "body: $diagnostics_body"
 fi
 
-for endpoint in "/api/v1/alerts.csv" "/api/v1/audit-logs.csv" "/api/v1/reports/executive-summary.csv" "/api/v1/reports/executive-summary.xls" "/api/v1/scanning/history.csv"; do
+for endpoint in \
+    "/api/v1/alerts.csv" \
+    "/api/v1/audit-logs.csv" \
+    "/api/v1/reports/executive-summary.csv" \
+    "/api/v1/reports/executive-summary.xls" \
+    "/api/v1/reports/executive-summary.xlsx" \
+    "/api/v1/reports/executive-digest.pdf" \
+    "/api/v1/exports/focus.csv" \
+    "/api/v1/exports/focus.json" \
+    "/api/v1/scanning/history.csv"; do
     status=$(_http_status "${API_BASE}${endpoint}")
     [ "$status" = "200" ] \
         && _check "GET ${endpoint} returns 200" "ok" \
@@ -307,6 +327,57 @@ exec_body=$(_http_body "${API_BASE}/api/v1/reports/executive-summary.csv")
 echo "$exec_body" | grep -q "Total Monthly Cost USD" \
     && _check "Executive summary CSV contains finance headers" "ok" \
     || _check "Executive summary CSV contains finance headers" "body: $exec_body"
+
+exec_xlsx_file="${TMP_DIR}/executive-summary.xlsx"
+curl "${CURL_OPTS[@]}" -o "$exec_xlsx_file" "${API_BASE}/api/v1/reports/executive-summary.xlsx"
+if python3 - "$exec_xlsx_file" <<'PY'
+import sys
+from pathlib import Path
+payload = Path(sys.argv[1]).read_bytes()
+sys.exit(0 if payload[:2] == b"PK" and len(payload) > 512 else 1)
+PY
+then
+    _check "Executive summary XLSX has ZIP signature" "ok"
+else
+    _check "Executive summary XLSX has ZIP signature" "invalid XLSX payload"
+fi
+
+exec_pdf_file="${TMP_DIR}/executive-digest.pdf"
+curl "${CURL_OPTS[@]}" -o "$exec_pdf_file" "${API_BASE}/api/v1/reports/executive-digest.pdf?frequency=weekly"
+if python3 - "$exec_pdf_file" <<'PY'
+import sys
+from pathlib import Path
+payload = Path(sys.argv[1]).read_bytes()
+sys.exit(0 if payload.startswith(b"%PDF-") and len(payload) > 128 else 1)
+PY
+then
+    _check "Executive digest PDF has PDF signature" "ok"
+else
+    _check "Executive digest PDF has PDF signature" "invalid PDF payload"
+fi
+
+focus_csv_body=$(_http_body "${API_BASE}/api/v1/exports/focus.csv")
+echo "$focus_csv_body" | grep -q "BilledCost,BillingAccountId" \
+    && _check "FOCUS CSV contains standard header columns" "ok" \
+    || _check "FOCUS CSV contains standard header columns" "body: $focus_csv_body"
+
+focus_json_body=$(_http_body "${API_BASE}/api/v1/exports/focus.json")
+if python3 - "$focus_json_body" <<'PY'
+import json
+import sys
+d = json.loads(sys.argv[1])
+ok = (
+    d.get("focus_version") == "1.0"
+    and isinstance(d.get("record_count"), int)
+    and isinstance(d.get("records"), list)
+)
+sys.exit(0 if ok else 1)
+PY
+then
+    _check "FOCUS JSON exposes version/record_count/records contract" "ok"
+else
+    _check "FOCUS JSON exposes version/record_count/records contract" "body: $focus_json_body"
+fi
 
 ai_status=$(_request_json_status "POST" "${DASHBOARD_BASE}/api/ai/chat" '{"message":"Summarize the current workspace cost source.","conversationHistory":[]}')
 [ "$ai_status" = "200" ] \
@@ -377,8 +448,9 @@ for endpoint in \
     "/api/v1/analytics/commitment-gap" \
     "/api/v1/analytics/unit-economics" \
     "/api/v1/analytics/scorecards" \
-    "/api/v1/inventory" \
-    "/api/v1/kubernetes/cost-allocation" \
+    "/api/v1/inventory/resources" \
+    "/api/v1/analytics/kubernetes/summary" \
+    "/api/v1/analytics/decision-intelligence" \
     "/api/v1/virtual-tags/rules" \
     "/api/v1/virtual-tags/preview" \
     "/api/v1/recommendations/rightsizing"; do

@@ -36,9 +36,11 @@ For the full topology and pipeline details, see [ARCHITECTURE.md](ARCHITECTURE.m
 
 - Forecasting: baseline forecast, percentiles, downside risk, what-if, stress testing, model diagnostics.
 - FinOps analytics: attribution, commitment analysis, waste decomposition, efficiency score, unit economics, scorecards.
+- Decision intelligence: scenario-frontier recommendations (stability/balanced/acceleration) with risk-confidence-payback trade-offs.
 - Optimization and governance: rightsizing, virtual tags, chargeback/showback, business mapping, exports.
 - Operations: scan history/diff, alert lifecycle, routing policy simulation, freshness telemetry.
 - Intelligence layer: `/api/v1/analytics/finops-intelligence` and `/api/v1/genai/rag-guidance` for deterministic + RAG + GenAI workflows.
+- Executive decision route: `/api/v1/analytics/decision-intelligence` for 30/60/90 sequencing and advisory memo generation.
 - Kubernetes: OpenCost sync and namespace/workload/team/node-pool allocation views.
 
 ## Repository Layout
@@ -83,6 +85,8 @@ Common direct commands:
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
 ```
+
+Recommended release order for Terraform + Ansible deployments: Terraform `init/validate/plan` -> optional `apply` -> `deploy-oci.sh compute/full` (Ansible run) -> `deploy-oci.sh verify` -> `scripts/generate_evidence_pack.sh`.
 
 Primary OCI region for hosting and GenAI inference: `uk-london-1`.
 

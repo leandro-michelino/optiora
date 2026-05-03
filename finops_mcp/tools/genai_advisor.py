@@ -942,3 +942,56 @@ def generate_finops_operating_review(context: dict[str, Any]) -> tuple[Optional[
     if not _is_configured():
         return None, prompt
     return _sign_and_call(prompt), prompt
+
+
+def generate_decision_intelligence(context: dict[str, Any]) -> tuple[Optional[str], str]:
+    """Generate a decision memo from scenario-frontier analytics."""
+    frontier = context.get("frontier", []) or []
+    recommended = context.get("recommended_scenario", "balanced")
+    baseline = _safe_float(context.get("baseline_annualized_spend_usd"), 0.0)
+    savings_pool = _safe_float(context.get("expected_monthly_savings_pool_usd"), 0.0)
+    guardrails = context.get("decision_guardrails", {}) or {}
+    sequence = context.get("recommended_sequence", []) or []
+
+    frontier_lines = []
+    for row in frontier[:3]:
+        if not isinstance(row, dict):
+            continue
+        frontier_lines.append(
+            f"- {row.get('scenario')}: annual_savings=${_safe_float(row.get('expected_annual_savings_usd')):,.0f}, "
+            f"risk_score={_safe_float(row.get('execution_risk_score')):.1f}, "
+            f"confidence={_safe_float(row.get('confidence')):.2f}, "
+            f"payback_months={row.get('estimated_payback_months')}"
+        )
+    frontier_block = "\n".join(frontier_lines) or "- no scenario frontier available"
+
+    phase_lines = []
+    for phase in sequence[:3]:
+        if not isinstance(phase, dict):
+            continue
+        phase_lines.append(
+            f"- {phase.get('phase')}: {phase.get('focus')} -> {', '.join(phase.get('actions', [])[:3])}"
+        )
+    sequence_block = "\n".join(phase_lines) or "- no phased sequence available"
+
+    prompt = (
+        "You are a FinOps strategy advisor. Write a concise decision memo for a CTO and CFO. "
+        "Include: recommended scenario, why it wins over alternatives, key trade-offs, and a 30/60/90 plan. "
+        "Do not change numeric values.\n\n"
+        f"Baseline annualized spend: ${baseline:,.0f}. "
+        f"Expected monthly savings pool: ${savings_pool:,.0f}. "
+        f"Recommended scenario: {recommended}.\n"
+        f"Guardrails: {guardrails}\n\n"
+        f"Scenario frontier:\n{frontier_block}\n\n"
+        f"Execution sequence:\n{sequence_block}\n\n"
+        "Output format:\n"
+        "1) Recommendation\n"
+        "2) Trade-offs\n"
+        "3) 30/60/90 execution plan\n"
+        "4) Governance checkpoints"
+    )
+    prompt = _with_rag(prompt, context)
+
+    if not _is_configured():
+        return None, prompt
+    return _sign_and_call(prompt), prompt

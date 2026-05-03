@@ -4487,6 +4487,12 @@ async def dashboard_costs(
         "potentialSavings": round(potential_savings, 2),
         "breakdown": context["breakdown"],
         "regionBreakdown": context["region_breakdown"],
+        "cost_context": {
+            "source": context.get("source", "unknown"),
+            "provider_errors": context.get("provider_errors", {}),
+            "rows_imported": int(context.get("rows_imported", 0) or 0),
+            "last_imported_at": context.get("last_imported_at"),
+        },
     }
 
 
@@ -4982,6 +4988,7 @@ class GenAIAnalyzeRequest(BaseModel):
         "tagging_strategy", "sustainability_narrative", "chargeback_narrative",
         "cross_provider_comparison_brief", "alert_triage", "rightsizing_brief",
         "vendor_negotiation_brief", "forecast_model_diagnostics", "finops_operating_review",
+        "decision_intelligence",
     ] = "spend"
     context: Dict[str, Any] = Field(default_factory=dict)
     anomaly: Optional[Dict[str, Any]] = None
@@ -5004,6 +5011,7 @@ class GenAICopilotPackRequest(BaseModel):
             "vendor_negotiation_brief",
             "forecast_model_diagnostics",
             "finops_operating_review",
+            "decision_intelligence",
         ]
     ] = Field(default_factory=lambda: ["spend", "optimization_roadmap", "executive_narrative"])
 
@@ -5312,6 +5320,8 @@ async def genai_analyze(
         narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(ctx)
     elif request.analysis_type == "finops_operating_review":
         narrative, prompt = genai_advisor.generate_finops_operating_review(ctx)
+    elif request.analysis_type == "decision_intelligence":
+        narrative, prompt = genai_advisor.generate_decision_intelligence(ctx)
 
     return {
         "analysis_type": request.analysis_type,
@@ -5505,6 +5515,33 @@ async def genai_copilot_pack(
             narrative, prompt = genai_advisor.generate_forecast_model_diagnostics(diag_ctx)
         elif item == "finops_operating_review":
             narrative, prompt = genai_advisor.generate_finops_operating_review(item_context)
+        elif item == "decision_intelligence":
+            historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+                db=db,
+                customer_id=customer_id,
+                cloud_provider=request.cloud_provider,
+                months=18,
+            )
+            decision_result = _safe_json_load(
+                await finops_analytics.get_decision_intelligence(
+                    {
+                        "months": 12,
+                        "cloud_provider": request.cloud_provider,
+                        "current_monthly_spend": context["total_cost"],
+                        "cost_breakdown": context["breakdown"],
+                        "historical_monthly_spend": historical_monthly_spend,
+                        "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                    }
+                ),
+                {},
+            )
+            decision_ctx = dict(decision_result)
+            item_rag = _rag_context_for_analysis(
+                analysis_type="decision_intelligence",
+                cloud_provider=request.cloud_provider,
+                context=decision_ctx,
+            )
+            narrative, prompt = genai_advisor.generate_decision_intelligence(decision_ctx)
         else:
             narrative, prompt = genai_advisor.generate_commitment_strategy(item_context)
 
@@ -5795,6 +5832,56 @@ async def analytics_operating_review(
     return result
 
 
+@router.get("/analytics/decision-intelligence")
+async def analytics_decision_intelligence(
+    cloud_provider: str = "all",
+    months: int = Query(default=12, ge=1, le=24),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Scenario frontier for executive FinOps decision-making."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+        months=18,
+    )
+
+    result = _safe_json_load(
+        await finops_analytics.get_decision_intelligence(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                "monthly_savings": float(permission.get("monthly_budget_usd", 0.0) or 0.0) * 0.08,
+            }
+        ),
+        {},
+    )
+
+    genai_context = dict(result)
+    rag = _rag_context_for_analysis(
+        analysis_type="decision_intelligence",
+        cloud_provider=cloud_provider,
+        context=genai_context,
+    )
+    genai_context["rag_brief"] = rag.get("rag_brief", "")
+    narrative, prompt = genai_advisor.generate_decision_intelligence(genai_context)
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["rag"] = rag
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/analytics/finops-intelligence")
 async def analytics_finops_intelligence(
     focus: Literal[
@@ -5804,6 +5891,7 @@ async def analytics_finops_intelligence(
         "tagging_strategy",
         "sustainability_narrative",
         "executive_narrative",
+        "decision_intelligence",
     ] = "finops_operating_review",
     cloud_provider: str = "all",
     months: int = Query(default=12, ge=1, le=24),
@@ -5965,6 +6053,30 @@ async def analytics_finops_intelligence(
             context=genai_context,
         )
         narrative, prompt = genai_advisor.generate_executive_narrative(genai_context)
+
+    elif focus == "decision_intelligence":
+        deterministic = _safe_json_load(
+            await finops_analytics.get_decision_intelligence(
+                {
+                    "months": months,
+                    "cloud_provider": cloud_provider,
+                    "current_monthly_spend": context["total_cost"],
+                    "cost_breakdown": context["breakdown"],
+                    "historical_monthly_spend": historical_monthly_spend,
+                    "budget_monthly": float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+                    "monthly_savings": 0.0,
+                }
+            ),
+            {},
+        )
+        genai_context = dict(deterministic)
+        rag = _rag_context_for_analysis(
+            analysis_type="decision_intelligence",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        )
+        genai_context["rag_brief"] = rag.get("rag_brief", "")
+        narrative, prompt = genai_advisor.generate_decision_intelligence(genai_context)
 
     else:
         deterministic = _safe_json_load(
@@ -6693,6 +6805,7 @@ async def api_info() -> Dict[str, Any]:
             "forecast_stress_test": True,
             "forecast_diagnostics": True,
             "forecast_model_diagnostics": True,
+            "decision_intelligence": True,
             "cost_attribution": True,
             "commitment_optimization": True,
             "optimization_portfolio": True,

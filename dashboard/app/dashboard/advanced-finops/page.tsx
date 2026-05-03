@@ -12,6 +12,7 @@ import {
   fetchAnomalyIntelligence,
   fetchChargebackSummary,
   fetchFinOpsOperatingReview,
+  fetchDecisionIntelligence,
 } from '@/lib/api'
 import {
   DecisionRecommendationResponse,
@@ -23,6 +24,7 @@ import {
   AnomalyIntelligenceResponse,
   ChargebackSummaryResponse,
   FinOpsOperatingReviewResponse,
+  DecisionIntelligenceResponse,
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -67,6 +69,7 @@ export default function AdvancedFinOpsPage() {
   const [anomalyIntel, setAnomalyIntel] = useState<AnomalyIntelligenceResponse | null>(null)
   const [chargeback, setChargeback] = useState<ChargebackSummaryResponse | null>(null)
   const [operatingReview, setOperatingReview] = useState<FinOpsOperatingReviewResponse | null>(null)
+  const [decisionIntel, setDecisionIntel] = useState<DecisionIntelligenceResponse | null>(null)
 
   const pushToast = useCallback((title: string, detail: string, kind: ToastKind = 'info') => {
     const id = Date.now() + Math.floor(Math.random() * 1000)
@@ -85,7 +88,7 @@ export default function AdvancedFinOpsPage() {
     setLoadingTagQuality(true)
     setLoadingDecision(true)
     setLoadingFederation(true)
-    const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes, opRes] = await Promise.allSettled([
+    const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes, opRes, diRes] = await Promise.allSettled([
       fetchTagQualityScore('all'),
       fetchDecisionGradeRecommendations({ top_n: 8, provider: 'all', min_monthly_savings: 10 }),
       fetchFederatedCosts({ provider: 'all', include_regions: true }),
@@ -95,6 +98,7 @@ export default function AdvancedFinOpsPage() {
       fetchAnomalyIntelligence('all'),
       fetchChargebackSummary('all'),
       fetchFinOpsOperatingReview('all', 12),
+      fetchDecisionIntelligence('all', 12),
     ])
 
     if (tagRes.status === 'fulfilled') {
@@ -130,6 +134,7 @@ export default function AdvancedFinOpsPage() {
     if (aiRes.status === 'fulfilled') setAnomalyIntel(aiRes.value)
     if (cbRes.status === 'fulfilled') setChargeback(cbRes.value)
     if (opRes.status === 'fulfilled') setOperatingReview(opRes.value)
+    if (diRes.status === 'fulfilled') setDecisionIntel(diRes.value)
 
     if (tagRes.status === 'rejected' && decRes.status === 'rejected' && fedRes.status === 'rejected') {
       setError('Failed to load advanced FinOps data.')
@@ -197,9 +202,9 @@ export default function AdvancedFinOpsPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-slate-500">Auto-Remediation</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">Guardrailed</p>
-                <p className="text-sm text-slate-500">Dry-run by default</p>
+                <p className="text-xs text-slate-500">Decision Frontier</p>
+                <p className="text-2xl font-bold capitalize text-slate-900 dark:text-white">{decisionIntel?.recommended_scenario || '—'}</p>
+                <p className="text-sm text-slate-500">{fmt(decisionIntel?.expected_monthly_savings_pool_usd || 0)} savings pool / month</p>
               </CardContent>
             </Card>
           </div>
@@ -326,6 +331,32 @@ export default function AdvancedFinOpsPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+              <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />Decision Intelligence Frontier</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {!decisionIntel ? (
+                <p className="text-sm text-slate-500">Decision frontier unavailable for this workspace.</p>
+              ) : (
+                <div className="space-y-3">
+                  {(decisionIntel.frontier || []).map((row) => (
+                    <div key={row.scenario} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                      <div className="mb-1 flex items-start justify-between gap-3">
+                        <p className="text-sm font-semibold capitalize text-slate-900 dark:text-white">{row.scenario}</p>
+                        <Badge variant="outline" className="rounded-md">utility {row.utility_score.toFixed(1)}</Badge>
+                      </div>
+                      <p className="text-xs text-slate-500">{row.description}</p>
+                      <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                        savings {fmt(row.expected_annual_savings_usd)}/yr · risk {row.execution_risk_score.toFixed(1)} · confidence {(row.confidence * 100).toFixed(0)}% · payback {row.estimated_payback_months ?? 'n/a'} mo
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* New deep analytics section */}
           <div className="grid gap-6 xl:grid-cols-2">

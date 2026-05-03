@@ -7,6 +7,12 @@ export interface CostResponse {
   trend: number
   anomalies: number
   potentialSavings: number
+  cost_context?: {
+    source?: string
+    provider_errors?: Record<string, string>
+    rows_imported?: number
+    last_imported_at?: string | null
+  }
   breakdown: {
     [key: string]: {
       cost: number
@@ -1644,5 +1650,38 @@ export interface FinOpsOperatingReviewResponse {
   genai_context: Record<string, unknown>
   genai_narrative: string | null
   genai_prompt: string
+  cost_context: Record<string, unknown>
+}
+
+export interface DecisionIntelligenceFrontierItem {
+  scenario: string
+  description: string
+  timeline_days: number
+  expected_annual_savings_usd: number
+  execution_risk_score: number
+  confidence: number
+  downside_incremental_risk_usd: number
+  utility_score: number
+  estimated_payback_months: number | null
+}
+
+export interface DecisionIntelligenceResponse {
+  generated_at: string
+  forecast_months: number
+  baseline_annualized_spend_usd: number
+  expected_monthly_savings_pool_usd: number
+  frontier: DecisionIntelligenceFrontierItem[]
+  recommended_scenario: string | null
+  recommended_sequence: Array<{
+    phase: string
+    focus: string
+    actions: string[]
+  }>
+  decision_guardrails: Record<string, number>
+  supporting_blocks: Record<string, unknown>
+  genai_context: Record<string, unknown>
+  genai_narrative: string | null
+  genai_prompt: string
+  rag: Record<string, unknown>
   cost_context: Record<string, unknown>
 }

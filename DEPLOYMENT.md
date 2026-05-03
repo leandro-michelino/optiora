@@ -166,7 +166,12 @@ OCI_PROFILE='DEFAULT' \
 Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
 
 `./deploy/deploy-oci.sh verify` resolves the deployed instance IP and runs `tests/smoke_test_0_9.sh` against the live dashboard/API pair.
-The verify flow now checks GenAI contracts in both configured and fallback modes and auto-detects whether your environment is exposed via direct ports or front-door routing.
+The verify flow now includes:
+
+- release-critical live-data route/API gate (`tests/live_data_gate.sh`)
+- export endpoint coverage for CSV/XLS/XLSX/PDF/FOCUS
+- GenAI contracts in both configured and fallback modes
+- auto-detection of direct-port (`:3000/:8000`) vs front-door (`:80/:443`) exposure
 
 The same script also manages the extra block volume. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
 
@@ -227,6 +232,25 @@ The Ansible-rendered `.env` values matter because the dashboard is browser-execu
 ./deploy/deploy-oci.sh restart
 ./deploy/deploy-oci.sh destroy
 ```
+
+## Dated Release Evidence Pack
+
+Generate one dated artifact bundle that records the exact commands and outputs used for release-gate proof:
+
+```bash
+EVIDENCE_DEPLOY_CMD="./deploy/deploy-oci.sh compute" \
+EVIDENCE_MIGRATION_CMD="cd /opt/optiora && ./venv/bin/alembic upgrade head" \
+EVIDENCE_SMOKE_CMD="./deploy/deploy-oci.sh verify" \
+EVIDENCE_LIVE_CREDENTIAL_CMD="SMOKE_CREDENTIAL_JSON='{\"provider\":\"aws\",\"access_key_id\":\"...\",\"secret_access_key\":\"...\",\"region\":\"us-east-1\"}' ./deploy/deploy-oci.sh verify" \
+EVIDENCE_ROLLBACK_CMD="./deploy/deploy-oci.sh restart" \
+./scripts/generate_evidence_pack.sh
+```
+
+Evidence packs are written under `artifacts/evidence/<UTC-timestamp>/` with:
+
+- `SUMMARY.md` (step status table + exact command inputs)
+- `metadata.env` (timestamp, git commit, base URLs, credential-flow flag)
+- one `.command.txt` + `.log` pair per step (`deploy`, `migration`, `smoke`, `live_credential_flow`, `rollback`)
 
 ## Environment Variables
 
@@ -365,7 +389,7 @@ Manual product checks:
 2. Upload a UTF-8 billing CSV from the settings page and confirm the imported dataset summary updates.
 3. Confirm the costs overview reflects the imported CSV totals.
 4. If live provider validation is in scope, add one cloud provider credential, approve scanning, and start a scan.
-5. Confirm history, diff, alerts, and CSV exports still work after deployment.
+5. Confirm history, diff, alerts, and CSV/XLS/XLSX/PDF/FOCUS exports still work after deployment.
 
 Optional live credential verification:
 

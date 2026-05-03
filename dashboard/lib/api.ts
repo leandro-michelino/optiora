@@ -75,25 +75,12 @@ import {
   AnomalyIntelligenceResponse,
   ChargebackSummaryResponse,
   FinOpsOperatingReviewResponse,
+  DecisionIntelligenceResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
 
 const DEFAULT_TIMEOUT_MS = 10000
-
-const safeFallbackCostData = {
-  totalCost: 0,
-  trend: 0,
-  anomalies: 0,
-  potentialSavings: 0,
-  breakdown: {
-    aws: { cost: 0, percentage: 0 },
-    azure: { cost: 0, percentage: 0 },
-    gcp: { cost: 0, percentage: 0 },
-    oci: { cost: 0, percentage: 0 },
-  },
-  regionBreakdown: [],
-}
 
 interface ListQuery {
   limit?: number
@@ -177,8 +164,8 @@ export async function fetchCosts(): Promise<CostResponse> {
   try {
     return await fetchCostsStrict()
   } catch (error) {
-    console.warn('Failed to fetch costs from backend, using safe fallback data', error)
-    return safeFallbackCostData as CostResponse
+    const reason = error instanceof Error ? error.message : 'Unknown backend error'
+    throw new Error(`Live source unavailable: unable to fetch costs from backend (${reason})`)
   }
 }
 
@@ -1070,6 +1057,17 @@ export function fetchFinOpsOperatingReview(
 ): Promise<FinOpsOperatingReviewResponse> {
   return requestJson<FinOpsOperatingReviewResponse>(
     `/api/v1/analytics/operating-review${toQueryString({ cloud_provider: cloudProvider, months })}`,
+    {},
+    { timeoutMs: 45000 },
+  )
+}
+
+export function fetchDecisionIntelligence(
+  cloudProvider = 'all',
+  months = 12,
+): Promise<DecisionIntelligenceResponse> {
+  return requestJson<DecisionIntelligenceResponse>(
+    `/api/v1/analytics/decision-intelligence${toQueryString({ cloud_provider: cloudProvider, months })}`,
     {},
     { timeoutMs: 45000 },
   )

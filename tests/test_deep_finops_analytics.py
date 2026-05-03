@@ -262,6 +262,63 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         self.assertGreaterEqual(data["rag"].get("retrieved_count", 0), 1)
         self.assertIn("prompt", data["advisory"])
 
+    def test_11_decision_intelligence_endpoint_contract(self) -> None:
+        resp = self.client.get(
+            "/api/v1/analytics/decision-intelligence?cloud_provider=all&months=12",
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("frontier", data)
+        self.assertEqual(len(data["frontier"]), 3)
+        self.assertIn("recommended_scenario", data)
+        self.assertIn("recommended_sequence", data)
+        self.assertIn("decision_guardrails", data)
+        self.assertIn("rag", data)
+        self.assertIn("genai_prompt", data)
+        self.assertGreaterEqual(data["rag"].get("retrieved_count", 0), 1)
+
+    def test_12_decision_intelligence_available_in_genai_and_intelligence_routes(self) -> None:
+        genai_resp = self.client.post(
+            "/api/v1/genai/analyze",
+            json={
+                "analysis_type": "decision_intelligence",
+                "context": {
+                    "recommended_scenario": "balanced",
+                    "baseline_annualized_spend_usd": 120000,
+                    "expected_monthly_savings_pool_usd": 9500,
+                    "frontier": [
+                        {
+                            "scenario": "balanced",
+                            "expected_annual_savings_usd": 91200,
+                            "execution_risk_score": 41.5,
+                            "confidence": 0.74,
+                            "estimated_payback_months": 1.8,
+                        }
+                    ],
+                },
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(genai_resp.status_code, 200, genai_resp.text)
+        genai_data = genai_resp.json()
+        self.assertEqual(genai_data.get("analysis_type"), "decision_intelligence")
+        self.assertIn("prompt", genai_data)
+        self.assertIn("rag", genai_data)
+        self.assertGreaterEqual(genai_data["rag"].get("retrieved_count", 0), 1)
+
+        intelligence_resp = self.client.get(
+            "/api/v1/analytics/finops-intelligence?focus=decision_intelligence&cloud_provider=all&months=12",
+            headers=self.headers,
+        )
+        self.assertEqual(intelligence_resp.status_code, 200, intelligence_resp.text)
+        intelligence_data = intelligence_resp.json()
+        self.assertEqual(intelligence_data.get("focus"), "decision_intelligence")
+        self.assertIn("deterministic", intelligence_data)
+        self.assertIn("advisory", intelligence_data)
+        self.assertIn("rag", intelligence_data)
+        self.assertIn("prompt", intelligence_data["advisory"])
+
 
 if __name__ == "__main__":
     unittest.main()

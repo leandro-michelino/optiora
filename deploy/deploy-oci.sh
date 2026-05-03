@@ -740,7 +740,7 @@ sync_local_project() {
         local_private_key_path="${local_private_key_path%\"}"
         local_private_key_path="${local_private_key_path#\"}"
         if [ -n "$local_private_key_path" ]; then
-            if [[ "$local_private_key_path" == ~/* ]]; then
+            if [[ "$local_private_key_path" == \~/* ]]; then
                 local_private_key_path="${HOME}${local_private_key_path#\~}"
             fi
             if [ -f "$local_private_key_path" ]; then
@@ -1097,6 +1097,7 @@ run_ansible_playbook_for_instance() {
     require_command ansible-playbook
 
     local inv
+    local vars_override
     local ssh_user
     local ssh_key
     local genai_key_path=""
@@ -1110,6 +1111,7 @@ run_ansible_playbook_for_instance() {
     ssh_user="${OCI_ANSIBLE_USER:-$REMOTE_USER}"
     ssh_key="${OCI_ANSIBLE_SSH_KEY_PATH:-$RESOLVED_SSH_PRIVATE_KEY_PATH}"
     inv="$(mktemp -t optiora-inventory.XXXXXX).yml"
+    vars_override="$(mktemp -t optiora-vars.XXXXXX).yml"
 
     # Resolve OCI private key path for GenAI (env var > local .env file).
     local_oci_key_path="${OCI_PRIVATE_KEY_PATH:-}"
@@ -1141,10 +1143,10 @@ run_ansible_playbook_for_instance() {
         fi
     fi
 
-    if [[ "$local_oci_key_path" == ~/* ]]; then
+    if [[ "$local_oci_key_path" == \~/* ]]; then
         local_oci_key_path="${HOME}${local_oci_key_path#\~}"
     fi
-    if [[ "$local_oci_config_file" == ~/* ]]; then
+    if [[ "$local_oci_config_file" == \~/* ]]; then
         local_oci_config_file="${HOME}${local_oci_config_file#\~}"
     fi
 
@@ -1176,28 +1178,31 @@ all:
           ansible_host: ${public_ip}
           ansible_user: ${ssh_user}
           ansible_ssh_private_key_file: ${ssh_key}
-          optiora_configure_firewall: false
-          optiora_firewall_expose_direct_services: true
-          optiora_manage_source: true
-          optiora_remote_archive: /tmp/optiora-deploy.tar.gz
-          optiora_frontend_url: http://${public_ip}:3000
-          optiora_api_url: http://${public_ip}:8000
-          optiora_region: ${REGION}
-          optiora_genai_endpoint: "${genai_endpoint}"
-          optiora_genai_model: "${genai_model}"
-          optiora_tenancy_ocid: "${OCI_TENANCY_OCID:-}"
-          optiora_user_ocid: "${OCI_USER_OCID:-}"
-          optiora_fingerprint: "${OCI_FINGERPRINT:-}"
-          optiora_private_key_path: "${genai_key_path}"
-          optiora_compartment_ocid: "${COMPARTMENT_ID:-}"
-          optiora_genai_compartment_ocid: "${OCI_GENAI_COMPARTMENT_ID:-}"
-          optiora_oci_config_file: "${runtime_oci_config_file}"
-          optiora_oci_profile: "${local_oci_profile}"
+EOF
+
+    cat > "$vars_override" <<EOF
+optiora_configure_firewall: false
+optiora_firewall_expose_direct_services: true
+optiora_manage_source: true
+optiora_remote_archive: /tmp/optiora-deploy.tar.gz
+optiora_frontend_url: "http://${public_ip}:3000"
+optiora_api_url: "http://${public_ip}:8000"
+optiora_region: "${REGION}"
+optiora_genai_endpoint: "${genai_endpoint}"
+optiora_genai_model: "${genai_model}"
+optiora_tenancy_ocid: "${OCI_TENANCY_OCID:-}"
+optiora_user_ocid: "${OCI_USER_OCID:-}"
+optiora_fingerprint: "${OCI_FINGERPRINT:-}"
+optiora_private_key_path: "${genai_key_path}"
+optiora_compartment_ocid: "${COMPARTMENT_ID:-}"
+optiora_genai_compartment_ocid: "${OCI_GENAI_COMPARTMENT_ID:-}"
+optiora_oci_config_file: "${runtime_oci_config_file}"
+optiora_oci_profile: "${local_oci_profile}"
 EOF
 
     if is_true "$RESOLVED_EXTRA_VOLUME_ENABLED"; then
-        cat >> "$inv" <<EOF
-          optiora_data_device: ${RESOLVED_EXTRA_VOLUME_DEVICE}
+        cat >> "$vars_override" <<EOF
+optiora_data_device: "${RESOLVED_EXTRA_VOLUME_DEVICE}"
 EOF
     fi
 
@@ -1205,8 +1210,9 @@ EOF
     ANSIBLE_STDOUT_CALLBACK=default ansible-playbook \
         -i "$inv" \
         --extra-vars "@${ROOT_DIR}/ansible/group_vars/all.yml" \
+        --extra-vars "@${vars_override}" \
         "${ROOT_DIR}/ansible/playbooks/site.yml"
-    rm -f "$inv"
+    rm -f "$inv" "$vars_override"
     log_success "Ansible provisioning completed"
 }
 

@@ -103,6 +103,8 @@ Current backend coverage includes:
 - forecast diagnostics contract (`GET /api/v1/analytics/forecast-diagnostics`)
 - RAG guidance retrieval contract (`POST /api/v1/genai/rag-guidance`)
 - combined intelligence contract (`GET /api/v1/analytics/finops-intelligence`)
+- decision-intelligence frontier contract (`GET /api/v1/analytics/decision-intelligence`)
+- decision-intelligence narrative contract (`POST /api/v1/genai/analyze` with `analysis_type=decision_intelligence`)
 - GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, vendor negotiation, and operating reviews
 
 **Kubernetes and partner portfolio** (`tests/test_kubernetes.py`, `tests/test_partner_portfolio.py`):
@@ -179,6 +181,8 @@ terraform -chdir=terraform validate
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
 - `./deploy/deploy-oci.sh verify` wraps `tests/smoke_test_0_9.sh` against the currently deployed OCI instance.
+- `tests/live_data_gate.sh` is the strict release-critical route/API data-source gate (fails on fallback/placeholder sources).
+- `./scripts/generate_evidence_pack.sh` creates dated deploy/migration/smoke/live-credential-flow/rollback artifacts for release evidence.
 - For Terraform + Ansible deployments, prefer `./deploy/deploy-oci.sh full` or menu option `1` so the extra block volume attach, inventory generation, and source upload stay consistent before smoke checks.
 - Epic 1 (platform hardening) and Epic 2 (multi-account hierarchy) are fully covered by `test_platform_hardening.py` and `test_epic2_multi_account.py` respectively.
 - Frontend production build is a required deployment gate.

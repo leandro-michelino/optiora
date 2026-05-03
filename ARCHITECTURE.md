@@ -39,6 +39,7 @@ Current as of May 2026.
 | - Resource intelligence         /api/v1/analytics/resource-intelligence |
 | - VM utilization hotspots       /api/v1/analytics/vm-utilization-hotspots |
 | - Operating review pack         /api/v1/analytics/operating-review |
+| - Decision intelligence frontier /api/v1/analytics/decision-intelligence |
 | - Hybrid advisor                /api/v1/advisor/hybrid        |
 | - GenAI narratives              /api/v1/genai/*               |
 | - Provider accounts             /api/v1/provider-accounts/*   |
@@ -121,6 +122,7 @@ finops_mcp/tools/finops_analytics.py
             - build_cost_anomaly_intelligence()
             - build_chargeback_summary()
             - build_finops_operating_review()
+            - build_decision_intelligence()
 ```
 
 ## Weekly Operating Review Pack
@@ -143,6 +145,28 @@ cost context + provider mix + budget policy + recommendations
         +--> GenAI narrative overlay (optional)
              - generate_finops_operating_review()
              - prompt fallback when GenAI is not configured
+```
+
+## Decision Intelligence Frontier
+
+```text
+forecast diagnostics + commitment gap + waste + optimization portfolio
+        |
+        v
+/api/v1/analytics/decision-intelligence
+        |
+        +--> deterministic scenario frontier
+        |    - stability / balanced / acceleration
+        |    - annual savings, execution risk, confidence, payback
+        |
+        +--> recommended sequence
+        |    - 0-30 / 31-60 / 61-90 day execution phases
+        |
+        +--> RAG context injection
+        |    - analysis_type=decision_intelligence
+        |
+        +--> GenAI decision memo (optional)
+             - CFO/CTO recommendation and trade-off narrative
 ```
 
 ## Forecasting Models
@@ -229,7 +253,8 @@ Path C: Hybrid advisor
 
 Path D: Copilot pack
   /api/v1/genai/copilot-pack
-      -> multi-narrative bundle driven by deterministic context
+  -> multi-narrative bundle driven by deterministic context
+  -> includes decision_intelligence narrative type
 
 Path E: Model-risk advisory
   /api/v1/forecast/model-diagnostics
@@ -249,6 +274,7 @@ Path G: RAG-guided advisory
       -> deterministic analytics block
       -> retrieved guidance context injection
       -> GenAI narrative with explicit retrieved context
+      -> includes focus=decision_intelligence
 ```
 
 ## How GenAI Is Used Beyond Forecasting
@@ -266,6 +292,7 @@ GenAI is used for:
   - vendor negotiation talking points
   - forecast model-risk explanations
   - weekly FinOps operating review updates
+  - scenario-frontier decision memos with trade-off analysis
   - MSP customer portfolio summaries and next-best-action prompts
 
 GenAI is not used as the source of truth for:
@@ -396,7 +423,8 @@ Execution order (full/menu flow)
   4) attach extra block volume (when enabled)
   5) upload local source archive
   6) run ansible playbook
-  7) health verification
+  7) smoke + live-data verification gates
+  8) dated evidence pack generation
 
 Primary OCI region
   uk-london-1

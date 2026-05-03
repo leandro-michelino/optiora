@@ -124,6 +124,29 @@ Status: **core implemented with advanced ops policy + scheduler controls; schedu
 - mute windows, escalation policies, acknowledgement SLAs, scheduler retry/backoff controls, and executive alert summary APIs ✅ implemented
 - remaining: daily/weekly delivered executive summaries and deeper noise-reduction analytics
 
+## Execution Checklist (Now / Next / Blocked-by-live-access)
+
+### Now
+
+- [x] expand smoke gate coverage for export + scan release paths (CSV/XLS/XLSX/PDF/FOCUS + scan history/diff)
+- [x] enforce strict fail-fast behavior in dashboard fetch layer when live backend data is unavailable
+- [x] run release-critical dashboard live-data gate against backing APIs (fail on fallback/placeholder sources)
+- [x] generate a dated deployment evidence pack for deploy/migration/smoke/live-credential-flow logs
+- [x] keep roadmap sections consolidated and remove duplicate competitive/backlog tracking
+
+### Next
+
+- [ ] run full local regression pass after each major dashboard/backend change (`pytest`, dashboard `lint/type-check/build`, smoke script)
+- [ ] keep extending endpoint contract coverage for new dashboard routes and export/report variants
+- [ ] track recommendation-lifecycle and policy-automation scope as the next differentiation slice
+
+### Blocked-by-live-access
+
+- [ ] validate credential add/test for at least one real provider in deployed OCI
+- [ ] approve and start a real scan, then capture terminal completion evidence
+- [ ] capture deployed export proofs for CSV/XLS/XLSX/PDF/FOCUS
+- [ ] attach one dated end-to-end evidence pack run as the release gate artifact
+
 ## Competitive Parity Status (Merged May 2026)
 
 This section consolidates the former competitive planning docs into the roadmap.
@@ -167,41 +190,73 @@ This section consolidates the former competitive planning docs into the roadmap.
 
 - Add stronger decision confidence and realization windows to recommendation workflows, then track planned-vs-realized outcomes.
 
-## Competitive Gap Closure
+## Competitive Gap Refresh (May 2026)
 
-## Enterprise FinOps maturity
+Based on current platform state vs. mainstream FinOps products (Cloudability, Flexera, Harness CCM, Datadog CCM, Kubecost), these are the highest-value capability gaps that still matter in enterprise evaluations:
 
-These initiatives close the main gap versus platforms such as Cloudability, Flexera One, and CloudHealth.
+### P0 - Next 1-2 releases
 
-- chargeback and showback by business unit, application, team, environment, and owner
-- customizable business mapping and tag normalization
-- budget management by organization, account, subscription, project, and cost center
-- executive dashboards for finance, procurement, and leadership
-- organization-scoped audit trail for credential changes, approvals, and policy actions
-- stronger governance views for anomaly resolution and optimization tracking
+- **Recommendation lifecycle and realized savings accounting**
+  - Competitor pattern: explicit recommendation lifecycle and post-action savings tracking.
+  - OptiOra gap: we generate recommendations but do not yet track plan -> approved -> executed -> realized with variance.
+  - Roadmap action: add recommendation ledger, owner assignment, execution timestamping, and realized-vs-expected savings scorecards.
 
-## Commitment and savings automation
+- **Policy-as-code automation engine for FinOps controls**
+  - Competitor pattern: customizable policy engines with dry-run, approvals, and automated actions.
+  - OptiOra gap: we have alert/routing and remediation hooks, but no full policy authoring + action orchestration layer.
+  - Roadmap action: introduce policy objects, rule simulation, manual approval steps, and action runners (stop/resize/tag/schedule).
 
-These initiatives close the main gap versus Spot by NetApp, Harness CCM, and other optimization-focused products.
+- **Commitment execution orchestration (not only analysis)**
+  - Competitor pattern: commitment management with automated or guided purchase execution and utilization guardrails.
+  - OptiOra gap: commitment analytics are strong, but purchase/execution workflow is not implemented.
+  - Roadmap action: add commitment action queue, approval workflow, and utilization drift alerts for purchased commitments.
 
-- reserved instance and savings plan coverage analysis
-- commitment recommendation engine by provider
-- rightsizing workflow with approval, execution history, and rationale
-- idle resource cleanup recommendations with dry-run preview
-- auto-remediation flows with approval gates
-- spot and preemptible recommendations with risk and interruption context
-- cross-region data transfer optimization analysis
+- **Scheduled stakeholder reporting (email/subscription workflow)**
+  - Competitor pattern: perspective/report schedules and recurring stakeholder delivery.
+  - OptiOra gap: report generation exists; scheduled outbound delivery is still pending.
+  - Roadmap action: deliver scheduled email digests with per-role templates and acknowledgment telemetry.
 
-## Containers and Kubernetes economics
+### P1 - Near-term enterprise parity
 
-These initiatives close the main gap versus Kubecost and container-cost-focused platforms.
+- **Cost planning workspace with fiscal calendars and delegated ownership**
+  - Competitor pattern: budget + forecast planning workspaces with fiscal periods and delegated planners.
+  - OptiOra gap: forecast/budget insights exist but no multi-owner planning workbook workflow.
+  - Roadmap action: create planning entities (plan, owner, period, baseline, target), variance workflows, and approvals.
 
-- Kubernetes cost allocation by cluster, namespace, workload, and team
-- cost views for shared clusters
-- idle namespace and underutilized workload detection
-- request and limit right-sizing recommendations
-- node pool optimization suggestions
-- unit economics for container-backed applications
+- **Advanced anomaly model governance and lookback recalculation**
+  - Competitor pattern: anomaly reprocessing windows and severity reclassification as billing backfills land.
+  - OptiOra gap: anomaly handling exists; formal lookback recalculation governance is limited.
+  - Roadmap action: implement rolling anomaly recompute window, severity drift tracking, and anomaly SLA policy controls.
+
+- **Engineering workflow integrations for actionability**
+  - Competitor pattern: direct ticketing/action integration in optimization loops.
+  - OptiOra gap: Jira token exists but no full bidirectional recommendation workflow.
+  - Roadmap action: recommendation-to-ticket lifecycle with status sync (Jira/ServiceNow), owner reminders, and completion evidence.
+
+### P2 - Differentiation opportunities
+
+- **Data cloud optimization lane (Snowflake/Databricks)**
+  - Competitor pattern: dedicated warehouse/query optimization and autonomous tuning recommendations.
+  - OptiOra gap: no first-class data cloud cost model today.
+  - Roadmap action: add connectors, query/warehouse efficiency metrics, and rightsizing recommendations for data cloud spend.
+
+- **High-fidelity Kubernetes network/GPU cost attribution by default**
+  - Competitor pattern: deep pod-level network and GPU allocation with stronger attribution controls.
+  - OptiOra gap: Kubernetes analytics exist, but default attribution depth can be expanded.
+  - Roadmap action: expand network/GPU allocation fidelity, add explicit confidence/coverage indicators, and surface tuning playbooks.
+
+- **Unified cloud + SaaS cost observability**
+  - Competitor pattern: unified cloud and SaaS spend attribution and governance.
+  - OptiOra gap: cloud-first scope; SaaS cost lane is limited.
+  - Roadmap action: add SaaS cost ingestion schema + allocation rules + FinOps reporting convergence.
+
+## Consolidated Competitive Backlog Ownership
+
+To avoid duplicate planning lanes, use these as the single sources of truth:
+
+- `Competitive Gap Refresh (May 2026)` for parity and enterprise-evaluation deltas (`P0/P1/P2`)
+- `Differentiation Priorities` for product-positioning bets
+- `Enhancements` for implementation backlog slices that map to release milestones
 
 ## Differentiation Priorities
 

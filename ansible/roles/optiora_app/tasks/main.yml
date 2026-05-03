@@ -300,6 +300,19 @@
   when: optiora_oci_config_file | length > 0
   ignore_errors: true
 
+- name: Rewrite OCI config key_file to deployed key path
+  ansible.builtin.lineinfile:
+    path: "{{ optiora_oci_config_file }}"
+    regexp: '^key_file\s*='
+    line: "key_file={{ optiora_private_key_path }}"
+    owner: root
+    group: "{{ optiora_app_user }}"
+    mode: "0640"
+  when:
+    - optiora_oci_config_file | length > 0
+    - optiora_private_key_path | length > 0
+  ignore_errors: true
+
 - name: Remove old venv if built with wrong Python version
   ansible.builtin.shell: |
     if [ -d "{{ optiora_app_dir }}/venv" ]; then
@@ -413,6 +426,12 @@
     group: "{{ optiora_app_user }}"
     mode: '0640'
   failed_when: false
+
+- name: Restore SELinux context on application files
+  ansible.builtin.command:
+    cmd: "restorecon -RF {{ optiora_app_dir }}"
+  changed_when: false
+  when: ansible_selinux.status == "enabled"
 
 - name: Flush service handlers
   ansible.builtin.meta: flush_handlers

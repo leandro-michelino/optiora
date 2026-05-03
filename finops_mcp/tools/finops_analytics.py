@@ -2339,6 +2339,224 @@ def build_finops_operating_review(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_decision_intelligence(params: dict[str, Any]) -> dict[str, Any]:
+    """Deep decision frontier for FinOps execution strategy."""
+    months = max(1, min(int(params.get("months", 12) or 12), 24))
+    current_monthly = _safe_float(params.get("current_monthly_spend"), 0.0)
+    cost_breakdown = params.get("cost_breakdown") or {}
+    historical = _normalized_history_points(params.get("historical_monthly_spend"))
+    budget_monthly = _safe_float(params.get("budget_monthly"), 0.0)
+    recommendations = params.get("recommendations") or []
+
+    forecast_diag = build_forecast_diagnostics(
+        {
+            "months": months,
+            "current_monthly_spend": current_monthly,
+            "cost_breakdown": cost_breakdown,
+            "historical_monthly_spend": historical,
+            "budget_monthly": budget_monthly,
+            "fallback_monthly_spend": params.get("fallback_monthly_spend", 0.0),
+        }
+    )
+    commitment_gap = build_commitment_gap_analysis(
+        {
+            "current_monthly_spend": current_monthly,
+            "cost_breakdown": cost_breakdown,
+        }
+    )
+    waste = build_cloud_waste_analysis(
+        {
+            "current_monthly_spend": current_monthly,
+            "cost_breakdown": cost_breakdown,
+        }
+    )
+    analytics = build_analytics(
+        {
+            "current_monthly_spend": current_monthly,
+            "cost_breakdown": cost_breakdown,
+            "budget_monthly": budget_monthly,
+            "monthly_savings": _safe_float(params.get("monthly_savings"), 0.0),
+            "anomalies": int(params.get("anomalies", 0) or 0),
+        }
+    )
+
+    if not isinstance(recommendations, list) or not recommendations:
+        recommendations = [
+            {
+                "id": f"waste-{idx+1}",
+                "title": row.get("category", "optimization").replace("_", " ").title(),
+                "service": row.get("category", "waste"),
+                "savings_monthly_usd": _safe_float(row.get("savings_range_usd", {}).get("low"), 0.0),
+                "roi_percent": 160.0 if row.get("effort") == "low" else 110.0,
+                "payback_months": 1.5 if row.get("effort") == "low" else 3.0,
+                "effort": row.get("effort", "medium"),
+                "confidence": "high" if row.get("effort") == "low" else "medium",
+            }
+            for idx, row in enumerate((waste.get("categories") or [])[:6])
+            if isinstance(row, dict)
+        ]
+
+    portfolio = build_optimization_portfolio(
+        {
+            "current_monthly_spend": current_monthly,
+            "recommendations": recommendations,
+        }
+    )
+
+    baseline_12m = _safe_float(
+        forecast_diag.get("exposure", {}).get("annualized_run_rate_usd"),
+        0.0,
+    )
+    if baseline_12m <= 0:
+        baseline_12m = _safe_float(current_monthly, 0.0) * 12
+    expected_monthly_savings = _safe_float(
+        commitment_gap.get("total_gap_savings_monthly_usd"),
+        0.0,
+    ) + _safe_float(portfolio.get("total_monthly_savings_usd"), 0.0)
+
+    maturity_score = _safe_float(analytics.get("maturity_score"), 50.0)
+    risk_score = _safe_float(analytics.get("risk_score"), 50.0)
+    confidence = forecast_diag.get("forecast_quality", {}).get("scenario_confidence", {})
+    sensitivity = forecast_diag.get("forecast_diagnostics", {}).get("sensitivity", [])
+
+    def _sensitivity_risk(level: str) -> float:
+        for row in sensitivity:
+            if isinstance(row, dict) and row.get("name") == level:
+                return _safe_float(row.get("incremental_risk_usd"), 0.0)
+        return 0.0
+
+    profiles = [
+        {
+            "name": "stability",
+            "description": "Low-risk execution: prioritize low-effort waste controls and limited commitment expansion.",
+            "savings_multiplier": 0.55,
+            "risk_penalty": 0.45,
+            "confidence_key": "conservative",
+            "timeline_days": 30,
+            "sensitivity_name": "conservative",
+        },
+        {
+            "name": "balanced",
+            "description": "Default execution path: combine rightsizing, commitment coverage, and governance guardrails.",
+            "savings_multiplier": 0.78,
+            "risk_penalty": 0.68,
+            "confidence_key": "balanced",
+            "timeline_days": 60,
+            "sensitivity_name": "balanced",
+        },
+        {
+            "name": "acceleration",
+            "description": "Aggressive transformation: deep architecture/workload changes with larger upside and higher execution risk.",
+            "savings_multiplier": 1.0,
+            "risk_penalty": 1.0,
+            "confidence_key": "aggressive",
+            "timeline_days": 90,
+            "sensitivity_name": "aggressive",
+        },
+    ]
+
+    frontier: list[dict[str, Any]] = []
+    for profile in profiles:
+        annual_savings = max(expected_monthly_savings * 12 * profile["savings_multiplier"], 0.0)
+        confidence_level = _safe_float(confidence.get(profile["confidence_key"]), 0.55)
+        downside_incremental_risk = _sensitivity_risk(profile["sensitivity_name"])
+        execution_risk_score = min(
+            100.0,
+            max(
+                5.0,
+                (risk_score * profile["risk_penalty"])
+                + ((100.0 - maturity_score) * 0.35)
+                + (downside_incremental_risk / max(baseline_12m, 1.0) * 100.0),
+            ),
+        )
+        utility_score = (
+            (annual_savings / max(baseline_12m, 1.0) * 100.0) * 1.35
+            + (confidence_level * 30.0)
+            - (execution_risk_score * 0.28)
+        )
+        payback_months = (
+            round((baseline_12m * 0.015 * profile["risk_penalty"]) / max(annual_savings / 12, 0.01), 1)
+            if annual_savings > 0
+            else None
+        )
+
+        frontier.append(
+            {
+                "scenario": profile["name"],
+                "description": profile["description"],
+                "timeline_days": profile["timeline_days"],
+                "expected_annual_savings_usd": round(annual_savings, 2),
+                "execution_risk_score": round(execution_risk_score, 1),
+                "confidence": round(confidence_level, 3),
+                "downside_incremental_risk_usd": round(downside_incremental_risk, 2),
+                "utility_score": round(utility_score, 2),
+                "estimated_payback_months": payback_months,
+            }
+        )
+
+    frontier.sort(key=lambda row: row["utility_score"], reverse=True)
+    primary = frontier[0] if frontier else {}
+
+    phased_plan = [
+        {
+            "phase": "0-30 days",
+            "focus": "quick-wins",
+            "actions": [row.get("title") for row in (portfolio.get("quick_wins") or [])[:5] if isinstance(row, dict)],
+        },
+        {
+            "phase": "31-60 days",
+            "focus": "commitment-and-governance",
+            "actions": [
+                "Close top commitment gaps by provider",
+                "Enforce tagging/allocation policy gates",
+                "Set budget guardrails from p90/p95 forecast bands",
+            ],
+        },
+        {
+            "phase": "61-90 days",
+            "focus": "architecture-and-automation",
+            "actions": [
+                "Execute strategic optimization bets",
+                "Automate remediation with approval policy controls",
+                "Re-baseline forecast diagnostics and model risk",
+            ],
+        },
+    ]
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "forecast_months": months,
+        "baseline_annualized_spend_usd": round(baseline_12m, 2),
+        "expected_monthly_savings_pool_usd": round(expected_monthly_savings, 2),
+        "frontier": frontier,
+        "recommended_scenario": primary.get("scenario"),
+        "recommended_sequence": phased_plan,
+        "decision_guardrails": {
+            "max_execution_risk_score": 65,
+            "minimum_confidence": 0.55,
+            "min_annual_savings_usd": round(max(baseline_12m * 0.04, 0.0), 2),
+            "requires_finance_signoff_if_payback_over_months": 9,
+        },
+        "supporting_blocks": {
+            "forecast_diagnostics": forecast_diag,
+            "commitment_gap": commitment_gap,
+            "waste": waste,
+            "optimization_portfolio": portfolio,
+        },
+        "genai_context": {
+            "prompt": (
+                "Create an executive decision memo comparing the scenario frontier. "
+                "Recommend one scenario, justify using confidence, risk, payback, and annual savings, "
+                "then provide a 30/60/90 day action sequence with owners."
+            ),
+            "frontier": frontier,
+            "recommended_scenario": primary.get("scenario"),
+            "baseline_annualized_spend_usd": round(baseline_12m, 2),
+            "expected_monthly_savings_pool_usd": round(expected_monthly_savings, 2),
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Async wrappers (called by api.py endpoints)
 # ---------------------------------------------------------------------------
@@ -2405,6 +2623,10 @@ async def get_forecast_model_diagnostics(params: dict[str, Any]) -> str:
 
 async def get_forecast_diagnostics(params: dict[str, Any]) -> str:
     return json.dumps(build_forecast_diagnostics(params))
+
+
+async def get_decision_intelligence(params: dict[str, Any]) -> str:
+    return json.dumps(build_decision_intelligence(params))
 
 
 # ---------------------------------------------------------------------------
