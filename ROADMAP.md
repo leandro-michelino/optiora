@@ -123,6 +123,49 @@ Status: **core implemented with advanced ops policy + scheduler controls; schedu
 - mute windows, escalation policies, acknowledgement SLAs, scheduler retry/backoff controls, and executive alert summary APIs ✅ implemented
 - remaining: daily/weekly delivered executive summaries and deeper noise-reduction analytics
 
+## Competitive Parity Status (Merged May 2026)
+
+This section consolidates the former competitive planning docs into the roadmap.
+
+### External benchmark inputs
+
+- Google Cloud Billing budget/anomaly delivery patterns (Pub/Sub semantics, automation model)
+- Azure Cost Management budget/alert lifecycle and scope controls
+- Datadog CCM allocation/monitoring operational patterns
+- Cloudability positioning around maturity, commitment optimization, and business mapping
+- FinOps Foundation capability model for ingestion, forecasting, reporting, and governance
+
+### Current parity position
+
+- No blocking parity gaps remain for the original Phase 0/1 scope.
+- Core parity features for alert lifecycle, routing, ingestion reliability, and freshness observability are implemented in MVP form.
+- Near-term focus should move from parity completion to differentiation depth and live OCI evidence runs.
+
+### Competitive backlog status bands
+
+#### P0 (Start now)
+
+- Budget alert delivery controls for email/Slack/Teams: **Concluded (MVP)**
+- Scheduler operations visibility (status/timeline/next-run signals): **Concluded**
+- External anomaly ingestion (AWS first): **Concluded**
+
+#### P1 (Near-term)
+
+- Export jobs and run history: **Concluded (MVP)**
+- GCP budget Pub/Sub ingestion with dedupe/audit trail: **Concluded (MVP)**
+- Hierarchical rollup budget fields: **Concluded (MVP)**
+- Connector framework (CloudHealth/Spot/OpenCost): **Concluded (MVP)**
+
+#### P2 (Expansion)
+
+- Kubernetes/OpenCost cost-allocation depth: **Concluded (MVP)**
+- Multi-destination alert routing matrix: **Concluded (MVP)**
+- Finance-ready report packs and business mapping outputs: **Concluded (MVP)**
+
+### Recommended immediate competitive slice
+
+- Add stronger decision confidence and realization windows to recommendation workflows, then track planned-vs-realized outcomes.
+
 ## Competitive Gap Closure
 
 ## Enterprise FinOps maturity

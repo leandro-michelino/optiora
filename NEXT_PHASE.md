@@ -1,200 +1,68 @@
 # Next Phase Checklist
 
-This file turns the current public-dashboard build into a concrete go-live gate and defines what must be true before work is considered ready to move into `1.0`.
+This file defines the release gate for `1.0` and the immediate post-`1.0` focus.
 
-## Current Go-Live Position (May 2026 — Feature-Complete)
+## Current Go-Live Position (May 2026)
 
-Release 1.0 FinOps features are fully implemented:
+Release `1.0` scope is feature-complete locally for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior.
 
-- **Core**: multi-cloud cost overview, anomaly detection, forecasting, recommendations
-- **Analytics**: cloud waste, efficiency score, commitment gap, attribution, maturity
-- **FinOps Intelligence**: unit economics, scorecards, resource inventory, Kubernetes cost allocation
-- **Virtual Tag Engine**: CRUD rule builder + dry-run coverage preview (`/api/v1/virtual-tags/*`)
-- **Resource-Level Rightsizing**: per-instance/volume recommendations (`/api/v1/recommendations/rightsizing`)
-- **Hybrid Advisor**: deterministic + GenAI overlay (`/api/v1/advisor/hybrid`)
-- **Exports**: FOCUS format, CSV, XLS executive summary, audit logs
-- **Business Mapping + Chargeback**: tag-based allocation, chargeback endpoints
-- **Auth (optional)**: JWT/RBAC (`OWNER / ADMIN / ANALYST / READONLY`) when `ENABLE_AUTH=true`
+Local validation snapshot recorded on **May 1, 2026**:
 
-Dashboard now has 17 pages across 3 nav sections — all routes verified in production build.
+- Backend tests passing (`245` test cases at that time).
+- Frontend type-check, lint, and production build passing.
+- Animated route integrity gate passing.
+- Remaining gate: live OCI environment evidence run.
 
-## Validation Snapshot (1 May 2026)
+## Release 1.0 Exit Criteria
 
-Local validation has been re-run end to end:
+Work should move into post-`1.0` only after these are true:
 
-- `.venv/bin/python -m pytest -q` ✅ (245 passed)
-- `tests.test_competitive_ops` covers alert lifecycle, routing simulation, freshness, and per-channel delivery telemetry ✅
-- `tests.test_epic2_multi_account` covers enterprise hierarchy/federation across AWS, Azure, GCP, and OCI ✅
-- `tests.test_auth_flow` covers public mode, org-scoped APIs, CSV import, exports, and Alembic upgrade/downgrade roundtrip through `0013` ✅
-- `cd dashboard && npm run type-check -- --pretty false && npm run lint && npm run build` ✅
-- `./scripts/check-animated-svg-routes.sh` ✅ as a laptop-run release gate
+- all dashboard routes required for `1.0` render without runtime errors in a deployed environment
+- virtual tag CRUD roundtrip passes in live deployment
+- rightsizing endpoint returns valid payloads (recommendations or correct empty state)
+- at least one deployed environment has passed full smoke validation
+- at least one real customer-like data path has been validated end to end
+- deployment/migration runbook steps have been validated for repeatable redeploys
+- Alembic migrations apply cleanly on a fresh database
 
-Notes:
+## Go-Live Gate Execution
 
-- Virtual Tag CRUD roundtrip is covered in automated API tests (`tests/test_virtual_tag_rules.py`) and currently passing.
-- A real-data path was validated through the UTF-8 billing CSV import flow used by tests (import → summary/cost APIs).
-- Full live OCI deployment validation remains a go-live environment gate, not a local-code gate.
+Use canonical docs for execution details so commands are maintained in one place:
 
-## Go-Live Exit Gate
-
-Before declaring an environment ready, all of the following should be done.
-
-### 1. Local validation
-
-```bash
-./setup.sh --clean
-
-python3 -m py_compile $(find ./finops_* -maxdepth 1 -name '*.py')
-.venv/bin/python -m pytest -q
-
-cd dashboard
-npm run type-check
-npm run lint
-npm run build
-cd ..
-
-alembic upgrade head
-terraform -chdir=terraform validate
-bash -n deploy/deploy-oci.sh
-```
-
-### 2. Environment configuration
-
-Use public dashboard mode unless you are intentionally testing hardened access:
-
-```env
-ENABLE_AUTH=false
-NEXT_PUBLIC_ENABLE_AUTH=false
-PUBLIC_WORKSPACE_NAME=OptiOra Public Workspace
-PUBLIC_WORKSPACE_EMAIL=public@optiora.local
-```
-
-Required deployment inputs:
-
-- `OCI_COMPARTMENT_ID`
-- subnet or VCN selection for the compute host
-- SSH key pair for the instance
-- outbound egress to package registries and any cloud APIs you plan to call
-- either valid provider credentials for at least one target cloud or a customer billing CSV ready for upload
-
-### 3. Deploy
-
-Preferred guided deploy path:
-
-```bash
-./deploy/deploy-oci.sh menu
-```
-
-Alternative quick OCI deploy:
-
-```bash
-export OCI_COMPARTMENT_ID=ocid1.compartment.oc1...
-./deploy/deploy-oci.sh compute
-./deploy/deploy-oci.sh status
-```
-
-The quick deploy path now applies `alembic upgrade head` on the VM before services restart.
-
-### 4. Smoke test in the live environment
-
-Backend and UI:
-
-```bash
-curl http://<instance-ip>:8000/health
-curl http://<instance-ip>:8000/api/v1/info
-curl http://<instance-ip>:3000
-```
-
-Manual product checks:
-
-1. Open `http://<instance-ip>:3000/dashboard` directly and confirm no login prompt appears.
-2. Upload one UTF-8 billing CSV from the dashboard settings page and confirm the imported dataset summary updates.
-3. Confirm the costs overview reflects the imported CSV totals.
-4. Navigate to FinOps Analytics pages: Unit Economics, Scorecards, Inventory, Kubernetes, Virtual Tags, Rightsizing.
-5. Create and delete a virtual tag rule; confirm coverage preview updates.
-6. If live provider testing is in scope, add one cloud provider credential, approve scanning, and start a scan.
-7. Confirm the operations page shows recent scan activity.
-8. Confirm history and diff views return real data after at least two scans.
-9. Confirm alerts load and acknowledgement works.
-10. Confirm CSV exports download successfully.
-11. Confirm forecasting, anomalies, recommendations, and AI insights render without hardcoded placeholder data.
-
-### 5. Operational checks
-
-On the VM:
-
-```bash
-sudo systemctl status optiora-api
-sudo systemctl status optiora-dashboard
-sudo tail -n 100 /var/log/optiora-api.log
-sudo tail -n 100 /var/log/optiora-dashboard.log
-sudo tail -n 100 /var/log/optiora-setup.log
-```
-
-If a manual migration rerun is needed:
-
-```bash
-cd /opt/optiora
-set -a
-. ./.env
-set +a
-./venv/bin/alembic upgrade head
-```
-
-## Release 1.0 Entry Criteria
-
-Work should move into post-1.0 only after these are true:
-
-- all 17 dashboard pages render without errors in a deployed environment
-- virtual tag CRUD roundtrip (create → list → preview → delete) passes in a live environment
-- rightsizing endpoint returns recommendations (or empty state with correct data_source label)
-- at least one deployed environment has passed the full smoke test (including new analytics section 6)
-- at least one real customer data path has been validated end to end
-- deployment runbook is accurate enough for repeatable redeploys
-- all Alembic migrations (0001–0013) apply cleanly on a fresh database
+1. Local verification and regression suite: [TESTING.md](TESTING.md)
+2. OCI deployment workflow, env vars, and troubleshooting: [DEPLOYMENT.md](DEPLOYMENT.md)
+3. Strategic sequencing and release framing: [ROADMAP.md](ROADMAP.md)
 
 ## Post-1.0 Focus
 
-`post-1.0` should expand product depth and enterprise readiness:
-
 Recommended near-term order:
 
-1. Redis-backed rate limiting (replace process-local buckets in `auth_routes.py`) ✅ implemented (optional Redis backend + in-memory fallback)
-2. SMTP notification integration with real email templates
-3. Scheduled report delivery (weekly/monthly)
-4. FOCUS 1.0 export certification
-5. Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring)
+1. SMTP notification integration with production-grade templates.
+2. Scheduled report delivery (weekly/monthly).
+3. FOCUS 1.0 export certification.
+4. Real cloud utilization signals for rightsizing (CloudWatch, Azure Monitor, Cloud Monitoring).
+5. SSO path (SAML/OIDC) and enterprise auth hardening.
 
-Additional post-1.0 backlog:
+Additional backlog:
 
-1. SAML / OIDC / SSO authentication path
-2. Vault-backed secret orchestration for credential storage
-3. Real Kubernetes metrics integration (Prometheus, cost-model)
-4. Multi-tenancy isolation hardening for SaaS deployment
+- vault-backed secret orchestration for credential storage
+- deeper Kubernetes metrics integration (Prometheus/cost-model)
+- stronger SaaS multi-tenancy isolation hardening
+- recommendation realization tracking (planned vs realized savings)
 
 ## Deferred Optional Hardening
 
-These items remain intentionally out of the default deployment path for now:
+These items remain intentionally outside the default public-dashboard deployment posture:
 
-- login wall
-- RBAC enforcement as a required feature
-- secure cookie sessions
-- SSO / SAML / OIDC
-- vault-backed secret management
+- mandatory login wall
+- mandatory RBAC enforcement
+- secure cookie session hardening as a required baseline
+- SSO-required access patterns
+- vault-required secret-management path
 
-If a hardened deployment is requested later, enable:
+When a hardened deployment is explicitly requested:
 
 ```env
 ENABLE_AUTH=true
 NEXT_PUBLIC_ENABLE_AUTH=true
 ```
-
-## Repository Maintenance Notes
-
-Merged from `REPO_REVIEW.md` so this file remains the single source for go-live and post-1.0 operations guidance.
-
-- Keep `finops_mcp/api.py` shrinking by extracting route-adjacent helper logic by domain.
-- Prefer one authoritative explanation per topic instead of repeating architecture/validation content across multiple docs.
-- Keep backend verification guidance aligned with the current `pytest` regression flow.
-- Preserve deterministic analytics as the source of truth and keep GenAI advisory-only.
-- Keep OCI hosting guidance separate from the product's multi-cloud analysis scope.
