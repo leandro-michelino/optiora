@@ -1,5 +1,7 @@
 # Testing and Verification
 
+Validation snapshot (May 4, 2026): backend `271` tests passing, dashboard type-check/lint/build passing, Terraform validate passing.
+
 ## Backend
 
 Bootstrap first (recommended):
@@ -173,9 +175,10 @@ terraform -chdir=terraform validate
 ## Notes
 
 - Backend tests require the Python dependencies from `pyproject.toml`.
+- `./setup.sh` installs pytest/ruff/mypy/black by default; use `--no-dev-tools` only when you intentionally want a minimal runtime-only environment.
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Alembic migrations require a single linear head before running the auth flow roundtrip migration test.
-- The backend suite is `unittest`-compatible but executed through `pytest` for consistent local and CI ergonomics.
+- The backend suite is `unittest`-compatible. If pytest is unavailable locally, run the canonical `unittest discover` command.
 - Run `./scripts/cleanup-workspace.sh` to remove redundant duplicate-copy artifacts and local cache folders before packaging or handoff.
 - Dashboard linting requires ESLint flat config (`eslint.config.mjs`) when using ESLint 9.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.

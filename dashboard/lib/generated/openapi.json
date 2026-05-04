@@ -4172,6 +4172,69 @@
         }
       }
     },
+    "/api/v1/analytics/decision-intelligence": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Analytics Decision Intelligence",
+        "description": "Scenario frontier for executive FinOps decision-making.",
+        "operationId": "analytics_decision_intelligence_api_v1_analytics_decision_intelligence_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cloud_provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Cloud Provider"
+            }
+          },
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 24,
+              "minimum": 1,
+              "default": 12,
+              "title": "Months"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Analytics Decision Intelligence Api V1 Analytics Decision Intelligence Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/analytics/finops-intelligence": {
       "get": {
         "tags": [
@@ -4197,7 +4260,8 @@
                 "commitment_strategy",
                 "tagging_strategy",
                 "sustainability_narrative",
-                "executive_narrative"
+                "executive_narrative",
+                "decision_intelligence"
               ],
               "type": "string",
               "default": "finops_operating_review",
@@ -8933,7 +8997,8 @@
               "rightsizing_brief",
               "vendor_negotiation_brief",
               "forecast_model_diagnostics",
-              "finops_operating_review"
+              "finops_operating_review",
+              "decision_intelligence"
             ],
             "title": "Analysis Type",
             "default": "spend"
@@ -8982,7 +9047,8 @@
                 "rightsizing_brief",
                 "vendor_negotiation_brief",
                 "forecast_model_diagnostics",
-                "finops_operating_review"
+                "finops_operating_review",
+                "decision_intelligence"
               ]
             },
             "type": "array",

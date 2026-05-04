@@ -32,14 +32,19 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+
+def _expand_path(raw_value: str) -> str:
+    return os.path.expanduser(os.path.expandvars(str(raw_value or "").strip()))
+
+
 _OCI_GENAI_ENDPOINT = os.getenv("OCI_GENAI_ENDPOINT", "")
 _OCI_GENAI_MODEL = os.getenv("OCI_GENAI_MODEL", "meta.llama-3.3-70b-instruct")
 _OCI_COMPARTMENT_ID = os.getenv("OCI_GENAI_COMPARTMENT_ID", "").strip() or os.getenv(
     "OCI_COMPARTMENT_OCID", ""
 )
-_OCI_CONFIG_FILE = os.getenv("OCI_CONFIG_FILE", "")
+_OCI_CONFIG_FILE = _expand_path(os.getenv("OCI_CONFIG_FILE", ""))
 _OCI_PROFILE = os.getenv("OCI_PROFILE", "DEFAULT")
-_OCI_PRIVATE_KEY_PATH = os.getenv("OCI_PRIVATE_KEY_PATH", "")
+_OCI_PRIVATE_KEY_PATH = _expand_path(os.getenv("OCI_PRIVATE_KEY_PATH", ""))
 _OCI_PRIVATE_KEY_INLINE = os.getenv("OCI_PRIVATE_KEY", "")
 _OCI_TENANCY_OCID = os.getenv("OCI_TENANCY_OCID", "")
 _OCI_USER_OCID = os.getenv("OCI_USER_OCID", "")

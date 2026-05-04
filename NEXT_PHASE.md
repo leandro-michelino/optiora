@@ -6,11 +6,12 @@ This file defines the release gate for `1.0` and the immediate post-`1.0` focus.
 
 Release `1.0` scope is feature-complete locally for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior.
 
-Local validation snapshot recorded on **May 1, 2026**:
+Local validation snapshot recorded on **May 4, 2026**:
 
-- Backend tests passing (`245` test cases at that time).
+- Backend tests passing (`271` test cases).
 - Frontend type-check, lint, and production build passing.
 - Animated route integrity gate passing.
+- Terraform configuration validation passing.
 - Remaining gate: live OCI environment evidence run.
 
 ## Release 1.0 Exit Criteria

@@ -1110,8 +1110,8 @@ run_ansible_playbook_for_instance() {
 
     ssh_user="${OCI_ANSIBLE_USER:-$REMOTE_USER}"
     ssh_key="${OCI_ANSIBLE_SSH_KEY_PATH:-$RESOLVED_SSH_PRIVATE_KEY_PATH}"
-    inv="$(mktemp -t optiora-inventory.XXXXXX).yml"
-    vars_override="$(mktemp -t optiora-vars.XXXXXX).yml"
+    inv="$(mktemp -t optiora-inventory.XXXXXX.yml)"
+    vars_override="$(mktemp -t optiora-vars.XXXXXX.yml)"
 
     # Resolve OCI private key path for GenAI (env var > local .env file).
     local_oci_key_path="${OCI_PRIVATE_KEY_PATH:-}"

@@ -32,6 +32,22 @@ FastAPI backend
 
 For the full topology and pipeline details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Delivery Architecture (ASCII)
+
+```text
+Local workspace
+  |
+  +--> setup.sh
+  |     +--> Python venv + backend deps
+  |     +--> dashboard npm deps
+  |     +--> OpenAPI client generation
+  |
+  +--> tests + build gates
+        +--> backend unittest/pytest
+        +--> dashboard type-check/lint/build
+        +--> terraform validate
+```
+
 ## Capability Highlights
 
 - Forecasting: baseline forecast, percentiles, downside risk, what-if, stress testing, model diagnostics.
@@ -69,6 +85,13 @@ npm run dev
 ```
 
 For full validation commands and coverage notes, see [TESTING.md](TESTING.md).
+
+## Verified Baseline (May 4, 2026)
+
+- Backend syntax gate passed: `python3 -m py_compile $(find ./finops_* -name '*.py')`
+- Backend regression suite passed: `271` tests via `unittest discover`
+- Frontend gates passed: `npm run type-check`, `npm run lint`, `npm run build`
+- Infrastructure gate passed: `terraform -chdir=terraform validate`
 
 ## OCI Deployment
 

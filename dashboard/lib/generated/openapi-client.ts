@@ -345,6 +345,20 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     })
   }
 
+  async function get_api_v1_analytics_decision_intelligence(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/analytics/decision-intelligence"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
   async function get_api_v1_analytics_efficiency_score(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/analytics/efficiency-score"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
@@ -2090,6 +2104,7 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     get_api_v1_analytics_commitment_gap,
     get_api_v1_analytics_commitment_optimization,
     get_api_v1_analytics_cross_provider_comparison,
+    get_api_v1_analytics_decision_intelligence,
     get_api_v1_analytics_efficiency_score,
     get_api_v1_analytics_finops_intelligence,
     get_api_v1_analytics_forecast_diagnostics,

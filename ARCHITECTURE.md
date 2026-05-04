@@ -452,6 +452,42 @@ enterprise profile
         -> FastAPI + Next.js + PostgreSQL + GenAI narrative overlays
 ```
 
+## Runtime Configuration Architecture
+
+```text
+.env / environment variables
+        |
+        +--> Frontend runtime
+        |     NEXT_PUBLIC_* + OCI GenAI credentials
+        |     dashboard/lib/ai-service.ts resolves "~/" key paths
+        |
+        +--> Backend runtime
+              finops_mcp/config.py + tools/genai_advisor.py
+              resolves "~/" and env-expanded file paths for:
+                - OCI_CONFIG_FILE
+                - OCI_PRIVATE_KEY_PATH
+```
+
+## Release Gate Architecture
+
+```text
+code change
+   |
+   +--> static python compile
+   +--> backend regression suite
+   +--> dashboard type-check/lint/build
+   +--> terraform validate
+   |
+   v
+deploy-oci.sh verify
+   |
+   +--> smoke_test_0_9.sh
+   +--> live_data_gate.sh
+   |
+   v
+generate_evidence_pack.sh -> artifacts/evidence/<timestamp>/SUMMARY.md
+```
+
 ## Configuration and Security Notes
 
 ```text

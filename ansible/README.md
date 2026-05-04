@@ -25,6 +25,8 @@ Provisioning is Oracle Linux-only by policy. The playbook asserts `ansible_distr
 cp ansible/inventory.example.yml ansible/inventory.yml
 ```
 
+`ansible/inventory.yml` is intentionally gitignored so host/IP/key changes remain local.
+
 3. Run the playbook:
 
 ```bash

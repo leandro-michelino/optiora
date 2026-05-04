@@ -64,6 +64,10 @@ terraform/tfplan
 # Local scratch / generated artifacts
 tmp/
 .tmp/
+artifacts/
+
+# Local infra inventories
+ansible/inventory.yml
 
 # Common accidental duplicate copies (Finder/Downloads)
 * (1).*
