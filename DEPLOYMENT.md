@@ -80,9 +80,18 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
 ## Network and Access Control
 
 - Primary ingress control: OCI security list rules from Terraform (`laptop_cidr` + optional `allowed_public_ingress_cidrs`).
-- Current default host profile: `firewalld` is not managed/enforced by automation (`optiora_configure_firewall: false`).
-- Direct access mode (default): expose `:3000` and `:8000` through OCI security rules.
-- Optional web front-door mode: expose `:80`/`:443` and disable direct app ingress in Terraform.
+- Current default host profile: `firewalld` is managed by automation (`optiora_configure_firewall: true`).
+- Current default exposure mode: nginx front door on `:80`/`:443` with direct app ports closed.
+- Recommended Terraform posture: `allow_direct_app_ingress=false`, `allow_web_ingress=true`.
+- Optional direct-service mode: expose `:3000` and `:8000` only when explicitly required.
+
+Endpoint routing with nginx front-door mode:
+
+- `GET /dashboard*` and general UI routes -> Next.js dashboard (`127.0.0.1:3000`)
+- `POST /api/ai/chat` -> Next.js route handler (`127.0.0.1:3000`)
+- `GET/POST /api/v1/*` -> FastAPI backend (`127.0.0.1:8000`)
+- `POST /auth/*` -> FastAPI backend (`127.0.0.1:8000`)
+- `/health`, `/docs`, `/redoc`, `/openapi.json` -> FastAPI backend (`127.0.0.1:8000`)
 
 ## Local Preflight
 

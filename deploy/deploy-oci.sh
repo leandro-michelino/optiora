@@ -396,6 +396,7 @@ ${YELLOW}USAGE:${NC}
 ${YELLOW}COMMANDS:${NC}
     menu                 Interactive deployment menu (scratch setup, review/fix, CIDR management, ideas)
     full                 Fancy end-to-end flow (Terraform + compute + Ansible + verify)
+    provision            Create/start compute and attach volume only (no code upload, no Ansible)
     compute              Create/start instance and deploy local code (default)
     status               Check current deployment status
     verify               Run end-to-end verification against the deployed dashboard and API
@@ -428,6 +429,9 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_SSH_PUBLIC_KEY         Raw public key string alternative
     OCI_INSTANCE_USER          SSH user (default: opc)
     OCI_APP_DIR                App directory on VM (default: /opt/optiora)
+    OCI_ENABLE_NGINX           true/false for nginx reverse proxy front door (default: true)
+    OCI_CONFIGURE_FIREWALL     true/false for host firewalld config (default: true)
+    OCI_EXPOSE_DIRECT_SERVICES true/false for opening 3000/8000 on host firewall (default: false)
     OCI_EXTRA_VOLUME_ENABLED   Attach extra data volume (default: true)
     OCI_EXTRA_VOLUME_SIZE_GBS  Extra data volume size in GiB (default: 200)
     OCI_EXTRA_VOLUME_VPUS_PER_GB Extra data volume performance tier (default: 10)
@@ -711,13 +715,13 @@ sync_local_project() {
     local public_ip="$1"
     local unpack_remote="${2:-true}"
     local archive_path="/tmp/optiora-deploy-$$.tar.gz"
-    local local_private_key_path=""
 
     log_step "Uploading Local Project To OCI VM"
     log_info "Deployment source: local filesystem snapshot from this laptop (no Git clone)."
     log_info "Creating deployment archive from local workspace..."
     COPYFILE_DISABLE=1 tar -czf "$archive_path" \
         --exclude=".git" \
+        --exclude=".env" \
         --exclude=".venv" \
         --exclude=".pytest_cache" \
         --exclude="__pycache__" \
@@ -734,26 +738,6 @@ sync_local_project() {
         -o UserKnownHostsFile=/dev/null \
         -i "$RESOLVED_SSH_PRIVATE_KEY_PATH" \
         "$archive_path" "${REMOTE_USER}@${public_ip}:/tmp/optiora-deploy.tar.gz"
-
-    if [ -f ".env" ]; then
-        local_private_key_path=$(grep '^OCI_PRIVATE_KEY_PATH=' .env | tail -1 | cut -d'=' -f2- || true)
-        local_private_key_path="${local_private_key_path%\"}"
-        local_private_key_path="${local_private_key_path#\"}"
-        if [ -n "$local_private_key_path" ]; then
-            if [[ "$local_private_key_path" == \~/* ]]; then
-                local_private_key_path="${HOME}${local_private_key_path#\~}"
-            fi
-            if [ -f "$local_private_key_path" ]; then
-                log_info "Copying OCI private key referenced by OCI_PRIVATE_KEY_PATH into the deployment bundle..."
-                scp -o StrictHostKeyChecking=no \
-                    -o UserKnownHostsFile=/dev/null \
-                    -i "$RESOLVED_SSH_PRIVATE_KEY_PATH" \
-                    "$local_private_key_path" "${REMOTE_USER}@${public_ip}:/tmp/optiora-oci-api-key.pem"
-            else
-                log_warning "OCI_PRIVATE_KEY_PATH is set locally but the file was not found: $local_private_key_path"
-            fi
-        fi
-    fi
 
     rm -f "$archive_path"
 
@@ -932,8 +916,10 @@ ensure_instance_running() {
 deploy_compute() {
     local deploy_started_at
     local deploy_elapsed
+    local nginx_enabled
 
     deploy_started_at=$(date +%s)
+    nginx_enabled="${OCI_ENABLE_NGINX:-true}"
     prepare_compute_instance
 
     ensure_extra_block_volume "$CURRENT_INSTANCE_ID" "$CURRENT_AVAILABILITY_DOMAIN"
@@ -941,13 +927,36 @@ deploy_compute() {
     run_ansible_playbook_for_instance "$CURRENT_PUBLIC_IP"
 
     log_step "Deployment Complete"
-    log_success "Dashboard: http://$CURRENT_PUBLIC_IP:3000"
-    log_success "API: http://$CURRENT_PUBLIC_IP:8000"
+    if is_true "$nginx_enabled"; then
+        log_success "Dashboard: http://$CURRENT_PUBLIC_IP/dashboard"
+        log_success "API: http://$CURRENT_PUBLIC_IP"
+        log_info "Direct service ports are disabled by default in nginx front-door mode."
+    else
+        log_success "Dashboard: http://$CURRENT_PUBLIC_IP:3000"
+        log_success "API: http://$CURRENT_PUBLIC_IP:8000"
+    fi
     log_info "Verification: ./deploy/deploy-oci.sh verify"
     log_info "API logs:   sudo journalctl -u optiora-api -n 100 --no-pager"
     log_info "UI logs:    sudo journalctl -u optiora-dashboard -n 100 --no-pager"
     deploy_elapsed=$(( $(date +%s) - deploy_started_at ))
     log_success "End-to-end compute deploy time: $(format_duration "$deploy_elapsed")"
+}
+
+provision_compute_only() {
+    local provision_started_at
+    local provision_elapsed
+
+    provision_started_at=$(date +%s)
+    prepare_compute_instance
+    ensure_extra_block_volume "$CURRENT_INSTANCE_ID" "$CURRENT_AVAILABILITY_DOMAIN"
+
+    log_step "Provisioning Complete (Infra Only)"
+    log_success "Instance is provisioned with no source upload and no Ansible run."
+    log_success "Dashboard not deployed in this mode."
+    log_success "API not deployed in this mode."
+    get_status || true
+    provision_elapsed=$(( $(date +%s) - provision_started_at ))
+    log_success "End-to-end provision time: $(format_duration "$provision_elapsed")"
 }
 
 instance_action() {
@@ -999,8 +1008,10 @@ get_status() {
         public_ip=$(get_public_ip_for_instance "$instance_id")
         if [ -n "$public_ip" ] && [ "$public_ip" != "null" ]; then
             log_info "Public IP: $public_ip"
-            log_info "Dashboard URL: http://$public_ip:3000"
-            log_info "API URL: http://$public_ip:8000"
+            log_info "Front-door URL: http://$public_ip"
+            log_info "Dashboard URL: http://$public_ip/dashboard"
+            log_info "Direct Dashboard URL (if enabled): http://$public_ip:3000"
+            log_info "Direct API URL (if enabled): http://$public_ip:8000"
         fi
     fi
 
@@ -1107,6 +1118,11 @@ run_ansible_playbook_for_instance() {
     local local_oci_profile=""
     local genai_model=""
     local genai_endpoint=""
+    local nginx_enabled=""
+    local configure_firewall=""
+    local expose_direct_services=""
+    local frontend_base_url=""
+    local api_base_url=""
 
     ssh_user="${OCI_ANSIBLE_USER:-$REMOTE_USER}"
     ssh_key="${OCI_ANSIBLE_SSH_KEY_PATH:-$RESOLVED_SSH_PRIVATE_KEY_PATH}"
@@ -1119,6 +1135,17 @@ run_ansible_playbook_for_instance() {
     local_oci_profile="${OCI_PROFILE:-${OCI_CLI_PROFILE:-DEFAULT}}"
     genai_model="${OCI_GENAI_MODEL:-}"
     genai_endpoint="${OCI_GENAI_ENDPOINT:-}"
+    nginx_enabled="${OCI_ENABLE_NGINX:-true}"
+    configure_firewall="${OCI_CONFIGURE_FIREWALL:-true}"
+    expose_direct_services="${OCI_EXPOSE_DIRECT_SERVICES:-false}"
+
+    if is_true "$nginx_enabled"; then
+        frontend_base_url="http://${public_ip}"
+        api_base_url="http://${public_ip}"
+    else
+        frontend_base_url="http://${public_ip}:3000"
+        api_base_url="http://${public_ip}:8000"
+    fi
 
     if [ -f "${ROOT_DIR}/.env" ]; then
         if [ -z "$local_oci_key_path" ]; then
@@ -1180,13 +1207,14 @@ all:
           ansible_ssh_private_key_file: ${ssh_key}
 EOF
 
-    cat > "$vars_override" <<EOF
-optiora_configure_firewall: false
-optiora_firewall_expose_direct_services: true
+cat > "$vars_override" <<EOF
+optiora_install_nginx: $(is_true "$nginx_enabled" && echo "true" || echo "false")
+optiora_configure_firewall: $(is_true "$configure_firewall" && echo "true" || echo "false")
+optiora_firewall_expose_direct_services: $(is_true "$expose_direct_services" && echo "true" || echo "false")
 optiora_manage_source: true
 optiora_remote_archive: /tmp/optiora-deploy.tar.gz
-optiora_frontend_url: "http://${public_ip}:3000"
-optiora_api_url: "http://${public_ip}:8000"
+optiora_frontend_url: "${frontend_base_url}"
+optiora_api_url: "${api_base_url}"
 optiora_region: "${REGION}"
 optiora_genai_endpoint: "${genai_endpoint}"
 optiora_genai_model: "${genai_model}"
@@ -1488,6 +1516,10 @@ main() {
         full)
             check_prerequisites
             run_fancy_end_to_end_deploy
+            ;;
+        provision)
+            check_prerequisites
+            provision_compute_only
             ;;
         menu)
             check_prerequisites

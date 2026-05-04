@@ -14,9 +14,9 @@ optiora_user_ocid: ""
 optiora_fingerprint: ""
 optiora_compartment_ocid: "ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya"
 optiora_genai_compartment_ocid: "ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya"
-optiora_frontend_url: "http://{{ ansible_host }}:{{ optiora_dashboard_port }}"
-optiora_api_url: "http://{{ ansible_host }}:{{ optiora_api_port }}"
-optiora_install_nginx: false
+optiora_frontend_url: "http://{{ ansible_host }}"
+optiora_api_url: "http://{{ ansible_host }}"
+optiora_install_nginx: true
 optiora_enable_auth: false
 optiora_public_workspace_name: "OptiOra Public Workspace"
 optiora_public_workspace_email: "public@optiora.local"
@@ -44,10 +44,10 @@ optiora_health_delay: 5
 # ── VM hardening defaults ──────────────────────────────────────────────────
 optiora_vm_hardening: true
 optiora_auto_security_updates: true
-optiora_configure_firewall: false
+optiora_configure_firewall: true
 optiora_ssh_port: 22
 # Keep direct dashboard/API ports reachable by default when nginx is disabled.
-optiora_firewall_expose_direct_services: true
+optiora_firewall_expose_direct_services: false
 optiora_sysctl_vm_swappiness: 10
 optiora_limits_nofile_soft: 65535
 optiora_limits_nofile_hard: 131072

@@ -97,6 +97,6 @@ These are controlled via `ansible/group_vars/all.yml`:
 
 Current defaults in `ansible/group_vars/all.yml`:
 
-- `optiora_install_nginx: false` (direct access mode)
-- `optiora_configure_firewall: false` (firewalld not managed/enforced)
-- `optiora_firewall_expose_direct_services: true` (used only when host firewall management is enabled)
+- `optiora_install_nginx: true` (nginx front-door mode)
+- `optiora_configure_firewall: true` (firewalld managed/enforced)
+- `optiora_firewall_expose_direct_services: false` (keep direct app ports closed by default)

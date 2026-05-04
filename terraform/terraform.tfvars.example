@@ -27,9 +27,9 @@ laptop_cidr = "<your_laptop_public_ip>/32"
 # Optional extra public CIDRs (office/VPN egress) allowed by security list.
 allowed_public_ingress_cidrs = []
 # Expose direct app ports only when needed.
-allow_direct_app_ingress = true
+allow_direct_app_ingress = false
 # Expose web ports for nginx/TLS front door.
-allow_web_ingress = false
+allow_web_ingress = true
 # Keep outbound access open by default so the VM can install packages and reach cloud APIs.
 egress_cidr = "0.0.0.0/0"
 
