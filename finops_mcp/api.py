@@ -12578,6 +12578,280 @@ def _rightsizing_from_oci_compute_inventory(
     return out
 
 
+def _oci_accessible_compartment_ids(
+    oci_module: Any,
+    identity_client: Any,
+    tenancy_id: str,
+) -> List[str]:
+    root_compartment_override = str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip()
+    compartment_ids: List[str] = []
+    seen_compartments: set[str] = set()
+    if root_compartment_override:
+        compartment_ids.append(root_compartment_override)
+        seen_compartments.add(root_compartment_override)
+    if tenancy_id and tenancy_id not in seen_compartments:
+        compartment_ids.append(tenancy_id)
+        seen_compartments.add(tenancy_id)
+
+    try:
+        comp_response = oci_module.pagination.list_call_get_all_results(
+            identity_client.list_compartments,
+            compartment_id=tenancy_id,
+            compartment_id_in_subtree=True,
+            access_level="ACCESSIBLE",
+        )
+        for compartment in comp_response.data or []:
+            lifecycle = str(getattr(compartment, "lifecycle_state", "") or "").upper()
+            comp_id = str(getattr(compartment, "id", "") or "").strip()
+            if not comp_id or lifecycle not in {"ACTIVE", ""}:
+                continue
+            if comp_id not in seen_compartments:
+                seen_compartments.add(comp_id)
+                compartment_ids.append(comp_id)
+    except Exception:
+        pass
+    return compartment_ids[:50]
+
+
+def _estimate_oci_storage_monthly_cost(size_gb: float, vpus_per_gb: Optional[float] = None) -> float:
+    size = max(0.0, float(size_gb or 0.0))
+    # OCI Block Volume is billed from live size/performance attributes; this is
+    # a conservative normalized estimate used only for ranking cleanup actions.
+    base_storage_rate = 0.0255
+    performance_rate = 0.0017 * max(0.0, float(vpus_per_gb or 0.0))
+    return round(size * (base_storage_rate + performance_rate), 2)
+
+
+def _rightsizing_from_oci_storage_inventory(
+    cred_json: Dict[str, Any],
+    min_savings: float,
+    limit: int = 120,
+) -> List[RightsizingRecommendation]:
+    """Find unattached OCI block and boot volumes from live provider inventory."""
+    try:
+        import oci
+    except Exception as exc:
+        logger.warning("OCI SDK unavailable for storage rightsizing inventory: %s", exc)
+        return []
+
+    config_file = str(cred_json.get("config_file") or "").strip()
+    profile = _normalize_oci_profile(cred_json.get("profile"))
+    if not config_file:
+        return []
+    try:
+        resolved_config, resolved_profile = CredentialValidator._normalize_oci_inputs(
+            config_file=config_file,
+            profile=profile,
+        )
+        oci_config = oci.config.from_file(resolved_config, resolved_profile)
+    except Exception as exc:
+        logger.warning("Unable to load OCI config for storage rightsizing inventory: %s", exc)
+        return []
+
+    tenancy_id = str(oci_config.get("tenancy") or "").strip()
+    region = str(oci_config.get("region") or "global").strip() or "global"
+    if not tenancy_id:
+        return []
+
+    client_timeout = (5, 20)
+    try:
+        identity = oci.identity.IdentityClient(oci_config, timeout=client_timeout)
+        compute = oci.core.ComputeClient(oci_config, timeout=client_timeout)
+        blockstorage = oci.core.BlockstorageClient(oci_config, timeout=client_timeout)
+    except Exception as exc:
+        logger.warning("Unable to initialize OCI storage clients for rightsizing inventory: %s", exc)
+        return []
+
+    compartment_ids = _oci_accessible_compartment_ids(oci, identity, tenancy_id)
+    try:
+        availability_domains = [
+            str(getattr(ad, "name", "") or "").strip()
+            for ad in identity.list_availability_domains(compartment_id=tenancy_id).data or []
+            if str(getattr(ad, "name", "") or "").strip()
+        ]
+    except Exception:
+        availability_domains = []
+
+    attached_block_volume_ids: set[str] = set()
+    attached_boot_volume_ids: set[str] = set()
+    total_seen = 0
+    for compartment_id in compartment_ids:
+        ad_values = availability_domains or [None]
+        for ad in ad_values:
+            try:
+                kwargs = {"compartment_id": compartment_id}
+                if ad:
+                    kwargs["availability_domain"] = ad
+                attachments = oci.pagination.list_call_get_all_results(
+                    compute.list_volume_attachments,
+                    **kwargs,
+                ).data
+                for attachment in attachments or []:
+                    lifecycle = str(getattr(attachment, "lifecycle_state", "") or "").upper()
+                    if lifecycle in {"DETACHED", "DETACHING", "TERMINATED"}:
+                        continue
+                    volume_id = str(getattr(attachment, "volume_id", "") or "").strip()
+                    if volume_id:
+                        attached_block_volume_ids.add(volume_id)
+            except Exception:
+                pass
+            try:
+                kwargs = {"compartment_id": compartment_id}
+                if ad:
+                    kwargs["availability_domain"] = ad
+                attachments = oci.pagination.list_call_get_all_results(
+                    compute.list_boot_volume_attachments,
+                    **kwargs,
+                ).data
+                for attachment in attachments or []:
+                    lifecycle = str(getattr(attachment, "lifecycle_state", "") or "").upper()
+                    if lifecycle in {"DETACHED", "DETACHING", "TERMINATED"}:
+                        continue
+                    volume_id = str(getattr(attachment, "boot_volume_id", "") or "").strip()
+                    if volume_id:
+                        attached_boot_volume_ids.add(volume_id)
+            except Exception:
+                pass
+
+    out: List[RightsizingRecommendation] = []
+    observed_at = _utcnow().isoformat()
+
+    def _append_storage_rec(
+        *,
+        resource_id: str,
+        display_name: str,
+        resource_type: str,
+        size_gb: float,
+        compartment_id: str,
+        lifecycle_state: str,
+        created_at: Any,
+        vpus_per_gb: Optional[float] = None,
+    ) -> None:
+        if len(out) >= limit:
+            return
+        monthly_cost = _estimate_oci_storage_monthly_cost(size_gb, vpus_per_gb)
+        if monthly_cost < min_savings:
+            return
+        last_seen = observed_at
+        if created_at is not None:
+            try:
+                last_seen = created_at.isoformat()
+            except Exception:
+                last_seen = str(created_at)
+        out.append(
+            RightsizingRecommendation(
+                resource_id=resource_id,
+                resource_name=display_name or resource_id,
+                resource_type=resource_type,
+                provider="oci",
+                region=region,
+                account_id=compartment_id or tenancy_id,
+                current_size=f"{size_gb:g} GB",
+                recommended_size="Delete after snapshot/retention validation",
+                current_monthly_cost_usd=monthly_cost,
+                projected_monthly_cost_usd=0.0,
+                monthly_savings_usd=monthly_cost,
+                annual_savings_usd=round(monthly_cost * 12, 2),
+                cpu_utilization_avg_percent=None,
+                memory_utilization_avg_percent=None,
+                reason=(
+                    f"Live OCI inventory shows this {resource_type.lower()} is not attached "
+                    f"to any instance. Lifecycle state: {lifecycle_state or 'unknown'}."
+                ),
+                confidence="high",
+                effort="low",
+                action="terminate",
+                evidence_source="oci_storage_inventory",
+                analysis_points=1,
+                trend_slope_usd=0.0,
+                trend_percent=0.0,
+                latest_monthly_cost_usd=monthly_cost,
+                peak_monthly_cost_usd=monthly_cost,
+                top_regions=[region] if region else [],
+                regional_breakdown=[{
+                    "region": region or "global",
+                    "monthly_cost_usd": monthly_cost,
+                    "share_percent": 100.0,
+                }],
+                resource_console_url=_rightsizing_console_url(
+                    provider="oci",
+                    resource_id=resource_id,
+                    region=region,
+                    account_id=compartment_id or tenancy_id,
+                    resource_type=resource_type,
+                ),
+                last_observed_at=last_seen,
+                risk_note=(
+                    "Unattached storage cleanup: create/verify a snapshot or backup, confirm owner "
+                    "approval, then delete to stop ongoing storage charges."
+                ),
+            )
+        )
+
+    for compartment_id in compartment_ids:
+        if len(out) >= limit:
+            break
+        try:
+            volumes = oci.pagination.list_call_get_all_results(
+                blockstorage.list_volumes,
+                compartment_id=compartment_id,
+                lifecycle_state="AVAILABLE",
+            ).data
+        except Exception:
+            volumes = []
+        for volume in volumes or []:
+            total_seen += 1
+            volume_id = str(getattr(volume, "id", "") or "").strip()
+            if not volume_id or volume_id in attached_block_volume_ids:
+                continue
+            size_gb = float(getattr(volume, "size_in_gbs", 0.0) or 0.0)
+            vpus = getattr(volume, "vpus_per_gb", None)
+            _append_storage_rec(
+                resource_id=volume_id,
+                display_name=str(getattr(volume, "display_name", "") or "").strip(),
+                resource_type="OCI Block Volume (unattached)",
+                size_gb=size_gb,
+                vpus_per_gb=float(vpus) if vpus is not None else None,
+                compartment_id=compartment_id,
+                lifecycle_state=str(getattr(volume, "lifecycle_state", "") or ""),
+                created_at=getattr(volume, "time_created", None),
+            )
+            if len(out) >= limit:
+                break
+
+        if len(out) >= limit:
+            break
+        try:
+            boot_volumes = oci.pagination.list_call_get_all_results(
+                blockstorage.list_boot_volumes,
+                compartment_id=compartment_id,
+                lifecycle_state="AVAILABLE",
+            ).data
+        except Exception:
+            boot_volumes = []
+        for volume in boot_volumes or []:
+            total_seen += 1
+            volume_id = str(getattr(volume, "id", "") or "").strip()
+            if not volume_id or volume_id in attached_boot_volume_ids:
+                continue
+            size_gb = float(getattr(volume, "size_in_gbs", 0.0) or 0.0)
+            _append_storage_rec(
+                resource_id=volume_id,
+                display_name=str(getattr(volume, "display_name", "") or "").strip(),
+                resource_type="OCI Boot Volume (unattached)",
+                size_gb=size_gb,
+                compartment_id=compartment_id,
+                lifecycle_state=str(getattr(volume, "lifecycle_state", "") or ""),
+                created_at=getattr(volume, "time_created", None),
+            )
+            if len(out) >= limit:
+                break
+
+    for rec in out:
+        rec.analysis_points = max(rec.analysis_points, total_seen)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Tier 1: AWS Cost Explorer get_rightsizing_recommendation
 # ---------------------------------------------------------------------------
@@ -13655,6 +13929,14 @@ async def get_rightsizing_recommendations(
                     elif data_source not in {"multi_provider_api", "oci_compute_inventory"}:
                         data_source = "multi_provider_api"
                     total_analyzed += len(tier2b)
+                tier2c = _rightsizing_from_oci_storage_inventory(oci_cred_json, min_savings, limit=max(120, limit))
+                if tier2c:
+                    recommendations_out.extend(tier2c)
+                    if data_source == "no_data_available":
+                        data_source = "oci_storage_inventory"
+                    elif data_source not in {"multi_provider_api", "oci_storage_inventory"}:
+                        data_source = "multi_provider_api"
+                    total_analyzed += max(len(tier2c), max((r.analysis_points for r in tier2c), default=0))
 
     # ── Tier 3: Cost-trend signal from scan snapshot history ────────────────
     if not recommendations_out:

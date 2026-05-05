@@ -331,12 +331,12 @@ export default function RightsizingPage() {
   const [data, setData] = useState<RightsizingResponse | null>(null)
   const [provider, setProvider] = useState('all')
   const [actionFilter, setActionFilter] = useState('all')
-  const [minSavings, setMinSavings] = useState(10)
+  const [minSavings, setMinSavings] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setData(await fetchRightsizingRecommendations({ provider, min_savings: minSavings, limit: 100 }))
+      setData(await fetchRightsizingRecommendations({ provider, min_savings: minSavings, limit: 200 }))
     } finally {
       setLoading(false)
     }
@@ -357,7 +357,7 @@ export default function RightsizingPage() {
           </div>
           <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Rightsizing</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
-            Per-resource rightsizing recommendations with CPU/memory utilization signals. Downsize idle instances, terminate orphaned disks, convert on-demand to reserved, or migrate to newer instance generations.
+            Per-resource optimization recommendations from live provider inventory and utilization signals. Downsize idle instances, clean unattached boot/block volumes, convert stable workloads to reserved capacity, or migrate to newer generations.
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} className="rounded-lg">
@@ -485,7 +485,7 @@ export default function RightsizingPage() {
 
       {/* Info callout */}
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
-        <strong>How rightsizing works:</strong> Optiora analyzes CPU and memory utilization signals from your cloud cost data. For deeper utilization metrics (CloudWatch, Azure Monitor, Cloud Monitoring), connect your monitoring integration. Recommendations are ranked by monthly savings opportunity.
+        <strong>How rightsizing works:</strong> Optiora combines live provider inventory, provider recommendation APIs, cost trends, and utilization signals. Storage cleanup actions such as unattached boot/block volumes are included alongside VM downsize and commitment opportunities.
       </div>
     </div>
   )
