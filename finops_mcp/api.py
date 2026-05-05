@@ -4752,6 +4752,7 @@ async def dashboard_recommendations(
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
     _ = current_user
+    customer_id = _customer_id_for_org(membership)
     context = await _cost_context(membership, db, "month", cloud_provider)
     result = _safe_json_load(
         await recommendations.get_recommendations(
@@ -4763,26 +4764,44 @@ async def dashboard_recommendations(
         ),
         {},
     )
-    rows = result.get("recommendations", [])
+    raw_rows = result.get("recommendations", [])
+    rows = raw_rows if isinstance(raw_rows, list) else []
+    live_rows = _collect_provider_recommendation_rows(
+        db=db,
+        customer_id=customer_id,
+        provider=cloud_provider,
+        min_monthly_savings=0.0,
+        limit=200,
+    )
+    if live_rows:
+        rows = [row for row in rows if isinstance(row, dict)] + live_rows
+
     mapped = []
     for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_provider = _provider_from_recommendation_row(row, cloud_provider)
+        savings_monthly = _recommendation_monthly_savings(row)
+        payback_months = float(row.get("payback_months", 3) or 3)
         mapped.append(
             {
                 "id": row.get("id"),
                 "service": row.get("service", "unknown"),
-                "cloud": cloud_provider if cloud_provider != "all" else "multi-cloud",
+                "cloud": row_provider if row_provider != "all" else "multi-cloud",
                 "title": row.get("description", "Optimization recommendation"),
                 "description": row.get("description", ""),
-                "savings": float(row.get("savings_annual_usd", 0) or 0) / 12,
+                "savings": savings_monthly,
                 "roi": float(row.get("roi_percent", 0) or 0),
                 "difficulty": "easy"
-                if row.get("payback_months", 0) <= 1
+                if payback_months <= 1
                 else "medium"
-                if row.get("payback_months", 0) <= 3
+                if payback_months <= 3
                 else "hard",
+                "source": row.get("source") or row.get("evidence_source") or "cost_context",
+                "resource_id": row.get("resource_id"),
             }
         )
-    return mapped
+    return _dedupe_dashboard_recommendations(mapped)
 
 
 @router.get("/forecast")
@@ -7061,6 +7080,7 @@ async def api_info() -> Dict[str, Any]:
             "finops_intelligence_endpoint": True,
             "genai_backend_narration": genai_advisor._is_configured(),
             "provider_diagnostics": True,
+            "provider_native_recommendations": True,
             "audit_logging": True,
             "alert_lifecycle": True,
             "alert_ops_policy": True,
@@ -12426,6 +12446,698 @@ def _slugify_resource_token(value: str) -> str:
     return token.strip("-") or "recommendation"
 
 
+def _safe_recommendation_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if isinstance(value, dict):
+            units = float(value.get("units") or 0.0)
+            nanos = float(value.get("nanos") or 0.0) / 1_000_000_000
+            return units + nanos
+        return float(str(value or "").replace("$", "").replace(",", "").strip() or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _recommendation_monthly_savings(row: Dict[str, Any]) -> float:
+    monthly = _safe_recommendation_float(row.get("monthly_savings_usd"), -1.0)
+    if monthly >= 0:
+        return round(monthly, 2)
+    annual = _safe_recommendation_float(row.get("savings_annual_usd"), 0.0)
+    return round(annual / 12.0, 2)
+
+
+def _recommendation_annual_savings(row: Dict[str, Any]) -> float:
+    annual = _safe_recommendation_float(row.get("savings_annual_usd"), -1.0)
+    if annual >= 0:
+        return round(annual, 2)
+    return round(_recommendation_monthly_savings(row) * 12.0, 2)
+
+
+def _provider_from_recommendation_row(row: Dict[str, Any], fallback: str = "all") -> str:
+    provider = str(row.get("provider") or "").strip().lower()
+    if provider and provider not in {"all", "multi-cloud"}:
+        return provider
+    rec_id = str(row.get("id") or "").strip().lower()
+    if "-rec-" in rec_id:
+        candidate = rec_id.split("-rec-", 1)[0]
+        if candidate:
+            return candidate
+    fallback_provider = str(fallback or "all").strip().lower() or "all"
+    return fallback_provider
+
+
+def _dedupe_dashboard_recommendations(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+    for row in rows:
+        key = (
+            str(row.get("cloud") or "").lower(),
+            str(row.get("source") or "").lower(),
+            str(row.get("service") or "").lower(),
+            str(row.get("resource_id") or "").lower(),
+            _slugify_resource_token(str(row.get("title") or row.get("description") or "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    out.sort(key=lambda item: float(item.get("savings") or 0), reverse=True)
+    return out
+
+
+def _provider_recommendation_type_from_text(
+    *,
+    rec_type: str = "",
+    service: str = "",
+    description: str = "",
+    action: str = "",
+) -> str:
+    text = " ".join([rec_type, service, description, action]).lower()
+    if "reservation" in text or "reserved" in text or "savings plan" in text or "commit" in text:
+        return "reserved-instances"
+    if "unattached" in text or "orphan" in text or "idle" in text or "delete" in text or "terminate" in text:
+        return "idle-resources"
+    if "storage" in text or "archive" in text or "lifecycle" in text or "tier" in text:
+        return "storage-optimization"
+    if "rightsiz" in text or "right-siz" in text or "resize" in text or "machine type" in text:
+        return "rightsizing"
+    return str(rec_type or "optimization").strip().lower() or "optimization"
+
+
+def _provider_row(
+    *,
+    provider: str,
+    source: str,
+    rec_id: str,
+    service: str,
+    rec_type: str,
+    description: str,
+    monthly_savings: float,
+    account_id: str = "",
+    region: str = "global",
+    resource_id: str = "",
+    resource_name: str = "",
+    resource_type: str = "",
+    current_monthly_cost: Optional[float] = None,
+    payback_months: float = 1.0,
+    confidence: str = "high",
+    severity: str = "medium",
+    roi_percent: float = 0.0,
+    console_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    safe_monthly = round(max(float(monthly_savings or 0.0), 0.0), 2)
+    current_monthly = (
+        round(max(float(current_monthly_cost or 0.0), 0.0), 2)
+        if current_monthly_cost is not None
+        else safe_monthly
+    )
+    return {
+        "id": rec_id,
+        "provider": provider,
+        "source": source,
+        "type": rec_type,
+        "service": service or resource_type or "Cloud Service",
+        "description": description or "Provider optimization recommendation.",
+        "current_annual_spend": round(current_monthly * 12.0, 2),
+        "monthly_savings_usd": safe_monthly,
+        "savings_annual_usd": round(safe_monthly * 12.0, 2),
+        "payback_months": payback_months,
+        "severity": severity,
+        "roi_percent": roi_percent,
+        "confidence": confidence if confidence in {"high", "medium", "low"} else "medium",
+        "account_id": account_id,
+        "region": region or "global",
+        "resource_id": resource_id,
+        "resource_name": resource_name,
+        "resource_type": resource_type or service,
+        "resource_console_url": console_url,
+    }
+
+
+def _recommendation_rows_from_rightsizing(
+    recs: List[RightsizingRecommendation],
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for rec in recs:
+        rows.append(_provider_row(
+            provider=rec.provider,
+            source=rec.evidence_source,
+            rec_id=f"{rec.provider}-{rec.evidence_source}-{_slugify_resource_token(rec.resource_id)}",
+            service=rec.resource_type,
+            rec_type=rec.action,
+            description=rec.reason or rec.resource_name,
+            monthly_savings=rec.monthly_savings_usd,
+            account_id=rec.account_id,
+            region=rec.region,
+            resource_id=rec.resource_id,
+            resource_name=rec.resource_name,
+            resource_type=rec.resource_type,
+            current_monthly_cost=rec.current_monthly_cost_usd,
+            payback_months=1.0 if rec.effort == "low" else 3.0 if rec.effort == "medium" else 6.0,
+            confidence=rec.confidence,
+            severity="high" if rec.confidence == "high" else "medium",
+            roi_percent=round(
+                (rec.monthly_savings_usd / rec.current_monthly_cost_usd) * 100,
+                2,
+            ) if rec.current_monthly_cost_usd > 0 else 0.0,
+            console_url=rec.resource_console_url,
+        ))
+    return rows
+
+
+def _aws_cost_explorer_commitment_recommendations(
+    cred_json: Dict[str, Any],
+    min_monthly_savings: float,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    try:
+        import boto3
+
+        client = boto3.client(
+            "ce",
+            aws_access_key_id=cred_json.get("access_key_id"),
+            aws_secret_access_key=cred_json.get("secret_access_key"),
+            region_name=cred_json.get("region", "us-east-1"),
+        )
+    except Exception as exc:
+        logger.warning("AWS recommendation client unavailable: %s", exc)
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    try:
+        response = client.get_savings_plans_purchase_recommendation(
+            SavingsPlansType="COMPUTE_SP",
+            TermInYears="ONE_YEAR",
+            PaymentOption="NO_UPFRONT",
+            LookbackPeriodInDays="THIRTY_DAYS",
+        )
+        details = (
+            (response.get("SavingsPlansPurchaseRecommendation") or {}).get(
+                "SavingsPlansPurchaseRecommendationDetails",
+                [],
+            )
+            or response.get("SavingsPlansPurchaseRecommendationDetails", [])
+            or []
+        )
+        for idx, detail in enumerate(details, start=1):
+            if len(rows) >= limit:
+                break
+            monthly = _safe_recommendation_float(
+                detail.get("EstimatedMonthlySavingsAmount")
+                or detail.get("EstimatedSavingsAmount")
+                or detail.get("MonthlySavings")
+            )
+            if monthly < min_monthly_savings:
+                continue
+            account_id = str(detail.get("AccountId") or detail.get("AccountScope") or "")
+            commitment = str(detail.get("HourlyCommitmentToPurchase") or "recommended commitment")
+            rows.append(_provider_row(
+                provider="aws",
+                source="aws_cost_explorer_savings_plans",
+                rec_id=f"aws-ce-savings-plan-{idx:03d}",
+                service="Savings Plans",
+                rec_type="reserved-instances",
+                description=f"AWS: Buy Compute Savings Plan commitment {commitment} for steady usage.",
+                monthly_savings=monthly,
+                account_id=account_id,
+                region=str(cred_json.get("region") or "global"),
+                payback_months=3,
+                confidence="high",
+                severity="high",
+                roi_percent=_safe_recommendation_float(detail.get("EstimatedROI")),
+            ))
+    except Exception as exc:
+        logger.info("AWS Savings Plans recommendations unavailable: %s", exc)
+
+    try:
+        response = client.get_reservation_purchase_recommendation(
+            Service="Amazon Elastic Compute Cloud - Compute",
+            LookbackPeriodInDays="THIRTY_DAYS",
+            TermInYears="ONE_YEAR",
+            PaymentOption="NO_UPFRONT",
+        )
+        recs = response.get("Recommendations", []) or []
+        for rec_idx, rec in enumerate(recs, start=1):
+            details = rec.get("RecommendationDetails") or []
+            for detail_idx, detail in enumerate(details, start=1):
+                if len(rows) >= limit:
+                    break
+                monthly = _safe_recommendation_float(
+                    detail.get("EstimatedMonthlySavingsAmount")
+                    or detail.get("EstimatedSavingsAmount")
+                    or detail.get("MonthlySavings")
+                )
+                if monthly < min_monthly_savings:
+                    continue
+                instance_details = detail.get("InstanceDetails") or {}
+                ec2_details = instance_details.get("EC2InstanceDetails") or {}
+                family = str(ec2_details.get("Family") or ec2_details.get("InstanceType") or "EC2")
+                account_id = str(rec.get("AccountId") or detail.get("AccountId") or "")
+                rows.append(_provider_row(
+                    provider="aws",
+                    source="aws_cost_explorer_reservations",
+                    rec_id=f"aws-ce-reservation-{rec_idx:03d}-{detail_idx:03d}",
+                    service="EC2 Reserved Instances",
+                    rec_type="reserved-instances",
+                    description=f"AWS: Purchase EC2 Reserved Instances for steady {family} usage.",
+                    monthly_savings=monthly,
+                    account_id=account_id,
+                    region=str(cred_json.get("region") or "global"),
+                    payback_months=3,
+                    confidence="high",
+                    severity="high",
+                    roi_percent=_safe_recommendation_float(detail.get("EstimatedROI")),
+                ))
+            if len(rows) >= limit:
+                break
+    except Exception as exc:
+        logger.info("AWS reservation recommendations unavailable: %s", exc)
+
+    return rows[:limit]
+
+
+def _azure_advisor_recommendation_rows(
+    cred_json: Dict[str, Any],
+    min_monthly_savings: float,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    try:
+        from azure.identity import ClientSecretCredential
+        from azure.mgmt.advisor import AdvisorManagementClient
+
+        azure_cred = ClientSecretCredential(
+            tenant_id=cred_json["tenant_id"],
+            client_id=cred_json["client_id"],
+            client_secret=cred_json["client_secret"],
+        )
+        subscription_id = cred_json["subscription_id"]
+        client = AdvisorManagementClient(azure_cred, subscription_id)
+    except Exception as exc:
+        logger.warning("Azure Advisor recommendation client unavailable: %s", exc)
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    try:
+        for idx, rec in enumerate(client.recommendations.list(), start=1):
+            if len(rows) >= limit:
+                break
+            if "cost" not in str(getattr(rec, "category", "") or "").lower():
+                continue
+            props = getattr(rec, "extended_properties", None) or {}
+            savings_value = (
+                props.get("annualSavingsAmount")
+                or props.get("savingsAmount")
+                or props.get("monthlySavingsAmount")
+                or 0
+            )
+            savings = _safe_recommendation_float(savings_value)
+            monthly = savings / 12.0 if "annual" in " ".join(props.keys()).lower() else savings
+            if monthly < min_monthly_savings:
+                continue
+            resource_id = str(getattr(rec, "resource_id", "") or "")
+            short = getattr(rec, "short_description", None)
+            problem = str(getattr(short, "problem", "") or "").strip()
+            solution = str(getattr(short, "solution", "") or "").strip()
+            description = solution or problem or str(getattr(rec, "name", "") or "Azure Advisor cost recommendation")
+            service = str(props.get("targetResourceType") or props.get("resourceType") or "Azure Advisor").split("/")[-1]
+            rec_type = _provider_recommendation_type_from_text(
+                service=service,
+                description=description,
+                action=str(props.get("recommendationType") or ""),
+            )
+            impact = str(getattr(rec, "impact", "") or "medium").lower()
+            confidence = "high" if impact == "high" else "medium" if impact == "medium" else "low"
+            rows.append(_provider_row(
+                provider="azure",
+                source="azure_advisor",
+                rec_id=str(getattr(rec, "id", "") or getattr(rec, "name", "") or f"azure-advisor-{idx:03d}"),
+                service=service,
+                rec_type=rec_type,
+                description=f"Azure: {description}",
+                monthly_savings=monthly,
+                account_id=str(subscription_id),
+                region=str(getattr(rec, "location", "") or "global"),
+                resource_id=resource_id,
+                resource_name=str(props.get("resourceName") or (resource_id.split("/")[-1] if resource_id else "")),
+                resource_type=service,
+                payback_months=1 if rec_type in {"idle-resources", "storage-optimization"} else 3,
+                confidence=confidence,
+                severity="high" if impact == "high" else "medium",
+            ))
+    except Exception as exc:
+        logger.warning("Azure Advisor recommendation collection failed: %s", exc)
+    return rows[:limit]
+
+
+def _gcp_recommender_rows(
+    cred_json: Dict[str, Any],
+    min_monthly_savings: float,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    try:
+        from google.oauth2 import service_account
+        from google.auth.transport.requests import AuthorizedSession
+    except Exception as exc:
+        logger.warning("GCP recommendation libraries unavailable: %s", exc)
+        return []
+
+    service_account_json = cred_json.get("service_account_json")
+    if isinstance(service_account_json, str):
+        try:
+            service_account_json = json.loads(service_account_json)
+        except Exception:
+            service_account_json = {}
+    if not isinstance(service_account_json, dict):
+        return []
+    project_id = str(cred_json.get("project_id") or service_account_json.get("project_id") or "").strip()
+    if not project_id:
+        return []
+
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_json,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        session = AuthorizedSession(credentials)
+    except Exception as exc:
+        logger.warning("GCP recommendation credentials unavailable: %s", exc)
+        return []
+
+    locations = {"global"}
+    try:
+        response = session.get(
+            f"https://compute.googleapis.com/compute/v1/projects/{project_id}/zones",
+            params={"maxResults": 500},
+            timeout=20,
+        )
+        if response.status_code < 400:
+            for zone in response.json().get("items", []) or []:
+                name = str(zone.get("name") or "").strip()
+                if name:
+                    locations.add(name)
+    except Exception:
+        pass
+
+    recommender_ids = [
+        "google.compute.instance.MachineTypeRecommender",
+        "google.compute.instance.IdleResourceRecommender",
+        "google.compute.disk.IdleResourceRecommender",
+        "google.compute.commitment.UsageCommitmentRecommender",
+        "google.cloudstorage.bucket.SoftDeleteRecommender",
+    ]
+    rows: List[Dict[str, Any]] = []
+    for location in sorted(locations)[:16]:
+        for recommender_id in recommender_ids:
+            if len(rows) >= limit:
+                break
+            page_token = ""
+            while len(rows) < limit:
+                params = {"pageSize": 100}
+                if page_token:
+                    params["pageToken"] = page_token
+                url = (
+                    f"https://recommender.googleapis.com/v1/projects/{project_id}/locations/"
+                    f"{quote(location, safe='')}/recommenders/{quote(recommender_id, safe='')}/recommendations"
+                )
+                try:
+                    response = session.get(url, params=params, timeout=10)
+                except Exception as exc:
+                    logger.info("GCP Recommender request failed for %s/%s: %s", location, recommender_id, exc)
+                    break
+                if response.status_code >= 400:
+                    break
+                payload = response.json()
+                for rec in payload.get("recommendations", []) or []:
+                    impact = rec.get("primaryImpact") or {}
+                    if str(impact.get("category") or "").upper() != "COST":
+                        continue
+                    cost_projection = impact.get("costProjection") or {}
+                    cost = _safe_recommendation_float(cost_projection.get("cost"))
+                    monthly = abs(cost)
+                    if monthly < min_monthly_savings:
+                        continue
+                    rec_name = str(rec.get("name") or "")
+                    subtype = str(rec.get("recommenderSubtype") or recommender_id.split(".")[-1])
+                    description = str(rec.get("description") or subtype or "GCP Recommender cost recommendation")
+                    rec_type = _provider_recommendation_type_from_text(
+                        rec_type=subtype,
+                        service=recommender_id,
+                        description=description,
+                    )
+                    resource_id = ""
+                    try:
+                        operations = (
+                            (rec.get("content") or {})
+                            .get("operationGroups", [{}])[0]
+                            .get("operations", [])
+                        )
+                        resource_id = str((operations[0] or {}).get("resource") or "")
+                    except Exception:
+                        resource_id = ""
+                    rows.append(_provider_row(
+                        provider="gcp",
+                        source="gcp_recommender",
+                        rec_id=rec_name or f"gcp-recommender-{_slugify_resource_token(location)}-{len(rows) + 1:03d}",
+                        service=recommender_id,
+                        rec_type=rec_type,
+                        description=f"GCP: {description}",
+                        monthly_savings=monthly,
+                        account_id=project_id,
+                        region=location,
+                        resource_id=resource_id,
+                        resource_name=resource_id.split("/")[-1] if resource_id else "",
+                        resource_type=recommender_id,
+                        payback_months=1 if rec_type in {"idle-resources", "storage-optimization"} else 3,
+                        confidence="high",
+                        severity="high" if str(rec.get("priority") or "").upper() == "P1" else "medium",
+                    ))
+                page_token = str(payload.get("nextPageToken") or "")
+                if not page_token:
+                    break
+        if len(rows) >= limit:
+            break
+    return rows[:limit]
+
+
+def _oci_optimizer_recommendation_rows(
+    cred_json: Dict[str, Any],
+    min_monthly_savings: float,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    try:
+        import oci
+    except Exception as exc:
+        logger.warning("OCI SDK unavailable for optimizer recommendations: %s", exc)
+        return []
+
+    config_file = str(cred_json.get("config_file") or "").strip()
+    profile = _normalize_oci_profile(cred_json.get("profile"))
+    if not config_file:
+        return []
+    try:
+        resolved_config, resolved_profile = CredentialValidator._normalize_oci_inputs(
+            config_file=config_file,
+            profile=profile,
+        )
+        oci_config = oci.config.from_file(resolved_config, resolved_profile)
+        tenancy_id = str(oci_config.get("tenancy") or "").strip()
+        region = str(oci_config.get("region") or "global").strip() or "global"
+    except Exception as exc:
+        logger.warning("Unable to load OCI config for optimizer recommendations: %s", exc)
+        return []
+    if not tenancy_id:
+        return []
+
+    try:
+        client = oci.optimizer.OptimizerClient(oci_config, timeout=(5, 25))
+    except Exception as exc:
+        logger.warning("Unable to initialize OCI Optimizer client: %s", exc)
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    try:
+        rec_response = oci.pagination.list_call_get_all_results(
+            client.list_recommendations,
+            compartment_id=tenancy_id,
+            compartment_id_in_subtree=True,
+        )
+        for idx, rec in enumerate(getattr(rec_response, "data", []) or [], start=1):
+            if len(rows) >= limit:
+                break
+            monthly = _safe_recommendation_float(getattr(rec, "estimated_cost_saving", 0))
+            if monthly < min_monthly_savings:
+                continue
+            name = str(getattr(rec, "name", "") or "OCI Optimizer recommendation")
+            description = str(getattr(rec, "description", "") or name)
+            rec_type = _provider_recommendation_type_from_text(
+                rec_type=str(getattr(rec, "category_id", "") or ""),
+                description=f"{name} {description}",
+            )
+            rows.append(_provider_row(
+                provider="oci",
+                source="oci_optimizer",
+                rec_id=str(getattr(rec, "id", "") or f"oci-optimizer-{idx:03d}"),
+                service=name,
+                rec_type=rec_type,
+                description=f"OCI: {description}",
+                monthly_savings=monthly,
+                account_id=tenancy_id,
+                region=region,
+                resource_type=name,
+                payback_months=1 if rec_type in {"idle-resources", "storage-optimization"} else 3,
+                confidence="high",
+                severity=str(getattr(rec, "importance", "") or "medium").lower() or "medium",
+            ))
+    except Exception as exc:
+        logger.info("OCI Optimizer recommendations unavailable: %s", exc)
+
+    try:
+        actions_response = oci.pagination.list_call_get_all_results(
+            client.list_resource_actions,
+            compartment_id=tenancy_id,
+            compartment_id_in_subtree=True,
+        )
+        for idx, action in enumerate(getattr(actions_response, "data", []) or [], start=1):
+            if len(rows) >= limit:
+                break
+            monthly = _safe_recommendation_float(getattr(action, "estimated_cost_saving", 0))
+            if monthly < min_monthly_savings:
+                continue
+            resource_type = str(getattr(action, "resource_type", "") or "OCI Resource")
+            action_name = str(getattr(action, "name", "") or getattr(action, "action", "") or "Optimize resource")
+            rec_type = _provider_recommendation_type_from_text(
+                service=resource_type,
+                description=action_name,
+                action=str(getattr(action, "action", "") or ""),
+            )
+            resource_id = str(getattr(action, "resource_id", "") or "")
+            rows.append(_provider_row(
+                provider="oci",
+                source="oci_optimizer_resource_action",
+                rec_id=str(getattr(action, "id", "") or f"oci-optimizer-action-{idx:03d}"),
+                service=resource_type,
+                rec_type=rec_type,
+                description=f"OCI: {action_name}",
+                monthly_savings=monthly,
+                account_id=tenancy_id,
+                region=region,
+                resource_id=resource_id,
+                resource_name=action_name,
+                resource_type=resource_type,
+                payback_months=1 if rec_type in {"idle-resources", "storage-optimization"} else 3,
+                confidence="high",
+                severity="high",
+                console_url=_rightsizing_console_url(
+                    provider="oci",
+                    resource_id=resource_id,
+                    region=region,
+                    account_id=tenancy_id,
+                    resource_type=resource_type,
+                ),
+            ))
+    except Exception as exc:
+        logger.info("OCI Optimizer resource actions unavailable: %s", exc)
+    return rows[:limit]
+
+
+def _collect_provider_recommendation_rows(
+    *,
+    db: Session,
+    customer_id: str,
+    provider: str,
+    min_monthly_savings: float,
+    limit: int = 200,
+    include_existing_rightsizing_sources: bool = True,
+) -> List[Dict[str, Any]]:
+    provider_filter = [provider] if provider != "all" else ["aws", "azure", "gcp", "oci"]
+    rows: List[Dict[str, Any]] = []
+    for prov in provider_filter:
+        if prov not in {"aws", "azure", "gcp", "oci"}:
+            continue
+        cred_rows = (
+            db.query(CredentialRecord)
+            .filter(
+                CredentialRecord.customer_id == customer_id,
+                CredentialRecord.provider == prov,
+                CredentialRecord.is_valid.is_(True),
+            )
+            .all()
+        )
+        for cred_row in cred_rows:
+            if len(rows) >= limit:
+                break
+            try:
+                cred_json: Dict[str, Any] = json.loads(cred_row.credential_json)
+            except Exception:
+                continue
+            remaining = max(limit - len(rows), 0)
+            if remaining <= 0:
+                break
+            if prov == "aws":
+                rows.extend(_aws_cost_explorer_commitment_recommendations(
+                    cred_json,
+                    min_monthly_savings,
+                    remaining,
+                ))
+                remaining = max(limit - len(rows), 0)
+                if include_existing_rightsizing_sources and remaining > 0:
+                    rows.extend(_recommendation_rows_from_rightsizing(
+                        _rightsizing_from_aws_ce(cred_json, min_monthly_savings)[:remaining]
+                    ))
+            elif prov == "azure":
+                if include_existing_rightsizing_sources:
+                    rows.extend(_azure_advisor_recommendation_rows(
+                        cred_json,
+                        min_monthly_savings,
+                        remaining,
+                    ))
+            elif prov == "gcp":
+                rows.extend(_gcp_recommender_rows(
+                    cred_json,
+                    min_monthly_savings,
+                    remaining,
+                ))
+                remaining = max(limit - len(rows), 0)
+                if include_existing_rightsizing_sources and remaining > 0:
+                    rows.extend(_recommendation_rows_from_rightsizing(
+                        _rightsizing_from_gcp_cloud_monitoring(cred_json, min_monthly_savings, limit=remaining)
+                    ))
+            elif prov == "oci":
+                rows.extend(_oci_optimizer_recommendation_rows(
+                    cred_json,
+                    min_monthly_savings,
+                    remaining,
+                ))
+                remaining = max(limit - len(rows), 0)
+                if include_existing_rightsizing_sources and remaining > 0:
+                    rows.extend(_recommendation_rows_from_rightsizing(
+                        _rightsizing_from_oci_compute_inventory(cred_json, min_monthly_savings, limit=remaining)
+                    ))
+                remaining = max(limit - len(rows), 0)
+                if include_existing_rightsizing_sources and remaining > 0:
+                    rows.extend(_recommendation_rows_from_rightsizing(
+                        _rightsizing_from_oci_storage_inventory(cred_json, min_monthly_savings, limit=remaining)
+                    ))
+        if len(rows) >= limit:
+            break
+
+    deduped: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+    for row in rows:
+        key = (
+            _provider_from_recommendation_row(row, provider),
+            str(row.get("source") or "").lower(),
+            str(row.get("resource_id") or "").lower(),
+            str(row.get("type") or "").lower(),
+            _slugify_resource_token(str(row.get("description") or "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    deduped.sort(key=_recommendation_monthly_savings, reverse=True)
+    return deduped[:limit]
+
+
 def _provider_recommendation_action(row: Dict[str, Any]) -> str:
     rec_type = str(row.get("type") or "").strip().lower()
     service = str(row.get("service") or "").strip().lower()
@@ -12459,26 +13171,32 @@ def _rightsizing_from_provider_recommendation_rows(
     safe_region = str(region or "global").strip() or "global"
     for row in rows:
         service = str(row.get("service") or "Cloud Service").strip()
-        monthly_savings = round(float(row.get("savings_annual_usd", 0) or 0) / 12, 2)
+        monthly_savings = _recommendation_monthly_savings(row)
         if monthly_savings < min_savings:
             continue
-        current_monthly = round(float(row.get("current_annual_spend", 0) or 0) / 12, 2)
+        current_monthly = round(_safe_recommendation_float(row.get("current_annual_spend"), 0.0) / 12, 2)
+        if not current_monthly:
+            current_monthly = _safe_recommendation_float(row.get("current_monthly_cost_usd"), 0.0)
         if current_monthly <= 0:
             current_monthly = monthly_savings
         projected_monthly = round(max(current_monthly - monthly_savings, 0.0), 2)
         action = _provider_recommendation_action(row)
-        rec_provider = str(row.get("provider") or normalized_provider).strip().lower()
-        if rec_provider in {"", "all", "multi-cloud"}:
-            rec_id = str(row.get("id") or "")
-            rec_provider = rec_id.split("-rec-", 1)[0] if "-rec-" in rec_id else normalized_provider
+        rec_provider = _provider_from_recommendation_row(row, normalized_provider)
         if rec_provider == "all":
             rec_provider = normalized_provider
 
         rec_type = str(row.get("type") or action).strip().lower()
         service_slug = _slugify_resource_token(service)
         rec_id = str(row.get("id") or f"{rec_provider}-{service_slug}-{rec_type}")
-        resource_type = f"{rec_provider.upper()} {service} service opportunity"
-        resource_name = f"{rec_provider.upper()} {service}: {str(row.get('description') or 'Optimization opportunity')}"
+        resource_id = str(row.get("resource_id") or f"provider-rec-{rec_id}")
+        resource_type = str(row.get("resource_type") or "").strip()
+        if not resource_type:
+            resource_type = f"{rec_provider.upper()} {service} service opportunity"
+        resource_name = str(row.get("resource_name") or "").strip()
+        if not resource_name:
+            resource_name = f"{rec_provider.upper()} {service}: {str(row.get('description') or 'Optimization opportunity')}"
+        row_region = str(row.get("region") or safe_region).strip() or safe_region
+        row_account = str(row.get("account_id") or account_id).strip()
         confidence = str(row.get("confidence") or "medium").strip().lower()
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
@@ -12486,13 +13204,13 @@ def _rightsizing_from_provider_recommendation_rows(
         effort = "low" if payback_months <= 1 else "medium" if payback_months <= 3 else "high"
         out.append(
             RightsizingRecommendation(
-                resource_id=f"provider-rec-{rec_id}",
+                resource_id=resource_id,
                 resource_name=resource_name,
                 resource_type=resource_type,
                 provider=rec_provider,
-                region=safe_region,
-                account_id=account_id,
-                current_size=f"{service} current monthly spend",
+                region=row_region,
+                account_id=row_account,
+                current_size=str(row.get("current_size") or f"{service} current monthly spend"),
                 recommended_size=str(row.get("description") or "Apply provider recommendation"),
                 current_monthly_cost_usd=current_monthly,
                 projected_monthly_cost_usd=projected_monthly,
@@ -12504,23 +13222,23 @@ def _rightsizing_from_provider_recommendation_rows(
                 confidence=confidence,
                 effort=effort,
                 action=action,
-                evidence_source="live_provider_recommendations",
+                evidence_source=str(row.get("source") or row.get("evidence_source") or "live_provider_recommendations"),
                 analysis_points=1,
                 trend_slope_usd=0.0,
                 trend_percent=0.0,
                 latest_monthly_cost_usd=current_monthly,
                 peak_monthly_cost_usd=current_monthly,
-                top_regions=[safe_region] if safe_region else [],
+                top_regions=[row_region] if row_region else [],
                 regional_breakdown=[{
-                    "region": safe_region,
+                    "region": row_region,
                     "monthly_cost_usd": current_monthly,
                     "share_percent": 100.0,
                 }],
-                resource_console_url=_rightsizing_console_url(
+                resource_console_url=row.get("resource_console_url") or _rightsizing_console_url(
                     provider=rec_provider,
-                    resource_id="",
-                    region=safe_region,
-                    account_id=account_id,
+                    resource_id=resource_id,
+                    region=row_region,
+                    account_id=row_account,
                     resource_type=resource_type,
                 ),
                 last_observed_at=observed_at,
@@ -13984,6 +14702,16 @@ async def get_rightsizing_recommendations(
             provider_recommendation_rows = [
                 row for row in raw_provider_rows if isinstance(row, dict)
             ]
+        provider_recommendation_rows.extend(
+            _collect_provider_recommendation_rows(
+                db=db,
+                customer_id=customer_id,
+                provider=provider,
+                min_monthly_savings=float(min_savings or 0.0),
+                limit=200,
+                include_existing_rightsizing_sources=False,
+            )
+        )
     except Exception as exc:
         logger.warning("Provider recommendation bridge for rightsizing failed: %s", exc)
 

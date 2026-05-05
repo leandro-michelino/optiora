@@ -75,6 +75,35 @@ class _FakeBlockstorageClient:
         ])
 
 
+class _FakeOptimizerClient:
+    def __init__(self, config, timeout=None):
+        self.config = config
+
+    def list_recommendations(self, **kwargs):
+        return SimpleNamespace(data=[
+            SimpleNamespace(
+                id="ocid1.optimizerrecommendation.delete-volumes",
+                name="Delete unattached block volumes",
+                description="Delete unattached block volumes to reduce storage cost.",
+                estimated_cost_saving=25.0,
+                category_id="cost",
+                importance="HIGH",
+            ),
+        ])
+
+    def list_resource_actions(self, **kwargs):
+        return SimpleNamespace(data=[
+            SimpleNamespace(
+                id="ocid1.optimizeraction.delete-volume",
+                resource_id="ocid1.volume.optimizer-orphan",
+                resource_type="Block Volume",
+                name="Delete unattached volume",
+                action="DELETE",
+                estimated_cost_saving=12.5,
+            ),
+        ])
+
+
 class _FakePagination:
     @staticmethod
     def list_call_get_all_results(func, **kwargs):
@@ -150,6 +179,46 @@ class RightsizingOciStorageTest(unittest.TestCase):
         self.assertEqual(recs[0].evidence_source, "live_provider_recommendations")
         self.assertEqual(recs[1].action, "modernize")
         self.assertIn("Object Storage", recs[1].resource_type)
+
+    def test_oci_optimizer_rows_are_collected_as_live_provider_recommendations(self) -> None:
+        fake_oci = SimpleNamespace(
+            config=SimpleNamespace(from_file=lambda config_file, profile: {
+                "tenancy": "ocid1.tenancy.test",
+                "region": "uk-london-1",
+            }),
+            optimizer=SimpleNamespace(OptimizerClient=_FakeOptimizerClient),
+            pagination=_FakePagination,
+        )
+
+        with patch.dict(sys.modules, {"oci": fake_oci}), patch.object(
+            api_module.CredentialValidator,
+            "_normalize_oci_inputs",
+            return_value=("/tmp/oci-config", "DEFAULT"),
+        ):
+            rows = api_module._oci_optimizer_recommendation_rows(
+                {"config_file": "/tmp/oci-config", "profile": "DEFAULT"},
+                min_monthly_savings=0,
+                limit=10,
+            )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["provider"], "oci")
+        self.assertEqual(rows[0]["source"], "oci_optimizer")
+        self.assertEqual(rows[0]["monthly_savings_usd"], 25.0)
+        self.assertEqual(rows[1]["source"], "oci_optimizer_resource_action")
+        self.assertEqual(rows[1]["resource_id"], "ocid1.volume.optimizer-orphan")
+
+        recs = api_module._rightsizing_from_provider_recommendation_rows(
+            rows,
+            provider="oci",
+            region="uk-london-1",
+            account_id="org-1",
+            min_savings=0,
+        )
+        self.assertEqual(len(recs), 2)
+        self.assertEqual(recs[0].evidence_source, "oci_optimizer")
+        self.assertEqual(recs[1].resource_id, "ocid1.volume.optimizer-orphan")
+        self.assertEqual(recs[1].action, "terminate")
 
 
 if __name__ == "__main__":

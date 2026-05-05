@@ -53,7 +53,7 @@ Local workspace
 - Forecasting: baseline forecast, percentiles, downside risk, what-if, stress testing, model diagnostics.
 - FinOps analytics: attribution, commitment analysis, waste decomposition, efficiency score, unit economics, scorecards.
 - Decision intelligence: scenario-frontier recommendations (stability/balanced/acceleration) with risk-confidence-payback trade-offs.
-- Optimization and governance: rightsizing, virtual tags, chargeback/showback, business mapping, exports.
+- Optimization and governance: provider-native recommendations, rightsizing, virtual tags, chargeback/showback, business mapping, exports.
 - Operations: scan history/diff, alert lifecycle, routing policy simulation, freshness telemetry.
 - Intelligence layer: `/api/v1/analytics/finops-intelligence` and `/api/v1/genai/rag-guidance` for deterministic + RAG + GenAI workflows.
 - Executive decision route: `/api/v1/analytics/decision-intelligence` for 30/60/90 sequencing and advisory memo generation.
@@ -119,6 +119,8 @@ Recommended release order for Terraform + Ansible deployments: Terraform `init/v
 Primary OCI region for hosting and GenAI inference: `uk-london-1`.
 
 Validated cloud connections are persisted until the customer disconnects them. Adding a valid credential writes runtime credentials on the API host and immediately starts a provider scan; unreachable or disabled credentials are marked invalid/inactive instead of being replaced with synthetic dashboard data.
+
+Recommendations are collected from live provider sources when credentials allow it: AWS Cost Explorer rightsizing, Savings Plans, and reservation purchase recommendations; Azure Advisor cost recommendations; GCP Recommender and Cloud Monitoring signals; OCI Optimizer plus compute, boot volume, and block volume inventory. CSV imports remain the only non-provider fallback.
 
 For prerequisites, environment variables, post-deploy checks, and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).
 

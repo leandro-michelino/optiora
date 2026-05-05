@@ -21,6 +21,17 @@ Disallowed sources:
 3. Forecasting must not backfill invented historical points.
 4. Virtual-tag previews must use observed resources only.
 
+## Recommendation Sources
+
+Optimization recommendations are collected from provider APIs and live inventory where available:
+
+- AWS: Cost Explorer rightsizing, Savings Plans purchase recommendations, Reserved Instance purchase recommendations, and CloudWatch-backed utilization.
+- Azure: Azure Advisor cost recommendations and Azure Monitor utilization enrichment.
+- GCP: Recommender cost recommendations and Cloud Monitoring utilization/inventory signals.
+- OCI: Optimizer recommendations/resource actions plus live compute, boot volume, and block volume inventory.
+
+If a provider API or permission is unavailable, the system returns the remaining live/imported signals and records the gap in logs or diagnostics. It must not create synthetic recommendation rows to fill missing provider data.
+
 ## Configuration
 
 Key runtime controls:
