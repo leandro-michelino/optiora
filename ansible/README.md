@@ -84,6 +84,7 @@ The playbook now applies host-level hardening defaults suitable for production V
 
 - automatic security updates with `dnf-automatic`
 - optional host firewall policy (disabled by default in the current deploy profile; OCI security lists remain the primary ingress control)
+- SSH daemon hardening that keeps source-IP access control out of `sshd`; SSH ingress is controlled by OCI security lists/network security groups
 - kernel safety defaults (`tcp_syncookies`, reverse path filtering, swappiness)
 - elevated file descriptor limits for high-concurrency API/UI workloads
 - stricter systemd service confinement for API and dashboard

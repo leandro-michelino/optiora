@@ -81,6 +81,7 @@ import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
 
 const DEFAULT_TIMEOUT_MS = 10000
+const LIVE_DATA_TIMEOUT_MS = 45000
 
 interface ListQuery {
   limit?: number
@@ -170,7 +171,7 @@ export async function fetchCosts(): Promise<CostResponse> {
 }
 
 export async function fetchCostsStrict(): Promise<CostResponse> {
-  return requestJson<CostResponse>('/api/v1/costs')
+  return requestJson<CostResponse>('/api/v1/costs', {}, { timeoutMs: LIVE_DATA_TIMEOUT_MS })
 }
 
 function paginate<T>(items: T[], query: ListQuery = {}): PaginatedResponse<T> {
@@ -226,7 +227,11 @@ export async function fetchAnomalies(query: ListQuery = {}): Promise<PaginatedRe
 }
 
 export async function fetchAnomaliesStrict(query: ListQuery = {}): Promise<PaginatedResponse<AnomalyResponse>> {
-  const rows = await requestJson<AnomalyResponse[]>('/api/v1/anomalies')
+  const rows = await requestJson<AnomalyResponse[]>(
+    '/api/v1/anomalies',
+    {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
+  )
   return paginate(rows, query)
 }
 
@@ -243,6 +248,7 @@ export async function fetchRecommendationsStrict(query: ListQuery = {}): Promise
   const rows = await requestJson<RecommendationResponse[]>(
     '/api/v1/recommendations',
     {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
   return paginate(rows, query)
 }
@@ -314,6 +320,7 @@ export async function fetchFinOpsAnalytics(): Promise<FinOpsAnalyticsResponse> {
   return requestJson<FinOpsAnalyticsResponse>(
     '/api/v1/analytics',
     {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
 }
 
@@ -321,6 +328,7 @@ export async function fetchCloudWasteAnalytics(): Promise<CloudWasteResponse> {
   return requestJson<CloudWasteResponse>(
     '/api/v1/analytics/cloud-waste',
     {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
 }
 
@@ -328,6 +336,7 @@ export async function fetchEfficiencyScore(): Promise<EfficiencyScoreResponse> {
   return requestJson<EfficiencyScoreResponse>(
     '/api/v1/analytics/efficiency-score',
     {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
 }
 
@@ -335,6 +344,7 @@ export async function fetchCommitmentGap(): Promise<CommitmentGapResponse> {
   return requestJson<CommitmentGapResponse>(
     '/api/v1/analytics/commitment-gap',
     {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
 }
 

@@ -18,6 +18,7 @@
       - make
       - openssl
       - openssl-devel
+      - openssh-server
       - postgresql
       - python3
       - python3-devel
@@ -102,6 +103,75 @@
   when:
     - optiora_vm_hardening | bool
     - optiora_configure_firewall | bool
+
+- name: Ensure sshd config drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure sshd loads drop-in configs
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^\s*Include\s+/etc/ssh/sshd_config\.d/\*\.conf\s*$'
+    line: "Include /etc/ssh/sshd_config.d/*.conf"
+    insertbefore: BOF
+    state: present
+    backup: true
+  notify: Restart sshd
+
+- name: Remove source-restricted SSH directives from primary sshd config
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^\s*(AllowUsers|DenyUsers|AllowGroups|DenyGroups|ListenAddress)\b'
+    state: absent
+    backup: true
+  notify: Restart sshd
+
+- name: Find sshd drop-in configs
+  ansible.builtin.find:
+    paths: /etc/ssh/sshd_config.d
+    patterns: "*.conf"
+    file_type: file
+  register: optiora_sshd_dropins
+
+- name: Remove source-restricted SSH directives from sshd drop-ins
+  ansible.builtin.lineinfile:
+    path: "{{ item.path }}"
+    regexp: '^\s*(AllowUsers|DenyUsers|AllowGroups|DenyGroups|ListenAddress)\b'
+    state: absent
+    backup: true
+  loop: "{{ optiora_sshd_dropins.files }}"
+  notify: Restart sshd
+
+- name: Ensure sshd accepts connections from OCI security-list approved sources
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/90-optiora-oci-boundary.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible. Do not restrict SSH by source IP on the VM.
+      # OCI security lists/network security groups are the ingress boundary.
+      Port {{ optiora_ssh_port }}
+      AddressFamily any
+      PubkeyAuthentication yes
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+  notify: Restart sshd
+
+- name: Validate sshd configuration
+  ansible.builtin.command:
+    cmd: sshd -t
+  changed_when: false
+
+- name: Ensure sshd is enabled and running
+  ansible.builtin.systemd:
+    name: sshd
+    enabled: true
+    state: started
 
 - name: Open SSH service in firewalld
   ansible.posix.firewalld:

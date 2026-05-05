@@ -1341,7 +1341,10 @@ EOF
     fi
 
     log_info "Running Ansible post-provisioning hardening/playbook..."
-    ANSIBLE_STDOUT_CALLBACK=default ansible-playbook \
+    ANSIBLE_FORCE_COLOR=true \
+    ANSIBLE_DISPLAY_SKIPPED_HOSTS=false \
+    ANSIBLE_DEPRECATION_WARNINGS=false \
+    ansible-playbook \
         -i "$inv" \
         --extra-vars "@${ROOT_DIR}/ansible/group_vars/all.yml" \
         --extra-vars "@${vars_override}" \
