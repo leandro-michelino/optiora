@@ -184,6 +184,7 @@ terraform -chdir=terraform validate
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
 - `./deploy/deploy-oci.sh verify` wraps `tests/smoke_test_0_9.sh` against the currently deployed OCI instance.
+- CSV import smoke is opt-in with `SMOKE_ENABLE_CSV_IMPORT=true`; leave it disabled for live customer environments so the dashboard remains backed by provider APIs, saved live scan snapshots, or customer-provided imports only.
 - `tests/live_data_gate.sh` is the strict release-critical route/API data-source gate (fails on fallback/placeholder sources).
 - `./scripts/generate_evidence_pack.sh` creates dated deploy/migration/smoke/live-credential-flow/rollback artifacts for release evidence.
 - For Terraform + Ansible deployments, prefer `./deploy/deploy-oci.sh full` or menu option `1` so the extra block volume attach, inventory generation, and source upload stay consistent before smoke checks.

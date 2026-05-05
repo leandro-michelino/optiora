@@ -28,8 +28,13 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     """
     try:
         period = params.get("period", "month")
+        credentials = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
+        subscription_id = str(credentials.get("subscription_id") or config.azure_subscription_id or "")
+        tenant_id = str(credentials.get("tenant_id") or config.azure_tenant_id or "")
+        client_id = str(credentials.get("client_id") or config.azure_client_id or "")
+        client_secret = str(credentials.get("client_secret") or config.azure_client_secret or "")
         
-        if not config.azure_subscription_id and not config.azure_subscription_ids and not config.azure_management_group_id:
+        if not subscription_id and not config.azure_subscription_ids and not config.azure_management_group_id:
             return json.dumps({"error": "Azure not configured (AZURE_SUBSCRIPTION_ID not set)"})
         
         try:
@@ -42,9 +47,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         
         # Create credentials
         credential = ClientSecretCredential(
-            tenant_id=config.azure_tenant_id,
-            client_id=config.azure_client_id,
-            client_secret=config.azure_client_secret,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
         )
         
         # Create CostManagement client
@@ -102,7 +107,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     "scope_type": "management_group",
                 }
             )
-        for subscription_id in _subscription_list():
+        subscription_values = [subscription_id] if subscription_id else _subscription_list()
+        for subscription_id in subscription_values:
             scopes.append(
                 {
                     "scope": f"/subscriptions/{subscription_id}",

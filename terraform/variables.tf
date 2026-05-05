@@ -59,13 +59,13 @@ variable "allowed_public_ingress_cidrs" {
 variable "allow_direct_app_ingress" {
   description = "Expose direct app ports (3000/8000) from allowed ingress CIDRs. Disable when using nginx/TLS front door only."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "allow_web_ingress" {
   description = "Expose web ports (80/443) from allowed ingress CIDRs. Enable when placing nginx on the VM."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "egress_cidr" {

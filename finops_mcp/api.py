@@ -1489,10 +1489,20 @@ def _resolve_customer_id(
     return derived_customer_id
 
 
-async def _cost_summary_for_provider(provider: str, period: str = "month") -> Dict[str, Any]:
+async def _cost_summary_for_provider(
+    provider: str,
+    period: str = "month",
+    customer_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    runtime_credentials = (
+        _load_runtime_provider_credentials(customer_id).get(provider)
+        if customer_id
+        else None
+    )
     return await fetch_provider_cost_summary(
         provider,
         period,
+        credentials=runtime_credentials,
         fetchers={
             "aws": aws_costs.get_cost_summary,
             "azure": azure_costs.get_cost_summary,
@@ -1519,6 +1529,135 @@ def _imported_cost_context(
     )
 
 
+def _cost_snapshot_context(
+    membership: UserOrganization,
+    db: Session,
+    cloud_provider: str = "all",
+    provider_errors: Optional[Dict[str, str]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Build real cost context from the latest persisted live scan snapshots."""
+    customer_id = _customer_id_for_org(membership)
+    query = db.query(CostSnapshot).filter(CostSnapshot.customer_id == customer_id)
+    if cloud_provider != "all":
+        query = query.filter(CostSnapshot.provider == cloud_provider)
+    rows = query.order_by(CostSnapshot.captured_at.desc()).limit(500).all()
+    if not rows:
+        return None
+
+    latest_by_provider: Dict[str, CostSnapshot] = {}
+    for row in rows:
+        provider = str(row.provider or "").strip().lower()
+        if not provider or provider in latest_by_provider:
+            continue
+        latest_by_provider[provider] = row
+
+    if not latest_by_provider:
+        return None
+
+    total_cost = 0.0
+    breakdown: Dict[str, Dict[str, float]] = {}
+    scan_ids: list[str] = []
+    latest_captured_at: Optional[datetime] = None
+    for provider, row in latest_by_provider.items():
+        cost = float(row.total_cost_usd or 0.0)
+        total_cost += cost
+        breakdown[provider] = {"cost": round(cost, 2), "percentage": 0.0}
+        if row.scan_id:
+            scan_ids.append(str(row.scan_id))
+        if row.captured_at and (latest_captured_at is None or row.captured_at > latest_captured_at):
+            latest_captured_at = row.captured_at
+
+    if total_cost > 0:
+        for provider in breakdown:
+            breakdown[provider]["percentage"] = round((breakdown[provider]["cost"] / total_cost) * 100, 1)
+
+    region_totals: Dict[str, float] = {}
+    if scan_ids:
+        allocation_query = db.query(CostAllocationSnapshot).filter(
+            CostAllocationSnapshot.customer_id == customer_id,
+            CostAllocationSnapshot.scan_id.in_(scan_ids),
+        )
+        if cloud_provider != "all":
+            allocation_query = allocation_query.filter(CostAllocationSnapshot.provider == cloud_provider)
+        for allocation in allocation_query.limit(2000).all():
+            region = str(allocation.region or "global")
+            region_totals[region] = region_totals.get(region, 0.0) + float(allocation.cost_usd or 0.0)
+
+    response: Dict[str, Any] = {
+        "period": "snapshot",
+        "cloud_provider": cloud_provider,
+        "total_cost": round(total_cost, 2),
+        "breakdown": breakdown,
+        "region_breakdown": [
+            {"region": region, "cost_usd": round(cost, 2)}
+            for region, cost in sorted(region_totals.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "source": "cost_snapshots_live",
+        "rows_imported": 0,
+        "last_imported_at": None,
+        "last_captured_at": latest_captured_at.isoformat() if latest_captured_at else None,
+        "scan_ids": scan_ids,
+    }
+    if provider_errors:
+        response["provider_errors"] = provider_errors
+    return response
+
+
+def _valid_runtime_provider_names(customer_id: str, db: Session) -> set[str]:
+    runtime_credentials = _load_runtime_provider_credentials(customer_id)
+    rows = (
+        db.query(CredentialRecord)
+        .filter(
+            CredentialRecord.customer_id == customer_id,
+            CredentialRecord.is_active.is_(True),
+            CredentialRecord.is_valid.is_(True),
+            CredentialRecord.provider.in_(list(SUPPORTED_CLOUD_PROVIDERS)),
+        )
+        .all()
+    )
+    providers: set[str] = set()
+    for row in rows:
+        provider = str(row.provider or "").strip().lower()
+        if not provider:
+            continue
+        runtime = runtime_credentials.get(provider)
+        if isinstance(runtime, dict) and runtime:
+            providers.add(provider)
+            continue
+        if provider == "oci":
+            try:
+                payload = json.loads(row.credential_json or "{}")
+            except Exception:
+                payload = {}
+            config_file = str(payload.get("config_file") or "").strip()
+            if config_file and os.path.isfile(os.path.expanduser(config_file)):
+                providers.add(provider)
+    return providers
+
+
+def _mark_provider_credentials_unreachable(
+    db: Session,
+    customer_id: str,
+    provider: str,
+    message: str,
+) -> None:
+    row = (
+        db.query(CredentialRecord)
+        .filter(
+            CredentialRecord.customer_id == customer_id,
+            CredentialRecord.provider == provider,
+        )
+        .first()
+    )
+    if row is None:
+        return
+    row.is_valid = False
+    row.is_active = False
+    row.validation_message = f"Credential became unreachable during live scan: {message}"
+    row.tested_at = _utcnow()
+    row.updated_at = _utcnow()
+
+
 async def _cost_context(
     membership: UserOrganization,
     db: Session,
@@ -1532,11 +1671,26 @@ async def _cost_context(
             period=period,
             cloud_provider=cloud_provider,
             require_live_provider_data=Config().require_live_provider_data,
-            provider_diagnostics=_provider_diagnostics,
+            provider_diagnostics=lambda: _provider_diagnostics(
+                customer_id=_customer_id_for_org(membership),
+                db=db,
+            ),
             imported_cost_context_builder=_imported_cost_context,
-            cost_summary_for_provider=_cost_summary_for_provider,
+            cost_summary_for_provider=lambda provider, requested_period: _cost_summary_for_provider(
+                provider,
+                requested_period,
+                customer_id=_customer_id_for_org(membership),
+            ),
         )
     except LiveDataPolicyError as exc:
+        snapshot_context = _cost_snapshot_context(
+            membership,
+            db,
+            cloud_provider=cloud_provider,
+            provider_errors={"live_provider_api": str(exc)},
+        )
+        if snapshot_context is not None:
+            return snapshot_context
         raise HTTPException(status_code=412, detail=str(exc))
 
 
@@ -1586,9 +1740,13 @@ def _setting_missing(value: Any) -> bool:
     return text.startswith("your_") or text.startswith("replace_") or "example.com" in text
 
 
-def _provider_diagnostics() -> List[ProviderDiagnostic]:
+def _provider_diagnostics(
+    customer_id: Optional[str] = None,
+    db: Optional[Session] = None,
+) -> List[ProviderDiagnostic]:
     config = Config()
     requirements = provider_diagnostic_requirements(config)
+    runtime_ready = _valid_runtime_provider_names(customer_id, db) if customer_id and db else set()
 
     diagnostics: List[ProviderDiagnostic] = []
     for provider, detail in requirements.items():
@@ -1614,6 +1772,9 @@ def _provider_diagnostics() -> List[ProviderDiagnostic]:
             if oci_config_file and not os.path.isfile(oci_config_file):
                 missing.append(f"OCI_CONFIG_FILE file not found: {oci_config_file}")
                 configured = False
+        if provider in runtime_ready:
+            configured = True
+            missing = []
         diagnostics.append(
             ProviderDiagnostic(
                 provider=provider,
@@ -1621,7 +1782,9 @@ def _provider_diagnostics() -> List[ProviderDiagnostic]:
                 required_settings=settings,
                 missing_settings=missing,
                 recommendation=(
-                    "Ready for live billing API calls."
+                    "Ready for live billing API calls from saved customer credentials."
+                    if provider in runtime_ready
+                    else "Ready for live billing API calls."
                     if configured
                     else f"Configure {', '.join(missing)} before enabling live {provider.upper()} cost collection."
                 ),
@@ -1740,11 +1903,13 @@ async def upload_oci_credential_files(
 @router.post("/credentials/add")
 async def add_credentials(
     payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
     credential_manager: CredentialManager = Depends(get_credential_manager),
+    scanning_manager: ScanningManager = Depends(get_scanning_manager),
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
 ) -> Dict[str, Any]:
-    """Validate and store credentials metadata."""
+    """Validate, persist, and immediately scan live provider credentials."""
     try:
         _require_management_role(membership, "credential updates")
         customer_id = _resolve_customer_id(
@@ -1772,13 +1937,58 @@ async def add_credentials(
             customer_id=customer_id,
             credential=credential,
         )
+        permission = scanning_manager.get_permission_status(customer_id)
+        existing_providers = [
+            str(provider or "").strip().lower()
+            for provider in permission.get("providers", [])
+            if str(provider or "").strip()
+        ]
+        scan_providers = list(dict.fromkeys([*existing_providers, credential.provider]))
+        scanning_manager.approve_scanning(
+            customer_id=customer_id,
+            auto_remediate=bool(permission.get("auto_remediate", False)),
+            scan_frequency=str(permission.get("scan_frequency") or "daily"),
+            notification_email=permission.get("notification_email"),
+            monthly_budget_usd=float(permission.get("monthly_budget_usd", 0.0) or 0.0),
+            warning_threshold_percent=float(permission.get("warning_threshold_percent", 80.0) or 80.0),
+            critical_threshold_percent=float(permission.get("critical_threshold_percent", 100.0) or 100.0),
+            notifications_enabled=bool(permission.get("notifications_enabled", True)),
+            scheduler_override_enabled=bool(permission.get("scheduler_override_enabled", False)),
+            scheduler_override_frequency=permission.get("scheduler_override_frequency"),
+            scheduler_retry_max_attempts=int(permission.get("scheduler_retry_max_attempts", 2) or 2),
+            scheduler_retry_backoff_seconds=int(permission.get("scheduler_retry_backoff_seconds", 120) or 120),
+            scheduler_overdue_alert_hours=int(permission.get("scheduler_overdue_alert_hours", 24) or 24),
+        )
+        permission_row = (
+            scanning_manager.db.query(ScanningPermissionRecord)
+            .filter(ScanningPermissionRecord.customer_id == customer_id)
+            .first()
+        )
+        if permission_row is not None:
+            permission_row.providers_json = json.dumps(scan_providers)
+            permission_row.updated_at = _utcnow()
+            scanning_manager.db.commit()
+
+        scan_id = f"scan_{customer_id}_{int(_utcnow().timestamp())}_{uuid4().hex[:8]}"
+        scanning_manager.create_scan_run(scan_id, customer_id, scan_providers)
+        background_tasks.add_task(
+            _run_cost_analysis,
+            scan_id=scan_id,
+            customer_id=customer_id,
+            providers=scan_providers,
+        )
         return {
             "status": "success",
-            "message": f"{credential.provider.upper()} credentials stored",
+            "message": f"{credential.provider.upper()} credentials stored and scan started",
             "provider": credential.provider,
             "customer_id": customer_id,
             "record": stored,
             "runtime": runtime,
+            "scan": {
+                "scan_id": scan_id,
+                "state": ScanningState.RUNNING.value,
+                "providers": scan_providers,
+            },
         }
     except HTTPException:
         raise
@@ -1822,6 +2032,11 @@ async def delete_credentials(
         deleted = credential_manager.delete_credentials(scoped_customer_id, provider)
         if not deleted:
             raise HTTPException(status_code=404, detail="Credential not found")
+        runtime_provider_dir = os.path.join(
+            _runtime_credentials_root(scoped_customer_id),
+            provider.lower(),
+        )
+        shutil.rmtree(runtime_provider_dir, ignore_errors=True)
         return {
             "status": "success",
             "message": f"{provider.upper()} credentials deleted",
@@ -2009,7 +2224,10 @@ async def start_scan(
                 detail=f"Unsupported provider(s): {', '.join(sorted(set(invalid_providers)))}",
             )
         if Config().require_live_provider_data:
-            diagnostics_map = {d.provider: bool(d.configured) for d in _provider_diagnostics()}
+            diagnostics_map = {
+                d.provider: bool(d.configured)
+                for d in _provider_diagnostics(customer_id=customer_id, db=scanning_manager.db)
+            }
             configured_targets = [provider for provider in providers_to_scan if diagnostics_map.get(provider, False)]
             if not configured_targets:
                 raise HTTPException(
@@ -6698,10 +6916,14 @@ async def analytics_chargeback_summary(
 
 
 @router.get("/provider-diagnostics", response_model=List[ProviderDiagnostic])
-async def provider_diagnostics(current_user: User = Depends(get_current_user)) -> List[ProviderDiagnostic]:
+async def provider_diagnostics(
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> List[ProviderDiagnostic]:
     """Return provider readiness checks without exposing secret values."""
     _ = current_user
-    return _provider_diagnostics()
+    return _provider_diagnostics(customer_id=_customer_id_for_org(membership), db=db)
 
 
 @router.get("/health")
@@ -6922,9 +7144,20 @@ async def _run_cost_analysis(
         require_live_provider_data = Config().require_live_provider_data
 
         for provider in providers:
-            summary = await _cost_summary_for_provider(provider, "month")
+            try:
+                summary = await _cost_summary_for_provider(provider, "month", customer_id=customer_id)
+            except TypeError as exc:
+                if "customer_id" not in str(exc) and "keyword" not in str(exc):
+                    raise
+                summary = await _cost_summary_for_provider(provider, "month")
             if "error" in summary:
                 provider_errors[provider] = str(summary.get("error") or "Unknown provider error")
+                _mark_provider_credentials_unreachable(
+                    db,
+                    customer_id,
+                    provider,
+                    provider_errors[provider],
+                )
                 continue
             successful_providers.append(provider)
 
@@ -7188,6 +7421,9 @@ async def _run_cost_analysis(
                     else:
                         existing_link.parent_account_id = parent_account.id
                         existing_link.relationship_type = "contains"
+
+        if provider_errors:
+            db.commit()
 
         if require_live_provider_data and not successful_providers:
             error_summary = ", ".join(

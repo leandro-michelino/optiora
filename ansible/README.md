@@ -55,16 +55,19 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml \
   -e optiora_manage_source=true
 ```
 
-## Secrets
+## Runtime Credentials And Secrets
 
 Pass sensitive values through Ansible Vault or environment-specific extra vars, not committed files:
 
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml \
   -e optiora_secret_key="$(openssl rand -hex 32)" \
-  -e optiora_private_key_path="~/.oci/oci_api_key.pem" \
+  -e optiora_oci_config_file="/opt/optiora/.oci/config" \
+  -e optiora_private_key_path="/opt/optiora/.oci/oci_api_key.pem" \
   -e optiora_genai_model="ocid1.generativeaimodel.oc1..<model_ocid>"
 ```
+
+The root `deploy/deploy-oci.sh` flow stages the local OCI config/key in `/tmp` and lets this role install them under `/opt/optiora/.oci` with `0600` permissions. For Ansible-only runs, upload those files yourself before running the playbook, then point `optiora_oci_config_file` and `optiora_private_key_path` at the target-host paths.
 
 The Ansible path deploys the public dashboard mode by default:
 

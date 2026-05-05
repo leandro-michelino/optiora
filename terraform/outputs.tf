@@ -106,11 +106,11 @@ output "next_step_banner" {
       3. Use ./deploy/deploy-oci.sh verify after provisioning completes
 
     After Ansible finishes:
-      Dashboard:       http://<instance-ip>:3000/dashboard
-      AI hub:          http://<instance-ip>:3000/dashboard/ai-insights
-      Cost advisor:    http://<instance-ip>:3000/dashboard/cost-advisor
-      API health:      http://<instance-ip>:8000/health
-      API info:        http://<instance-ip>:8000/api/v1/info
+      Dashboard:       ${var.allow_web_ingress ? "http://<instance-ip>/dashboard" : "http://<instance-ip>:3000/dashboard"}
+      AI hub:          ${var.allow_web_ingress ? "http://<instance-ip>/dashboard/ai-insights" : "http://<instance-ip>:3000/dashboard/ai-insights"}
+      Cost advisor:    ${var.allow_web_ingress ? "http://<instance-ip>/dashboard/cost-advisor" : "http://<instance-ip>:3000/dashboard/cost-advisor"}
+      API health:      ${var.allow_web_ingress ? "http://<instance-ip>/health" : "http://<instance-ip>:8000/health"}
+      API info:        ${var.allow_web_ingress ? "http://<instance-ip>/api/v1/info" : "http://<instance-ip>:8000/api/v1/info"}
       OCI GenAI:       https://inference.generativeai.${var.region}.oci.oraclecloud.com
 
   EOT

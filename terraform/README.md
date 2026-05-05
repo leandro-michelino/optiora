@@ -12,6 +12,8 @@ Preferred operator flow is the interactive root setup wizard:
 
 That flow manages Terraform variables and optional apply, then hands off to the same deploy script for compute creation, extra data volume attachment, and Ansible provisioning.
 
+Deployment order is intentionally Terraform first, then compute/source upload, then Ansible runtime configuration, then smoke verification. Terraform should not be used to push application secrets; OCI config/key material is staged by `deploy/deploy-oci.sh` and installed by Ansible under `/opt/optiora/.oci`.
+
 ## Design Intent
 
 - OCI naming convention:

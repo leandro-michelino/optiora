@@ -72,7 +72,7 @@ export function buildCostDataSourceStatus({
       title: `${pageName} has limited runtime data`,
       description:
         configuredProviders.length === 0
-          ? 'No live provider runtime is configured yet. Connect cloud providers on the backend host for the preferred data path, or upload a CSV as an optional manual fallback.'
+          ? 'No live provider runtime is configured yet. Connect cloud providers on the backend host, or upload a CSV to use imported billing data.'
           : `Some backend signals are available, but ${pageName.toLowerCase()} cannot confirm a full live dataset right now.`,
     }
   }

@@ -75,6 +75,19 @@ class CostContextHelperTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(context, imported_context)
 
+    async def test_build_live_cost_context_returns_no_data_without_live_or_imported_rows(self) -> None:
+        context = await build_live_cost_context(
+            SimpleNamespace(),
+            object(),
+            provider_diagnostics=lambda: [SimpleNamespace(provider="aws", configured=False)],
+            imported_cost_context_builder=lambda membership, db, cloud_provider: None,
+            cost_summary_for_provider=self._unused_cost_summary,
+        )
+
+        self.assertEqual(context["source"], "no_data_available")
+        self.assertTrue(context["no_data"])
+        self.assertEqual(context["breakdown"], {})
+
     async def test_build_live_cost_context_aggregates_live_provider_results(self) -> None:
         async def _summary(provider: str, period: str):
             self.assertEqual(period, "month")

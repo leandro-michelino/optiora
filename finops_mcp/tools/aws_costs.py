@@ -29,12 +29,17 @@ def _parse_role_targets(raw: str) -> List[Tuple[str, str]]:
     return targets
 
 
-def _assumed_ce_client(role_arn: str, region: str):
+def _assumed_ce_client(
+    role_arn: str,
+    region: str,
+    access_key_id: str | None = None,
+    secret_access_key: str | None = None,
+):
     sts = boto3.client(
         "sts",
         region_name=region,
-        aws_access_key_id=config.aws_access_key_id,
-        aws_secret_access_key=config.aws_secret_access_key,
+        aws_access_key_id=access_key_id or config.aws_access_key_id,
+        aws_secret_access_key=secret_access_key or config.aws_secret_access_key,
     )
     session = sts.assume_role(
         RoleArn=role_arn,
@@ -80,14 +85,19 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     """
     try:
         period = params.get("period", "month")
-        if not config.aws_access_key_id:
+        credentials = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
+        access_key_id = str(credentials.get("access_key_id") or config.aws_access_key_id or "")
+        secret_access_key = str(credentials.get("secret_access_key") or config.aws_secret_access_key or "")
+        region = str(credentials.get("region") or config.aws_region or "us-east-1")
+
+        if not access_key_id or not secret_access_key:
             return json.dumps({"error": "AWS not configured"})
 
         base_client = boto3.client(
             "ce",
-            region_name=config.aws_region,
-            aws_access_key_id=config.aws_access_key_id,
-            aws_secret_access_key=config.aws_secret_access_key,
+            region_name=region,
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
         )
 
         # Calculate date range
@@ -150,7 +160,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         _query_account("default", base_client)
         for account_id, role_arn in role_targets:
             try:
-                client = _assumed_ce_client(role_arn, config.aws_region)
+                client = _assumed_ce_client(role_arn, region, access_key_id, secret_access_key)
                 _query_account(account_id, client, role_arn=role_arn)
             except Exception as exc:
                 logger.warning("Skipping AWS org account %s (%s): %s", account_id, role_arn, exc)

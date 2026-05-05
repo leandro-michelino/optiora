@@ -27,39 +27,11 @@ type ProviderProfile = {
   nodeTypes: Array<{ value: string; monthlyCost: number; vcpu?: number | null; memoryGiB?: number | null; source?: string }>
 }
 
-const fallbackProviderProfiles: Record<KubernetesProvider, ProviderProfile> = {
-  aws: {
-    regions: ['us-east-1', 'us-west-2', 'eu-west-1'],
-    nodeTypes: [
-      { value: 'm5.xlarge', monthlyCost: 150 },
-      { value: 'm6i.xlarge', monthlyCost: 165 },
-      { value: 'c6i.xlarge', monthlyCost: 145 },
-    ],
-  },
-  azure: {
-    regions: ['eastus', 'westeurope', 'uksouth'],
-    nodeTypes: [
-      { value: 'Standard_D4s_v5', monthlyCost: 155 },
-      { value: 'Standard_D8s_v5', monthlyCost: 290 },
-      { value: 'Standard_F4s_v2', monthlyCost: 148 },
-    ],
-  },
-  gcp: {
-    regions: ['us-central1', 'europe-west1', 'europe-west2'],
-    nodeTypes: [
-      { value: 'n2-standard-4', monthlyCost: 145 },
-      { value: 'e2-standard-4', monthlyCost: 120 },
-      { value: 'c3-standard-4', monthlyCost: 190 },
-    ],
-  },
-  oci: {
-    regions: ['uk-london-1', 'eu-frankfurt-1', 'us-ashburn-1'],
-    nodeTypes: [
-      { value: 'VM.Standard.E4.Flex', monthlyCost: 120 },
-      { value: 'VM.Standard.E5.Flex', monthlyCost: 135 },
-      { value: 'VM.Standard.A1.Flex', monthlyCost: 95 },
-    ],
-  },
+const emptyProviderProfiles: Record<KubernetesProvider, ProviderProfile> = {
+  aws: { regions: [], nodeTypes: [] },
+  azure: { regions: [], nodeTypes: [] },
+  gcp: { regions: [], nodeTypes: [] },
+  oci: { regions: [], nodeTypes: [] },
 }
 
 function providerProfileFromCatalog(entry: KubernetesProviderCatalogEntry): ProviderProfile {
@@ -91,19 +63,19 @@ function formatNodeTypeLabel(option: { value: string; vcpu?: number | null; memo
 const defaultForm = {
   cluster_name: 'production',
   provider: 'oci' as KubernetesProvider,
-  region: fallbackProviderProfiles.oci.regions[0],
+  region: '',
   node_count: 5,
-  node_type: fallbackProviderProfiles.oci.nodeTypes[0].value,
-  monthly_node_cost_usd: fallbackProviderProfiles.oci.nodeTypes[0].monthlyCost,
+  node_type: '',
+  monthly_node_cost_usd: 0,
 }
 
 export default function KubernetesPage() {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<KubernetesSummaryResponse | null>(null)
-  const [providerProfiles, setProviderProfiles] = useState<Record<KubernetesProvider, ProviderProfile>>(fallbackProviderProfiles)
-  const [catalogMeta, setCatalogMeta] = useState<{ fetchedAt?: string; liveProviders: number; fallbackProviders: number; error?: string }>({
+  const [providerProfiles, setProviderProfiles] = useState<Record<KubernetesProvider, ProviderProfile>>(emptyProviderProfiles)
+  const [catalogMeta, setCatalogMeta] = useState<{ fetchedAt?: string; liveProviders: number; noDataProviders: number; error?: string }>({
     liveProviders: 0,
-    fallbackProviders: 4,
+    noDataProviders: 4,
   })
   const [form, setForm] = useState(defaultForm)
   const [opencostEnabled, setOpencostEnabled] = useState(false)
@@ -133,32 +105,32 @@ export default function KubernetesPage() {
       const catalog = await fetchKubernetesProviderCatalog()
       const mappedProfiles: Partial<Record<KubernetesProvider, ProviderProfile>> = {}
       let liveProviders = 0
-      let fallbackProviders = 0
+      let noDataProviders = 0
       for (const provider of ['aws', 'azure', 'gcp', 'oci'] as KubernetesProvider[]) {
         const entry = catalog.providers[provider]
         if (!entry) {
-          mappedProfiles[provider] = fallbackProviderProfiles[provider]
-          fallbackProviders += 1
+          mappedProfiles[provider] = emptyProviderProfiles[provider]
+          noDataProviders += 1
           continue
         }
         mappedProfiles[provider] = providerProfileFromCatalog(entry)
         if (entry.source === 'live') {
           liveProviders += 1
         } else {
-          fallbackProviders += 1
+          noDataProviders += 1
         }
       }
       setProviderProfiles(mappedProfiles as Record<KubernetesProvider, ProviderProfile>)
       setCatalogMeta({
         fetchedAt: catalog.generated_at,
         liveProviders,
-        fallbackProviders,
+        noDataProviders,
       })
     } catch (error) {
-      setProviderProfiles(fallbackProviderProfiles)
+      setProviderProfiles(emptyProviderProfiles)
       setCatalogMeta({
         liveProviders: 0,
-        fallbackProviders: 4,
+        noDataProviders: 4,
         error: error instanceof Error ? error.message : 'Unable to load provider catalog.',
       })
     }
@@ -259,9 +231,9 @@ export default function KubernetesPage() {
             <Badge variant="outline" className="rounded-md border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30">
               {catalogMeta.liveProviders}/4 providers live catalog
             </Badge>
-            {catalogMeta.fallbackProviders > 0 && (
+            {catalogMeta.noDataProviders > 0 && (
               <Badge variant="outline" className="rounded-md border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/30">
-                {catalogMeta.fallbackProviders} fallback
+                {catalogMeta.noDataProviders} no data
               </Badge>
             )}
           </div>
@@ -277,12 +249,12 @@ export default function KubernetesPage() {
 
       {catalogMeta.error && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          Provider catalog fallback active: {catalogMeta.error}
+          Provider catalog is unavailable: {catalogMeta.error}
         </div>
       )}
-      {catalogMeta.fallbackProviders > 0 && !catalogMeta.error && (
+      {catalogMeta.noDataProviders > 0 && !catalogMeta.error && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          {catalogMeta.fallbackProviders} provider catalog(s) are using fallback data. Reconnect provider credentials in Settings so Optiora can fetch live regions and shapes from provider APIs.
+          {catalogMeta.noDataProviders} provider catalog(s) have no live regions or shapes yet. Connect provider credentials in Settings so OptiOra can fetch live catalog data from provider APIs.
         </div>
       )}
 
@@ -387,7 +359,7 @@ export default function KubernetesPage() {
                     ))}
                   </select>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Source: {selectedProviderProfile.source || 'fallback'}.
+                    Source: {selectedProviderProfile.source || 'no live catalog'}.
                   </p>
                 </div>
                 <div>

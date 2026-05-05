@@ -38,8 +38,11 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     """Get OCI cost summary for specified period using OCI Usage API."""
     try:
         period = params.get("period", "month")
+        credentials = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
+        config_file = str(credentials.get("config_file") or config.oci_config_file or "")
+        profile = str(credentials.get("profile") or config.oci_profile or "DEFAULT")
 
-        if not config.oci_config_file:
+        if not config_file:
             return json.dumps({"error": "OCI not configured (OCI_CONFIG_FILE not set)"})
 
         try:
@@ -47,8 +50,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             from oci.usage_api import UsageapiClient
 
             # Initialize OCI client
-            config_path = os.path.expanduser(config.oci_config_file)
-            oci_config = oci.config.from_file(config_path, config.oci_profile)
+            config_path = os.path.expanduser(config_file)
+            oci_config = oci.config.from_file(config_path, profile)
             usage_client = UsageapiClient(oci_config)
             tenancy_id = oci_config["tenancy"]
         except ImportError:

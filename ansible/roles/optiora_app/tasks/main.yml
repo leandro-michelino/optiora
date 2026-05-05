@@ -1,10 +1,10 @@
 - name: Require Oracle Linux host
   ansible.builtin.assert:
     that:
-      - ansible_distribution == "OracleLinux"
+      - ansible_facts.distribution == "OracleLinux"
     fail_msg: >-
       OptiOra provisioning supports only Oracle Linux hosts on OCI.
-      Detected {{ ansible_distribution }} {{ ansible_distribution_version }}.
+      Detected {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}.
 
 - name: Install Oracle Linux system packages
   ansible.builtin.dnf:
@@ -270,6 +270,14 @@
     - Restart optiora api
     - Restart optiora dashboard
 
+- name: Remove stale files from earlier source layouts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ optiora_app_dir }}/alembic/versions/0013_imported_cost_tags_json.py"
+  when: optiora_manage_source | bool
+
 - name: Ensure source ownership
   ansible.builtin.file:
     path: "{{ optiora_app_dir }}"
@@ -278,40 +286,55 @@
     group: "{{ optiora_app_user }}"
     recurse: true
 
-- name: Install OCI API key for GenAI (from upload)
-  ansible.builtin.copy:
-    src: /tmp/optiora-oci-api-key.pem
-    dest: "{{ optiora_app_dir }}/oci_api_key.pem"
-    owner: root
+- name: Create OCI credential directory
+  ansible.builtin.file:
+    path: "{{ optiora_app_dir }}/.oci"
+    state: directory
+    owner: "{{ optiora_app_user }}"
     group: "{{ optiora_app_user }}"
-    mode: "0640"
-    remote_src: true
-  when: optiora_private_key_path | length > 0
-  ignore_errors: true
+    mode: "0700"
+  when: optiora_oci_config_file | length > 0 or optiora_private_key_path | length > 0
 
-- name: Install OCI config file for GenAI/OCI SDK (from upload)
+- name: Install OCI config file for runtime credential import
   ansible.builtin.copy:
     src: /tmp/optiora-oci-config
     dest: "{{ optiora_oci_config_file }}"
-    owner: root
+    owner: "{{ optiora_app_user }}"
     group: "{{ optiora_app_user }}"
-    mode: "0640"
+    mode: "0600"
     remote_src: true
   when: optiora_oci_config_file | length > 0
-  ignore_errors: true
+
+- name: Install OCI API key for runtime credential import and GenAI
+  ansible.builtin.copy:
+    src: /tmp/optiora-oci-api-key.pem
+    dest: "{{ optiora_private_key_path }}"
+    owner: "{{ optiora_app_user }}"
+    group: "{{ optiora_app_user }}"
+    mode: "0600"
+    remote_src: true
+  when: optiora_private_key_path | length > 0
+
+- name: Remove staged OCI credential files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/optiora-oci-config
+    - /tmp/optiora-oci-api-key.pem
+  when: optiora_oci_config_file | length > 0 or optiora_private_key_path | length > 0
 
 - name: Rewrite OCI config key_file to deployed key path
   ansible.builtin.lineinfile:
     path: "{{ optiora_oci_config_file }}"
     regexp: '^key_file\s*='
     line: "key_file={{ optiora_private_key_path }}"
-    owner: root
+    owner: "{{ optiora_app_user }}"
     group: "{{ optiora_app_user }}"
-    mode: "0640"
+    mode: "0600"
   when:
     - optiora_oci_config_file | length > 0
     - optiora_private_key_path | length > 0
-  ignore_errors: true
 
 - name: Remove old venv if built with wrong Python version
   ansible.builtin.shell: |
@@ -431,7 +454,7 @@
   ansible.builtin.command:
     cmd: "restorecon -RF {{ optiora_app_dir }}"
   changed_when: false
-  when: ansible_selinux.status == "enabled"
+  when: ansible_facts.selinux.status == "enabled"
 
 - name: Flush service handlers
   ansible.builtin.meta: flush_handlers
@@ -464,15 +487,24 @@
   until: optiora_dashboard_health.status == 200
 
 # ── nginx reverse-proxy + optional TLS ──────────────────────────────────────
-- name: Install nginx and certbot on Oracle Linux
+- name: Install nginx on Oracle Linux
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+  when:
+    - optiora_install_nginx | bool
+
+- name: Install certbot packages when TLS is enabled
   ansible.builtin.dnf:
     name:
-      - nginx
       - certbot
       - python3-certbot-nginx
     state: present
   when:
     - optiora_install_nginx | bool
+    - optiora_enable_tls | bool
+    - optiora_domain | length > 0
+    - optiora_certbot_email | length > 0
 
 - name: Create webroot for ACME challenges
   ansible.builtin.file:
@@ -498,7 +530,7 @@
     persistent: true
   when:
     - optiora_install_nginx | bool
-    - ansible_selinux.status == "enabled"
+    - ansible_facts.selinux.status == "enabled"
 
 - name: Start and enable nginx
   ansible.builtin.systemd:

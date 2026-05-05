@@ -11,17 +11,41 @@ class LiveDataPolicyError(RuntimeError):
     """Raised when live-provider-only policy cannot be satisfied."""
 
 
+def _no_data_context(
+    *,
+    period: str,
+    cloud_provider: str,
+    provider_errors: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    response: Dict[str, Any] = {
+        "period": period,
+        "cloud_provider": cloud_provider,
+        "total_cost": 0.0,
+        "breakdown": {},
+        "region_breakdown": [],
+        "source": "no_data_available",
+        "no_data": True,
+    }
+    if provider_errors:
+        response["provider_errors"] = provider_errors
+    return response
+
+
 async def fetch_provider_cost_summary(
     provider: str,
     period: str,
     *,
+    credentials: Optional[Dict[str, Any]] = None,
     fetchers: Dict[str, Callable[[Dict[str, Any]], Awaitable[str]]],
     safe_json_load: Callable[[str, Dict[str, Any]], Dict[str, Any]],
 ) -> Dict[str, Any]:
     fetcher = fetchers.get(provider)
     if fetcher is None:
         return {"error": f"Unsupported provider: {provider}"}
-    raw = await fetcher({"period": period, "cloud_provider": provider})
+    params: Dict[str, Any] = {"period": period, "cloud_provider": provider}
+    if credentials:
+        params["credentials"] = credentials
+    raw = await fetcher(params)
     return safe_json_load(raw, {"error": "Invalid tool response"})
 
 
@@ -130,12 +154,17 @@ async def build_live_cost_context(
                     "or set REQUIRE_LIVE_PROVIDER_DATA=false to allow imported CSV fallback."
                 )
     else:
-        providers = requested_providers
+        providers = [
+            provider
+            for provider in requested_providers
+            if provider in configured_live_providers
+        ]
 
     if not configured_live_providers and not require_live_provider_data:
         imported_context = imported_cost_context_builder(membership, db, cloud_provider)
         if imported_context is not None:
             return imported_context
+        return _no_data_context(period=period, cloud_provider=cloud_provider)
 
     breakdown: Dict[str, Dict[str, float]] = {}
     region_breakdown: Dict[str, float] = {}
@@ -147,8 +176,6 @@ async def build_live_cost_context(
         summary = await cost_summary_for_provider(provider, period)
         if "error" in summary:
             provider_errors[provider] = str(summary.get("error") or "Unknown provider error")
-            if not require_live_provider_data:
-                breakdown[provider] = {"cost": 0.0, "percentage": 0.0}
             continue
 
         successful_provider_calls += 1
@@ -176,6 +203,19 @@ async def build_live_cost_context(
             f"Provider errors: {provider_error_summary or 'unknown'}"
         )
 
+    if successful_provider_calls == 0:
+        imported_context = imported_cost_context_builder(membership, db, cloud_provider)
+        if imported_context is not None:
+            imported_context = dict(imported_context)
+            if provider_errors:
+                imported_context["provider_errors"] = provider_errors
+            return imported_context
+        return _no_data_context(
+            period=period,
+            cloud_provider=cloud_provider,
+            provider_errors=provider_errors,
+        )
+
     response = {
         "period": period,
         "cloud_provider": cloud_provider,
@@ -186,7 +226,7 @@ async def build_live_cost_context(
             if require_live_provider_data and provider_errors
             else "live_provider_api"
             if configured_live_providers
-            else "live_backend"
+            else "no_data_available"
         ),
         "region_breakdown": [
             {"region": region, "cost_usd": round(cost, 2)}

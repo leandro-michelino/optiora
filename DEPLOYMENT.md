@@ -175,6 +175,7 @@ OCI_PROFILE='DEFAULT' \
 Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
 
 `./deploy/deploy-oci.sh verify` resolves the deployed instance IP and runs `tests/smoke_test_0_9.sh` against the live dashboard/API pair.
+By default the smoke test does not upload CSV data, so a live environment remains backed only by provider APIs, saved scan snapshots, or customer-imported files. Set `SMOKE_ENABLE_CSV_IMPORT=true` only when you intentionally want to exercise the CSV import path with temporary smoke data.
 The verify flow now includes:
 
 - release-critical live-data route/API gate (`tests/live_data_gate.sh`)
@@ -309,7 +310,7 @@ OCI_CONFIG_FILE=
 ENVIRONMENT=production
 PASSWORD_RESET_RETURN_TOKEN=false
 PASSWORD_RESET_TOKEN_MINUTES=30
-ENABLE_SCAN_SCHEDULER=false
+ENABLE_SCAN_SCHEDULER=true
 SCAN_SCHEDULER_INTERVAL_MINUTES=60
 # Auto-remediation execution gate. Keep false unless explicitly approved.
 ENABLE_AUTO_REMEDIATION=false
@@ -335,17 +336,18 @@ DATABASE_URL=postgresql+psycopg2://optiora_user:your_secure_db_password@postgres
 
 `OCI_PRIVATE_KEY_PATH` is the preferred deployment option because it avoids fragile multiline env formatting.
 
-- For `deploy/deploy-oci.sh`, export `OCI_PRIVATE_KEY_PATH` before deployment so the script can copy the key to the VM and render a server-valid `OCI_PRIVATE_KEY_PATH` in runtime env.
-- If `OCI_CONFIG_FILE` is exported (or present in local `.env`) and points to a local file, `deploy/deploy-oci.sh` also uploads it and renders a server-valid `OCI_CONFIG_FILE` path in runtime env.
-- For Ansible-only provisioning, point `optiora_private_key_path` at a file path that exists on the target host.
+- For `deploy/deploy-oci.sh`, export `OCI_CONFIG_FILE`, `OCI_PROFILE`, and `OCI_PRIVATE_KEY_PATH` before deployment, or keep them in local `.env`. The script stages the local OCI config/key to the VM and Ansible installs them under `/opt/optiora/.oci` as the `optiora` user with `0600` permissions.
+- If `OCI_PRIVATE_KEY_PATH` is not set, the deploy script reads `key_file` from the selected local OCI profile.
+- For Ansible-only provisioning, upload the files yourself and set `optiora_oci_config_file=/opt/optiora/.oci/config`, `optiora_oci_profile=<profile>`, and `optiora_private_key_path=/opt/optiora/.oci/oci_api_key.pem`.
 - Use `OCI_PRIVATE_KEY` only when you intentionally need to inject the PEM inline with literal `\n` escapes.
 - Enable `RETENTION_ENABLED` only after `OCI_ARCHIVE_BUCKET` and `OCI_ARCHIVE_NAMESPACE` point to the Object Storage archive bucket created by Terraform.
 
 OCI credential file source policy:
 
 - OptiOra validates OCI credentials from files that exist on the API host filesystem; browser-local paths are not readable by the backend.
-- Preferred persistent path: provision `~/.oci/config` (and key file) directly on the VM with owner `optiora` and mode `600`.
-- Test-only path: use `POST /api/v1/credentials/oci/upload-files` from the dashboard OCI form to upload config/key files into the server runtime credential directory; then validate using the returned server `config_file` path.
+- Preferred persistent path: provision `/opt/optiora/.oci/config` and `/opt/optiora/.oci/oci_api_key.pem` on the VM with owner `optiora` and mode `600`.
+- Dashboard import path: use `POST /api/v1/credentials/oci/upload-files` from the dashboard OCI form to upload config/key files into the server runtime credential directory; then add the credential using the returned server `config_file` path.
+- After a credential is inserted and validated, OptiOra stores the connection metadata, persists runtime credentials on the API host, approves the provider for scanning, and starts a scan immediately. The connection remains listed until the customer disconnects it manually; if provider APIs later reject or cannot reach the credential, OptiOra marks the connection invalid/inactive instead of showing fabricated data.
 - Avoid committing OCI config/key files to git or embedding private keys in docs/scripts.
 
 Optional hardened deployment later:
@@ -397,7 +399,7 @@ Manual product checks:
 1. Open `http://<instance-ip>:3000/dashboard` and confirm the dashboard opens directly with no login wall.
 2. Upload a UTF-8 billing CSV from the settings page and confirm the imported dataset summary updates.
 3. Confirm the costs overview reflects the imported CSV totals.
-4. If live provider validation is in scope, add one cloud provider credential, approve scanning, and start a scan.
+4. If live provider validation is in scope, add one cloud provider credential and confirm the automatic scan starts.
 5. Confirm history, diff, alerts, and CSV/XLS/XLSX/PDF/FOCUS exports still work after deployment.
 
 Optional live credential verification:
@@ -408,6 +410,7 @@ SMOKE_CREDENTIAL_JSON='{"provider":"aws","access_key_id":"...","secret_access_ke
 ```
 
 When `SMOKE_CREDENTIAL_JSON` is provided, the verify flow also exercises credential validation, credential add, scan approval, scan start, history lookup, and diff export for that provider.
+Set `SMOKE_ENABLE_CSV_IMPORT=true` separately if you want the smoke test to replace the active imported-cost dataset with its temporary CSV fixture.
 
 If you run nginx-only exposure (`allow_direct_app_ingress=false`, `allow_web_ingress=true`), verify using front-door overrides:
 

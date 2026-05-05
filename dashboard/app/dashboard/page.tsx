@@ -258,7 +258,7 @@ export default function DashboardPage() {
       ? 'Scan snapshot'
       : state.importedSummary?.has_data
         ? 'Imported CSV active'
-        : 'Imported CSV fallback'
+        : 'No imported rollup'
     : 'No rollup data'
   const dataSourceStatus = buildCostDataSourceStatus({
     health: state.health,

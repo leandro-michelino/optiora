@@ -544,7 +544,7 @@ def generate_commitment_strategy(context: dict[str, Any]) -> tuple[Optional[str]
     """Generate a commitment purchasing strategy brief for finance/engineering planning."""
     annual_opportunity = context.get("total_annual_opportunity_usd", 0)
     monthly_spend = context.get("current_monthly_spend_usd", 0)
-    priority_provider = context.get("priority_provider", "aws")
+    priority_provider = context.get("priority_provider") or "multi-cloud"
     provider_gaps = context.get("provider_gaps", [])
 
     top_gaps = []

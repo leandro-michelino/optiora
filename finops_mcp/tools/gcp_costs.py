@@ -28,10 +28,17 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     """
     try:
         period = params.get("period", "month")
+        credentials_payload = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
+        credentials_file = str(
+            credentials_payload.get("service_account_file")
+            or config.google_application_credentials
+            or ""
+        )
+        project_id = str(credentials_payload.get("project_id") or config.gcp_project_id or "")
         
-        if not config.google_application_credentials:
+        if not credentials_file:
             return json.dumps({"error": "GCP not configured (GOOGLE_APPLICATION_CREDENTIALS not set)"})
-        if not config.gcp_project_id and not config.gcp_project_ids:
+        if not project_id and not config.gcp_project_ids:
             return json.dumps({"error": "GCP not configured (GCP_PROJECT_ID not set)"})
         
         try:
@@ -43,7 +50,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         
         # Load GCP credentials
         credentials = service_account.Credentials.from_service_account_file(
-            config.google_application_credentials
+            credentials_file
         )
         
         client = bigquery.Client(credentials=credentials)
@@ -66,7 +73,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         parent_scope_id = config.gcp_folder_id or config.gcp_organization_id or None
         parent_scope_type = "folder" if config.gcp_folder_id else ("organization" if config.gcp_organization_id else None)
 
-        for project_id in _project_list():
+        project_values = [project_id] if project_id else _project_list()
+        for project_id in project_values:
             # Typical billing export table: <project>.billing.gcp_billing_export_v1_*
             service_query = f"""
             SELECT

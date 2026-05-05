@@ -1,7 +1,8 @@
 """Live Kubernetes provider catalog helpers.
 
 Fetches regions and node shape/size metadata from provider APIs when possible.
-Falls back to curated defaults if credentials or permissions are missing.
+When provider access is missing, returns an explicit no-data entry rather than
+static catalog values.
 """
 
 from __future__ import annotations
@@ -16,52 +17,9 @@ from .credentials import CredentialValidator
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MONTHLY_NODE_COST = {
-    "aws": 150.0,
-    "azure": 155.0,
-    "gcp": 145.0,
-    "oci": 120.0,
-}
-
-FALLBACK_CATALOG: Dict[str, Dict[str, Any]] = {
-    "aws": {
-        "regions": ["us-east-1", "us-west-2", "eu-west-1"],
-        "node_types": [
-            {"value": "m5.xlarge", "monthly_cost_usd": 150.0},
-            {"value": "m6i.xlarge", "monthly_cost_usd": 165.0},
-            {"value": "c6i.xlarge", "monthly_cost_usd": 145.0},
-        ],
-    },
-    "azure": {
-        "regions": ["eastus", "westeurope", "uksouth"],
-        "node_types": [
-            {"value": "Standard_D4s_v5", "monthly_cost_usd": 155.0},
-            {"value": "Standard_D8s_v5", "monthly_cost_usd": 290.0},
-            {"value": "Standard_F4s_v2", "monthly_cost_usd": 148.0},
-        ],
-    },
-    "gcp": {
-        "regions": ["us-central1", "europe-west1", "europe-west2"],
-        "node_types": [
-            {"value": "n2-standard-4", "monthly_cost_usd": 145.0},
-            {"value": "e2-standard-4", "monthly_cost_usd": 120.0},
-            {"value": "c3-standard-4", "monthly_cost_usd": 190.0},
-        ],
-    },
-    "oci": {
-        "regions": ["uk-london-1", "eu-frankfurt-1", "us-ashburn-1"],
-        "node_types": [
-            {"value": "VM.Standard.E4.Flex", "monthly_cost_usd": 120.0},
-            {"value": "VM.Standard.E5.Flex", "monthly_cost_usd": 135.0},
-            {"value": "VM.Standard.A1.Flex", "monthly_cost_usd": 95.0},
-        ],
-    },
-}
-
-
 def _estimate_monthly_node_cost(provider: str, vcpu: float | None, memory_gib: float | None) -> float:
     if vcpu is None and memory_gib is None:
-        return DEFAULT_MONTHLY_NODE_COST.get(provider, 150.0)
+        return 0.0
     vcpu_val = float(vcpu or 0.0)
     mem_val = float(memory_gib or 0.0)
     return round(max(20.0, (vcpu_val * 16.0) + (mem_val * 1.8)), 2)
@@ -104,19 +62,13 @@ def _normalize_node_types(
     return ordered[:max_items]
 
 
-def _catalog_from_fallback(provider: str, reason: str) -> Dict[str, Any]:
-    fallback = FALLBACK_CATALOG[provider]
-    node_types = _normalize_node_types(
-        provider,
-        [{**item, "source": "fallback"} for item in fallback["node_types"]],
-        max_items=50,
-    )
+def _catalog_no_data(provider: str, reason: str) -> Dict[str, Any]:
     return {
         "provider": provider,
-        "source": "fallback",
+        "source": "no_data_available",
         "configured": False,
-        "regions": fallback["regions"],
-        "node_types": node_types,
+        "regions": [],
+        "node_types": [],
         "message": reason,
     }
 
@@ -415,7 +367,7 @@ def build_kubernetes_provider_catalog(
     config: Config,
     runtime_credentials_by_provider: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Return provider catalog entries with live API data or fallback metadata."""
+    """Return provider catalog entries with live API data or explicit no-data metadata."""
     fetchers = {
         "aws": _fetch_aws,
         "azure": _fetch_azure,
@@ -445,7 +397,7 @@ def build_kubernetes_provider_catalog(
                 "message": message,
             }
         except Exception as exc:
-            logger.info("Falling back to static Kubernetes catalog for %s: %s", provider, exc)
-            catalog[provider] = _catalog_from_fallback(provider, str(exc))
+            logger.info("No live Kubernetes catalog data for %s: %s", provider, exc)
+            catalog[provider] = _catalog_no_data(provider, str(exc))
 
     return catalog

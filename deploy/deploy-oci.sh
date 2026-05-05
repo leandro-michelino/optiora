@@ -177,6 +177,130 @@ read_tfvar_list() {
     sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\[\(.*\)\][[:space:]]*$/\1/p" "$file" | head -n 1 | tr -d '"' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
 }
 
+strip_wrapping_quotes() {
+    local value="${1:-}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    value="${value%\"}"
+    value="${value#\"}"
+    value="${value%\'}"
+    value="${value#\'}"
+    printf '%s' "$value"
+}
+
+expand_local_path() {
+    local value
+    value="$(strip_wrapping_quotes "${1:-}")"
+    value="${value/#\~/$HOME}"
+    value="${value//\$HOME/$HOME}"
+    value="${value//\$\{HOME\}/$HOME}"
+    printf '%s' "$value"
+}
+
+read_dotenv_value() {
+    local key="$1"
+    local file="${2:-${ROOT_DIR}/.env}"
+    if [[ ! -f "$file" ]]; then
+        return 0
+    fi
+    awk -v key="$key" '
+        $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+            sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*", "", $0)
+            print
+            exit
+        }
+    ' "$file" | sed 's/[[:space:]]*#.*$//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+read_oci_config_value() {
+    local config_file="$1"
+    local profile="$2"
+    local key="$3"
+    if [[ ! -f "$config_file" ]]; then
+        return 0
+    fi
+    awk -F= -v profile="$profile" -v key="$key" '
+        BEGIN {
+            section = "[" profile "]"
+            in_section = 0
+        }
+        $0 == section {
+            in_section = 1
+            next
+        }
+        /^\[/ && $0 != section {
+            in_section = 0
+        }
+        in_section {
+            left = $1
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", left)
+            if (left == key) {
+                value = substr($0, index($0, "=") + 1)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                print value
+                exit
+            }
+        }
+    ' "$config_file"
+}
+
+resolve_local_oci_config_path() {
+    local config_path="${OCI_CONFIG_FILE:-}"
+    if [[ -z "$config_path" ]]; then
+        config_path="$(read_dotenv_value OCI_CONFIG_FILE || true)"
+    fi
+    if [[ -z "$config_path" && -f "$HOME/.oci/config" ]]; then
+        config_path="$HOME/.oci/config"
+    fi
+    config_path="$(expand_local_path "$config_path")"
+    if [[ -n "$config_path" && -f "$config_path" ]]; then
+        printf '%s' "$config_path"
+    fi
+}
+
+resolve_local_oci_private_key_path() {
+    local config_file="$1"
+    local profile="$2"
+    local key_path="${OCI_PRIVATE_KEY_PATH:-}"
+    if [[ -z "$key_path" ]]; then
+        key_path="$(read_dotenv_value OCI_PRIVATE_KEY_PATH || true)"
+    fi
+    if [[ -z "$key_path" && -n "$config_file" ]]; then
+        key_path="$(read_oci_config_value "$config_file" "$profile" key_file || true)"
+    fi
+    key_path="$(expand_local_path "$key_path")"
+    if [[ -n "$key_path" && -f "$key_path" ]]; then
+        printf '%s' "$key_path"
+    fi
+}
+
+stage_oci_credentials_for_instance() {
+    local public_ip="$1"
+    local ssh_user="$2"
+    local ssh_key="$3"
+    local config_file="$4"
+    local private_key_path="$5"
+    local staged_any="false"
+
+    if [[ -n "$config_file" && -f "$config_file" ]]; then
+        log_info "Staging local OCI config on VM for runtime import..."
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i "$ssh_key" \
+            "$config_file" "${ssh_user}@${public_ip}:/tmp/optiora-oci-config"
+        staged_any="true"
+    fi
+
+    if [[ -n "$private_key_path" && -f "$private_key_path" ]]; then
+        log_info "Staging local OCI API key on VM for runtime import..."
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i "$ssh_key" \
+            "$private_key_path" "${ssh_user}@${public_ip}:/tmp/optiora-oci-api-key.pem"
+        staged_any="true"
+    fi
+
+    [[ "$staged_any" == "true" ]]
+}
+
 upsert_tfvar() {
     local key="$1"
     local value="$2"
@@ -1109,6 +1233,7 @@ run_ansible_playbook_for_instance() {
 
     local inv
     local vars_override
+    local ansible_tmp_dir
     local ssh_user
     local ssh_key
     local genai_key_path=""
@@ -1116,6 +1241,9 @@ run_ansible_playbook_for_instance() {
     local local_oci_config_file=""
     local runtime_oci_config_file=""
     local local_oci_profile=""
+    local config_tenancy=""
+    local config_user=""
+    local config_fingerprint=""
     local genai_model=""
     local genai_endpoint=""
     local nginx_enabled=""
@@ -1126,13 +1254,14 @@ run_ansible_playbook_for_instance() {
 
     ssh_user="${OCI_ANSIBLE_USER:-$REMOTE_USER}"
     ssh_key="${OCI_ANSIBLE_SSH_KEY_PATH:-$RESOLVED_SSH_PRIVATE_KEY_PATH}"
-    inv="$(mktemp -t optiora-inventory.XXXXXX.yml)"
-    vars_override="$(mktemp -t optiora-vars.XXXXXX.yml)"
+    ansible_tmp_dir="$(mktemp -d -t optiora-ansible.XXXXXX)"
+    inv="${ansible_tmp_dir}/inventory.yml"
+    vars_override="${ansible_tmp_dir}/vars.yml"
 
-    # Resolve OCI private key path for GenAI (env var > local .env file).
-    local_oci_key_path="${OCI_PRIVATE_KEY_PATH:-}"
-    local_oci_config_file="${OCI_CONFIG_FILE:-}"
+    # Resolve local OCI config/key for runtime import (env > .env > ~/.oci/config).
     local_oci_profile="${OCI_PROFILE:-${OCI_CLI_PROFILE:-DEFAULT}}"
+    local_oci_config_file="$(resolve_local_oci_config_path || true)"
+    local_oci_key_path="$(resolve_local_oci_private_key_path "$local_oci_config_file" "$local_oci_profile" || true)"
     genai_model="${OCI_GENAI_MODEL:-}"
     genai_endpoint="${OCI_GENAI_ENDPOINT:-}"
     nginx_enabled="${OCI_ENABLE_NGINX:-true}"
@@ -1148,52 +1277,29 @@ run_ansible_playbook_for_instance() {
     fi
 
     if [ -f "${ROOT_DIR}/.env" ]; then
-        if [ -z "$local_oci_key_path" ]; then
-            local_oci_key_path=$(grep '^OCI_PRIVATE_KEY_PATH=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
-            local_oci_key_path="${local_oci_key_path%\"}"
-            local_oci_key_path="${local_oci_key_path#\"}"
-        fi
-        if [ -z "$local_oci_config_file" ]; then
-            local_oci_config_file=$(grep '^OCI_CONFIG_FILE=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
-            local_oci_config_file="${local_oci_config_file%\"}"
-            local_oci_config_file="${local_oci_config_file#\"}"
-        fi
         if [ -z "$genai_model" ]; then
-            genai_model=$(grep '^OCI_GENAI_MODEL=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
-            genai_model="${genai_model%\"}"
-            genai_model="${genai_model#\"}"
+            genai_model="$(strip_wrapping_quotes "$(read_dotenv_value OCI_GENAI_MODEL || true)")"
         fi
         if [ -z "$genai_endpoint" ]; then
-            genai_endpoint=$(grep '^OCI_GENAI_ENDPOINT=' "${ROOT_DIR}/.env" | tail -1 | cut -d'=' -f2- || true)
-            genai_endpoint="${genai_endpoint%\"}"
-            genai_endpoint="${genai_endpoint#\"}"
+            genai_endpoint="$(strip_wrapping_quotes "$(read_dotenv_value OCI_GENAI_ENDPOINT || true)")"
         fi
     fi
 
-    if [[ "$local_oci_key_path" == \~/* ]]; then
-        local_oci_key_path="${HOME}${local_oci_key_path#\~}"
-    fi
-    if [[ "$local_oci_config_file" == \~/* ]]; then
-        local_oci_config_file="${HOME}${local_oci_config_file#\~}"
-    fi
-
-    if [ -n "$local_oci_key_path" ] && [ -f "$local_oci_key_path" ]; then
-        genai_key_path="/opt/optiora/oci_api_key.pem"
-        log_info "Copying OCI API key to VM for GenAI use..."
-        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            -i "$ssh_key" \
-            "$local_oci_key_path" "${ssh_user}@${public_ip}:/tmp/optiora-oci-api-key.pem"
+    if [[ -n "$local_oci_config_file" ]]; then
+        config_tenancy="$(read_oci_config_value "$local_oci_config_file" "$local_oci_profile" tenancy || true)"
+        config_user="$(read_oci_config_value "$local_oci_config_file" "$local_oci_profile" user || true)"
+        config_fingerprint="$(read_oci_config_value "$local_oci_config_file" "$local_oci_profile" fingerprint || true)"
     fi
 
-    if [ -n "$local_oci_config_file" ] && [ -f "$local_oci_config_file" ]; then
-        runtime_oci_config_file="/opt/optiora/oci_config"
-        log_info "Copying OCI config file to VM for GenAI/OCI SDK use..."
-        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            -i "$ssh_key" \
-            "$local_oci_config_file" "${ssh_user}@${public_ip}:/tmp/optiora-oci-config"
-    elif [ -n "$local_oci_config_file" ]; then
-        # Assume caller provided a path already valid on the VM.
-        runtime_oci_config_file="$local_oci_config_file"
+    if stage_oci_credentials_for_instance "$public_ip" "$ssh_user" "$ssh_key" "$local_oci_config_file" "$local_oci_key_path"; then
+        if [[ -n "$local_oci_config_file" ]]; then
+            runtime_oci_config_file="${APP_DIR}/.oci/config"
+        fi
+        if [[ -n "$local_oci_key_path" ]]; then
+            genai_key_path="${APP_DIR}/.oci/oci_api_key.pem"
+        fi
+    elif [[ -n "${OCI_CONFIG_FILE:-}" ]]; then
+        runtime_oci_config_file="${OCI_CONFIG_FILE}"
     fi
 
     cat > "$inv" <<EOF
@@ -1218,9 +1324,9 @@ optiora_api_url: "${api_base_url}"
 optiora_region: "${REGION}"
 optiora_genai_endpoint: "${genai_endpoint}"
 optiora_genai_model: "${genai_model}"
-optiora_tenancy_ocid: "${OCI_TENANCY_OCID:-}"
-optiora_user_ocid: "${OCI_USER_OCID:-}"
-optiora_fingerprint: "${OCI_FINGERPRINT:-}"
+optiora_tenancy_ocid: "${OCI_TENANCY_OCID:-$config_tenancy}"
+optiora_user_ocid: "${OCI_USER_OCID:-$config_user}"
+optiora_fingerprint: "${OCI_FINGERPRINT:-$config_fingerprint}"
 optiora_private_key_path: "${genai_key_path}"
 optiora_compartment_ocid: "${COMPARTMENT_ID:-}"
 optiora_genai_compartment_ocid: "${OCI_GENAI_COMPARTMENT_ID:-}"
@@ -1240,7 +1346,7 @@ EOF
         --extra-vars "@${ROOT_DIR}/ansible/group_vars/all.yml" \
         --extra-vars "@${vars_override}" \
         "${ROOT_DIR}/ansible/playbooks/site.yml"
-    rm -f "$inv" "$vars_override"
+    rm -rf "$ansible_tmp_dir"
     log_success "Ansible provisioning completed"
 }
 

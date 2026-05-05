@@ -28,6 +28,8 @@ optiora_retention_run_interval_hours: 24
 optiora_archive_bucket: ""
 optiora_archive_namespace: ""
 optiora_oci_db_license_model: "BYOL"
+optiora_enable_scan_scheduler: true
+optiora_scan_scheduler_interval_minutes: 60
 
 # --- nginx / TLS settings (only used when optiora_install_nginx: true) ---
 # Set optiora_domain to the public FQDN for certbot. Leave blank to serve

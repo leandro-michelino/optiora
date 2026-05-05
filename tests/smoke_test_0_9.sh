@@ -9,6 +9,7 @@
 #   DASHBOARD_BASE=http://<instance-ip>:3000
 #   SMOKE_CREDENTIAL_JSON='{"provider":"aws",...}'
 #   SMOKE_SCAN_POLL_SECONDS=180
+#   SMOKE_ENABLE_CSV_IMPORT=true  # intentionally uploads a temporary CSV dataset
 #   SMOKE_CURL_INSECURE=true   # pass -k for self-signed HTTPS
 
 set -euo pipefail
@@ -18,6 +19,7 @@ API_BASE="${API_BASE:-${HOST}:8000}"
 DASHBOARD_BASE="${DASHBOARD_BASE:-${HOST}:3000}"
 SMOKE_CREDENTIAL_JSON="${SMOKE_CREDENTIAL_JSON:-}"
 SMOKE_SCAN_POLL_SECONDS="${SMOKE_SCAN_POLL_SECONDS:-180}"
+SMOKE_ENABLE_CSV_IMPORT="${SMOKE_ENABLE_CSV_IMPORT:-false}"
 SMOKE_CURL_INSECURE="${SMOKE_CURL_INSECURE:-false}"
 TMP_DIR="$(mktemp -d)"
 PASS=0
@@ -233,53 +235,58 @@ echo "$template_body" | grep -q "provider,cost_usd" \
     && _check "Template CSV contains provider and cost_usd columns" "ok" \
     || _check "Template CSV contains provider and cost_usd columns" "missing expected header"
 
-upload_response=$(_http_body -X POST \
-    -F "file=@-;filename=smoke-test.csv;type=text/csv" \
-    "${API_BASE}/api/v1/imports/costs/csv" <<'EOF'
+if [ "$SMOKE_ENABLE_CSV_IMPORT" = "true" ]; then
+    upload_response=$(_http_body -X POST \
+        -F "file=@-;filename=smoke-test.csv;type=text/csv" \
+        "${API_BASE}/api/v1/imports/costs/csv" <<'EOF'
 provider,cost_usd,service_name,account_identifier,account_name,account_type,parent_account_identifier,region,currency
 aws,250.00,EC2,smoke-acct-1,AWS Smoke,account,aws-root,us-east-1,USD
 azure,150.00,Compute,smoke-sub-1,Azure Smoke,subscription,mg-smoke,eastus,USD
 EOF
-)
+    )
 
-[ "$(_json_get "$upload_response" "rows_imported")" = "2" ] \
-    && _check "CSV upload imports 2 rows" "ok" \
-    || _check "CSV upload imports 2 rows" "response: $upload_response"
+    [ "$(_json_get "$upload_response" "rows_imported")" = "2" ] \
+        && _check "CSV upload imports 2 rows" "ok" \
+        || _check "CSV upload imports 2 rows" "response: $upload_response"
 
-summary_body=$(_http_body "${API_BASE}/api/v1/imports/costs/summary")
-[ "$(_json_get "$summary_body" "has_data")" = "true" ] \
-    && _check "Import summary shows active data" "ok" \
-    || _check "Import summary shows active data" "body: $summary_body"
+    summary_body=$(_http_body "${API_BASE}/api/v1/imports/costs/summary")
+    [ "$(_json_get "$summary_body" "has_data")" = "true" ] \
+        && _check "Import summary shows active data" "ok" \
+        || _check "Import summary shows active data" "body: $summary_body"
 
-[ "$(_json_get "$summary_body" "rows_imported")" = "2" ] \
-    && _check "Import summary row count matches upload" "ok" \
-    || _check "Import summary row count matches upload" "body: $summary_body"
+    [ "$(_json_get "$summary_body" "rows_imported")" = "2" ] \
+        && _check "Import summary row count matches upload" "ok" \
+        || _check "Import summary row count matches upload" "body: $summary_body"
 
-echo ""
-echo "--- 4. Imported CSV becomes active cost source ---"
-costs_body=$(_http_body "${API_BASE}/api/v1/costs")
-_json_number_ge "$costs_body" "totalCost" "400" \
-    && _check "/api/v1/costs totalCost reflects uploaded CSV" "ok" \
-    || _check "/api/v1/costs totalCost reflects uploaded CSV" "body: $costs_body"
+    echo ""
+    echo "--- 4. Imported CSV becomes active cost source ---"
+    costs_body=$(_http_body "${API_BASE}/api/v1/costs")
+    _json_number_ge "$costs_body" "totalCost" "400" \
+        && _check "/api/v1/costs totalCost reflects uploaded CSV" "ok" \
+        || _check "/api/v1/costs totalCost reflects uploaded CSV" "body: $costs_body"
 
-forecast_body=$(_http_body "${API_BASE}/api/v1/forecast")
-_json_number_ge "$forecast_body" "current_monthly_spend_usd" "400" \
-    && _check "/api/v1/forecast reflects imported spend" "ok" \
-    || _check "/api/v1/forecast reflects imported spend" "body: $forecast_body"
+    forecast_body=$(_http_body "${API_BASE}/api/v1/forecast")
+    _json_number_ge "$forecast_body" "current_monthly_spend_usd" "400" \
+        && _check "/api/v1/forecast reflects imported spend" "ok" \
+        || _check "/api/v1/forecast reflects imported spend" "body: $forecast_body"
 
-_json_number_ge "$forecast_body" "cost_context.total_cost" "400" \
-    && _check "/api/v1/forecast exposes imported cost_context" "ok" \
-    || _check "/api/v1/forecast exposes imported cost_context" "body: $forecast_body"
+    _json_number_ge "$forecast_body" "cost_context.total_cost" "400" \
+        && _check "/api/v1/forecast exposes imported cost_context" "ok" \
+        || _check "/api/v1/forecast exposes imported cost_context" "body: $forecast_body"
 
-analytics_body=$(_http_body "${API_BASE}/api/v1/analytics")
-_json_number_ge "$analytics_body" "current_monthly_spend_usd" "400" \
-    && _check "/api/v1/analytics reflects imported spend" "ok" \
-    || _check "/api/v1/analytics reflects imported spend" "body: $analytics_body"
+    analytics_body=$(_http_body "${API_BASE}/api/v1/analytics")
+    _json_number_ge "$analytics_body" "current_monthly_spend_usd" "400" \
+        && _check "/api/v1/analytics reflects imported spend" "ok" \
+        || _check "/api/v1/analytics reflects imported spend" "body: $analytics_body"
 
-rollup_body=$(_http_body "${API_BASE}/api/v1/provider-accounts/rollups")
-_json_array_len_ge "$rollup_body" "items" "0" \
-    && _check "/api/v1/provider-accounts/rollups returns hierarchy items" "ok" \
-    || _check "/api/v1/provider-accounts/rollups returns hierarchy items" "body: $rollup_body"
+    rollup_body=$(_http_body "${API_BASE}/api/v1/provider-accounts/rollups")
+    _json_array_len_ge "$rollup_body" "items" "0" \
+        && _check "/api/v1/provider-accounts/rollups returns hierarchy items" "ok" \
+        || _check "/api/v1/provider-accounts/rollups returns hierarchy items" "body: $rollup_body"
+else
+    _skip "CSV upload/import flow" "Set SMOKE_ENABLE_CSV_IMPORT=true to upload a temporary CSV dataset."
+    _skip "Imported CSV active-source checks" "CSV import smoke is disabled for live environments."
+fi
 
 echo ""
 echo "--- 4b. Release-critical live-data gate ---"
@@ -492,35 +499,23 @@ else
 
     add_response_file="${TMP_DIR}/add.json"
     add_status=$(_request_json_once "POST" "${API_BASE}/api/v1/credentials/add" "$SMOKE_CREDENTIAL_JSON" "$add_response_file")
+    add_body="$(cat "$add_response_file")"
     [ "$add_status" = "200" ] \
         && _check "POST /api/v1/credentials/add returns 200" "ok" \
         || _check "POST /api/v1/credentials/add returns 200" "HTTP $add_status"
+
+    scan_id="$(_json_get "$add_body" "scan.scan_id")"
+    if [ -n "$scan_id" ]; then
+        _check "Credential add starts automatic scan" "ok"
+    else
+        _check "Credential add starts automatic scan" "body: $add_body"
+    fi
 
     provider="$(_json_get "$SMOKE_CREDENTIAL_JSON" "provider")"
     listed_credentials=$(_http_body "${API_BASE}/api/v1/credentials")
     echo "$listed_credentials" | grep -qi "\"provider\":\"${provider}\"" \
         && _check "Credential list includes added provider" "ok" \
         || _check "Credential list includes added provider" "body: $listed_credentials"
-
-    approve_status=$(_request_json_status "POST" "${API_BASE}/api/v1/scanning/approve" '{"scan_frequency":"daily","auto_remediate":false}')
-    [ "$approve_status" = "200" ] \
-        && _check "POST /api/v1/scanning/approve returns 200" "ok" \
-        || _check "POST /api/v1/scanning/approve returns 200" "HTTP $approve_status"
-
-    start_payload="{\"providers\":[\"${provider}\"]}"
-    start_response_file="${TMP_DIR}/start.json"
-    start_status=$(_request_json_once "POST" "${API_BASE}/api/v1/scanning/start" "$start_payload" "$start_response_file")
-    start_body="$(cat "$start_response_file")"
-    [ "$start_status" = "200" ] \
-        && _check "POST /api/v1/scanning/start returns 200" "ok" \
-        || _check "POST /api/v1/scanning/start returns 200" "HTTP $start_status"
-
-    scan_id="$(_json_get "$start_body" "scan_id")"
-    if [ -n "$scan_id" ]; then
-        _check "Scan start returns scan_id" "ok"
-    else
-        _check "Scan start returns scan_id" "body: $start_body"
-    fi
 
     if [ -n "$scan_id" ]; then
         if progress_body=$(_wait_for_scan_terminal_state "$scan_id"); then

@@ -58,6 +58,7 @@ Local workspace
 - Intelligence layer: `/api/v1/analytics/finops-intelligence` and `/api/v1/genai/rag-guidance` for deterministic + RAG + GenAI workflows.
 - Executive decision route: `/api/v1/analytics/decision-intelligence` for 30/60/90 sequencing and advisory memo generation.
 - Kubernetes: OpenCost sync and namespace/workload/team/node-pool allocation views.
+- Data source policy: dashboard metrics use live provider APIs or imported billing data only; empty states are explicit when neither source is available.
 
 ## Repository Layout
 
@@ -112,6 +113,8 @@ Common direct commands:
 Recommended release order for Terraform + Ansible deployments: Terraform `init/validate/plan` -> optional `apply` -> `deploy-oci.sh compute/full` (Ansible run) -> `deploy-oci.sh verify` -> `scripts/generate_evidence_pack.sh`.
 
 Primary OCI region for hosting and GenAI inference: `uk-london-1`.
+
+Validated cloud connections are persisted until the customer disconnects them. Adding a valid credential writes runtime credentials on the API host and immediately starts a provider scan; unreachable or disabled credentials are marked invalid/inactive instead of being replaced with synthetic dashboard data.
 
 For prerequisites, environment variables, post-deploy checks, and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
