@@ -12402,18 +12402,135 @@ def _rightsizing_console_url(
         return "https://console.cloud.google.com/compute/instances"
 
     if prov == "oci":
+        oci_region_suffix = f"?region={quote(safe_region, safe='')}" if safe_region else ""
         if rid.startswith("ocid1.instance."):
             url = f"https://cloud.oracle.com/compute/instances/{quote(rid, safe='')}"
-            return f"{url}?region={quote(safe_region, safe='')}" if safe_region else url
+            return f"{url}{oci_region_suffix}" if safe_region else url
         if rid.startswith("ocid1."):
             # Generic OCI resource deep-link by OCID via global search.
             url = f"https://cloud.oracle.com/search?search={quote(rid, safe='')}"
             return f"{url}&region={quote(safe_region, safe='')}" if safe_region else url
+        if "boot volume" in rtype or "block volume" in rtype or "volume" in rtype:
+            return f"https://cloud.oracle.com/block-storage/volumes{oci_region_suffix}"
+        if "object storage" in rtype or "bucket" in rtype:
+            return f"https://cloud.oracle.com/object-storage/buckets{oci_region_suffix}"
         # Account-level signal: link to compute inventory in selected region.
         base = "https://cloud.oracle.com/compute/instances"
-        return f"{base}?region={quote(safe_region, safe='')}" if safe_region else base
+        return f"{base}{oci_region_suffix}" if safe_region else base
 
     return None
+
+
+def _slugify_resource_token(value: str) -> str:
+    token = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower())
+    return token.strip("-") or "recommendation"
+
+
+def _provider_recommendation_action(row: Dict[str, Any]) -> str:
+    rec_type = str(row.get("type") or "").strip().lower()
+    service = str(row.get("service") or "").strip().lower()
+    description = str(row.get("description") or "").strip().lower()
+    if rec_type in {"reserved-instances", "committed-use", "savings-plan", "commitment"}:
+        return "reserve"
+    if rec_type in {"idle-resources", "orphaned-resources"}:
+        return "terminate"
+    if "unattached" in description or "orphan" in description:
+        return "terminate"
+    if "volume" in service and ("clean" in description or "delete" in description):
+        return "terminate"
+    if rec_type in {"storage-optimization", "lifecycle", "modernization"}:
+        return "modernize"
+    if rec_type in {"rightsizing", "right-size"}:
+        return "downsize"
+    return "modernize"
+
+
+def _rightsizing_from_provider_recommendation_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    provider: str,
+    region: str,
+    account_id: str,
+    min_savings: float,
+) -> List[RightsizingRecommendation]:
+    out: List[RightsizingRecommendation] = []
+    observed_at = _utcnow().isoformat()
+    normalized_provider = str(provider or "all").strip().lower() or "all"
+    safe_region = str(region or "global").strip() or "global"
+    for row in rows:
+        service = str(row.get("service") or "Cloud Service").strip()
+        monthly_savings = round(float(row.get("savings_annual_usd", 0) or 0) / 12, 2)
+        if monthly_savings < min_savings:
+            continue
+        current_monthly = round(float(row.get("current_annual_spend", 0) or 0) / 12, 2)
+        if current_monthly <= 0:
+            current_monthly = monthly_savings
+        projected_monthly = round(max(current_monthly - monthly_savings, 0.0), 2)
+        action = _provider_recommendation_action(row)
+        rec_provider = str(row.get("provider") or normalized_provider).strip().lower()
+        if rec_provider in {"", "all", "multi-cloud"}:
+            rec_id = str(row.get("id") or "")
+            rec_provider = rec_id.split("-rec-", 1)[0] if "-rec-" in rec_id else normalized_provider
+        if rec_provider == "all":
+            rec_provider = normalized_provider
+
+        rec_type = str(row.get("type") or action).strip().lower()
+        service_slug = _slugify_resource_token(service)
+        rec_id = str(row.get("id") or f"{rec_provider}-{service_slug}-{rec_type}")
+        resource_type = f"{rec_provider.upper()} {service} service opportunity"
+        resource_name = f"{rec_provider.upper()} {service}: {str(row.get('description') or 'Optimization opportunity')}"
+        confidence = str(row.get("confidence") or "medium").strip().lower()
+        if confidence not in {"high", "medium", "low"}:
+            confidence = "medium"
+        payback_months = float(row.get("payback_months", 0) or 0)
+        effort = "low" if payback_months <= 1 else "medium" if payback_months <= 3 else "high"
+        out.append(
+            RightsizingRecommendation(
+                resource_id=f"provider-rec-{rec_id}",
+                resource_name=resource_name,
+                resource_type=resource_type,
+                provider=rec_provider,
+                region=safe_region,
+                account_id=account_id,
+                current_size=f"{service} current monthly spend",
+                recommended_size=str(row.get("description") or "Apply provider recommendation"),
+                current_monthly_cost_usd=current_monthly,
+                projected_monthly_cost_usd=projected_monthly,
+                monthly_savings_usd=monthly_savings,
+                annual_savings_usd=round(monthly_savings * 12, 2),
+                cpu_utilization_avg_percent=None,
+                memory_utilization_avg_percent=None,
+                reason=str(row.get("description") or "Provider optimization recommendation."),
+                confidence=confidence,
+                effort=effort,
+                action=action,
+                evidence_source="live_provider_recommendations",
+                analysis_points=1,
+                trend_slope_usd=0.0,
+                trend_percent=0.0,
+                latest_monthly_cost_usd=current_monthly,
+                peak_monthly_cost_usd=current_monthly,
+                top_regions=[safe_region] if safe_region else [],
+                regional_breakdown=[{
+                    "region": safe_region,
+                    "monthly_cost_usd": current_monthly,
+                    "share_percent": 100.0,
+                }],
+                resource_console_url=_rightsizing_console_url(
+                    provider=rec_provider,
+                    resource_id="",
+                    region=safe_region,
+                    account_id=account_id,
+                    resource_type=resource_type,
+                ),
+                last_observed_at=observed_at,
+                risk_note=(
+                    "Service-level provider recommendation. Use Cloud Resources and the provider console "
+                    "to select exact resources before making changes."
+                ),
+            )
+        )
+    return out
 
 
 def _rightsizing_from_oci_compute_inventory(
@@ -13846,6 +13963,29 @@ async def get_rightsizing_recommendations(
     recommendations_out: List[RightsizingRecommendation] = []
     data_source = "no_data_available"
     total_analyzed = 0
+    provider_recommendation_rows: List[Dict[str, Any]] = []
+    provider_recommendation_context: Dict[str, Any] = {}
+
+    try:
+        provider_recommendation_context = await _cost_context(membership, db, "month", provider)
+        provider_rec_result = _safe_json_load(
+            await recommendations.get_recommendations(
+                {
+                    "cloud_provider": provider,
+                    "current_monthly_spend": provider_recommendation_context.get("total_cost", 0.0),
+                    "cost_breakdown": provider_recommendation_context.get("breakdown", {}),
+                    "min_savings_usd": max(0.0, float(min_savings or 0.0) * 12),
+                }
+            ),
+            {},
+        )
+        raw_provider_rows = provider_rec_result.get("recommendations", [])
+        if isinstance(raw_provider_rows, list):
+            provider_recommendation_rows = [
+                row for row in raw_provider_rows if isinstance(row, dict)
+            ]
+    except Exception as exc:
+        logger.warning("Provider recommendation bridge for rightsizing failed: %s", exc)
 
     # ── Tier 1 + 2: Real provider APIs and utilization telemetry ────────────
     provider_filter = [provider] if provider != "all" else ["aws", "azure", "gcp"]
@@ -13937,6 +14077,42 @@ async def get_rightsizing_recommendations(
                     elif data_source not in {"multi_provider_api", "oci_storage_inventory"}:
                         data_source = "multi_provider_api"
                     total_analyzed += max(len(tier2c), max((r.analysis_points for r in tier2c), default=0))
+
+    # ── Tier 2d: Provider recommendation bridge for service-level actions ───
+    if provider_recommendation_rows:
+        provider_rec_items = _rightsizing_from_provider_recommendation_rows(
+            provider_recommendation_rows,
+            provider=provider,
+            region=str(Config().oci_region or provider_recommendation_context.get("region") or "global"),
+            account_id=customer_id,
+            min_savings=min_savings,
+        )
+        if provider_rec_items:
+            existing_keys = {
+                (
+                    rec.provider,
+                    rec.action,
+                    _slugify_resource_token(rec.resource_type),
+                    _slugify_resource_token(rec.resource_name),
+                )
+                for rec in recommendations_out
+            }
+            for rec in provider_rec_items:
+                key = (
+                    rec.provider,
+                    rec.action,
+                    _slugify_resource_token(rec.resource_type),
+                    _slugify_resource_token(rec.resource_name),
+                )
+                if key in existing_keys:
+                    continue
+                existing_keys.add(key)
+                recommendations_out.append(rec)
+            if data_source == "no_data_available":
+                data_source = "live_provider_recommendations"
+            elif data_source not in {"multi_provider_api", "live_provider_recommendations"}:
+                data_source = "multi_provider_api"
+            total_analyzed += len(provider_rec_items)
 
     # ── Tier 3: Cost-trend signal from scan snapshot history ────────────────
     if not recommendations_out:

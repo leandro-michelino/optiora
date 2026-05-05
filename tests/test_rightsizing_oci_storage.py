@@ -114,6 +114,43 @@ class RightsizingOciStorageTest(unittest.TestCase):
         self.assertTrue(all(rec.action == "terminate" for rec in recs))
         self.assertTrue(all(rec.evidence_source == "oci_storage_inventory" for rec in recs))
 
+    def test_provider_recommendation_rows_are_normalized_for_rightsizing(self) -> None:
+        recs = api_module._rightsizing_from_provider_recommendation_rows(
+            [
+                {
+                    "id": "oci-rec-002",
+                    "type": "idle-resources",
+                    "service": "Block Volume",
+                    "description": "OCI: Clean unattached volumes and expired backups.",
+                    "current_annual_spend": 1200,
+                    "savings_annual_usd": 480,
+                    "payback_months": 1,
+                    "confidence": "high",
+                },
+                {
+                    "id": "oci-rec-003",
+                    "type": "storage-optimization",
+                    "service": "Object Storage",
+                    "description": "OCI: Move infrequently accessed data to archive storage.",
+                    "current_annual_spend": 1200,
+                    "savings_annual_usd": 360,
+                    "payback_months": 1,
+                    "confidence": "high",
+                },
+            ],
+            provider="oci",
+            region="uk-london-1",
+            account_id="org-1",
+            min_savings=0,
+        )
+
+        self.assertEqual(len(recs), 2)
+        self.assertEqual(recs[0].action, "terminate")
+        self.assertEqual(recs[0].resource_type, "OCI Block Volume service opportunity")
+        self.assertEqual(recs[0].evidence_source, "live_provider_recommendations")
+        self.assertEqual(recs[1].action, "modernize")
+        self.assertIn("Object Storage", recs[1].resource_type)
+
 
 if __name__ == "__main__":
     unittest.main()
