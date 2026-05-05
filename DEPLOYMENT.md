@@ -7,6 +7,8 @@ This repository deploys two services onto one OCI compute instance:
 - `optiora-api.service` -> FastAPI backend on `:8000`
 - `optiora-dashboard.service` -> Next.js dashboard on `:3000`
 
+Production/runtime policy: **OCI only**. On-premises execution is disabled until explicitly re-enabled in a future change. The deployed environment sets `DEPLOYMENT_TARGET=oci` and `OCI_RUNTIME_REQUIRED=true`; the API validates OCI instance metadata at startup, and both systemd units run an OCI metadata `ExecStartPre` check before starting.
+
 Deployment can be done two ways:
 
 - `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services on the latest Oracle Linux 9 platform image for the selected shape.
@@ -308,6 +310,8 @@ OCI_PRIVATE_KEY_PATH=~/.oci/oci_api_key.pem
 OCI_REGION=<oci_region>
 OCI_CONFIG_FILE=
 ENVIRONMENT=production
+DEPLOYMENT_TARGET=oci
+OCI_RUNTIME_REQUIRED=true
 PASSWORD_RESET_RETURN_TOKEN=false
 PASSWORD_RESET_TOKEN_MINUTES=30
 ENABLE_SCAN_SCHEDULER=true

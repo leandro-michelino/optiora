@@ -9,6 +9,8 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
 os.environ["ENABLE_AUTH"] = "true"
 os.environ["SECRET_KEY"] = "test-secret-key-runtime-hardening"
 os.environ["PASSWORD_RESET_RETURN_TOKEN"] = "true"
+os.environ["DEPLOYMENT_TARGET"] = "oci"
+os.environ["OCI_RUNTIME_REQUIRED"] = "false"
 os.environ["REQUIRE_LIVE_PROVIDER_DATA"] = "false"
 
 try:
@@ -62,6 +64,8 @@ class RuntimeHardeningTest(unittest.TestCase):
         self.assertIn("runtime", checks)
         self.assertIn(checks["database"].get("status"), {"healthy", "unhealthy"})
         self.assertIn(checks["providers"].get("status"), {"healthy", "degraded", "unhealthy"})
+        self.assertEqual(checks["runtime"].get("deployment_target"), "oci")
+        self.assertFalse(checks["runtime"].get("oci_runtime_required"))
 
 
 if __name__ == "__main__":

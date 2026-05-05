@@ -2,6 +2,8 @@
 
 import logging
 import os
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 
 _logger = logging.getLogger(__name__)
@@ -25,6 +27,14 @@ def _env_float(name: str, default: float) -> float:
 
 def _env_upper_str(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip().upper()
+
+
+def _env_lower_str(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip().lower()
+
+
+def _default_oci_runtime_required() -> str:
+    return "true" if os.getenv("ENVIRONMENT", "development").strip().lower() == "production" else "false"
 
 
 def _genai_compartment_id() -> str:
@@ -52,6 +62,11 @@ class Config:
     # Server
     api_port: int = field(default_factory=lambda: _env_int("PORT", 8000))
     api_log_level: str = field(default_factory=lambda: _env_str("LOG_LEVEL", "INFO"))
+    environment: str = field(default_factory=lambda: _env_lower_str("ENVIRONMENT", "development"))
+    deployment_target: str = field(default_factory=lambda: _env_lower_str("DEPLOYMENT_TARGET", "oci"))
+    oci_runtime_required: bool = field(
+        default_factory=lambda: _env_bool("OCI_RUNTIME_REQUIRED", _default_oci_runtime_required())
+    )
 
     # AWS
     aws_access_key_id: str = field(
@@ -190,8 +205,31 @@ class Config:
         default_factory=lambda: _env_bool("REQUIRE_LIVE_PROVIDER_DATA", "true")
     )
 
+    @staticmethod
+    def is_running_on_oci(timeout_seconds: float = 1.0) -> bool:
+        """Return true when the process can reach OCI instance metadata."""
+        request = urllib.request.Request(
+            "http://169.254.169.254/opc/v2/instance/",
+            headers={"Authorization": "Bearer Oracle"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                return 200 <= int(response.status) < 300
+        except (OSError, TimeoutError, urllib.error.URLError, urllib.error.HTTPError):
+            return False
+
     def validate(self):
         """Validate required configuration."""
+        if self.deployment_target != "oci":
+            raise ValueError(
+                "DEPLOYMENT_TARGET must be 'oci'. On-premises runtime is disabled until explicitly re-enabled."
+            )
+        if self.oci_runtime_required and not self.is_running_on_oci():
+            raise ValueError(
+                "OCI_RUNTIME_REQUIRED=true but OCI instance metadata is unavailable. "
+                "Refusing to run OptiOra services outside OCI."
+            )
+
         valid_license_models = {"BYOL", "LICENSE_INCLUDED"}
         if self.oci_db_license_model not in valid_license_models:
             raise ValueError(
@@ -230,8 +268,7 @@ class Config:
                 "Running in CSV-import mode because REQUIRE_LIVE_PROVIDER_DATA=false."
             )
         # Warn clearly about insecure runtime defaults
-        _env = os.getenv("ENVIRONMENT", "development").strip().lower()
-        if not self.auth_enabled and _env == "production":
+        if not self.auth_enabled and self.environment == "production":
             _logger.warning(
                 "SECURITY WARNING: ENABLE_AUTH=false in a production environment. "
                 "All API endpoints are publicly accessible without authentication. "

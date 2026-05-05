@@ -20,6 +20,8 @@ class ConfigTest(unittest.TestCase):
             {
                 "ENABLE_AUTH": "true",
                 "PORT": "9001",
+                "DEPLOYMENT_TARGET": "oci",
+                "OCI_RUNTIME_REQUIRED": "false",
                 "REQUIRE_LIVE_PROVIDER_DATA": "false",
             },
             clear=False,
@@ -28,7 +30,47 @@ class ConfigTest(unittest.TestCase):
 
         self.assertTrue(cfg.auth_enabled)
         self.assertEqual(cfg.api_port, 9001)
+        self.assertEqual(cfg.deployment_target, "oci")
+        self.assertFalse(cfg.oci_runtime_required)
         self.assertFalse(cfg.require_live_provider_data)
+
+    def test_validate_rejects_non_oci_deployment_target(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DEPLOYMENT_TARGET": "onprem",
+                "OCI_RUNTIME_REQUIRED": "false",
+                "REQUIRE_LIVE_PROVIDER_DATA": "false",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "DEPLOYMENT_TARGET"):
+                Config().validate()
+
+    def test_validate_rejects_required_oci_runtime_without_metadata(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DEPLOYMENT_TARGET": "oci",
+                "OCI_RUNTIME_REQUIRED": "true",
+                "REQUIRE_LIVE_PROVIDER_DATA": "false",
+            },
+            clear=False,
+        ), patch.object(Config, "is_running_on_oci", return_value=False):
+            with self.assertRaisesRegex(ValueError, "outside OCI"):
+                Config().validate()
+
+    def test_validate_allows_required_oci_runtime_with_metadata(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "DEPLOYMENT_TARGET": "oci",
+                "OCI_RUNTIME_REQUIRED": "true",
+                "REQUIRE_LIVE_PROVIDER_DATA": "false",
+            },
+            clear=False,
+        ), patch.object(Config, "is_running_on_oci", return_value=True):
+            Config().validate()
 
     def test_genai_compartment_override_takes_precedence(self) -> None:
         with patch.dict(

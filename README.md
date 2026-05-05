@@ -1,6 +1,6 @@
 # OptiOra
 
-Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an OCI-first deployment path.
+Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an OCI-only production deployment path.
 
 ## Dashboard Preview
 
@@ -70,6 +70,8 @@ Local workspace
 
 ## Local Development
 
+Local commands are for development and test loops only. Until this policy is changed, production services must run on OCI compute and the deployed systemd units refuse to start when OCI instance metadata is unavailable.
+
 Supported Python for backend setup: `3.10` through `3.13`.
 
 ```bash
@@ -95,6 +97,8 @@ For full validation commands and coverage notes, see [TESTING.md](TESTING.md).
 - Infrastructure gate passed: `terraform -chdir=terraform validate`
 
 ## OCI Deployment
+
+Production/runtime policy: OCI only. The Ansible-rendered `.env` sets `DEPLOYMENT_TARGET=oci` and `OCI_RUNTIME_REQUIRED=true`, and both API and dashboard systemd units perform an OCI metadata preflight before starting.
 
 Recommended path:
 

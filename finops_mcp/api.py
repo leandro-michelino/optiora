@@ -6999,6 +6999,9 @@ async def readiness_check() -> Dict[str, Any]:
         "auth_enabled": bool(cfg.auth_enabled),
         "scan_scheduler_enabled": bool(cfg.enable_scan_scheduler),
         "retention_enabled": bool(cfg.retention_enabled),
+        "deployment_target": cfg.deployment_target,
+        "oci_runtime_required": bool(cfg.oci_runtime_required),
+        "running_on_oci": Config.is_running_on_oci(),
     }
 
     return {
@@ -7011,10 +7014,16 @@ async def readiness_check() -> Dict[str, Any]:
 
 @router.get("/info")
 async def api_info() -> Dict[str, Any]:
+    cfg = Config()
     return {
         "name": "OptiOra API",
         "version": __version__,
         "description": "Cloud Cost Optimization Platform",
+        "runtime": {
+            "deployment_target": cfg.deployment_target,
+            "oci_runtime_required": bool(cfg.oci_runtime_required),
+            "on_premises_supported": False,
+        },
         "supported_providers": list(SUPPORTED_CLOUD_PROVIDERS),
         "features": {
             "credential_management": True,
