@@ -4747,6 +4747,8 @@ async def dashboard_anomalies(
 @router.get("/recommendations")
 async def dashboard_recommendations(
     cloud_provider: str = "all",
+    limit: int = Query(20, ge=1, le=1000),
+    include_provider_recommendations: bool = Query(False),
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
     db: Session = Depends(get_db),
@@ -4766,15 +4768,17 @@ async def dashboard_recommendations(
     )
     raw_rows = result.get("recommendations", [])
     rows = raw_rows if isinstance(raw_rows, list) else []
-    live_rows = _collect_provider_recommendation_rows(
-        db=db,
-        customer_id=customer_id,
-        provider=cloud_provider,
-        min_monthly_savings=0.0,
-        limit=200,
-    )
-    if live_rows:
-        rows = [row for row in rows if isinstance(row, dict)] + live_rows
+    if include_provider_recommendations:
+        live_rows = _collect_provider_recommendation_rows(
+            db=db,
+            customer_id=customer_id,
+            provider=cloud_provider,
+            min_monthly_savings=0.0,
+            limit=limit,
+            include_existing_rightsizing_sources=False,
+        )
+        if live_rows:
+            rows = [row for row in rows if isinstance(row, dict)] + live_rows
 
     mapped = []
     for row in rows:
@@ -4788,7 +4792,7 @@ async def dashboard_recommendations(
                 "id": row.get("id"),
                 "service": row.get("service", "unknown"),
                 "cloud": row_provider if row_provider != "all" else "multi-cloud",
-                "title": row.get("description", "Optimization recommendation"),
+                "title": row.get("recommendation_type") or row.get("description", "Optimization recommendation"),
                 "description": row.get("description", ""),
                 "savings": savings_monthly,
                 "roi": float(row.get("roi_percent", 0) or 0),
@@ -4799,9 +4803,19 @@ async def dashboard_recommendations(
                 else "hard",
                 "source": row.get("source") or row.get("evidence_source") or "cost_context",
                 "resource_id": row.get("resource_id"),
+                "resource_type": row.get("resource_type"),
+                "resource_name": row.get("resource_name"),
+                "region": row.get("region"),
+                "recommendation_type": row.get("recommendation_type"),
+                "recommendation_name": row.get("recommendation_name"),
+                "resource_count": row.get("resource_count"),
+                "category": row.get("category"),
+                "importance": row.get("importance"),
+                "status": row.get("status"),
+                "recommendation_status": row.get("recommendation_status"),
             }
         )
-    return _dedupe_dashboard_recommendations(mapped)
+    return _dedupe_dashboard_recommendations(mapped)[:limit]
 
 
 @router.get("/forecast")
@@ -12423,17 +12437,34 @@ def _rightsizing_console_url(
 
     if prov == "oci":
         oci_region_suffix = f"?region={quote(safe_region, safe='')}" if safe_region else ""
-        if rid.startswith("ocid1.instance."):
-            url = f"https://cloud.oracle.com/compute/instances/{quote(rid, safe='')}"
-            return f"{url}{oci_region_suffix}" if safe_region else url
-        if rid.startswith("ocid1."):
-            # Generic OCI resource deep-link by OCID via global search.
-            url = f"https://cloud.oracle.com/search?search={quote(rid, safe='')}"
-            return f"{url}&region={quote(safe_region, safe='')}" if safe_region else url
-        if "boot volume" in rtype or "block volume" in rtype or "volume" in rtype:
+        if (
+            rid.startswith("ocid1.bootvolume.")
+            or "bootvolume" in rtype
+            or "boot volume" in rtype
+        ):
+            return f"https://cloud.oracle.com/block-storage/boot-volumes{oci_region_suffix}"
+        if (
+            rid.startswith("ocid1.volume.")
+            or "blockvolume" in rtype
+            or "block volume" in rtype
+            or rtype == "volume"
+        ):
             return f"https://cloud.oracle.com/block-storage/volumes{oci_region_suffix}"
-        if "object storage" in rtype or "bucket" in rtype:
+        if (
+            rid.startswith("ocid1.bucket.")
+            or "objectstorage" in rtype
+            or "object storage" in rtype
+            or "bucket" in rtype
+        ):
             return f"https://cloud.oracle.com/object-storage/buckets{oci_region_suffix}"
+        if rid.startswith("ocid1.loadbalancer.") or "load balancer" in rtype or "loadbalancer" in rtype:
+            return f"https://cloud.oracle.com/networking/load-balancers{oci_region_suffix}"
+        if rid.startswith("ocid1.autonomousdatabase.") or "autonomous" in rtype:
+            return f"https://cloud.oracle.com/db/adbs{oci_region_suffix}"
+        if rid.startswith("ocid1.instance."):
+            return f"https://cloud.oracle.com/compute/instances{oci_region_suffix}"
+        if rid.startswith("ocid1."):
+            return f"https://cloud.oracle.com/resources{oci_region_suffix}"
         # Account-level signal: link to compute inventory in selected region.
         base = "https://cloud.oracle.com/compute/instances"
         return f"{base}{oci_region_suffix}" if safe_region else base
@@ -12514,13 +12545,36 @@ def _provider_recommendation_type_from_text(
     text = " ".join([rec_type, service, description, action]).lower()
     if "reservation" in text or "reserved" in text or "savings plan" in text or "commit" in text:
         return "reserved-instances"
-    if "unattached" in text or "orphan" in text or "idle" in text or "delete" in text or "terminate" in text:
+    if (
+        "unattached" in text
+        or "detached" in text
+        or "not attached" in text
+        or "orphan" in text
+        or "idle" in text
+        or "delete" in text
+        or "terminate" in text
+        or ("volume" in text and "attachment" in text)
+    ):
         return "idle-resources"
-    if "storage" in text or "archive" in text or "lifecycle" in text or "tier" in text:
+    if (
+        "storage" in text
+        or "object-store" in text
+        or "object storage" in text
+        or "blockvolume" in text
+        or "bootvolume" in text
+        or "bucket" in text
+        or "volume" in text
+        or "archive" in text
+        or "lifecycle" in text
+        or "tier" in text
+    ):
         return "storage-optimization"
-    if "rightsiz" in text or "right-siz" in text or "resize" in text or "machine type" in text:
+    if "rightsiz" in text or "right-siz" in text or "resize" in text or "machine type" in text or "underutilized" in text:
         return "rightsizing"
-    return str(rec_type or "optimization").strip().lower() or "optimization"
+    fallback = str(rec_type or "optimization").strip().lower() or "optimization"
+    if fallback.startswith("ocid1."):
+        return "optimization"
+    return fallback
 
 
 def _provider_row(
@@ -12918,6 +12972,166 @@ def _gcp_recommender_rows(
     return rows[:limit]
 
 
+def _oci_home_region(
+    oci_module: Any,
+    oci_config: Dict[str, Any],
+    tenancy_id: str,
+    timeout: tuple[int, int] = (5, 15),
+) -> Optional[str]:
+    """Return the tenancy home region for Cloud Advisor calls when discoverable."""
+    if not tenancy_id:
+        return None
+    try:
+        identity = oci_module.identity.IdentityClient(oci_config, timeout=timeout)
+        response = identity.list_region_subscriptions(tenancy_id)
+        for subscription in getattr(response, "data", []) or []:
+            if bool(getattr(subscription, "is_home_region", False)):
+                region_name = str(getattr(subscription, "region_name", "") or "").strip()
+                if region_name:
+                    return region_name
+    except Exception as exc:
+        logger.info("Unable to discover OCI home region for optimizer recommendations: %s", exc)
+    return None
+
+
+def _oci_collection_items(response_or_data: Any) -> List[Any]:
+    data = getattr(response_or_data, "data", response_or_data)
+    if isinstance(data, list):
+        return data
+    items = getattr(data, "items", None)
+    if isinstance(items, list):
+        return items
+    if isinstance(data, dict):
+        dict_items = data.get("items")
+        if isinstance(dict_items, list):
+            return dict_items
+    return []
+
+
+def _oci_extended_metadata(item: Any) -> Dict[str, Any]:
+    metadata = getattr(item, "extended_metadata", None)
+    if isinstance(metadata, dict):
+        return metadata
+    if isinstance(item, dict):
+        raw = item.get("extended-metadata") or item.get("extended_metadata")
+        if isinstance(raw, dict):
+            return raw
+    return {}
+
+
+def _oci_recommendation_slug(value: str) -> str:
+    slug = str(value or "").strip().lower()
+    for suffix in ("-name", "-desc"):
+        if slug.endswith(suffix):
+            slug = slug[: -len(suffix)]
+    return slug
+
+
+def _oci_recommendation_display_name(name: str) -> str:
+    slug = _oci_recommendation_slug(name)
+    labels = {
+        "cost-management-block-volume-attachment": "Delete unattached block volumes",
+        "cost-management-boot-volume-attachment": "Delete unattached boot volumes",
+        "cost-management-compute-host-burstable": "Change compute instances to burstable",
+        "cost-management-compute-host-underutilized": "Downsize underutilized compute instances",
+        "cost-management-autonomous-database-underutilized": "Downsize underutilized ADW and ATP databases",
+        "cost-management-load-balancer-underutilized": "Downsize underutilized load balancers",
+        "rightsize-exacs-x6-x7-x8-db-cluster": "Downsize underutilized Exadata Cloud VM clusters",
+        "rightsize-vmdb-system": "Downsize underutilized Base Database system",
+        "downsize-exacs-x6-x7-x8-db-cluster": "Downsize underutilized Exadata Cloud VM clusters",
+        "downsize-vmdb-system": "Downsize underutilized Base Database system",
+        "cost-management-database-management": "Enable database management",
+        "enable-db-management": "Enable database management",
+        "cost-management-compute-host-monitoring": "Enable monitoring on compute instances",
+        "cost-management-compute-enable-monitoring": "Enable monitoring on compute instances",
+        "cost-management-compute-host-idle": "Delete idle compute instances",
+        "cost-management-compute-host-terminated": "Delete idle compute instances",
+        "performance-block-volume-enable-auto-tuning": "Enable performance auto-tuning for detached block volumes",
+        "performance-boot-volume-enable-auto-tuning": "Enable performance auto-tuning for detached boot volumes",
+        "performance-compute-host-highutilization": "Rightsize compute instances",
+        "performance-load-balancer-highutilization": "Rightsize load balancers",
+        "high-availability-object-storage-enable-object-versioning": "Enable object versioning",
+        "high-availability-object-storage-enable-replication": "Enable object replication",
+        "high-availability-compute-fault-domain": "Improve fault tolerance",
+        "cost-management-object-storage-enable-olm": "Move object storage to lower cost tiers",
+    }
+    if slug in labels:
+        return labels[slug]
+    for prefix in ("cost-management-", "performance-", "high-availability-"):
+        if slug.startswith(prefix):
+            slug = slug[len(prefix):]
+    return slug.replace("-", " ").title() or "OCI Cloud Advisor recommendation"
+
+
+def _oci_recommendation_category(name: str) -> str:
+    slug = _oci_recommendation_slug(name)
+    if slug.startswith("performance-") or slug.startswith("rightsize-"):
+        return "Performance"
+    if slug.startswith("high-availability-"):
+        return "High availability"
+    return "Cost management"
+
+
+def _oci_recommendation_service(name: str) -> str:
+    slug = _oci_recommendation_slug(name)
+    if "block-volume" in slug or "boot-volume" in slug:
+        return "Block storage"
+    if "object-storage" in slug:
+        return "Object storage"
+    if "autonomous-database" in slug:
+        return "Autonomous database"
+    if "load-balancer" in slug:
+        return "Load balancing"
+    if "exacs" in slug:
+        return "Exadata cloud"
+    if "vmdb" in slug or "database-management" in slug or "db-management" in slug:
+        return "Base database"
+    if "compute" in slug:
+        return "Compute"
+    return "OCI"
+
+
+def _oci_recommendation_resource_count(rec: Any) -> int:
+    counts = getattr(rec, "resource_counts", None) or []
+    if isinstance(rec, dict):
+        counts = rec.get("resource-counts") or rec.get("resource_counts") or counts
+    total = 0
+    for item in counts or []:
+        status = str(getattr(item, "status", "") or (item.get("status") if isinstance(item, dict) else "") or "").upper()
+        raw_count = getattr(item, "count", None)
+        if raw_count is None and isinstance(item, dict):
+            raw_count = item.get("count")
+        try:
+            count = int(raw_count or 0)
+        except (TypeError, ValueError):
+            count = 0
+        if status in {"PENDING", "ACTIVE", ""}:
+            total += count
+    return total
+
+
+def _oci_importance_label(value: Any) -> str:
+    text = str(value or "MODERATE").strip().upper()
+    return {
+        "LOW": "Low",
+        "MODERATE": "Medium",
+        "MEDIUM": "Medium",
+        "HIGH": "High",
+        "CRITICAL": "Critical",
+    }.get(text, text.title() or "Medium")
+
+
+def _runtime_oci_credential_json() -> Optional[Dict[str, Any]]:
+    cfg = Config()
+    config_file = str(cfg.oci_config_file or "").strip()
+    if not config_file:
+        return None
+    return {
+        "config_file": config_file,
+        "profile": _normalize_oci_profile(cfg.oci_profile),
+    }
+
+
 def _oci_optimizer_recommendation_rows(
     cred_json: Dict[str, Any],
     min_monthly_savings: float,
@@ -12947,6 +13161,12 @@ def _oci_optimizer_recommendation_rows(
     if not tenancy_id:
         return []
 
+    home_region = _oci_home_region(oci, oci_config, tenancy_id)
+    if home_region and home_region != region:
+        oci_config = dict(oci_config)
+        oci_config["region"] = home_region
+        region = home_region
+
     try:
         client = oci.optimizer.OptimizerClient(oci_config, timeout=(5, 25))
     except Exception as exc:
@@ -12955,12 +13175,20 @@ def _oci_optimizer_recommendation_rows(
 
     rows: List[Dict[str, Any]] = []
     try:
-        rec_response = oci.pagination.list_call_get_all_results(
-            client.list_recommendations,
-            compartment_id=tenancy_id,
-            compartment_id_in_subtree=True,
-        )
-        for idx, rec in enumerate(getattr(rec_response, "data", []) or [], start=1):
+        try:
+            rec_response = oci.pagination.list_call_get_all_results(
+                client.list_recommendations,
+                compartment_id=tenancy_id,
+                compartment_id_in_subtree=True,
+                include_organization=True,
+            )
+        except TypeError:
+            rec_response = oci.pagination.list_call_get_all_results(
+                client.list_recommendations,
+                compartment_id=tenancy_id,
+                compartment_id_in_subtree=True,
+            )
+        for idx, rec in enumerate(_oci_collection_items(rec_response), start=1):
             if len(rows) >= limit:
                 break
             monthly = _safe_recommendation_float(getattr(rec, "estimated_cost_saving", 0))
@@ -12968,45 +13196,76 @@ def _oci_optimizer_recommendation_rows(
                 continue
             name = str(getattr(rec, "name", "") or "OCI Optimizer recommendation")
             description = str(getattr(rec, "description", "") or name)
+            display_name = _oci_recommendation_display_name(name)
+            service_name = _oci_recommendation_service(name)
+            category_name = _oci_recommendation_category(name)
             rec_type = _provider_recommendation_type_from_text(
                 rec_type=str(getattr(rec, "category_id", "") or ""),
-                description=f"{name} {description}",
+                service=service_name,
+                description=f"{name} {description} {display_name}",
             )
-            rows.append(_provider_row(
+            row = _provider_row(
                 provider="oci",
                 source="oci_optimizer",
                 rec_id=str(getattr(rec, "id", "") or f"oci-optimizer-{idx:03d}"),
-                service=name,
+                service=service_name,
                 rec_type=rec_type,
-                description=f"OCI: {description}",
+                description=f"OCI: {display_name}",
                 monthly_savings=monthly,
-                account_id=tenancy_id,
+                account_id=str(getattr(rec, "compartment_id", "") or tenancy_id),
                 region=region,
-                resource_type=name,
+                resource_type=service_name,
                 payback_months=1 if rec_type in {"idle-resources", "storage-optimization"} else 3,
                 confidence="high",
                 severity=str(getattr(rec, "importance", "") or "medium").lower() or "medium",
-            ))
+            )
+            lifecycle_state = str(getattr(rec, "lifecycle_state", "") or "").upper()
+            row.update({
+                "recommendation_type": display_name,
+                "recommendation_name": name,
+                "resource_count": _oci_recommendation_resource_count(rec),
+                "category": category_name,
+                "importance": _oci_importance_label(getattr(rec, "importance", None)),
+                "status": "Active" if lifecycle_state == "ACTIVE" else str(getattr(rec, "status", "") or "Active").title(),
+                "recommendation_status": str(getattr(rec, "status", "") or "").title(),
+            })
+            rows.append(row)
     except Exception as exc:
         logger.info("OCI Optimizer recommendations unavailable: %s", exc)
 
     try:
-        actions_response = oci.pagination.list_call_get_all_results(
-            client.list_resource_actions,
-            compartment_id=tenancy_id,
-            compartment_id_in_subtree=True,
-        )
-        for idx, action in enumerate(getattr(actions_response, "data", []) or [], start=1):
+        try:
+            actions_response = oci.pagination.list_call_get_all_results(
+                client.list_resource_actions,
+                compartment_id=tenancy_id,
+                compartment_id_in_subtree=True,
+                include_organization=True,
+                include_resource_metadata=True,
+            )
+        except TypeError:
+            actions_response = oci.pagination.list_call_get_all_results(
+                client.list_resource_actions,
+                compartment_id=tenancy_id,
+                compartment_id_in_subtree=True,
+                include_resource_metadata=True,
+            )
+        for idx, action in enumerate(_oci_collection_items(actions_response), start=1):
             if len(rows) >= limit:
                 break
             monthly = _safe_recommendation_float(getattr(action, "estimated_cost_saving", 0))
             if monthly < min_monthly_savings:
                 continue
             resource_type = str(getattr(action, "resource_type", "") or "OCI Resource")
-            action_name = str(getattr(action, "name", "") or getattr(action, "action", "") or "Optimize resource")
+            action_name = str(getattr(action, "name", "") or "Optimize resource")
+            extended_metadata = _oci_extended_metadata(action)
+            action_region = str(extended_metadata.get("region") or region).strip() or region
+            detached_volume = bool(extended_metadata.get("volumeDetachedStatus")) or bool(extended_metadata.get("unattachedSince"))
+            description = f"{action_name}"
+            if detached_volume and "volume" in resource_type.lower():
+                description = f"Delete unattached {resource_type}: {action_name}"
             rec_type = _provider_recommendation_type_from_text(
                 service=resource_type,
-                description=action_name,
+                description=description,
                 action=str(getattr(action, "action", "") or ""),
             )
             resource_id = str(getattr(action, "resource_id", "") or "")
@@ -13016,10 +13275,10 @@ def _oci_optimizer_recommendation_rows(
                 rec_id=str(getattr(action, "id", "") or f"oci-optimizer-action-{idx:03d}"),
                 service=resource_type,
                 rec_type=rec_type,
-                description=f"OCI: {action_name}",
+                description=f"OCI: {description}",
                 monthly_savings=monthly,
-                account_id=tenancy_id,
-                region=region,
+                account_id=str(getattr(action, "compartment_id", "") or tenancy_id),
+                region=action_region,
                 resource_id=resource_id,
                 resource_name=action_name,
                 resource_type=resource_type,
@@ -13029,7 +13288,7 @@ def _oci_optimizer_recommendation_rows(
                 console_url=_rightsizing_console_url(
                     provider="oci",
                     resource_id=resource_id,
-                    region=region,
+                    region=action_region,
                     account_id=tenancy_id,
                     resource_type=resource_type,
                 ),
@@ -13062,13 +13321,19 @@ def _collect_provider_recommendation_rows(
             )
             .all()
         )
+        credential_payloads: List[Dict[str, Any]] = []
         for cred_row in cred_rows:
-            if len(rows) >= limit:
-                break
             try:
-                cred_json: Dict[str, Any] = json.loads(cred_row.credential_json)
+                credential_payloads.append(json.loads(cred_row.credential_json))
             except Exception:
                 continue
+        if prov == "oci" and not credential_payloads:
+            runtime_oci = _runtime_oci_credential_json()
+            if runtime_oci is not None:
+                credential_payloads.append(runtime_oci)
+        for cred_json in credential_payloads:
+            if len(rows) >= limit:
+                break
             remaining = max(limit - len(rows), 0)
             if remaining <= 0:
                 break
@@ -14530,6 +14795,228 @@ def _rightsizing_from_snapshot_trends(
     return out
 
 
+def _service_recommendation_profile(provider: str, service_name: str) -> Optional[Dict[str, Any]]:
+    text = f"{provider} {service_name}".lower()
+    profiles = [
+        {
+            "terms": ["block storage", "block volume", "boot volume", "file storage", "ebs", "managed disk", "persistent disk", "snapshot", "backup"],
+            "action": "modernize",
+            "savings_rate": 0.28,
+            "resource_type": "Storage volume and backup service",
+            "current_size": "Current volume/backup spend",
+            "recommended_size": "Lifecycle policy plus unattached volume/snapshot cleanup review",
+            "reason": "Storage volume, snapshot, or backup spend is visible in provider service costs. Review unattached volumes, stale snapshots, backup retention, and performance tiers.",
+            "effort": "low",
+            "confidence": "medium",
+        },
+        {
+            "terms": ["object storage", "cloud storage", "amazon s3", "s3", "blob", "bucket", "glacier", "archive storage"],
+            "action": "modernize",
+            "savings_rate": 0.18,
+            "resource_type": "Object storage service",
+            "current_size": "Current object storage spend",
+            "recommended_size": "Lifecycle to infrequent/archive tiers",
+            "reason": "Object storage spend is present in the latest service-cost snapshot. Apply lifecycle rules, delete expired objects, and move cold data to archive tiers.",
+            "effort": "low",
+            "confidence": "medium",
+        },
+        {
+            "terms": ["database", "rds", "aurora", "sql", "postgres", "mysql", "autonomous", "dynamodb", "cosmos", "spanner", "redis", "elasticache"],
+            "action": "reserve",
+            "savings_rate": 0.24,
+            "resource_type": "Database and cache service",
+            "current_size": "Current managed database/cache spend",
+            "recommended_size": "Reserved capacity or right-sized managed tier",
+            "reason": "Managed database/cache spend is visible in service-cost snapshots. Check idle instances, storage growth, backup retention, and reserved capacity coverage.",
+            "effort": "medium",
+            "confidence": "medium",
+        },
+        {
+            "terms": ["load balancer", "network", "nat", "gateway", "egress", "bandwidth", "cdn", "dns", "firewall", "waf", "ip address"],
+            "action": "modernize",
+            "savings_rate": 0.12,
+            "resource_type": "Network and traffic service",
+            "current_size": "Current network spend",
+            "recommended_size": "Egress, gateway, and idle endpoint optimization",
+            "reason": "Network spend is visible in service-cost snapshots. Review NAT gateways, idle load balancers, public IPs, egress paths, and CDN/cache placement.",
+            "effort": "medium",
+            "confidence": "medium",
+        },
+        {
+            "terms": ["kubernetes", "container", "nodepool", "node pool", "gke", "aks", "eks", "oke", "namespace", "pod"],
+            "action": "downsize",
+            "savings_rate": 0.22,
+            "resource_type": "Kubernetes and container platform",
+            "current_size": "Current cluster/container spend",
+            "recommended_size": "Right-sized node pools and workload requests",
+            "reason": "Kubernetes/container spend is visible in service-cost snapshots. Review node pool sizing, idle namespaces, requests/limits, and autoscaling policy.",
+            "effort": "medium",
+            "confidence": "medium",
+        },
+        {
+            "terms": ["bigquery", "redshift", "athena", "emr", "databricks", "analytics", "warehouse", "dataflow", "synapse"],
+            "action": "modernize",
+            "savings_rate": 0.16,
+            "resource_type": "Analytics and data platform service",
+            "current_size": "Current analytics spend",
+            "recommended_size": "Query, retention, and commitment optimization",
+            "reason": "Analytics/data-platform spend is visible in service-cost snapshots. Review query efficiency, storage retention, job schedules, and commitment coverage.",
+            "effort": "medium",
+            "confidence": "medium",
+        },
+        {
+            "terms": ["queue", "pubsub", "pub/sub", "kafka", "event hub", "service bus", "sqs", "sns", "stream"],
+            "action": "modernize",
+            "savings_rate": 0.10,
+            "resource_type": "Messaging and streaming service",
+            "current_size": "Current messaging/streaming spend",
+            "recommended_size": "Retention, throughput, and idle topic cleanup",
+            "reason": "Messaging/streaming spend is visible in service-cost snapshots. Review retention windows, idle topics/queues, throughput tiers, and replay storage.",
+            "effort": "low",
+            "confidence": "medium",
+        },
+        {
+            "terms": ["compute", "ec2", "virtual machine", "vm", "instance", "compute engine", "oci compute"],
+            "action": "downsize",
+            "savings_rate": 0.20,
+            "resource_type": "Compute service",
+            "current_size": "Current compute spend",
+            "recommended_size": "Right-sized shapes or commitment coverage",
+            "reason": "Compute service spend is visible in service-cost snapshots. Review idle capacity, shape family, and commitment coverage.",
+            "effort": "low",
+            "confidence": "medium",
+        },
+    ]
+    for profile in profiles:
+        if any(term in text for term in profile["terms"]):
+            return profile
+    return {
+        "action": "modernize",
+        "savings_rate": 0.08,
+        "resource_type": "Cloud service",
+        "current_size": "Current service spend",
+        "recommended_size": "Service-specific optimization review",
+        "reason": "This service appears in the latest service-cost snapshot. Review configuration, idle usage, retention, and pricing model for savings.",
+        "effort": "medium",
+        "confidence": "low",
+    }
+
+
+def _rightsizing_from_service_cost_snapshots(
+    snapshots: List[Any],
+    min_savings: float,
+) -> List[RightsizingRecommendation]:
+    """Derive product/service-level opportunities from persisted top_services snapshots."""
+    grouped: Dict[tuple[str, str], Dict[str, Any]] = {}
+    for snap in snapshots:
+        provider = str(getattr(snap, "provider", "") or "").strip().lower()
+        if provider not in {"aws", "azure", "gcp", "oci"}:
+            continue
+        try:
+            services = json.loads(getattr(snap, "top_services_json", "") or "[]")
+        except Exception:
+            services = []
+        if not isinstance(services, list):
+            continue
+        for service in services:
+            if not isinstance(service, dict):
+                continue
+            service_name = str(
+                service.get("service")
+                or service.get("service_name")
+                or service.get("name")
+                or ""
+            ).strip()
+            if not service_name:
+                continue
+            cost = _safe_recommendation_float(
+                service.get("cost_usd")
+                or service.get("cost")
+                or service.get("amount")
+            )
+            if cost <= 0:
+                continue
+            key = (provider, service_name.lower())
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "provider": provider,
+                    "service_name": service_name,
+                    "costs": [],
+                    "latest_cost": 0.0,
+                    "latest_at": None,
+                },
+            )
+            bucket["costs"].append(cost)
+            captured_at = getattr(snap, "captured_at", None)
+            latest_at = bucket.get("latest_at")
+            if latest_at is None or (captured_at is not None and captured_at > latest_at):
+                bucket["latest_at"] = captured_at
+                bucket["latest_cost"] = cost
+
+    out: List[RightsizingRecommendation] = []
+    for (_provider, _service_key), bucket in grouped.items():
+        provider = str(bucket["provider"])
+        service_name = str(bucket["service_name"])
+        costs = [float(value or 0.0) for value in bucket["costs"]]
+        if not costs:
+            continue
+        avg_cost = sum(costs) / len(costs)
+        latest_cost = float(bucket.get("latest_cost") or costs[-1])
+        if avg_cost < 15:
+            continue
+        profile = _service_recommendation_profile(provider, service_name)
+        if not profile:
+            continue
+        savings_rate = float(profile["savings_rate"])
+        monthly_savings = round(latest_cost * savings_rate, 2)
+        if monthly_savings < min_savings:
+            continue
+        latest_at = bucket.get("latest_at")
+        last_observed = latest_at.isoformat() if latest_at is not None else None
+        trend_slope = _trend_slope(costs)
+        trend_pct = round((trend_slope / avg_cost) * 100, 2) if avg_cost > 0 else 0.0
+        service_slug = _slugify_resource_token(service_name)
+        out.append(RightsizingRecommendation(
+            resource_id=f"{provider}-service-{service_slug}",
+            resource_name=service_name,
+            resource_type=str(profile["resource_type"]),
+            provider=provider,
+            region="global",
+            account_id=f"{provider}-service-costs",
+            current_size=str(profile["current_size"]),
+            recommended_size=str(profile["recommended_size"]),
+            current_monthly_cost_usd=round(latest_cost, 2),
+            projected_monthly_cost_usd=round(max(latest_cost - monthly_savings, 0.0), 2),
+            monthly_savings_usd=monthly_savings,
+            annual_savings_usd=round(monthly_savings * 12, 2),
+            cpu_utilization_avg_percent=None,
+            memory_utilization_avg_percent=None,
+            reason=str(profile["reason"]),
+            confidence=str(profile["confidence"]),
+            effort=str(profile["effort"]),
+            action=str(profile["action"]),
+            evidence_source="service_cost_snapshot",
+            analysis_points=len(costs),
+            trend_slope_usd=round(trend_slope, 4),
+            trend_percent=trend_pct,
+            latest_monthly_cost_usd=round(latest_cost, 2),
+            peak_monthly_cost_usd=round(max(costs), 2),
+            top_regions=["global"],
+            regional_breakdown=[{
+                "region": "global",
+                "monthly_cost_usd": round(latest_cost, 2),
+                "share_percent": 100.0,
+            }],
+            last_observed_at=last_observed,
+            risk_note=(
+                "Service-level recommendation from provider top-services cost snapshots. "
+                "Open service inventory/billing details to select exact resources before execution."
+            ),
+        ))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Tier 4: Imported CSV cost-signal analysis (deterministic, no random)
 # ---------------------------------------------------------------------------
@@ -14660,17 +15147,22 @@ def _rightsizing_from_imported_costs(
 async def get_rightsizing_recommendations(
     provider: str = Query("all"),
     min_savings: float = Query(10.0, description="Minimum monthly savings threshold USD"),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=1000),
+    refresh_live: bool = Query(
+        False,
+        description="Run provider-native live collection on this request. Default uses stored scans/imports for a responsive dashboard path.",
+    ),
     current_user: User = Depends(get_current_user),
     membership=Depends(get_current_membership),
     db: Session = Depends(get_db),
 ):
     """Resource-level rightsizing recommendations.
 
-    Tries live provider signals first (AWS Cost Explorer + CloudWatch,
-    Azure Advisor + Azure Monitor, GCP Cloud Monitoring inventory), then
-    falls back to deterministic cost-trend analysis on scan history,
-    and imported CSV signals when CSV fallback is enabled.
+    Uses stored scan/import signals by default for dashboard responsiveness.
+    When refresh_live=true, also tries live provider signals first (AWS Cost
+    Explorer + CloudWatch, Azure Advisor + Azure Monitor, GCP Cloud Monitoring
+    inventory, and OCI inventory) before deterministic scan history/imported
+    CSV analysis.
     No synthetic recommendation records are ever generated.
     """
     org_id = membership.organization_id
@@ -14684,96 +15176,98 @@ async def get_rightsizing_recommendations(
     provider_recommendation_rows: List[Dict[str, Any]] = []
     provider_recommendation_context: Dict[str, Any] = {}
 
-    try:
-        provider_recommendation_context = await _cost_context(membership, db, "month", provider)
-        provider_rec_result = _safe_json_load(
-            await recommendations.get_recommendations(
-                {
-                    "cloud_provider": provider,
-                    "current_monthly_spend": provider_recommendation_context.get("total_cost", 0.0),
-                    "cost_breakdown": provider_recommendation_context.get("breakdown", {}),
-                    "min_savings_usd": max(0.0, float(min_savings or 0.0) * 12),
-                }
-            ),
-            {},
-        )
-        raw_provider_rows = provider_rec_result.get("recommendations", [])
-        if isinstance(raw_provider_rows, list):
-            provider_recommendation_rows = [
-                row for row in raw_provider_rows if isinstance(row, dict)
-            ]
-        provider_recommendation_rows.extend(
-            _collect_provider_recommendation_rows(
-                db=db,
-                customer_id=customer_id,
-                provider=provider,
-                min_monthly_savings=float(min_savings or 0.0),
-                limit=200,
-                include_existing_rightsizing_sources=False,
+    if refresh_live:
+        try:
+            provider_recommendation_context = await _cost_context(membership, db, "month", provider)
+            provider_rec_result = _safe_json_load(
+                await recommendations.get_recommendations(
+                    {
+                        "cloud_provider": provider,
+                        "current_monthly_spend": provider_recommendation_context.get("total_cost", 0.0),
+                        "cost_breakdown": provider_recommendation_context.get("breakdown", {}),
+                        "min_savings_usd": max(0.0, float(min_savings or 0.0) * 12),
+                    }
+                ),
+                {},
             )
-        )
-    except Exception as exc:
-        logger.warning("Provider recommendation bridge for rightsizing failed: %s", exc)
+            raw_provider_rows = provider_rec_result.get("recommendations", [])
+            if isinstance(raw_provider_rows, list):
+                provider_recommendation_rows = [
+                    row for row in raw_provider_rows if isinstance(row, dict)
+                ]
+            provider_recommendation_rows.extend(
+                _collect_provider_recommendation_rows(
+                    db=db,
+                    customer_id=customer_id,
+                    provider=provider,
+                    min_monthly_savings=float(min_savings or 0.0),
+                    limit=limit,
+                    include_existing_rightsizing_sources=False,
+                )
+            )
+        except Exception as exc:
+            logger.warning("Provider recommendation bridge for rightsizing failed: %s", exc)
 
     # ── Tier 1 + 2: Real provider APIs and utilization telemetry ────────────
-    provider_filter = [provider] if provider != "all" else ["aws", "azure", "gcp"]
-    for prov in provider_filter:
-        cred_row = (
-            db.query(CredentialRecord)
-            .filter(
-                CredentialRecord.customer_id == customer_id,
-                CredentialRecord.provider == prov,
-                CredentialRecord.is_valid.is_(True),
+    if refresh_live:
+        provider_filter = [provider] if provider != "all" else ["aws", "azure", "gcp"]
+        for prov in provider_filter:
+            cred_row = (
+                db.query(CredentialRecord)
+                .filter(
+                    CredentialRecord.customer_id == customer_id,
+                    CredentialRecord.provider == prov,
+                    CredentialRecord.is_valid.is_(True),
+                )
+                .first()
             )
-            .first()
-        )
-        if cred_row is None:
-            continue
-        try:
-            cred_json: Dict[str, Any] = json.loads(cred_row.credential_json)
-        except Exception:
-            continue
+            if cred_row is None:
+                continue
+            try:
+                cred_json: Dict[str, Any] = json.loads(cred_row.credential_json)
+            except Exception:
+                continue
 
-        if prov == "aws":
-            tier1 = _rightsizing_from_aws_ce(cred_json, min_savings)
-            if tier1:
-                tier1 = _enrich_aws_with_cloudwatch_utilization(cred_json, tier1)
-                recommendations_out.extend(tier1)
-                has_live_signals = any(
-                    (r.cpu_utilization_avg_percent is not None or r.memory_utilization_avg_percent is not None)
-                    for r in tier1
-                )
-                data_source = "aws_ce_cloudwatch" if has_live_signals else "aws_cost_explorer"
-                total_analyzed += len(tier1) * 4  # CE analyzes all instances
-            else:
-                tier1b = _rightsizing_from_aws_cloudwatch_inventory(cred_json, min_savings, limit=max(120, limit))
-                if tier1b:
-                    recommendations_out.extend(tier1b)
-                    data_source = "aws_cloudwatch_inventory" if data_source == "no_data_available" else "multi_provider_api"
-                    total_analyzed += len(tier1b)
+            if prov == "aws":
+                tier1 = _rightsizing_from_aws_ce(cred_json, min_savings)
+                if tier1:
+                    tier1 = _enrich_aws_with_cloudwatch_utilization(cred_json, tier1)
+                    recommendations_out.extend(tier1)
+                    has_live_signals = any(
+                        (r.cpu_utilization_avg_percent is not None or r.memory_utilization_avg_percent is not None)
+                        for r in tier1
+                    )
+                    data_source = "aws_ce_cloudwatch" if has_live_signals else "aws_cost_explorer"
+                    total_analyzed += len(tier1) * 4  # CE analyzes all instances
+                else:
+                    tier1b = _rightsizing_from_aws_cloudwatch_inventory(cred_json, min_savings, limit=max(120, limit))
+                    if tier1b:
+                        recommendations_out.extend(tier1b)
+                        data_source = "aws_cloudwatch_inventory" if data_source == "no_data_available" else "multi_provider_api"
+                        total_analyzed += len(tier1b)
 
-        elif prov == "azure":
-            tier2 = _rightsizing_from_azure_advisor(cred_json, min_savings)
-            if tier2:
-                tier2 = _enrich_azure_with_monitor_utilization(cred_json, tier2)
-                recommendations_out.extend(tier2)
-                has_live_signals = any(
-                    (r.cpu_utilization_avg_percent is not None or r.memory_utilization_avg_percent is not None)
-                    for r in tier2
-                )
-                source_name = "azure_advisor_monitor" if has_live_signals else "azure_advisor"
-                data_source = source_name if data_source == "no_data_available" else "multi_provider_api"
-                total_analyzed += len(tier2) * 3
+            elif prov == "azure":
+                tier2 = _rightsizing_from_azure_advisor(cred_json, min_savings)
+                if tier2:
+                    tier2 = _enrich_azure_with_monitor_utilization(cred_json, tier2)
+                    recommendations_out.extend(tier2)
+                    has_live_signals = any(
+                        (r.cpu_utilization_avg_percent is not None or r.memory_utilization_avg_percent is not None)
+                        for r in tier2
+                    )
+                    source_name = "azure_advisor_monitor" if has_live_signals else "azure_advisor"
+                    data_source = source_name if data_source == "no_data_available" else "multi_provider_api"
+                    total_analyzed += len(tier2) * 3
 
-        elif prov == "gcp":
-            tier2c = _rightsizing_from_gcp_cloud_monitoring(cred_json, min_savings, limit=max(120, limit))
-            if tier2c:
-                recommendations_out.extend(tier2c)
-                data_source = "gcp_cloud_monitoring" if data_source == "no_data_available" else "multi_provider_api"
-                total_analyzed += len(tier2c)
+            elif prov == "gcp":
+                tier2c = _rightsizing_from_gcp_cloud_monitoring(cred_json, min_savings, limit=max(120, limit))
+                if tier2c:
+                    recommendations_out.extend(tier2c)
+                    data_source = "gcp_cloud_monitoring" if data_source == "no_data_available" else "multi_provider_api"
+                    total_analyzed += len(tier2c)
 
     # ── Tier 2b: OCI live compute inventory (per-instance actionable scope) ──
-    if provider in {"all", "oci"}:
+    if refresh_live and provider in {"all", "oci"}:
         oci_row = (
             db.query(CredentialRecord)
             .filter(
@@ -14788,23 +15282,25 @@ async def get_rightsizing_recommendations(
                 oci_cred_json: Dict[str, Any] = json.loads(oci_row.credential_json)
             except Exception:
                 oci_cred_json = {}
-            if isinstance(oci_cred_json, dict):
-                tier2b = _rightsizing_from_oci_compute_inventory(oci_cred_json, min_savings, limit=max(120, limit))
-                if tier2b:
-                    recommendations_out.extend(tier2b)
-                    if data_source == "no_data_available":
-                        data_source = "oci_compute_inventory"
-                    elif data_source not in {"multi_provider_api", "oci_compute_inventory"}:
-                        data_source = "multi_provider_api"
-                    total_analyzed += len(tier2b)
-                tier2c = _rightsizing_from_oci_storage_inventory(oci_cred_json, min_savings, limit=max(120, limit))
-                if tier2c:
-                    recommendations_out.extend(tier2c)
-                    if data_source == "no_data_available":
-                        data_source = "oci_storage_inventory"
-                    elif data_source not in {"multi_provider_api", "oci_storage_inventory"}:
-                        data_source = "multi_provider_api"
-                    total_analyzed += max(len(tier2c), max((r.analysis_points for r in tier2c), default=0))
+        else:
+            oci_cred_json = _runtime_oci_credential_json() or {}
+        if isinstance(oci_cred_json, dict):
+            tier2b = _rightsizing_from_oci_compute_inventory(oci_cred_json, min_savings, limit=max(120, limit))
+            if tier2b:
+                recommendations_out.extend(tier2b)
+                if data_source == "no_data_available":
+                    data_source = "oci_compute_inventory"
+                elif data_source not in {"multi_provider_api", "oci_compute_inventory"}:
+                    data_source = "multi_provider_api"
+                total_analyzed += len(tier2b)
+            tier2c = _rightsizing_from_oci_storage_inventory(oci_cred_json, min_savings, limit=max(120, limit))
+            if tier2c:
+                recommendations_out.extend(tier2c)
+                if data_source == "no_data_available":
+                    data_source = "oci_storage_inventory"
+                elif data_source not in {"multi_provider_api", "oci_storage_inventory"}:
+                    data_source = "multi_provider_api"
+                total_analyzed += max(len(tier2c), max((r.analysis_points for r in tier2c), default=0))
 
     # ── Tier 2d: Provider recommendation bridge for service-level actions ───
     if provider_recommendation_rows:
@@ -14902,6 +15398,47 @@ async def get_rightsizing_recommendations(
             if tier3:
                 recommendations_out = tier3
                 data_source = "cost_trend_analysis"
+
+    service_snapshot_query = db.query(CostSnapshot).filter(CostSnapshot.customer_id == customer_id)
+    if provider != "all":
+        service_snapshot_query = service_snapshot_query.filter(CostSnapshot.provider == provider)
+    service_snapshot_rows = (
+        service_snapshot_query
+        .order_by(CostSnapshot.captured_at.desc())
+        .limit(500)
+        .all()
+    )
+    service_recommendations = _rightsizing_from_service_cost_snapshots(
+        service_snapshot_rows,
+        min_savings,
+    )
+    if service_recommendations:
+        existing_service_keys = {
+            (
+                rec.provider,
+                _slugify_resource_token(rec.resource_type),
+                _slugify_resource_token(rec.resource_name),
+            )
+            for rec in recommendations_out
+        }
+        added_service_count = 0
+        for rec in service_recommendations:
+            key = (
+                rec.provider,
+                _slugify_resource_token(rec.resource_type),
+                _slugify_resource_token(rec.resource_name),
+            )
+            if key in existing_service_keys:
+                continue
+            existing_service_keys.add(key)
+            recommendations_out.append(rec)
+            added_service_count += 1
+        if added_service_count:
+            if data_source == "no_data_available":
+                data_source = "service_cost_snapshot"
+            elif data_source != "service_cost_snapshot":
+                data_source = "multi_source_cost_analysis"
+            total_analyzed += added_service_count
 
     # ── Tier 4: Imported CSV cost-signal analysis ────────────────────────────
     if not recommendations_out and not require_live_provider_data:

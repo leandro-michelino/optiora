@@ -44,6 +44,18 @@ export interface RecommendationResponse {
   savings: number
   roi: number
   difficulty: 'easy' | 'medium' | 'hard'
+  source?: string
+  resource_id?: string | null
+  resource_type?: string | null
+  resource_name?: string | null
+  region?: string | null
+  recommendation_type?: string | null
+  recommendation_name?: string | null
+  resource_count?: number | null
+  category?: string | null
+  importance?: string | null
+  status?: string | null
+  recommendation_status?: string | null
 }
 
 export interface PaginatedResponse<T> {

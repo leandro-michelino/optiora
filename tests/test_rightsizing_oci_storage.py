@@ -16,6 +16,12 @@ class _FakeIdentityClient:
     def list_availability_domains(self, **kwargs):
         return SimpleNamespace(data=[SimpleNamespace(name="AD-1")])
 
+    def list_region_subscriptions(self, tenancy_id):
+        return SimpleNamespace(data=[
+            SimpleNamespace(region_name="me-abudhabi-1", is_home_region=True),
+            SimpleNamespace(region_name="af-johannesburg-1", is_home_region=False),
+        ])
+
 
 class _FakeComputeClient:
     def __init__(self, config, timeout=None):
@@ -102,6 +108,40 @@ class _FakeOptimizerClient:
                 estimated_cost_saving=12.5,
             ),
         ])
+
+
+class _HomeRegionOptimizerClient(_FakeOptimizerClient):
+    def list_recommendations(self, **kwargs):
+        if self.config.get("region") != "me-abudhabi-1":
+            raise RuntimeError("Please go to your home region to execute this operations.")
+        return super().list_recommendations(**kwargs)
+
+
+class _CollectionOptimizerClient(_FakeOptimizerClient):
+    def list_recommendations(self, **kwargs):
+        return SimpleNamespace(data=SimpleNamespace(items=[
+            SimpleNamespace(
+                id="ocid1.optimizerrecommendation.collection",
+                name="Underutilized compute instances",
+                description="Downsize underutilized compute instances.",
+                estimated_cost_saving=42.0,
+                category_id="cost",
+                importance="HIGH",
+            ),
+        ]))
+
+    def list_resource_actions(self, **kwargs):
+        return SimpleNamespace(data=SimpleNamespace(items=[
+            SimpleNamespace(
+                id="ocid1.optimizeraction.collection",
+                resource_id="ocid1.instance.collection",
+                resource_type="BlockVolume",
+                name="qradar-data-volume",
+                action={"type": "KB_ARTICLE"},
+                estimated_cost_saving=21.0,
+                extended_metadata={"region": "me-dubai-1", "volumeDetachedStatus": True},
+            ),
+        ]))
 
 
 class _FakePagination:
@@ -219,6 +259,90 @@ class RightsizingOciStorageTest(unittest.TestCase):
         self.assertEqual(recs[0].evidence_source, "oci_optimizer")
         self.assertEqual(recs[1].resource_id, "ocid1.volume.optimizer-orphan")
         self.assertEqual(recs[1].action, "terminate")
+
+    def test_oci_optimizer_uses_home_region_for_cloud_advisor(self) -> None:
+        fake_oci = SimpleNamespace(
+            config=SimpleNamespace(from_file=lambda config_file, profile: {
+                "tenancy": "ocid1.tenancy.test",
+                "region": "af-johannesburg-1",
+            }),
+            identity=SimpleNamespace(IdentityClient=_FakeIdentityClient),
+            optimizer=SimpleNamespace(OptimizerClient=_HomeRegionOptimizerClient),
+            pagination=_FakePagination,
+        )
+
+        with patch.dict(sys.modules, {"oci": fake_oci}), patch.object(
+            api_module.CredentialValidator,
+            "_normalize_oci_inputs",
+            return_value=("/tmp/oci-config", "DEFAULT"),
+        ):
+            rows = api_module._oci_optimizer_recommendation_rows(
+                {"config_file": "/tmp/oci-config", "profile": "DEFAULT"},
+                min_monthly_savings=0,
+                limit=10,
+            )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["region"], "me-abudhabi-1")
+
+    def test_oci_optimizer_accepts_collection_items_shape(self) -> None:
+        fake_oci = SimpleNamespace(
+            config=SimpleNamespace(from_file=lambda config_file, profile: {
+                "tenancy": "ocid1.tenancy.test",
+                "region": "uk-london-1",
+            }),
+            optimizer=SimpleNamespace(OptimizerClient=_CollectionOptimizerClient),
+            pagination=_FakePagination,
+        )
+
+        with patch.dict(sys.modules, {"oci": fake_oci}), patch.object(
+            api_module.CredentialValidator,
+            "_normalize_oci_inputs",
+            return_value=("/tmp/oci-config", "DEFAULT"),
+        ):
+            rows = api_module._oci_optimizer_recommendation_rows(
+                {"config_file": "/tmp/oci-config", "profile": "DEFAULT"},
+                min_monthly_savings=0,
+                limit=10,
+            )
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["monthly_savings_usd"], 42.0)
+        self.assertEqual(rows[1]["resource_id"], "ocid1.instance.collection")
+        self.assertEqual(rows[1]["type"], "idle-resources")
+        self.assertEqual(rows[1]["region"], "me-dubai-1")
+
+    def test_oci_resource_console_urls_use_service_pages(self) -> None:
+        self.assertEqual(
+            api_module._rightsizing_console_url(
+                "oci",
+                "ocid1.volume.oc1.me-dubai-1.example",
+                "me-dubai-1",
+                "acct",
+                "BlockVolume",
+            ),
+            "https://cloud.oracle.com/block-storage/volumes?region=me-dubai-1",
+        )
+        self.assertEqual(
+            api_module._rightsizing_console_url(
+                "oci",
+                "ocid1.bootvolume.oc1.me-dubai-1.example",
+                "me-dubai-1",
+                "acct",
+                "BootVolume",
+            ),
+            "https://cloud.oracle.com/block-storage/boot-volumes?region=me-dubai-1",
+        )
+        self.assertNotIn(
+            "/search?",
+            api_module._rightsizing_console_url(
+                "oci",
+                "ocid1.volume.oc1.me-dubai-1.example",
+                "me-dubai-1",
+                "acct",
+                "BlockVolume",
+            ),
+        )
 
 
 if __name__ == "__main__":

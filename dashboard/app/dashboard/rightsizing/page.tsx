@@ -10,6 +10,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
 const ACTIONS = ['all', 'downsize', 'terminate', 'reserve', 'modernize']
+const PRODUCT_LABELS: Record<string, string> = {
+  all: 'All products',
+  compute: 'Compute',
+  storage: 'Storage',
+  commitments: 'Commitments',
+  database: 'Database',
+  network: 'Network',
+  kubernetes: 'Kubernetes',
+  governance: 'Governance',
+  other: 'Other',
+}
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -55,6 +66,40 @@ function providerColor(p: string) {
   }[p] ?? 'border-slate-200 bg-slate-50 text-slate-600'
 }
 
+function productCategory(rec: RightsizingRecommendation): string {
+  const text = [
+    rec.resource_type,
+    rec.resource_name,
+    rec.current_size,
+    rec.recommended_size,
+    rec.reason,
+    rec.evidence_source,
+    rec.action,
+  ].join(' ').toLowerCase()
+
+  if (rec.action === 'reserve' || /reservation|reserved|commitment|savings plan|committed use|coverage/.test(text)) return 'commitments'
+  if (/storage|volume|disk|snapshot|backup|bucket|object|blob|archive/.test(text)) return 'storage'
+  if (/database|\bdb\b|postgres|mysql|sql|rds|aurora|autonomous|oracle database|cosmos|spanner|bigquery/.test(text)) return 'database'
+  if (/kubernetes|\bk8s\b|cluster|nodepool|node pool|container|namespace|pod/.test(text)) return 'kubernetes'
+  if (/network|load balancer|nat|gateway|cdn|dns|ip address|egress|bandwidth|firewall|waf/.test(text)) return 'network'
+  if (/tag|budget|policy|governance|anomaly|alert|schedule|scheduler/.test(text)) return 'governance'
+  if (/compute|instance|virtual machine|\bvm\b|ec2|shape|cpu|memory|rightsizing|downsize/.test(text)) return 'compute'
+  return 'other'
+}
+
+function productTone(product: string) {
+  return {
+    compute: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300',
+    storage: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
+    commitments: 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300',
+    database: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300',
+    network: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-950/30 dark:text-cyan-300',
+    kubernetes: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300',
+    governance: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
+    other: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
+  }[product] ?? 'border-slate-200 bg-slate-50 text-slate-700'
+}
+
 function resourceConsoleUrl(rec: RightsizingRecommendation): string | null {
   if (rec.resource_console_url) return rec.resource_console_url
 
@@ -71,9 +116,14 @@ function resourceConsoleUrl(rec: RightsizingRecommendation): string | null {
     return 'https://console.cloud.google.com/compute/instances'
   }
   if (rec.provider === 'oci') {
-    return normalizedRegion
-      ? `https://cloud.oracle.com/compute/instances?region=${encodeURIComponent(normalizedRegion)}`
-      : 'https://cloud.oracle.com/compute/instances'
+    const suffix = normalizedRegion ? `?region=${encodeURIComponent(normalizedRegion)}` : ''
+    const text = `${rec.resource_id} ${rec.resource_type}`.toLowerCase()
+    if (text.includes('bootvolume') || text.includes('boot volume')) return `https://cloud.oracle.com/block-storage/boot-volumes${suffix}`
+    if (text.includes('blockvolume') || text.includes('block volume') || text.includes('ocid1.volume.')) return `https://cloud.oracle.com/block-storage/volumes${suffix}`
+    if (text.includes('objectstorage') || text.includes('object storage') || text.includes('bucket')) return `https://cloud.oracle.com/object-storage/buckets${suffix}`
+    if (text.includes('loadbalancer') || text.includes('load balancer')) return `https://cloud.oracle.com/networking/load-balancers${suffix}`
+    if (text.includes('autonomous')) return `https://cloud.oracle.com/db/adbs${suffix}`
+    return `https://cloud.oracle.com/compute/instances${suffix}`
   }
   return null
 }
@@ -146,6 +196,7 @@ function rollbackPlan(rec: RightsizingRecommendation): string {
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
   const [expanded, setExpanded] = useState(true)
   const consoleUrl = resourceConsoleUrl(rec)
+  const product = productCategory(rec)
   const aggregateScope = rec.resource_type.toLowerCase().includes('aggregate')
     || rec.evidence_source.includes('cost_trend')
     || rec.evidence_source.includes('imported')
@@ -161,6 +212,7 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 mb-1">
                 <Badge className={`rounded-md border text-xs ${providerColor(rec.provider)}`}>{rec.provider.toUpperCase()}</Badge>
+                <Badge className={`rounded-md border text-xs ${productTone(product)}`}>{PRODUCT_LABELS[product] ?? product}</Badge>
                 <Badge className={`rounded-md border text-xs ${actionColor(rec.action)}`}>{rec.action}</Badge>
                 <span className={`text-xs font-medium ${confidenceColor(rec.confidence)}`}>{rec.confidence} confidence</span>
                 <span className={`text-xs font-medium ${effortColor(rec.effort)}`}>effort: {rec.effort}</span>
@@ -175,7 +227,7 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
                   rel="noreferrer noopener"
                   className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
                 >
-                  Open resource in cloud console
+                  Open in cloud console
                   <ExternalLink className="h-3 w-3" />
                 </a>
               )}
@@ -331,20 +383,40 @@ export default function RightsizingPage() {
   const [data, setData] = useState<RightsizingResponse | null>(null)
   const [provider, setProvider] = useState('all')
   const [actionFilter, setActionFilter] = useState('all')
-  const [minSavings, setMinSavings] = useState(0)
+  const [productFilter, setProductFilter] = useState('all')
+  const [refreshLive, setRefreshLive] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setData(await fetchRightsizingRecommendations({ provider, min_savings: minSavings, limit: 200 }))
+      setData(await fetchRightsizingRecommendations({ provider, min_savings: 0, limit: 1000, refresh_live: refreshLive }))
     } finally {
       setLoading(false)
     }
-  }, [provider, minSavings])
+  }, [provider, refreshLive])
 
   useEffect(() => { void load() }, [load])
 
-  const filtered = data?.recommendations.filter(r => actionFilter === 'all' || r.action === actionFilter) ?? []
+  const recommendations = data?.recommendations ?? []
+  const productSummaries = Object.entries(
+    recommendations.reduce<Record<string, { count: number; savings: number }>>((acc, rec) => {
+      const product = productCategory(rec)
+      acc[product] = acc[product] ?? { count: 0, savings: 0 }
+      acc[product].count += 1
+      acc[product].savings += rec.monthly_savings_usd
+      return acc
+    }, {}),
+  ).sort((a, b) => b[1].savings - a[1].savings)
+  const productFilterOptions = ['all', ...productSummaries.map(([product]) => product)]
+  const nonComputeSavings = recommendations
+    .filter((rec) => productCategory(rec) !== 'compute')
+    .reduce((sum, rec) => sum + rec.monthly_savings_usd, 0)
+  const productScoped = recommendations.filter((r) => productFilter === 'all' || productCategory(r) === productFilter)
+  const filtered = productScoped.filter((r) => actionFilter === 'all' || r.action === actionFilter)
+  const selectProductFilter = (product: string) => {
+    setProductFilter(product)
+    setActionFilter('all')
+  }
 
   return (
     <div className="space-y-8">
@@ -353,16 +425,27 @@ export default function RightsizingPage() {
         <div>
           <div className="mb-2 flex flex-wrap gap-2">
             <Badge variant="outline" className="rounded-md">Resource-Level Rightsizing</Badge>
-            <Badge variant="outline" className="rounded-md border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-950/30">Instance · Volume · Service</Badge>
+            <Badge variant="outline" className="rounded-md border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-950/30">Compute · Storage · Commitments · Services</Badge>
           </div>
           <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Rightsizing</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
-            Per-resource optimization recommendations from live provider inventory and utilization signals. Downsize idle instances, clean unattached boot/block volumes, convert stable workloads to reserved capacity, or migrate to newer generations.
+            Product-level optimization recommendations from provider inventory, billing trends, and utilization signals. Compare compute, storage, commitment, database, network, Kubernetes, and governance savings from one view.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void load()} className="rounded-lg">
-          <RefreshCw className="mr-2 h-4 w-4" />Refresh
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={refreshLive}
+              onChange={(event) => setRefreshLive(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+            />
+            Live provider scan
+          </label>
+          <Button variant="outline" onClick={() => void load()} className="rounded-lg" disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -397,16 +480,20 @@ export default function RightsizingPage() {
             </button>
           ))}
         </div>
-        <div className="ml-auto flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-          <label className="shrink-0">Min savings $</label>
-          <input
-            type="number"
-            min="0"
-            value={minSavings}
-            onChange={e => setMinSavings(Number(e.target.value))}
-            className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900"
-          />
-          <span className="text-xs text-slate-400">/mo</span>
+        <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700 sm:basis-full">
+          {productFilterOptions.map(product => (
+            <button
+              key={product}
+              onClick={() => selectProductFilter(product)}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                productFilter === product
+                  ? `${productTone(product === 'all' ? 'other' : product)} ring-2 ring-slate-400`
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+              }`}
+            >
+              {PRODUCT_LABELS[product] ?? product}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -417,7 +504,7 @@ export default function RightsizingPage() {
             { label: 'Resources Analyzed', value: data.total_resources_analyzed.toLocaleString(), icon: Zap, color: 'from-blue-500 to-blue-600' },
             { label: 'Rightsizable', value: data.rightsizable_count.toLocaleString(), icon: AlertTriangle, color: 'from-amber-500 to-amber-600' },
             { label: 'Monthly Savings', value: fmtK(data.total_monthly_savings_usd), icon: DollarSign, color: 'from-emerald-500 to-emerald-600' },
-            { label: 'Annual Opportunity', value: fmtK(data.total_annual_savings_usd), icon: CheckCircle, color: 'from-indigo-500 to-indigo-600' },
+            { label: 'Non-Compute Savings', value: fmtK(nonComputeSavings), icon: CheckCircle, color: 'from-violet-500 to-violet-600' },
           ].map(kpi => {
             const Icon = kpi.icon
             return (
@@ -435,12 +522,35 @@ export default function RightsizingPage() {
         </div>
       )}
 
+      {/* Product breakdown */}
+      {data && productSummaries.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Savings by product</h2>
+            <span className="text-sm text-slate-500">Non-compute: {fmtK(nonComputeSavings)}/mo</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {productSummaries.map(([product, summary]) => (
+              <button
+                key={product}
+                onClick={() => selectProductFilter(productFilter === product ? 'all' : product)}
+                className={`rounded-xl border p-4 text-left transition hover:shadow-sm ${productFilter === product ? 'ring-2 ring-blue-500' : ''} ${productTone(product)}`}
+              >
+                <p className="text-sm font-semibold">{PRODUCT_LABELS[product] ?? product}</p>
+                <p className="mt-2 text-2xl font-bold">{fmtK(summary.savings)}</p>
+                <p className="mt-1 text-xs">{summary.count} opportunit{summary.count === 1 ? 'y' : 'ies'} / mo</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Action breakdown */}
-      {data && filtered.length > 0 && (
+      {data && productScoped.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-4">
           {ACTIONS.filter(a => a !== 'all').map(action => {
-            const count = data.recommendations.filter(r => r.action === action).length
-            const savings = data.recommendations.filter(r => r.action === action).reduce((s, r) => s + r.monthly_savings_usd, 0)
+            const count = productScoped.filter(r => r.action === action).length
+            const savings = productScoped.filter(r => r.action === action).reduce((s, r) => s + r.monthly_savings_usd, 0)
             return (
               <button
                 key={action}
@@ -465,7 +575,7 @@ export default function RightsizingPage() {
         <>
           {data && (
             <p className="text-sm text-slate-500">
-              Showing {filtered.length} of {data.rightsizable_count} recommendations · data source: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{data.data_source}</code>
+              Showing {filtered.length} of {data.rightsizable_count} recommendations · product: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{PRODUCT_LABELS[productFilter] ?? productFilter}</code> · scan: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{refreshLive ? 'live' : 'stored'}</code> · data source: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{data.data_source}</code>
             </p>
           )}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -476,10 +586,17 @@ export default function RightsizingPage() {
         <div className="rounded-lg border border-dashed border-slate-300 p-10 text-center dark:border-slate-700">
           <CheckCircle className="mx-auto h-10 w-10 text-emerald-400 mb-3" />
           <p className="text-sm text-slate-500">
-            {data && data.total_resources_analyzed > 0
+            {productScoped.length > 0 && actionFilter !== 'all'
+              ? `No ${PRODUCT_LABELS[productFilter] ?? productFilter} opportunities match the ${actionFilter} action filter.`
+              : data && data.total_resources_analyzed > 0
               ? 'No rightsizing opportunities found with current filters — your resources are well-sized!'
               : 'Connect cloud providers and run a scan to surface per-resource rightsizing opportunities.'}
           </p>
+          {productScoped.length > 0 && actionFilter !== 'all' && (
+            <Button variant="outline" onClick={() => setActionFilter('all')} className="mt-4 rounded-lg">
+              Show all actions
+            </Button>
+          )}
         </div>
       )}
 

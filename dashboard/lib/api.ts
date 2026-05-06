@@ -88,6 +88,11 @@ interface ListQuery {
   offset?: number
 }
 
+interface RecommendationQuery extends ListQuery {
+  cloud_provider?: string
+  include_provider_recommendations?: boolean
+}
+
 async function requestJson<T>(
   path: string,
   init: RequestInit = {},
@@ -185,7 +190,7 @@ function paginate<T>(items: T[], query: ListQuery = {}): PaginatedResponse<T> {
   }
 }
 
-function toQueryString(query: Record<string, string | number | undefined>): string {
+function toQueryString(query: Record<string, string | number | boolean | undefined | null>): string {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null) {
@@ -235,7 +240,7 @@ export async function fetchAnomaliesStrict(query: ListQuery = {}): Promise<Pagin
   return paginate(rows, query)
 }
 
-export async function fetchRecommendations(query: ListQuery = {}): Promise<PaginatedResponse<RecommendationResponse>> {
+export async function fetchRecommendations(query: RecommendationQuery = {}): Promise<PaginatedResponse<RecommendationResponse>> {
   try {
     return await fetchRecommendationsStrict(query)
   } catch (error) {
@@ -244,9 +249,13 @@ export async function fetchRecommendations(query: ListQuery = {}): Promise<Pagin
   }
 }
 
-export async function fetchRecommendationsStrict(query: ListQuery = {}): Promise<PaginatedResponse<RecommendationResponse>> {
+export async function fetchRecommendationsStrict(query: RecommendationQuery = {}): Promise<PaginatedResponse<RecommendationResponse>> {
   const rows = await requestJson<RecommendationResponse[]>(
-    '/api/v1/recommendations',
+    `/api/v1/recommendations${toQueryString({
+      cloud_provider: query.cloud_provider,
+      limit: query.limit ? Math.max(query.limit, 100) : 100,
+      include_provider_recommendations: query.include_provider_recommendations,
+    })}`,
     {},
     { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
@@ -1022,11 +1031,13 @@ export function fetchRightsizingRecommendations(params?: {
   provider?: string
   min_savings?: number
   limit?: number
+  refresh_live?: boolean
 }): Promise<RightsizingResponse> {
   const q = new URLSearchParams()
   if (params?.provider && params.provider !== 'all') q.set('provider', params.provider)
   if (params?.min_savings !== undefined) q.set('min_savings', String(params.min_savings))
   if (params?.limit !== undefined) q.set('limit', String(params.limit))
+  if (params?.refresh_live !== undefined) q.set('refresh_live', String(params.refresh_live))
   const qs = q.toString()
   return requestJson<RightsizingResponse>(`/api/v1/recommendations/rightsizing${qs ? `?${qs}` : ''}`)
 }

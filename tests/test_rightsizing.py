@@ -14,6 +14,8 @@ Covers:
 import os
 import tempfile
 import unittest
+from datetime import datetime
+from types import SimpleNamespace
 
 TEST_DB = os.path.join(tempfile.gettempdir(), f"optiora_rightsizing_test_{os.getpid()}.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
@@ -24,6 +26,7 @@ os.environ["PASSWORD_RESET_RETURN_TOKEN"] = "true"
 try:
     from fastapi.testclient import TestClient
 
+    from finops_mcp import api as api_module
     from finops_mcp.app import app
     from finops_mcp.orm_models import Base, engine
 except ImportError as exc:  # pragma: no cover
@@ -192,6 +195,31 @@ class RightsizingTest(unittest.TestCase):
         fresh = TestClient(app)
         resp = fresh.get("/api/v1/recommendations/rightsizing")
         self.assertIn(resp.status_code, (401, 403))
+
+    def test_14_service_cost_snapshots_surface_non_compute_products(self) -> None:
+        rows = [
+            SimpleNamespace(
+                provider="oci",
+                captured_at=datetime(2026, 5, 1),
+                top_services_json=(
+                    '[{"service":"Object Storage","cost_usd":1000},'
+                    '{"service":"Autonomous Database","cost_usd":800},'
+                    '{"service":"NAT Gateway","cost_usd":400}]'
+                ),
+            )
+        ]
+
+        recs = api_module._rightsizing_from_service_cost_snapshots(rows, min_savings=0)
+        resource_types = {rec.resource_type for rec in recs}
+        resource_names = {rec.resource_name for rec in recs}
+
+        self.assertIn("Object Storage", resource_names)
+        self.assertIn("Autonomous Database", resource_names)
+        self.assertIn("NAT Gateway", resource_names)
+        self.assertIn("Object storage service", resource_types)
+        self.assertIn("Database and cache service", resource_types)
+        self.assertIn("Network and traffic service", resource_types)
+        self.assertTrue(all("Compute (account aggregate)" not in rec.resource_type for rec in recs))
 
 
 if __name__ == "__main__":
