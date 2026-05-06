@@ -264,6 +264,19 @@ export default function RecommendationsPage() {
   })
   const ociCloudAdvisorSummaries = ociCloudAdvisorItems.filter((item) => item.source === 'oci_optimizer')
   const ociCloudAdvisorActions = ociCloudAdvisorItems.filter((item) => item.source === 'oci_optimizer_resource_action')
+
+  const awsCeItems = state.items.filter((item) => {
+    const source = String(item.source || '').toLowerCase()
+    return item.cloud === 'aws' && (source.includes('aws_cost_explorer') || source.includes('aws_ce') || source.includes('aws_rightsizing'))
+  })
+  const azureAdvisorItems = state.items.filter((item) => {
+    const source = String(item.source || '').toLowerCase()
+    return item.cloud === 'azure' && source.includes('azure_advisor')
+  })
+  const gcpRecommenderItems = state.items.filter((item) => {
+    const source = String(item.source || '').toLowerCase()
+    return item.cloud === 'gcp' && source.includes('gcp_recommender')
+  })
   const sourceSummary = Object.entries(
     state.items.reduce<Record<string, { count: number; savings: number }>>((acc, item) => {
       const source = item.source || 'cost_context'
@@ -580,6 +593,179 @@ export default function RecommendationsPage() {
               </div>
             )}
           </section>
+
+          {awsCeItems.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">AWS Cost Explorer</h2>
+                  <p className="text-sm text-slate-500">Savings Plans and Reserved Instance commitment recommendations from AWS Cost Explorer.</p>
+                </div>
+                <Badge variant="outline" className="rounded-md">
+                  {awsCeItems.length} recommendation{awsCeItems.length === 1 ? '' : 's'} · {fmtK(awsCeItems.reduce((s, i) => s + Number(i.savings || 0), 0))}/mo
+                </Badge>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-orange-200 bg-white dark:border-orange-800 dark:bg-slate-800">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                        <th className="px-4 py-3">Recommendation</th>
+                        <th className="px-4 py-3">Service</th>
+                        <th className="px-4 py-3">Source</th>
+                        <th className="px-4 py-3">Difficulty</th>
+                        <th className="px-4 py-3 text-right">Savings / mo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {awsCeItems.map((item) => {
+                        const consoleUrl = resourceConsoleUrl(item)
+                        return (
+                          <tr key={`aws-ce-${item.id}-${item.source}`} className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-slate-900 dark:text-white">{item.title}</div>
+                              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.description}</div>
+                              {consoleUrl && (
+                                <a href={consoleUrl} target="_blank" rel="noreferrer noopener" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+                                  Open AWS console <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{item.service}</td>
+                            <td className="px-4 py-3">
+                              <Badge className={`rounded-md border text-xs ${sourceTone(item.source)}`}>{sourceLabel(item.source)}</Badge>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge className={`rounded-md border text-xs ${difficultyTone(item.difficulty)}`}>{item.difficulty}</Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">{fmt(item.savings)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {azureAdvisorItems.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Azure Advisor</h2>
+                  <p className="text-sm text-slate-500">Cost recommendations from Azure Advisor across connected subscriptions.</p>
+                </div>
+                <Badge variant="outline" className="rounded-md">
+                  {azureAdvisorItems.length} recommendation{azureAdvisorItems.length === 1 ? '' : 's'} · {fmtK(azureAdvisorItems.reduce((s, i) => s + Number(i.savings || 0), 0))}/mo
+                </Badge>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-blue-200 bg-white dark:border-blue-800 dark:bg-slate-800">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                        <th className="px-4 py-3">Recommendation</th>
+                        <th className="px-4 py-3">Service</th>
+                        <th className="px-4 py-3">Resource</th>
+                        <th className="px-4 py-3">Difficulty</th>
+                        <th className="px-4 py-3 text-right">Savings / mo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {azureAdvisorItems.map((item) => {
+                        const consoleUrl = resourceConsoleUrl(item)
+                        return (
+                          <tr key={`azure-advisor-${item.id}-${item.source}`} className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-slate-900 dark:text-white">{item.title}</div>
+                              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.description}</div>
+                              {consoleUrl && (
+                                <a href={consoleUrl} target="_blank" rel="noreferrer noopener" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+                                  Open Azure portal <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{item.service}</td>
+                            <td className="px-4 py-3">
+                              {item.resource_name
+                                ? <div className="font-medium text-slate-900 dark:text-white">{item.resource_name}</div>
+                                : null}
+                              {item.resource_id
+                                ? <div className="max-w-[300px] truncate font-mono text-xs text-slate-500 dark:text-slate-400">{item.resource_id}</div>
+                                : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge className={`rounded-md border text-xs ${difficultyTone(item.difficulty)}`}>{item.difficulty}</Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">{fmt(item.savings)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {gcpRecommenderItems.length > 0 && (
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">GCP Recommender</h2>
+                  <p className="text-sm text-slate-500">Machine type, idle resource, commitment, and storage recommendations from the GCP Recommender API.</p>
+                </div>
+                <Badge variant="outline" className="rounded-md">
+                  {gcpRecommenderItems.length} recommendation{gcpRecommenderItems.length === 1 ? '' : 's'} · {fmtK(gcpRecommenderItems.reduce((s, i) => s + Number(i.savings || 0), 0))}/mo
+                </Badge>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-emerald-200 bg-white dark:border-emerald-800 dark:bg-slate-800">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                        <th className="px-4 py-3">Recommendation</th>
+                        <th className="px-4 py-3">Type</th>
+                        <th className="px-4 py-3">Region</th>
+                        <th className="px-4 py-3">Resource</th>
+                        <th className="px-4 py-3 text-right">Savings / mo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gcpRecommenderItems.map((item) => {
+                        const consoleUrl = resourceConsoleUrl(item)
+                        return (
+                          <tr key={`gcp-rec-${item.id}-${item.source}`} className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-slate-900 dark:text-white">{item.title}</div>
+                              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{item.description}</div>
+                              {consoleUrl && (
+                                <a href={consoleUrl} target="_blank" rel="noreferrer noopener" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+                                  Open GCP console <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{productCategory(`${item.service} ${item.title}`)}</td>
+                            <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{item.region || 'global'}</td>
+                            <td className="px-4 py-3">
+                              {item.resource_name
+                                ? <div className="font-medium text-slate-900 dark:text-white">{item.resource_name}</div>
+                                : null}
+                              {item.resource_id
+                                ? <div className="max-w-[260px] truncate font-mono text-xs text-slate-500 dark:text-slate-400">{item.resource_id}</div>
+                                : null}
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">{fmt(item.savings)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          )}
 
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">

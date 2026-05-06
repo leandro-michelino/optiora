@@ -4775,7 +4775,7 @@ async def dashboard_recommendations(
             provider=cloud_provider,
             min_monthly_savings=0.0,
             limit=limit,
-            include_existing_rightsizing_sources=False,
+            include_existing_rightsizing_sources=True,
         )
         if live_rows:
             rows = [row for row in rows if isinstance(row, dict)] + live_rows
@@ -13349,12 +13349,11 @@ def _collect_provider_recommendation_rows(
                         _rightsizing_from_aws_ce(cred_json, min_monthly_savings)[:remaining]
                     ))
             elif prov == "azure":
-                if include_existing_rightsizing_sources:
-                    rows.extend(_azure_advisor_recommendation_rows(
-                        cred_json,
-                        min_monthly_savings,
-                        remaining,
-                    ))
+                rows.extend(_azure_advisor_recommendation_rows(
+                    cred_json,
+                    min_monthly_savings,
+                    remaining,
+                ))
             elif prov == "gcp":
                 rows.extend(_gcp_recommender_rows(
                     cred_json,
