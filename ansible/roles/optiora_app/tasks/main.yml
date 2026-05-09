@@ -6,6 +6,50 @@
       OptiOra provisioning supports only Oracle Linux hosts on OCI.
       Detected {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}.
 
+- name: Build operator-facing provisioning plan
+  ansible.builtin.set_fact:
+    optiora_summary_host: "{{ ansible_host | default(inventory_hostname, true) }}"
+    optiora_summary_front_door: >-
+      {{ 'nginx reverse proxy on ports 80/443' if (optiora_install_nginx | bool) else 'direct service ports 3000/8000' }}
+    optiora_summary_auth: >-
+      {{ 'enabled (login/RBAC enforced)' if (optiora_enable_auth | bool) else 'disabled (public dashboard mode)' }}
+    optiora_summary_data_policy: >-
+      {{ 'live provider data required' if (optiora_require_live_provider_data | bool) else 'CSV/import mode allowed' }}
+    optiora_summary_storage: >-
+      {{ 'extra block volume mounted at ' ~ optiora_app_dir if (optiora_data_device | length > 0) else 'boot disk only' }}
+    optiora_summary_source: >-
+      {{ 'uploaded source archive ' ~ optiora_remote_archive if (optiora_manage_source | bool) else 'existing source on host' }}
+
+- name: Show OptiOra provisioning plan
+  ansible.builtin.debug:
+    msg: |
+
+      ============================================================
+      OptiOra Ansible provisioning plan
+      ============================================================
+
+      Target
+        Host:              {{ optiora_summary_host }}
+        OS:                {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
+        Application dir:   {{ optiora_app_dir }}
+        Application user:  {{ optiora_app_user }}
+        Source:            {{ optiora_summary_source }}
+
+      Runtime
+        Python:            {{ optiora_python_bin }}
+        Node.js module:    {{ optiora_node_major }}
+        API port:          {{ optiora_api_port }}
+        Dashboard port:    {{ optiora_dashboard_port }}
+        Front door:        {{ optiora_summary_front_door }}
+        Auth:              {{ optiora_summary_auth }}
+        Data policy:       {{ optiora_summary_data_policy }}
+        Scheduler:         {{ 'enabled' if optiora_enable_scan_scheduler | bool else 'disabled' }}
+        Retention:         {{ 'enabled' if optiora_retention_enabled | bool else 'disabled' }}
+        Storage:           {{ optiora_summary_storage }}
+
+      This playbook will install packages, apply host hardening, deploy the app,
+      build the dashboard, run migrations, restart services, and verify health.
+
 - name: Install Oracle Linux system packages
   ansible.builtin.dnf:
     name:
@@ -542,6 +586,7 @@
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ optiora_api_port }}/health"
     status_code: 200
+    return_content: true
   register: optiora_api_health
   retries: "{{ optiora_health_retries }}"
   delay: "{{ optiora_health_delay }}"
@@ -551,6 +596,7 @@
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ optiora_dashboard_port }}"
     status_code: 200
+    return_content: false
   register: optiora_dashboard_health
   retries: "{{ optiora_health_retries }}"
   delay: "{{ optiora_health_delay }}"
@@ -654,38 +700,163 @@
     - optiora_install_nginx | bool
     - optiora_enable_tls | bool
 
+- name: Check API service state for summary
+  ansible.builtin.command:
+    cmd: systemctl is-active optiora-api.service
+  register: optiora_api_service_active
+  changed_when: false
+  failed_when: false
+
+- name: Check dashboard service state for summary
+  ansible.builtin.command:
+    cmd: systemctl is-active optiora-dashboard.service
+  register: optiora_dashboard_service_active
+  changed_when: false
+  failed_when: false
+
+- name: Check API service enablement for summary
+  ansible.builtin.command:
+    cmd: systemctl is-enabled optiora-api.service
+  register: optiora_api_service_enabled
+  changed_when: false
+  failed_when: false
+
+- name: Check dashboard service enablement for summary
+  ansible.builtin.command:
+    cmd: systemctl is-enabled optiora-dashboard.service
+  register: optiora_dashboard_service_enabled
+  changed_when: false
+  failed_when: false
+
+- name: Check nginx service state for summary
+  ansible.builtin.command:
+    cmd: systemctl is-active nginx
+  register: optiora_nginx_service_active
+  changed_when: false
+  failed_when: false
+  when: optiora_install_nginx | bool
+
+- name: Check nginx enablement for summary
+  ansible.builtin.command:
+    cmd: systemctl is-enabled nginx
+  register: optiora_nginx_service_enabled
+  changed_when: false
+  failed_when: false
+  when: optiora_install_nginx | bool
+
+- name: Read runtime versions for summary
+  ansible.builtin.shell: |
+    set -euo pipefail
+    echo "backend=$({{ optiora_app_dir }}/venv/bin/optiora --version 2>/dev/null || echo unavailable)"
+    echo "python=$({{ optiora_app_dir }}/venv/bin/python --version 2>&1 || echo unavailable)"
+    echo "node=$(node --version 2>/dev/null || echo unavailable)"
+    echo "npm=$(npm --version 2>/dev/null || echo unavailable)"
+  args:
+    executable: /bin/bash
+  register: optiora_runtime_versions
+  changed_when: false
+  failed_when: false
+
+- name: Read application storage usage for summary
+  ansible.builtin.command:
+    cmd: "df -hP {{ optiora_app_dir }}"
+  register: optiora_app_storage
+  changed_when: false
+  failed_when: false
+
+- name: Check rendered environment file presence for summary
+  ansible.builtin.stat:
+    path: "{{ optiora_app_dir }}/.env"
+  register: optiora_env_file_stat
+
 - name: Build deployment access summary
   ansible.builtin.set_fact:
     optiora_access_scheme: "{{ 'https' if (optiora_install_nginx | bool and optiora_enable_tls | bool and optiora_domain | length > 0) else 'http' }}"
-    optiora_access_host: "{{ optiora_domain if (optiora_install_nginx | bool and optiora_domain | length > 0) else ansible_host }}"
-    optiora_dashboard_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else ansible_host)) ~ '/dashboard') if (optiora_install_nginx | bool) else (optiora_frontend_url ~ '/dashboard') }}"
-    optiora_api_health_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else ansible_host)) ~ '/health') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/health') }}"
-    optiora_api_info_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else ansible_host)) ~ '/api/v1/info') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/api/v1/info') }}"
+    optiora_access_host: "{{ optiora_domain if (optiora_install_nginx | bool and optiora_domain | length > 0) else optiora_summary_host }}"
+    optiora_public_base_url: "{{ ('https' if (optiora_install_nginx | bool and optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_install_nginx | bool and optiora_domain | length > 0) else optiora_summary_host) }}"
+    optiora_dashboard_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else optiora_summary_host)) ~ '/dashboard') if (optiora_install_nginx | bool) else (optiora_frontend_url ~ '/dashboard') }}"
+    optiora_api_health_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else optiora_summary_host)) ~ '/health') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/health') }}"
+    optiora_api_info_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else optiora_summary_host)) ~ '/api/v1/info') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/api/v1/info') }}"
+    optiora_openapi_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else optiora_summary_host)) ~ '/openapi.json') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/openapi.json') }}"
+    optiora_docs_access_url: "{{ ((('https' if (optiora_enable_tls | bool and optiora_domain | length > 0) else 'http') ~ '://' ~ (optiora_domain if (optiora_domain | length > 0) else optiora_summary_host)) ~ '/docs') if (optiora_install_nginx | bool) else (optiora_api_url ~ '/docs') }}"
+    optiora_health_version: "{{ optiora_api_health.json.version | default('unknown') if optiora_api_health.json is defined else 'unknown' }}"
+    optiora_storage_summary: "{{ (optiora_app_storage.stdout_lines | default([]))[-1] | default('storage check unavailable') }}"
+    optiora_env_file_mode: "{{ optiora_env_file_stat.stat.mode | default('missing') }}"
 
 - name: Show OptiOra access summary
   ansible.builtin.debug:
     msg: |
 
       ============================================================
-      OptiOra deployment is live
+      OptiOra deployment complete
       ============================================================
 
-      Access
-        Dashboard:  {{ optiora_dashboard_access_url }}
-        API health: {{ optiora_api_health_access_url }}
-        API info:   {{ optiora_api_info_access_url }}
-        AI hub:     {{ optiora_dashboard_access_url | regex_replace('/dashboard$', '/dashboard/ai-insights') }}
-        Advisor:    {{ optiora_dashboard_access_url | regex_replace('/dashboard$', '/dashboard/cost-advisor') }}
+      Access URLs
+        Dashboard:              {{ optiora_dashboard_access_url }}
+        AI insights:            {{ optiora_dashboard_access_url | regex_replace('/dashboard$', '/dashboard/ai-insights') }}
+        Cost advisor:           {{ optiora_dashboard_access_url | regex_replace('/dashboard$', '/dashboard/cost-advisor') }}
+        Settings:               {{ optiora_dashboard_access_url | regex_replace('/dashboard$', '/dashboard/settings') }}
+        API health:             {{ optiora_api_health_access_url }}
+        API info:               {{ optiora_api_info_access_url }}
+        API docs:               {{ optiora_docs_access_url }}
+        OpenAPI JSON:           {{ optiora_openapi_access_url }}
 
-      Operations
-        SSH:        ssh {{ ansible_user | default('opc') }}@{{ ansible_host }}
-        API logs:   sudo journalctl -u optiora-api -n 100 --no-pager
-        UI logs:    sudo journalctl -u optiora-dashboard -n 100 --no-pager
+      Local health checks on the VM
+        API health status:      HTTP {{ optiora_api_health.status | default('unknown') }} (version {{ optiora_health_version }})
+        Dashboard status:       HTTP {{ optiora_dashboard_health.status | default('unknown') }}
+
+      Services
+        optiora-api:            {{ optiora_api_service_active.stdout | default('unknown') }} / {{ optiora_api_service_enabled.stdout | default('unknown') }}
+        optiora-dashboard:      {{ optiora_dashboard_service_active.stdout | default('unknown') }} / {{ optiora_dashboard_service_enabled.stdout | default('unknown') }}
+        nginx:                  {{ (optiora_nginx_service_active.stdout | default('not installed')) if (optiora_install_nginx | bool) else 'disabled by configuration' }} / {{ (optiora_nginx_service_enabled.stdout | default('not installed')) if (optiora_install_nginx | bool) else 'disabled by configuration' }}
+
+      Runtime configuration
+        Release/API version:    {{ optiora_health_version }}
+        Application directory:  {{ optiora_app_dir }}
+        Runtime user:           {{ optiora_app_user }}
+        Environment file:       {{ optiora_app_dir }}/.env (mode {{ optiora_env_file_mode }})
+        Database URL source:    {{ 'custom optiora_database_url' if (optiora_database_url is defined and optiora_database_url | length > 0) else 'default SQLite file or OCI DB env fallback' }}
+        Storage:                {{ optiora_storage_summary }}
+        Front door:             {{ optiora_summary_front_door }}
+        TLS:                    {{ 'enabled for ' ~ optiora_domain if (optiora_install_nginx | bool and optiora_enable_tls | bool and optiora_domain | length > 0) else 'not enabled' }}
+        Auth:                   {{ optiora_summary_auth }}
+        Data policy:            {{ optiora_summary_data_policy }}
+        Scheduler:              {{ 'enabled, interval ' ~ optiora_scan_scheduler_interval_minutes ~ ' minutes' if optiora_enable_scan_scheduler | bool else 'disabled' }}
+        Retention:              {{ 'enabled, hot months ' ~ optiora_retention_hot_months if optiora_retention_enabled | bool else 'disabled' }}
 
       OCI GenAI
-        Region:     {{ optiora_region | default('uk-london-1', true) }}
-        Endpoint:   {{ optiora_genai_endpoint | default('https://inference.generativeai.uk-london-1.oci.oraclecloud.com', true) }}
+        Region:                 {{ optiora_region | default('uk-london-1', true) }}
+        Endpoint:               {{ optiora_genai_endpoint | default('https://inference.generativeai.uk-london-1.oci.oraclecloud.com', true) }}
+        Model:                  {{ optiora_genai_model | default('meta.llama-3.3-70b-instruct', true) }}
+        Runtime OCI config:     {{ optiora_oci_config_file | default('not installed', true) }}
+        Runtime OCI profile:    {{ optiora_oci_profile | default('DEFAULT', true) }}
 
-      Mode
-        Auth:       {{ 'enabled' if optiora_enable_auth | bool else 'disabled (public dashboard mode)' }}
-        Front door: {{ 'nginx reverse proxy' if optiora_install_nginx | bool else 'direct service ports 3000/8000' }}
+      Runtime versions
+      {{ optiora_runtime_versions.stdout | default('version check unavailable') | indent(8, true) }}
+
+      Operator commands
+        SSH:                    ssh {{ ansible_user | default('opc') }}@{{ optiora_summary_host }}
+        Verify from laptop:     ./deploy/deploy-oci.sh verify
+        Service status:         sudo systemctl status optiora-api optiora-dashboard nginx --no-pager
+        Follow API logs:        sudo journalctl -u optiora-api -f
+        Follow dashboard logs:  sudo journalctl -u optiora-dashboard -f
+        Last API logs:          sudo journalctl -u optiora-api -n 100 --no-pager
+        Last dashboard logs:    sudo journalctl -u optiora-dashboard -n 100 --no-pager
+        Restart services:       sudo systemctl restart optiora-api optiora-dashboard
+        Re-run migrations:      cd {{ optiora_app_dir }} && sudo -u {{ optiora_app_user }} ./venv/bin/alembic -c alembic.ini upgrade head
+        Check local API:        curl -fsS http://127.0.0.1:{{ optiora_api_port }}/health
+        Check local dashboard:  curl -fsS http://127.0.0.1:{{ optiora_dashboard_port }}/
+
+      Recommended next steps
+        1. Open the dashboard URL above.
+        2. Run ./deploy/deploy-oci.sh verify from your laptop.
+        3. In Settings, connect real cloud credentials or upload customer billing CSV.
+        4. Run a scan, then review Operations, Recommendations, Rightsizing, and AI Insights.
+        5. Generate a release evidence pack with scripts/generate_evidence_pack.sh when preparing a handoff.
+
+      If something is not reachable
+        - Confirm OCI security list or NSG allows your source IP.
+        - Check whether nginx front-door mode is enabled; direct ports 3000/8000 are closed by default.
+        - Inspect service logs with the journalctl commands above.
+        - Confirm OCI metadata is reachable from the VM when OCI_RUNTIME_REQUIRED=true.
+        - Confirm REQUIRE_LIVE_PROVIDER_DATA matches your intended live-provider vs CSV-only mode.

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { backendUrl } from "@/lib/backend-url";
+import { AuthRedirectState, AuthShell } from "@/components/AuthShell";
+import { AlertCircle, CheckCircle2, KeyRound } from "lucide-react";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -40,8 +42,8 @@ export default function ResetPasswordPage() {
       setMessage(data?.message || "Password reset successfully.");
       setResetToken("");
       setNewPassword("");
-    } catch (err: any) {
-      setError(err?.message || "Failed to reset password");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to reset password");
     } finally {
       setLoading(false);
     }
@@ -49,33 +51,36 @@ export default function ResetPasswordPage() {
 
   if (authLoading || !authEnabled) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-        <div className="text-center text-slate-300">
-          <p className="text-lg font-medium">Redirecting to the dashboard...</p>
-          <p className="mt-2 text-sm text-slate-400">
-            Password reset is unavailable while authentication is disabled for this deployment.
-          </p>
-        </div>
-      </div>
+      <AuthRedirectState>
+        <p className="text-lg font-medium">Opening dashboard</p>
+        <p className="mt-2 text-sm text-slate-400">Password reset is unavailable while authentication is disabled.</p>
+      </AuthRedirectState>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-      <div className="w-full max-w-md p-8 bg-slate-800 rounded-lg shadow-lg border border-slate-700">
-        <h1 className="text-3xl font-bold text-white mb-2">Reset Password</h1>
-        <p className="text-slate-400 mb-8">
-          Paste your reset token and choose a new password.
-        </p>
-
+    <AuthShell
+      title="Reset password"
+      subtitle="Paste your reset token and choose a new password."
+      footer={
+        <>
+          Need a token?{" "}
+          <Link href="/forgot-password" className="font-medium text-blue-300 transition hover:text-blue-200">
+            Request reset
+          </Link>
+        </>
+      }
+    >
         {message && (
-          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded text-emerald-300 text-sm">
-            {message}
+          <div className="mb-5 flex items-start gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{message}</span>
           </div>
         )}
         {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded text-red-400 text-sm">
-            {error}
+          <div className="mb-5 flex items-start gap-2 rounded-lg border border-rose-500/25 bg-rose-500/10 p-3 text-sm text-rose-200">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -91,7 +96,7 @@ export default function ResetPasswordPage() {
               required
               rows={3}
               placeholder="Paste reset token"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="form-field border-slate-700 bg-slate-950 text-white"
             />
           </div>
 
@@ -107,26 +112,19 @@ export default function ResetPasswordPage() {
               required
               minLength={8}
               placeholder="StrongPass1!"
-              className="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="form-field border-slate-700 bg-slate-950 text-white"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 text-white font-medium rounded transition-colors"
+            className="btn-primary inline-flex w-full items-center justify-center gap-2 py-2.5 disabled:bg-slate-700"
           >
+            <KeyRound className="h-4 w-4" />
             {loading ? "Resetting..." : "Reset Password"}
           </button>
         </form>
-
-        <p className="mt-6 text-center text-slate-400 text-sm">
-          Need a token?{" "}
-          <Link href="/forgot-password" className="text-blue-400 hover:text-blue-300 font-medium">
-            Request reset
-          </Link>
-        </p>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

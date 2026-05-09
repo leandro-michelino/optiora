@@ -34,7 +34,10 @@ cp ansible/inventory.example.yml ansible/inventory.yml
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ```
 
-When the playbook finishes successfully it now prints a deployment summary with the dashboard URL, AI insights URL, cost advisor URL, API endpoints, SSH command, log commands, and the active OCI GenAI region/endpoint.
+The playbook prints two operator-facing summaries:
+
+- a provisioning plan before changes begin, covering target host, runtime, ports, auth posture, data policy, scheduler/retention, and storage mode
+- a completion summary with dashboard/API/doc URLs, local health checks, service active/enabled state, runtime versions, storage usage, GenAI settings, verification commands, log commands, restart/migration commands, next steps, and reachability troubleshooting hints
 
 Recommended data disk sizing: `200 GiB` at `10 VPUs/GB` (balanced). That is enough headroom for the database, imported billing files, exports, and dashboard build artifacts without wasting money on a very large boot disk.
 
