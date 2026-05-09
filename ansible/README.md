@@ -110,3 +110,7 @@ Current defaults in `ansible/group_vars/all.yml`:
 - `optiora_install_nginx: true` (nginx front-door mode)
 - `optiora_configure_firewall: true` (firewalld managed/enforced)
 - `optiora_firewall_expose_direct_services: false` (keep direct app ports closed by default)
+
+## Contact / Pilot
+
+Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot

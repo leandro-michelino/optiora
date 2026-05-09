@@ -73,3 +73,7 @@ When a hardened deployment is explicitly requested:
 ENABLE_AUTH=true
 NEXT_PUBLIC_ENABLE_AUTH=true
 ```
+
+## Contact / Pilot
+
+Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot

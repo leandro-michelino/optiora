@@ -57,3 +57,7 @@ In both modes, synthetic/demo fallbacks are not allowed.
 ## Operational Expectation
 
 For production and development alike, workflows must be grounded in real cloud telemetry or real CSV billing data. Missing data is surfaced as missing data; it is never replaced with fabricated records.
+
+## Contact / Pilot
+
+Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot

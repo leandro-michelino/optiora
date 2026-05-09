@@ -106,3 +106,7 @@ If using Autonomous Database with BYOL:
 4. Keep retention windows intentional (alerts, snapshots, exports) to avoid silent storage creep.
 5. Use proxy-based operational rankings only when native monitoring is unavailable, then connect provider monitoring to improve precision.
 6. Keep `refresh_live=false` for normal dashboard browsing and reserve live refresh for operational decision points.
+
+## Contact / Pilot
+
+Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot

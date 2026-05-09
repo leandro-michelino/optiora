@@ -5,7 +5,8 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'OptiOra - Multi-Cloud FinOps Dashboard',
-  description: 'Unified cost optimization across AWS, Azure, GCP, and OCI',
+  description: 'Unified cost optimization across AWS, Azure, GCP, and OCI. Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot',
+  authors: [{ name: 'Leandro Michelino - ACE', url: 'mailto:leandro.michelino@oracle.com' }],
 }
 
 export default function RootLayout({

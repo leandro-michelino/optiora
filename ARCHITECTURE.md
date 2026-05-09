@@ -612,3 +612,7 @@ generate_evidence_pack.sh -> artifacts/evidence/<timestamp>/SUMMARY.md
 - Auto-remediation execution is disabled by default and guarded by ENABLE_AUTO_REMEDIATION
 - Process-local rate limiting exists today; distributed rate limiting should move to Redis in a future hardening phase
 ```
+
+## Contact / Pilot
+
+Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot

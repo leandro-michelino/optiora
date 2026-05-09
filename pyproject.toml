@@ -6,7 +6,7 @@ build-backend = "poetry.core.masonry.api"
 name = "optiora"
 version = "0.9.1"
 description = "OptiOra - Multi-Cloud Cost Optimization platform deployed on OCI. Optimize costs across AWS, Azure, GCP, and OCI."
-authors = [{name = "Leandro Michelino", email = "info@optiora.ai"}]
+authors = [{name = "Leandro Michelino - ACE", email = "leandro.michelino@oracle.com"}]
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -15,7 +15,7 @@ requires-python = ">=3.10,<3.14"
 name = "optiora"
 version = "0.9.1"
 description = "OptiOra - Multi-Cloud Cost Optimization platform on OCI"
-authors = ["Leandro Michelino <info@optiora.ai>"]
+authors = ["Leandro Michelino - ACE <leandro.michelino@oracle.com>"]
 packages = [{ include = "finops_mcp" }]
 
 [tool.poetry.dependencies]

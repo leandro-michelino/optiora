@@ -23,7 +23,7 @@
     "gcp",
     "oci"
   ],
-  "author": "OptiOra Team",
+  "author": "Leandro Michelino - ACE <leandro.michelino@oracle.com>",
   "license": "MIT",
   "engines": {
     "node": ">=20.9.0"

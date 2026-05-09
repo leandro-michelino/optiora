@@ -432,3 +432,7 @@ The most important next move is to close the commercial readiness gap through:
 - explainable optimization at scale
 
 The strongest strategic path is to position OptiOra as a modern, explainable, OCI-friendly multi-cloud FinOps platform for mid-market enterprise customers, Oracle-centric environments, and FinOps-as-a-Service delivery models.
+
+## Contact / Pilot
+
+Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot

@@ -91,3 +91,7 @@ This release frames OptiOra as an OCI-hosted multi-cloud FinOps platform with a 
 - Local developers using `.env.example` should copy the updated blank provider defaults and set real cloud credentials only when needed.
 - Operators who require live-provider-only startup should leave `REQUIRE_LIVE_PROVIDER_DATA` unset or set it to `true`.
 - Public dashboard mode remains the default deployment posture; enable `ENABLE_AUTH=true` and `NEXT_PUBLIC_ENABLE_AUTH=true` only for hardened deployments.
+
+## Contact / Pilot
+
+Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot
