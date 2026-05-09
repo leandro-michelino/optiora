@@ -93,6 +93,44 @@ interface RecommendationQuery extends ListQuery {
   include_provider_recommendations?: boolean
 }
 
+function cleanErrorDetail(detail: string, fallback: string): string {
+  const normalized = detail.replace(/\s+/g, ' ').trim()
+  if (!normalized) return fallback
+
+  const looksLikeHtml =
+    normalized.toLowerCase().startsWith('<!doctype') ||
+    normalized.toLowerCase().startsWith('<html') ||
+    normalized.includes('<body') ||
+    normalized.includes('__next')
+
+  if (looksLikeHtml) return fallback
+  if (normalized.length > 280) return `${normalized.slice(0, 277)}...`
+  return normalized
+}
+
+async function responseErrorMessage(response: Response, fallbackPrefix: string): Promise<string> {
+  const statusText = response.statusText ? ` ${response.statusText}` : ''
+  const fallback = `${fallbackPrefix}: backend returned HTTP ${response.status}${statusText}`
+  const contentType = response.headers.get('content-type') || ''
+
+  if (contentType.includes('application/json')) {
+    const payload = await response.json().catch(() => null)
+    if (payload && typeof payload === 'object') {
+      const record = payload as Record<string, unknown>
+      const detail = record.detail || record.message || record.error
+      if (typeof detail === 'string') {
+        return cleanErrorDetail(detail, fallback)
+      }
+      if (Array.isArray(detail)) {
+        return cleanErrorDetail(detail.map((item) => String(item)).join('; '), fallback)
+      }
+    }
+  }
+
+  const detail = await response.text().catch(() => '')
+  return cleanErrorDetail(detail, fallback)
+}
+
 async function requestJson<T>(
   path: string,
   init: RequestInit = {},
@@ -138,8 +176,7 @@ async function requestJson<T>(
       : await authorizedFetch(url, requestInit)
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => '')
-      throw new Error(detail || `Request failed with ${response.status}`)
+      throw new Error(await responseErrorMessage(response, 'Request failed'))
     }
 
     return await response.json() as T
@@ -205,8 +242,7 @@ async function requestBlob(path: string): Promise<Blob> {
   const url = backendUrl(path)
   const response = await authorizedFetch(url, { method: 'GET' })
   if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(detail || `Download failed with ${response.status}`)
+    throw new Error(await responseErrorMessage(response, 'Download failed'))
   }
   return response.blob()
 }
@@ -466,8 +502,7 @@ export async function uploadImportedCostCsv(file: File): Promise<ImportedCostUpl
     body: formData,
   })
   if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(detail || `Upload failed with ${response.status}`)
+    throw new Error(await responseErrorMessage(response, 'Upload failed'))
   }
   return await response.json() as ImportedCostUploadResponse
 }
@@ -481,8 +516,7 @@ export async function previewImportedCostCsv(file: File): Promise<ImportPreviewR
     body: formData,
   })
   if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(detail || `Preview failed with ${response.status}`)
+    throw new Error(await responseErrorMessage(response, 'Preview failed'))
   }
   return await response.json() as ImportPreviewResponse
 }

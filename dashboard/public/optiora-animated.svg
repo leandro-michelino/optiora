@@ -80,6 +80,8 @@
 <style>
   text { font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
   .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Monaco,Consolas,monospace; }
+  .scene1,.nav1 { opacity:1; }
+  .scene2,.scene3,.scene4,.scene5,.nav2,.nav3,.nav4,.nav5 { opacity:0; }
   .scene1,.nav1 { animation: s1 35s linear infinite; }
   .scene2,.nav2 { animation: s2 35s linear infinite; }
   .scene3,.nav3 { animation: s3 35s linear infinite; }
@@ -102,6 +104,11 @@
     0%{transform:translateX(-54px);opacity:0} 15%{opacity:.8} 85%{opacity:.8} 100%{transform:translateX(240px);opacity:0}
   }
   @keyframes dot { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+  @media (prefers-reduced-motion: reduce) {
+    .scene1,.nav1 { opacity:1; animation:none; }
+    .scene2,.scene3,.scene4,.scene5,.nav2,.nav3,.nav4,.nav5 { opacity:0; animation:none; }
+    .pulse,.blink,.scanSweep,.dot1,.dot2,.dot3 { animation:none; }
+  }
 </style>
 
 <g clip-path="url(#frame)">
@@ -119,9 +126,9 @@
 
   <!-- Active nav highlight per scene -->
   <rect class="nav1" x="10" y="72"  width="162" height="26" rx="7" fill="#1d4ed8"/>
-  <rect class="nav2" x="10" y="192" width="162" height="26" rx="7" fill="#1d4ed8"/>
-  <rect class="nav3" x="10" y="132" width="162" height="26" rx="7" fill="#6d28d9"/>
-  <rect class="nav4" x="10" y="252" width="162" height="26" rx="7" fill="#b45309"/>
+  <rect class="nav2" x="10" y="132" width="162" height="26" rx="7" fill="#6d28d9"/>
+  <rect class="nav3" x="10" y="192" width="162" height="26" rx="7" fill="#1d4ed8"/>
+  <rect class="nav4" x="10" y="358" width="162" height="24" rx="7" fill="#b45309"/>
   <rect class="nav5" x="10" y="326" width="162" height="26" rx="7" fill="#059669"/>
 
   <!-- Nav items (static) -->
@@ -213,13 +220,13 @@
   <text class="scene2" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Deep FinOps Analytics — Maturity · Attribution · Commitment ROI</text>
   <text class="scene3" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Forecasting with GenAI Narration + Budget Risk</text>
   <text class="scene4" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Anomaly Z-Score + Alert Ops Policy + Scheduler Controls</text>
-  <text class="scene5" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">FinOps Intelligence — Virtual Tags · Rightsizing · Scorecards · Cloud Resources · K8s Namespaces</text>
+  <text class="scene5" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">FinOps Intelligence Workspace</text>
 
   <text class="scene1" x="202" y="40" fill="#64748b" font-size="9.5">Epic 2 · tree view, region drill-down, cost rollups + budget utilization/status per account</text>
   <text class="scene2" x="202" y="40" fill="#64748b" font-size="9.5">CRAWL/WALK/RUN/OPTIMIZE · Pareto 80/20 · RI savings projection per provider tier</text>
   <text class="scene3" x="202" y="40" fill="#64748b" font-size="9.5">p10/p50/p90/p95 fan · velocity +3.2% MoM · OCI GenAI backend narration active</text>
   <text class="scene4" x="202" y="40" fill="#64748b" font-size="9.5">z-score ranking · ack/reactivate lifecycle · executive summary · scheduler policy · admin diagnostics</text>
-  <text class="scene5" x="202" y="40" fill="#64748b" font-size="9.5">rule builder + coverage preview · per-resource savings · scorecards · expandable inventory rows · OpenCost namespace sync</text>
+  <text class="scene5" x="202" y="40" fill="#64748b" font-size="9.5">Virtual tags · rightsizing · scorecards · inventory rows · OpenCost namespace sync</text>
 
   <rect x="810" y="12" width="72" height="26" rx="7" fill="#f8fafc"/>
   <text x="846" y="29" fill="#334155" font-size="10" text-anchor="middle" font-weight="700">Apr 2026</text>
@@ -358,28 +365,28 @@
 
     <text x="674" y="340" fill="#64748b" font-size="9">AWS</text>
     <rect x="706" y="328" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="328" width="0"   height="13" rx="5" fill="url(#awsBar)">
+    <rect x="706" y="328" width="72"  height="13" rx="5" fill="url(#awsBar)">
       <animate attributeName="width" values="0;72;70;72" dur="3s" repeatCount="indefinite"/>
     </rect>
     <text x="836" y="340" fill="#ea580c" font-size="9" font-weight="700" text-anchor="end">42%</text>
 
     <text x="674" y="358" fill="#64748b" font-size="9">Azure</text>
     <rect x="706" y="346" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="346" width="0"   height="13" rx="5" fill="url(#azureBar)">
+    <rect x="706" y="346" width="50"  height="13" rx="5" fill="url(#azureBar)">
       <animate attributeName="width" values="0;50;48;50" dur="3s" repeatCount="indefinite"/>
     </rect>
     <text x="836" y="358" fill="#2563eb" font-size="9" font-weight="700" text-anchor="end">28%</text>
 
     <text x="674" y="376" fill="#64748b" font-size="9">GCP</text>
     <rect x="706" y="364" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="364" width="0"   height="13" rx="5" fill="url(#gcpBar)">
+    <rect x="706" y="364" width="32"  height="13" rx="5" fill="url(#gcpBar)">
       <animate attributeName="width" values="0;32;30;32" dur="3s" repeatCount="indefinite"/>
     </rect>
     <text x="836" y="376" fill="#15803d" font-size="9" font-weight="700" text-anchor="end">18%</text>
 
     <text x="674" y="394" fill="#64748b" font-size="9">OCI</text>
     <rect x="706" y="382" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="382" width="0"   height="13" rx="5" fill="url(#ociBar)">
+    <rect x="706" y="382" width="22"  height="13" rx="5" fill="url(#ociBar)">
       <animate attributeName="width" values="0;22;20;22" dur="3s" repeatCount="indefinite"/>
     </rect>
     <text x="836" y="394" fill="#7c3aed" font-size="9" font-weight="700" text-anchor="end">12%</text>
