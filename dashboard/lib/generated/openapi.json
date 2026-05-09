@@ -3,7 +3,7 @@
   "info": {
     "title": "OptiOra API",
     "description": "Multi-Cloud Cost Optimization Platform",
-    "version": "0.1.0"
+    "version": "0.9.0"
   },
   "paths": {
     "/health": {
@@ -537,7 +537,7 @@
           "api"
         ],
         "summary": "Add Credentials",
-        "description": "Validate and store credentials metadata.",
+        "description": "Validate, persist, and immediately scan live provider credentials.",
         "operationId": "add_credentials_api_v1_credentials_add_post",
         "requestBody": {
           "content": {
@@ -3069,6 +3069,28 @@
               "default": "all",
               "title": "Cloud Provider"
             }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "include_provider_recommendations",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Provider Recommendations"
+            }
           }
         ],
         "responses": {
@@ -3121,6 +3143,28 @@
               "type": "string",
               "default": "all",
               "title": "Cloud Provider"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "include_provider_recommendations",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Provider Recommendations"
             }
           }
         ],
@@ -6826,7 +6870,7 @@
           "api"
         ],
         "summary": "Get Rightsizing Recommendations",
-        "description": "Resource-level rightsizing recommendations.\n\nTries live provider signals first (AWS Cost Explorer + CloudWatch,\nAzure Advisor + Azure Monitor, GCP Cloud Monitoring inventory), then\nfalls back to deterministic cost-trend analysis on scan history,\nand imported CSV signals when CSV fallback is enabled.\nNo synthetic recommendation records are ever generated.",
+        "description": "Resource-level rightsizing recommendations.\n\nUses stored scan/import signals by default for dashboard responsiveness.\nWhen refresh_live=true, also tries live provider signals first (AWS Cost\nExplorer + CloudWatch, Azure Advisor + Azure Monitor, GCP Cloud Monitoring\ninventory, and OCI inventory) before deterministic scan history/imported\nCSV analysis.\nNo synthetic recommendation records are ever generated.",
         "operationId": "get_rightsizing_recommendations_api_v1_recommendations_rightsizing_get",
         "security": [
           {
@@ -6862,11 +6906,23 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 200,
+              "maximum": 1000,
               "minimum": 1,
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "refresh_live",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Run provider-native live collection on this request. Default uses stored scans/imports for a responsive dashboard path.",
+              "default": false,
+              "title": "Refresh Live"
+            },
+            "description": "Run provider-native live collection on this request. Default uses stored scans/imports for a responsive dashboard path."
           }
         ],
         "responses": {
@@ -7561,7 +7617,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -7575,7 +7631,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File"
           }
         },
@@ -7594,14 +7650,14 @@
           },
           "config_file": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Config File"
           },
           "private_key_file": {
             "anyOf": [
               {
                 "type": "string",
-                "format": "binary"
+                "contentMediaType": "application/octet-stream"
               },
               {
                 "type": "null"
@@ -12843,6 +12899,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

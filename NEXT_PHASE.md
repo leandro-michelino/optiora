@@ -1,17 +1,18 @@
 # Next Phase Checklist
 
-This file defines the release gate for `1.0` and the immediate post-`1.0` focus.
+This file defines the path from the current `0.9.0` public-dashboard readiness release to the `1.0` go-live gate, then the immediate post-`1.0` focus.
 
 ## Current Go-Live Position (May 2026)
 
-Release `1.0` scope is feature-complete locally for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior.
+Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `1.0` remains gated on live OCI evidence.
 
-Local validation snapshot recorded on **May 4, 2026**:
+Local validation snapshot recorded on **May 9, 2026**:
 
-- Backend tests passing (`271` test cases).
+- Backend regression suite passing (`278` test cases, `2` skipped).
 - Frontend type-check, lint, and production build passing.
 - Animated route integrity gate passing.
 - Terraform configuration validation passing.
+- Workspace cleanup gate passing.
 - Remaining gate: live OCI environment evidence run.
 
 ## Release 1.0 Exit Criteria
@@ -33,6 +34,7 @@ Use canonical docs for execution details so commands are maintained in one place
 1. Local verification and regression suite: [TESTING.md](TESTING.md)
 2. OCI deployment workflow, env vars, and troubleshooting: [DEPLOYMENT.md](DEPLOYMENT.md)
 3. Strategic sequencing and release framing: [ROADMAP.md](ROADMAP.md)
+4. Release deltas and upgrade notes: [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
 ## Post-1.0 Focus
 

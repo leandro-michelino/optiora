@@ -1,6 +1,6 @@
 {
   "name": "optiora-dashboard",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "description": "OptiOra multi-cloud cost optimization dashboard built with Next.js and React",
   "scripts": {
     "dev": "next dev",

@@ -1039,7 +1039,11 @@ export function fetchRightsizingRecommendations(params?: {
   if (params?.limit !== undefined) q.set('limit', String(params.limit))
   if (params?.refresh_live !== undefined) q.set('refresh_live', String(params.refresh_live))
   const qs = q.toString()
-  return requestJson<RightsizingResponse>(`/api/v1/recommendations/rightsizing${qs ? `?${qs}` : ''}`)
+  return requestJson<RightsizingResponse>(
+    `/api/v1/recommendations/rightsizing${qs ? `?${qs}` : ''}`,
+    {},
+    { timeoutMs: params?.refresh_live ? LIVE_DATA_TIMEOUT_MS : DEFAULT_TIMEOUT_MS },
+  )
 }
 
 // --- New FinOps Analytics ---

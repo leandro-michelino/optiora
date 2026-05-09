@@ -6,6 +6,7 @@ OptiOra uses only real cost and utilization inputs.
 
 Allowed sources:
 - Cloud provider APIs (AWS, Azure, GCP, OCI)
+- Persisted scan snapshots derived from cloud provider APIs
 - Customer-provided CSV imports
 
 Disallowed sources:
@@ -30,7 +31,7 @@ Optimization recommendations are collected from provider APIs and live inventory
 - GCP: Recommender cost recommendations and Cloud Monitoring utilization/inventory signals.
 - OCI: Optimizer recommendations/resource actions plus live compute, boot volume, and block volume inventory.
 
-If a provider API or permission is unavailable, the system returns the remaining live/imported signals and records the gap in logs or diagnostics. It must not create synthetic recommendation rows to fill missing provider data.
+If a provider API or permission is unavailable, the system returns the remaining live/snapshot/imported signals and records the gap in logs or diagnostics. It must not create synthetic recommendation rows to fill missing provider data.
 
 ## Configuration
 
@@ -42,7 +43,7 @@ REQUIRE_LIVE_PROVIDER_DATA=false
 
 Meaning:
 - `true`: only live provider API paths are allowed.
-- `false`: provider APIs plus CSV imports are allowed.
+- `false`: provider APIs, stored live-scan snapshots, and CSV imports are allowed.
 
 In both modes, synthetic/demo fallbacks are not allowed.
 
@@ -50,7 +51,7 @@ In both modes, synthetic/demo fallbacks are not allowed.
 
 - Validate provider identity, region, and currency fields on ingestion.
 - Reject malformed or negative cost rows from CSV imports.
-- Keep audit logs for ingestion and recommendation generation.
+- Keep audit logs for ingestion, scan snapshots, and recommendation generation.
 - Preserve tenant isolation by `organization_id` on all reads/writes.
 
 ## Operational Expectation

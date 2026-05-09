@@ -1,6 +1,6 @@
 # OptiOra Deployment Guide (OCI)
 
-Current as of May 2026.
+Current as of May 9, 2026.
 
 This repository deploys two services onto one OCI compute instance:
 
@@ -23,6 +23,8 @@ Choose the path that matches your deployment style:
 - `./deploy/deploy-oci.sh menu`: interactive operations menu with setup/review/CIDR management ideas.
 
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
+
+Current packaged release metadata is tracked in [RELEASE_NOTES.md](RELEASE_NOTES.md). The deployed API `/health` and OpenAPI schema report the same backend version.
 
 ## Deployment Execution Order
 
@@ -221,6 +223,7 @@ sudo systemctl status optiora-dashboard
 - uploads your local workspace snapshot (no VM-side git clone)
 - runs Ansible provisioning on Oracle Linux
 - renders `/opt/optiora/.env` from Ansible template values (including `FRONTEND_URL`, `NEXT_PUBLIC_API_URL`, GenAI/runtime settings)
+- renders `REQUIRE_LIVE_PROVIDER_DATA=true` by default unless an operator explicitly overrides it for CSV-only PoC mode
 - installs/updates backend and dashboard dependencies
 - builds the dashboard
 - installs/updates systemd units and reloads daemon

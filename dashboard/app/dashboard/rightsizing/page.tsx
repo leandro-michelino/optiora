@@ -6,7 +6,7 @@ import { fetchRightsizingRecommendations } from '@/lib/api'
 import { RightsizingResponse, RightsizingRecommendation } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
 const ACTIONS = ['all', 'downsize', 'terminate', 'reserve', 'modernize']
@@ -34,6 +34,30 @@ function fmtDate(v: string | null) {
   const d = new Date(v)
   if (Number.isNaN(d.getTime())) return v
   return d.toLocaleString()
+}
+
+function requestErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Unknown request failure.'
+  const message = error.message.trim()
+  if (!message) return 'Unknown request failure.'
+  try {
+    const payload = JSON.parse(message) as { detail?: unknown }
+    if (typeof payload.detail === 'string' && payload.detail.trim()) {
+      return payload.detail.trim()
+    }
+    if (Array.isArray(payload.detail) && payload.detail.length > 0) {
+      return payload.detail.map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object' && 'msg' in item) {
+          return String((item as { msg?: unknown }).msg)
+        }
+        return JSON.stringify(item)
+      }).join('; ')
+    }
+  } catch {
+    // Plain text error from requestJson.
+  }
+  return message
 }
 
 function actionColor(action: string) {
@@ -381,15 +405,33 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
 export default function RightsizingPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<RightsizingResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [provider, setProvider] = useState('all')
   const [actionFilter, setActionFilter] = useState('all')
   const [productFilter, setProductFilter] = useState('all')
-  const [refreshLive, setRefreshLive] = useState(true)
+  const [refreshLive, setRefreshLive] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
-      setData(await fetchRightsizingRecommendations({ provider, min_savings: 0, limit: 1000, refresh_live: refreshLive }))
+      const result = await fetchRightsizingRecommendations({ provider, min_savings: 0, limit: 1000, refresh_live: refreshLive })
+      setData(result)
+    } catch (error) {
+      const reason = requestErrorMessage(error)
+      if (refreshLive) {
+        try {
+          const fallback = await fetchRightsizingRecommendations({ provider, min_savings: 0, limit: 1000, refresh_live: false })
+          setData(fallback)
+          setError(`Live provider scan failed: ${reason}. Showing stored scan results instead.`)
+        } catch (fallbackError) {
+          setData(null)
+          setError(`Unable to load rightsizing recommendations: ${requestErrorMessage(fallbackError)}`)
+        }
+      } else {
+        setData(null)
+        setError(`Unable to load rightsizing recommendations: ${reason}`)
+      }
     } finally {
       setLoading(false)
     }
@@ -447,6 +489,13 @@ export default function RightsizingPage() {
           </Button>
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{error}</p>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">

@@ -33,8 +33,28 @@ def _env_lower_str(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip().lower()
 
 
+def _is_placeholder(value: str) -> bool:
+    """Treat documented example values as unset for readiness validation."""
+    normalized = value.strip().lower()
+    if not normalized:
+        return True
+    return (
+        normalized.startswith("your_")
+        or normalized.startswith("<")
+        or normalized.startswith("replace_")
+        or normalized.startswith("/path/to/your/")
+        or normalized.endswith(".example.com")
+        or "oraclevcn.com" in normalized
+    )
+
+
+def _configured(*values: str) -> bool:
+    return all(not _is_placeholder(value) for value in values)
+
+
 def _default_oci_runtime_required() -> str:
-    return "true" if os.getenv("ENVIRONMENT", "development").strip().lower() == "production" else "false"
+    environment = os.getenv("ENVIRONMENT", "development").strip().lower()
+    return "true" if environment == "production" else "false"
 
 
 def _genai_compartment_id() -> str:
@@ -62,10 +82,16 @@ class Config:
     # Server
     api_port: int = field(default_factory=lambda: _env_int("PORT", 8000))
     api_log_level: str = field(default_factory=lambda: _env_str("LOG_LEVEL", "INFO"))
-    environment: str = field(default_factory=lambda: _env_lower_str("ENVIRONMENT", "development"))
-    deployment_target: str = field(default_factory=lambda: _env_lower_str("DEPLOYMENT_TARGET", "oci"))
+    environment: str = field(
+        default_factory=lambda: _env_lower_str("ENVIRONMENT", "development")
+    )
+    deployment_target: str = field(
+        default_factory=lambda: _env_lower_str("DEPLOYMENT_TARGET", "oci")
+    )
     oci_runtime_required: bool = field(
-        default_factory=lambda: _env_bool("OCI_RUNTIME_REQUIRED", _default_oci_runtime_required())
+        default_factory=lambda: _env_bool(
+            "OCI_RUNTIME_REQUIRED", _default_oci_runtime_required()
+        )
     )
 
     # AWS
@@ -243,20 +269,29 @@ class Config:
             )
 
         has_aws = bool(
-            (self.aws_access_key_id and self.aws_secret_access_key)
-            or self.aws_organization_role_arns
+            _configured(self.aws_access_key_id, self.aws_secret_access_key)
+            or not _is_placeholder(self.aws_organization_role_arns)
         )
         has_azure = bool(
-            (self.azure_subscription_id or self.azure_subscription_ids or self.azure_management_group_id)
-            and self.azure_tenant_id
-            and self.azure_client_id
-            and self.azure_client_secret
+            (
+                not _is_placeholder(self.azure_subscription_id)
+                or not _is_placeholder(self.azure_subscription_ids)
+                or not _is_placeholder(self.azure_management_group_id)
+            )
+            and _configured(
+                self.azure_tenant_id,
+                self.azure_client_id,
+                self.azure_client_secret,
+            )
         )
         has_gcp = bool(
-            self.google_application_credentials
-            and (self.gcp_project_id or self.gcp_project_ids)
+            not _is_placeholder(self.google_application_credentials)
+            and (
+                not _is_placeholder(self.gcp_project_id)
+                or not _is_placeholder(self.gcp_project_ids)
+            )
         )
-        has_oci = bool(self.oci_config_file)
+        has_oci = bool(not _is_placeholder(self.oci_config_file))
         if not any([has_aws, has_azure, has_gcp, has_oci]):
             if self.require_live_provider_data:
                 raise ValueError(

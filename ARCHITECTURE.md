@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-Current as of May 2026.
+Current as of May 9, 2026.
 
 ## Runtime Topology
 
@@ -77,8 +77,9 @@ Current as of May 2026.
 ```
 
 Ingress control is enforced primarily at OCI security list level (`laptop_cidr`
-and optional `allowed_public_ingress_cidrs`). Host firewalld is currently disabled
-in the default deployment profile.
+and optional `allowed_public_ingress_cidrs`). The default Ansible profile also
+manages host firewalld and keeps direct app ports closed when nginx front-door
+mode is enabled.
 
 ## Textual Diagram - Final Architecture
 
@@ -360,12 +361,52 @@ Evaluation
 ```text
 /api/v1/recommendations/rightsizing
 
-Tier 1  Provider-native usage and rightsizing signals when available
-Tier 2  Provider inventory and configuration heuristics
-Tier 3  Snapshot trend analysis
-Tier 4  Imported CSV cost-signal analysis
+Default path (refresh_live=false)
+  Tier 1  Stored provider recommendation rows from previous scans
+  Tier 2  Snapshot trend analysis
+  Tier 3  Imported CSV cost-signal analysis
+
+Live refresh path (refresh_live=true)
+  Tier 1  Provider-native usage and rightsizing signals when available
+  Tier 2  Provider inventory and configuration heuristics
+  Tier 3  Stored scan snapshots when live context returns no data
+  Tier 4  Imported CSV cost-signal analysis
+
 No synthetic recommendation tier
 If no eligible real signals exist: empty recommendation list with no_data_available source
+```
+
+## Data Source Fallback Architecture
+
+```text
+dashboard request
+        |
+        v
+FastAPI endpoint
+        |
+        +--> live provider APIs
+        |       |
+        |       +--> success: deterministic analytics/recommendations
+        |       |
+        |       +--> no data / provider error
+        |              |
+        |              v
+        +------> latest persisted scan snapshots
+        |              |
+        |              +--> cost_snapshots
+        |              +--> cost_allocation_snapshots
+        |              +--> provider recommendation rows
+        |
+        +------> imported CSV billing rows (when policy allows)
+        |
+        v
+explicit source metadata + provider_errors when partial
+
+Rules
+  - no synthetic cost, recommendation, forecast, or dashboard payloads
+  - stored snapshots must originate from previous live provider scans
+  - CSV imports must be customer-provided billing data
+  - empty state is returned when no real source exists
 ```
 
 ## RAG Retrieval Pipeline
@@ -466,6 +507,28 @@ enterprise profile
               resolves "~/" and env-expanded file paths for:
                 - OCI_CONFIG_FILE
                 - OCI_PRIVATE_KEY_PATH
+
+Validation rules
+  - DEPLOYMENT_TARGET must be oci
+  - OCI_RUNTIME_REQUIRED=true requires OCI instance metadata
+  - REQUIRE_LIVE_PROVIDER_DATA=true requires at least one real provider config
+  - documented placeholders like your_aws_access_key are treated as unset
+```
+
+## Release Documentation Wiring
+
+```text
+pyproject.toml + finops_mcp/__init__.py + dashboard/package.json
+        |
+        v
+version 0.9.0
+        |
+        +--> FastAPI /health and OpenAPI schema
+        +--> dashboard package metadata
+        +--> README.md current release pointer
+        +--> RELEASE_NOTES.md release history
+        +--> TESTING.md validation commands
+        +--> DEPLOYMENT.md OCI release gate
 ```
 
 ## Release Gate Architecture

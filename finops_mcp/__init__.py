@@ -8,4 +8,4 @@ except ModuleNotFoundError:  # pragma: no cover - optional local bootstrap helpe
 if load_dotenv is not None:
     load_dotenv()
 
-__version__ = "0.1.0"
+__version__ = "0.9.0"

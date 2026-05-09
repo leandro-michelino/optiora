@@ -73,7 +73,9 @@ The root `deploy/deploy-oci.sh` flow stages the local OCI config/key in `/tmp` a
 The Ansible path deploys the public dashboard mode by default:
 
 - `optiora_enable_auth: false`
+- `optiora_require_live_provider_data: true`
 - direct dashboard access with no login wall
+- live provider credentials are required for production API startup unless explicitly overridden for CSV-only PoC mode
 - RBAC/auth left available only as optional hardening later
 
 Migrations are applied before the health checks so schema-changing releases come up cleanly.

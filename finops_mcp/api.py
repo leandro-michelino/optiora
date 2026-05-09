@@ -1665,7 +1665,7 @@ async def _cost_context(
     cloud_provider: str = "all",
 ) -> Dict[str, Any]:
     try:
-        return await build_live_cost_context(
+        context = await build_live_cost_context(
             membership,
             db,
             period=period,
@@ -1682,6 +1682,16 @@ async def _cost_context(
                 customer_id=_customer_id_for_org(membership),
             ),
         )
+        if context.get("no_data") or context.get("source") == "no_data_available":
+            snapshot_context = _cost_snapshot_context(
+                membership,
+                db,
+                cloud_provider=cloud_provider,
+                provider_errors=context.get("provider_errors"),
+            )
+            if snapshot_context is not None:
+                return snapshot_context
+        return context
     except LiveDataPolicyError as exc:
         snapshot_context = _cost_snapshot_context(
             membership,

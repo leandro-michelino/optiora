@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 4, 2026): backend `271` tests passing, dashboard type-check/lint/build passing, Terraform validate passing.
+Validation snapshot (May 9, 2026): backend `278` tests passing (`2` skipped), dashboard type-check/lint/build passing, animated SVG route integrity passing, Terraform validate passing, workspace cleanup passing.
 
 ## Backend
 
@@ -44,6 +44,13 @@ Regression tests:
 ```
 
 Current backend coverage includes:
+
+**Configuration and release wiring** (`tests/test_config.py`):
+
+- environment-derived configuration refresh at instantiation time
+- OCI-only runtime guardrails and metadata preflight behavior
+- live-provider readiness with copied example placeholders treated as unset
+- CSV/import mode allowance when `REQUIRE_LIVE_PROVIDER_DATA=false`
 
 **Auth and organization flows** (`tests/test_auth_flow.py`):
 

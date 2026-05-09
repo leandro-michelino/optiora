@@ -367,6 +367,8 @@ This is the best near-term commercial path.
 
 Goal: make the product deployable, demoable, and operationally credible with direct dashboard access.
 
+Status: **current packaged release (`0.9.0`)**. See [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
 - keep dashboard access public by default
 - preserve auth and RBAC only as optional hardening
 - validate org-scoped credential, CSV import, scan, alert, and export flows
@@ -381,7 +383,7 @@ Goal: make the product deployable, demoable, and operationally credible with dir
 
 Goal: deliver a competitive FinOps core for multi-cloud customers.
 
-Status: **feature-complete MVP; live OCI validation is the release gate**.
+Status: **feature-complete MVP; live OCI validation and evidence pack are the release gate**.
 
 - deliver multi-account and multi-subscription aggregation
 - deliver chargeback and showback foundations

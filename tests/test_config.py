@@ -144,7 +144,9 @@ class ConfigTest(unittest.TestCase):
             "AZURE_SUBSCRIPTION_ID|AZURE_SUBSCRIPTION_IDS|AZURE_MANAGEMENT_GROUP_ID",
         )
         self.assertEqual(requirements["azure"]["values"][0], "sub-a,sub-b")
-        self.assertEqual(requirements["gcp"]["settings"][1], "GCP_PROJECT_ID|GCP_PROJECT_IDS")
+        self.assertEqual(
+            requirements["gcp"]["settings"][1], "GCP_PROJECT_ID|GCP_PROJECT_IDS"
+        )
         self.assertEqual(requirements["gcp"]["values"][1], "proj-a,proj-b")
 
     def test_validate_allows_csv_mode_without_live_providers(self) -> None:
@@ -186,6 +188,32 @@ class ConfigTest(unittest.TestCase):
                 "AZURE_CLIENT_SECRET": "",
                 "GOOGLE_APPLICATION_CREDENTIALS": "",
                 "GCP_PROJECT_ID": "",
+                "GCP_PROJECT_IDS": "",
+                "OCI_CONFIG_FILE": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaises(ValueError):
+                Config().validate()
+
+    def test_validate_treats_example_provider_placeholders_as_unset(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "REQUIRE_LIVE_PROVIDER_DATA": "true",
+                "AWS_ACCESS_KEY_ID": "your_aws_access_key",
+                "AWS_SECRET_ACCESS_KEY": "your_aws_secret_key",
+                "AWS_ORGANIZATION_ROLE_ARNS": "",
+                "AZURE_SUBSCRIPTION_ID": "your_azure_subscription_id",
+                "AZURE_SUBSCRIPTION_IDS": "",
+                "AZURE_MANAGEMENT_GROUP_ID": "",
+                "AZURE_TENANT_ID": "your_azure_tenant_id",
+                "AZURE_CLIENT_ID": "your_azure_app_client_id",
+                "AZURE_CLIENT_SECRET": "your_azure_app_secret",
+                "GOOGLE_APPLICATION_CREDENTIALS": (
+                    "/path/to/your/gcp-service-account.json"
+                ),
+                "GCP_PROJECT_ID": "your_gcp_project_id",
                 "GCP_PROJECT_IDS": "",
                 "OCI_CONFIG_FILE": "",
             },

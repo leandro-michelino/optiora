@@ -1,5 +1,7 @@
 # OptiOra
 
+Current release: `0.9.0` public dashboard readiness.
+
 Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an OCI-only production deployment path.
 
 ## Dashboard Preview
@@ -13,6 +15,7 @@ Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an 
 - Supports operations workflows for scans, alerts, exports, and governance.
 - Uses OCI GenAI as an advisory overlay (narrative and prioritization), not as the source of truth for cost math.
 - Adds CSV-backed FinOps RAG retrieval for benchmark-guided narratives across forecasting, operations, governance, and commitment strategy.
+- Reuses stored live scan snapshots when provider APIs are unavailable, while still refusing synthetic/demo cost data.
 
 ## Architecture At A Glance
 
@@ -26,7 +29,7 @@ Next.js dashboard
 FastAPI backend
   |
   +--> SQLite or PostgreSQL
-  +--> Cloud provider APIs
+  +--> Cloud provider APIs + stored scan snapshots + CSV imports
   +--> OCI Generative AI (optional)
 ```
 
@@ -87,14 +90,17 @@ npm install
 npm run dev
 ```
 
+For the easiest local quick start, copy `.env.example` to `.env` and leave provider credentials blank. The example file sets `REQUIRE_LIVE_PROVIDER_DATA=false` so local CSV/import workflows can run without pretending placeholder cloud credentials are real.
+
 For full validation commands and coverage notes, see [TESTING.md](TESTING.md).
 
-## Verified Baseline (May 4, 2026)
+## Verified Baseline (May 9, 2026)
 
 - Backend syntax gate passed: `python3 -m py_compile $(find ./finops_* -name '*.py')`
-- Backend regression suite passed: `271` tests via `unittest discover`
+- Backend regression suite passed: `278` tests via `unittest discover` (`2` skipped)
 - Frontend gates passed: `npm run type-check`, `npm run lint`, `npm run build`
 - Infrastructure gate passed: `terraform -chdir=terraform validate`
+- Cleanup gate passed: `./scripts/cleanup-workspace.sh`
 
 ## OCI Deployment
 
@@ -122,12 +128,15 @@ Validated cloud connections are persisted until the customer disconnects them. A
 
 Recommendations are collected from live provider sources when credentials allow it: AWS Cost Explorer rightsizing, Savings Plans, and reservation purchase recommendations; Azure Advisor cost recommendations; GCP Recommender and Cloud Monitoring signals; OCI Optimizer plus compute, boot volume, and block volume inventory. CSV imports remain the only non-provider fallback.
 
+The default rightsizing dashboard path uses stored scan/import signals for responsiveness. Operators can request a live refresh; if that refresh fails, the dashboard keeps showing stored scan results with an explicit warning.
+
 For prerequisites, environment variables, post-deploy checks, and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Documentation
 
 - [Architecture](ARCHITECTURE.md)
 - [Deployment](DEPLOYMENT.md)
+- [Release Notes](RELEASE_NOTES.md)
 - [Testing](TESTING.md)
 - [Roadmap](ROADMAP.md)
 - [Next Phase](NEXT_PHASE.md)
