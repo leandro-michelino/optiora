@@ -1,6 +1,6 @@
 # OptiOra
 
-Current release: `0.9.0` public dashboard readiness.
+Current release: `0.9.1` dashboard wiring and repository hygiene.
 
 Multi-cloud FinOps platform with a FastAPI backend, a Next.js dashboard, and an OCI-only production deployment path.
 
@@ -76,6 +76,7 @@ Local workspace
 Local commands are for development and test loops only. Until this policy is changed, production services must run on OCI compute and the deployed systemd units refuse to start when OCI instance metadata is unavailable.
 
 Supported Python for backend setup: `3.10` through `3.13`.
+Supported Node.js for dashboard setup: `20.9.0` or newer.
 
 ```bash
 ./setup.sh
@@ -94,13 +95,18 @@ For the easiest local quick start, copy `.env.example` to `.env` and leave provi
 
 For full validation commands and coverage notes, see [TESTING.md](TESTING.md).
 
-## Verified Baseline (May 9, 2026)
+## Verified Baseline (May 10, 2026)
 
-- Backend syntax gate passed: `python3 -m py_compile $(find ./finops_* -name '*.py')`
-- Backend regression suite passed: `278` tests via `unittest discover` (`2` skipped)
-- Frontend gates passed: `npm run type-check`, `npm run lint`, `npm run build`
-- Infrastructure gate passed: `terraform -chdir=terraform validate`
-- Cleanup gate passed: `./scripts/cleanup-workspace.sh`
+- Frontend gates passed serially: `npm run build`, `npm run type-check`, `npm run lint`
+- Frontend audit passed: `npm audit --audit-level=high`
+- Backend syntax and regression gates passed: `python3 -m py_compile ...` and `278` tests via `unittest discover` (`2` skipped)
+- Infrastructure syntax gates passed: tracked Terraform format/validate and Ansible playbook syntax check
+- Animated dashboard wiring gate passed: `./scripts/check-animated-svg-routes.sh`
+- Production browser smoke passed for `/optiora-animated.svg`, desktop `/dashboard`, mobile `/dashboard`, and friendly backend-unavailable alerts
+- Workspace cleanup preserves dependency/runtime state while removing generated dashboard, Python, and Terraform cache artifacts
+
+Run `npm run build` before standalone `npm run type-check` after cleanup so
+Next.js regenerates `.next/types` before TypeScript reads them.
 
 ## OCI Deployment
 

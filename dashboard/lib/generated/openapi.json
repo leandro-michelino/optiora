@@ -3,7 +3,7 @@
   "info": {
     "title": "OptiOra API",
     "description": "Multi-Cloud Cost Optimization Platform",
-    "version": "0.9.0"
+    "version": "0.9.1"
   },
   "paths": {
     "/health": {

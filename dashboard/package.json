@@ -1,6 +1,6 @@
 {
   "name": "optiora-dashboard",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "OptiOra multi-cloud cost optimization dashboard built with Next.js and React",
   "scripts": {
     "dev": "next dev",
@@ -26,18 +26,18 @@
   "author": "OptiOra Team",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.9.0"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
     "autoprefixer": "^10.4.27",
-    "axios": "^1.15.0",
+    "axios": "^1.16.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",
-    "next": "^16.2.3",
+    "next": "^16.2.6",
     "next-themes": "^0.4.6",
-    "postcss": "^8.5.9",
+    "postcss": "8.5.14",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-is": "^19.2.5",
@@ -53,10 +53,13 @@
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^16.2.3",
+    "eslint-config-next": "^16.2.6",
     "eslint-plugin-react-hooks": "^7.1.1",
     "prettier": "^3.1.0",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.3.0"
+  },
+  "overrides": {
+    "postcss": "8.5.14"
   }
 }

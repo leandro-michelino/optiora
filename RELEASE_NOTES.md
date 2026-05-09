@@ -1,5 +1,57 @@
 # Release Notes
 
+## 0.9.1 - Dashboard Wiring and Repository Hygiene (May 10, 2026)
+
+This maintenance release tightens the animated dashboard experience, production
+error handling, validation order, documentation, and local cleanup behavior.
+
+### Added
+
+- Pause-aware animated dashboard preview with scene metadata for overview,
+  resource inventory, and Kubernetes namespace views.
+- Reduced-motion handling for both the public dashboard preview and the
+  animated SVG asset used in the README.
+- Production smoke wiring checks for the animated SVG asset, desktop dashboard,
+  mobile dashboard, and backend-unavailable dashboard state.
+- ASCII architecture notes for dashboard asset/API wiring, validation order, and
+  workspace cleanup boundaries.
+
+### Changed
+
+- API error handling now strips framework HTML/Next.js 404 payloads before
+  surfacing messages in dashboard alerts.
+- Shared alert layout now aligns title and description content correctly on
+  narrow screens.
+- Workspace cleanup now removes generated dashboard build/test artifacts and
+  Terraform plugin/plan cache while preserving virtualenvs, installed
+  dependencies, local databases, and Terraform state.
+- Cost estimates now call out the current shape-only compute basis, extra block
+  volume performance basis, and GenAI character-metered cost driver.
+- Dashboard dependency metadata now matches the Next.js runtime requirement
+  (`node >=20.9.0`) and pins the PostCSS audit override used by Next.
+
+### Fixed
+
+- Animated SVG scene navigation highlights now match the active scene.
+- Static/reduced-motion SVG rendering no longer stacks all dashboard scenes on
+  top of each other.
+- Public dashboard warning alerts no longer leak raw HTML error pages when the
+  backend is unavailable or API paths return 404.
+
+### Validation
+
+- `./scripts/check-animated-svg-routes.sh`
+- `cd dashboard && npm run build`
+- `cd dashboard && npm run type-check`
+- `cd dashboard && npm run lint`
+- `cd dashboard && npm audit --audit-level=high`
+- `python3 -m py_compile $(find ./finops_mcp -name '*.py')`
+- `python -m unittest discover -s tests -p 'test_*.py'` (`278` passing, `2` skipped)
+- tracked Terraform `fmt -check` + `validate`
+- `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
+- Production browser smoke: `/optiora-animated.svg`, desktop `/dashboard`,
+  mobile `/dashboard`, and friendly backend error state.
+
 ## 0.9.0 - Public Dashboard Readiness (May 9, 2026)
 
 This release frames OptiOra as an OCI-hosted multi-cloud FinOps platform with a public dashboard posture by default, optional auth/RBAC hardening, real-data-only analytics, and repeatable Terraform + Ansible deployment flow.

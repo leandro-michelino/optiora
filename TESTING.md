@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 9, 2026): backend `278` tests passing (`2` skipped), dashboard type-check/lint/build passing, animated SVG route integrity passing, Terraform validate passing, workspace cleanup passing.
+Validation snapshot (May 10, 2026): backend `278` tests passing (`2` skipped), dashboard audit/build/type-check/lint passing when run serially, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing for the animated SVG, desktop dashboard, mobile dashboard, and friendly backend-unavailable state.
 
 ## Backend
 
@@ -153,11 +153,16 @@ curl -X POST http://localhost:8000/auth/register \
 
 ```bash
 cd dashboard
+npm audit --audit-level=high
+npm run build
 npm run type-check
 npm run lint
-npm run build
 npm run test:e2e
 ```
+
+Run `npm run build` before standalone `npm run type-check` after a cleanup
+because Next.js owns `.next/types`. Running `type-check` concurrently with
+`next build` can race while the generated `.next/types` tree is being refreshed.
 
 Browser E2E coverage now validates the public dashboard optional CSV fallback workflow:
 
@@ -186,7 +191,7 @@ terraform -chdir=terraform validate
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Alembic migrations require a single linear head before running the auth flow roundtrip migration test.
 - The backend suite is `unittest`-compatible. If pytest is unavailable locally, run the canonical `unittest discover` command.
-- Run `./scripts/cleanup-workspace.sh` to remove redundant duplicate-copy artifacts and local cache folders before packaging or handoff.
+- Run `./scripts/cleanup-workspace.sh` to remove redundant duplicate-copy artifacts and generated local cache folders before packaging or handoff. It intentionally preserves `.venv`, `dashboard/node_modules`, `optiora.db`, `terraform/*.tfstate`, and `terraform/terraform.tfvars`.
 - Dashboard linting requires ESLint flat config (`eslint.config.mjs`) when using ESLint 9.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.

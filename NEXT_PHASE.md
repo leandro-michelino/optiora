@@ -1,18 +1,18 @@
 # Next Phase Checklist
 
-This file defines the path from the current `0.9.0` public-dashboard readiness release to the `1.0` go-live gate, then the immediate post-`1.0` focus.
+This file defines the path from the current `0.9.1` dashboard-wiring maintenance release to the `1.0` go-live gate, then the immediate post-`1.0` focus.
 
 ## Current Go-Live Position (May 2026)
 
-Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `1.0` remains gated on live OCI evidence.
+Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `0.9.1` keeps that baseline and adds dashboard wiring, friendly error-state, cleanup, and documentation hygiene. Release `1.0` remains gated on live OCI evidence.
 
-Local validation snapshot recorded on **May 9, 2026**:
+Local validation snapshot recorded on **May 10, 2026**:
 
 - Backend regression suite passing (`278` test cases, `2` skipped).
-- Frontend type-check, lint, and production build passing.
+- Frontend audit, production build, type-check, and lint passing.
 - Animated route integrity gate passing.
-- Terraform configuration validation passing.
-- Workspace cleanup gate passing.
+- Tracked Terraform format/validation and Ansible syntax gates passing.
+- Workspace cleanup gate passing with dependency/runtime state preserved.
 - Remaining gate: live OCI environment evidence run.
 
 ## Release 1.0 Exit Criteria

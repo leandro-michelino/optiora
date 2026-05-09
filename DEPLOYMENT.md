@@ -1,6 +1,6 @@
 # OptiOra Deployment Guide (OCI)
 
-Current as of May 9, 2026.
+Current as of May 10, 2026.
 
 This repository deploys two services onto one OCI compute instance:
 
@@ -67,6 +67,8 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
 ## Prerequisites
 
 - OCI CLI installed and configured (`oci setup config`)
+- Node.js `20.9.0` or newer for dashboard dependency install/build. The
+  Ansible default installs Node major `20`.
 - Deployment default compartment is pinned to:
   `ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya`
   (override only when needed with `OCI_COMPARTMENT_ID`)
@@ -111,13 +113,15 @@ python3 -m compileall $(find ./finops_* -type d)
 .venv/bin/python -m pytest -q
 
 cd dashboard
+npm run build
 npm run type-check
 npm run lint
-npm run build
 ```
 
 `npm run build` is pinned to webpack mode (`next build --webpack`) for stable
 builds across local and OCI runtime hosts.
+Run build before standalone type-check after workspace cleanup so `.next/types`
+exists before TypeScript reads generated Next.js route types.
 
 Optional Terraform baseline:
 

@@ -1,6 +1,6 @@
 # Cost Estimate (Monthly, Full Capability)
 
-Current as of **May 9, 2026**.
+Current as of **May 10, 2026**.
 
 This estimate reflects the current OptiOra architecture and behavior:
 - OCI-hosted application plane (API + Dashboard).
@@ -13,6 +13,13 @@ This estimate reflects the current OptiOra architecture and behavior:
 
 - Primary deployment region: `uk-london-1`.
 - Runtime: one VM running API + dashboard continuously (~730 hours/month).
+- Compute shape pricing is modeled as OCPU-hours plus memory GB-hours for
+  flexible OCI VM shapes. Use the OCI cost estimator for purchase decisions.
+- Extra block volume baseline: optional `200 GiB` balanced block volume with
+  `10 VPUs/GB`, matching Terraform defaults.
+- OCI Generative AI costs are driven by request/response character volume and
+  selected serving mode. Treat the GenAI bands below as workload envelopes, not
+  committed spend.
 - Feature set enabled:
   - FinOps analytics, rightsizing, forecasting, tagging, scorecards, exports.
   - Scheduler + policy controls.
@@ -34,13 +41,29 @@ GenAI + RAG inference                  : prompt volume and response size depende
 Network egress                         : export/report/API payload dependent
 ```
 
+## Current Shape-Only Compute Basis
+
+The table below isolates VM shape cost before storage, database, telemetry,
+logging, exports, and GenAI. It is useful for checking that the wider monthly
+profile bands stay grounded in the actual runtime shape.
+
+```text
+Small     1 OCPU /  4 GB  x 730h ~= $23/month shape-only
+Default   2 OCPU /  8 GB  x 730h ~= $45/month shape-only
+High      4 OCPU / 16 GB  x 730h ~= $91/month shape-only
+```
+
+The profile totals below remain higher because they include storage, runtime
+services, snapshot/export growth, provider telemetry, logging, database choice,
+and GenAI usage.
+
 ## Deployment Profiles (USD / month)
 
 | Profile | Shape guidance | Database | Core infra* | Telemetry/ops | GenAI + RAG | Estimated total |
 |---|---|---|---:|---:|---:|---:|
-| Small | `1 OCPU / 4 GB` | SQLite on VM | 65-125 | 10-35 | 20-90 | **95-250** |
-| Default | `2 OCPU / 8 GB` | PostgreSQL | 110-190 | 35-110 | 100-320 | **245-620** |
-| High Throughput | `4 OCPU / 16 GB` | PostgreSQL | 220-420 | 110-300 | 350-1400+ | **680-2120+** |
+| Small | `1 OCPU / 4 GB` | SQLite on VM | 55-115 | 10-35 | 20-90 | **85-240** |
+| Default | `2 OCPU / 8 GB` | PostgreSQL | 105-190 | 35-110 | 100-320 | **240-620** |
+| High Throughput | `4 OCPU / 16 GB` | PostgreSQL | 215-420 | 110-300 | 350-1400+ | **675-2120+** |
 
 \* Core infra includes VM, base storage, nginx front door, baseline logs, scheduler overhead, and normal operational services. Ranges are planning estimates; verify region-specific list prices in the OCI cost estimator before purchase.
 
@@ -71,9 +94,9 @@ If using Autonomous Database with BYOL:
 
 ## Planning Baselines
 
-- Default production (PostgreSQL + medium telemetry + medium GenAI): **$245-$620 / month**.
+- Default production (PostgreSQL + medium telemetry + medium GenAI): **$240-$620 / month**.
 - Default with heavier real-time cross-provider usage: **$375-$900 / month**.
-- Small cost-conscious profile (SQLite + light telemetry): **$95-$250 / month**.
+- Small cost-conscious profile (SQLite + light telemetry): **$85-$240 / month**.
 
 ## Cost Control Recommendations
 

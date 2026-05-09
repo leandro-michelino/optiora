@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-Current as of May 9, 2026.
+Current as of May 10, 2026.
 
 ## Runtime Topology
 
@@ -515,13 +515,62 @@ Validation rules
   - documented placeholders like your_aws_access_key are treated as unset
 ```
 
+## Dashboard Wiring Architecture
+
+```text
+README.md
+  |
+  +--> dashboard/public/optiora-animated.svg
+  |       |
+  |       +--> scene classes: scene1..scene5
+  |       +--> nav classes:   nav1..nav5
+  |       +--> prefers-reduced-motion static first scene
+  |       +--> /api/v1/* labels checked by scripts/check-animated-svg-routes.sh
+  |
+  +--> dashboard/app/page.tsx
+          |
+          +--> public preview scene registry
+          +--> pause-on-hover/focus rotation
+          +--> reduced-motion stop condition
+          +--> auth-enabled redirect to /dashboard when already signed in
+
+dashboard/app/dashboard/page.tsx
+  |
+  +--> dashboard/lib/api.ts
+          |
+          +--> requestJson()
+          +--> responseErrorMessage()
+          +--> strips HTML/Next.js 404 payloads before AlertDescription
+```
+
+## Local Cleanup Boundary
+
+```text
+./scripts/cleanup-workspace.sh
+  |
+  +--> removes generated artifacts
+  |     - dashboard/.next
+  |     - dashboard/test-results
+  |     - dashboard/tsconfig.tsbuildinfo
+  |     - terraform/.terraform
+  |     - terraform/tfplan
+  |     - Python cache directories and duplicate-copy files
+  |
+  +--> preserves local runtime/dependency state
+        - .venv and .venv313
+        - dashboard/node_modules
+        - optiora.db
+        - terraform/*.tfstate
+        - terraform/terraform.tfvars
+```
+
 ## Release Documentation Wiring
 
 ```text
 pyproject.toml + finops_mcp/__init__.py + dashboard/package.json
         |
         v
-version 0.9.0
+version 0.9.1
         |
         +--> FastAPI /health and OpenAPI schema
         +--> dashboard package metadata
@@ -538,7 +587,7 @@ code change
    |
    +--> static python compile
    +--> backend regression suite
-   +--> dashboard type-check/lint/build
+   +--> dashboard build -> type-check -> lint
    +--> terraform validate
    |
    v
