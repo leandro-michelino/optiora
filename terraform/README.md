@@ -113,7 +113,7 @@ terraform -chdir=terraform plan
 terraform -chdir=terraform apply
 ```
 
-`terraform apply` is intentionally not forced in the default guided flow; `menu` and `full` explicitly ask for confirmation before apply. After infrastructure exists, run the Ansible playbook from `../ansible` for application provisioning on Oracle Linux hosts. The Terraform apply output now ends with a next-step banner that points operators to the Ansible command, dashboard URL pattern, API URLs, and OCI GenAI endpoint for the chosen region.
+`terraform apply` is intentionally not forced in the default guided flow; `menu` and `full` explicitly ask for confirmation before apply. After infrastructure exists, `deploy/deploy-oci.sh full` and `deploy/deploy-oci.sh compute` read Terraform `public_subnet_id` and `vcn_id` outputs when present, then hand the resolved target to compute provisioning and Ansible. The Terraform apply output ends with a next-step banner that points operators to the Ansible command, dashboard URL pattern, API URLs, and OCI GenAI endpoint for the chosen region.
 
 ## Topology
 

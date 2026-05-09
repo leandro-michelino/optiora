@@ -8974,51 +8974,104 @@ async def get_cost_trend(
             .all()
         )
         if not snapshots:
-            return CostTrendResponse(
-                organization_id=org_id,
-                period_type=period_type,
-                lookback_periods=lookback,
-                view_by=view_by,
-                data_source="empty",
-                points=[],
-                provider_totals={},
-                dimension_totals={},
-                grand_total_usd=0.0,
-            )
+            live_context = await _cost_context(membership, db, "month", provider.lower() if provider else "all")
+            live_source = str(live_context.get("source") or "").strip().lower()
+            live_errors = live_context.get("provider_errors")
+            live_total = float(live_context.get("total_cost") or 0.0)
+            if live_source.startswith("live_provider_api") and not live_errors and live_total > 0:
+                pstart, pend = _compute_period_bucket(_utcnow(), period_type)
+                breakdown = live_context.get("breakdown")
+                live_points: List[CostTrendPoint] = []
 
-        live_buckets: Dict[tuple[datetime, datetime, str], Dict[str, Any]] = {}
-        now = _utcnow()
-        for row in snapshots:
-            provider_key = str(row.provider or "unknown").strip().lower() or "unknown"
-            anchor = row.period_start or row.period_end or row.captured_at or now
-            pstart, pend = _compute_period_bucket(anchor, period_type)
-            key = (pstart, pend, provider_key)
-            bucket = live_buckets.setdefault(
-                key,
-                {
-                    "total": 0.0,
-                    "record_count": 0,
-                },
-            )
-            bucket["total"] += float(row.total_cost_usd or 0.0)
-            bucket["record_count"] += 1
+                if isinstance(breakdown, dict) and breakdown:
+                    for provider_key, provider_row in sorted(breakdown.items()):
+                        provider_name = str(provider_key or "live").strip().lower() or "live"
+                        if provider and provider_name != provider.lower():
+                            continue
+                        if isinstance(provider_row, dict):
+                            provider_cost = float(provider_row.get("cost") or 0.0)
+                        else:
+                            provider_cost = float(provider_row or 0.0)
+                        if provider_cost <= 0:
+                            continue
+                        live_points.append(
+                            CostTrendPoint(
+                                period_start=pstart.isoformat(),
+                                period_end=pend.isoformat(),
+                                provider=provider_name,
+                                dimension_value=provider_name,
+                                total_cost_usd=round(provider_cost, 2),
+                                mapped_cost_usd=0.0,
+                                unmapped_cost_usd=round(provider_cost, 2),
+                                record_count=1,
+                                service_breakdown={},
+                            )
+                        )
 
-        sorted_keys = sorted(live_buckets.keys(), key=lambda item: item[0], reverse=True)[:lookback]
-        points = [
-            CostTrendPoint(
-                period_start=key[0].isoformat(),
-                period_end=key[1].isoformat(),
-                provider=key[2],
-                dimension_value=key[2],
-                total_cost_usd=round(float(live_buckets[key]["total"] or 0.0), 2),
-                mapped_cost_usd=0.0,
-                unmapped_cost_usd=round(float(live_buckets[key]["total"] or 0.0), 2),
-                record_count=int(live_buckets[key]["record_count"] or 0),
-                service_breakdown={},
-            )
-            for key in sorted(sorted_keys, key=lambda item: item[0])
-        ]
-        data_source = "cost_snapshots_live"
+                if not live_points:
+                    provider_name = provider.lower() if provider else "live"
+                    live_points = [
+                        CostTrendPoint(
+                            period_start=pstart.isoformat(),
+                            period_end=pend.isoformat(),
+                            provider=provider_name,
+                            dimension_value=provider_name,
+                            total_cost_usd=round(live_total, 2),
+                            mapped_cost_usd=0.0,
+                            unmapped_cost_usd=round(live_total, 2),
+                            record_count=1,
+                            service_breakdown={},
+                        )
+                    ]
+
+                points = live_points[:lookback]
+                data_source = "live_provider_api_current_period"
+            else:
+                return CostTrendResponse(
+                    organization_id=org_id,
+                    period_type=period_type,
+                    lookback_periods=lookback,
+                    view_by=view_by,
+                    data_source="empty",
+                    points=[],
+                    provider_totals={},
+                    dimension_totals={},
+                    grand_total_usd=0.0,
+                )
+        else:
+            live_buckets: Dict[tuple[datetime, datetime, str], Dict[str, Any]] = {}
+            now = _utcnow()
+            for row in snapshots:
+                provider_key = str(row.provider or "unknown").strip().lower() or "unknown"
+                anchor = row.period_start or row.period_end or row.captured_at or now
+                pstart, pend = _compute_period_bucket(anchor, period_type)
+                key = (pstart, pend, provider_key)
+                bucket = live_buckets.setdefault(
+                    key,
+                    {
+                        "total": 0.0,
+                        "record_count": 0,
+                    },
+                )
+                bucket["total"] += float(row.total_cost_usd or 0.0)
+                bucket["record_count"] += 1
+
+            sorted_keys = sorted(live_buckets.keys(), key=lambda item: item[0], reverse=True)[:lookback]
+            points = [
+                CostTrendPoint(
+                    period_start=key[0].isoformat(),
+                    period_end=key[1].isoformat(),
+                    provider=key[2],
+                    dimension_value=key[2],
+                    total_cost_usd=round(float(live_buckets[key]["total"] or 0.0), 2),
+                    mapped_cost_usd=0.0,
+                    unmapped_cost_usd=round(float(live_buckets[key]["total"] or 0.0), 2),
+                    record_count=int(live_buckets[key]["record_count"] or 0),
+                    service_breakdown={},
+                )
+                for key in sorted(sorted_keys, key=lambda item: item[0])
+            ]
+            data_source = "cost_snapshots_live"
     else:
         records = (
             db.query(ImportedCostRecord)

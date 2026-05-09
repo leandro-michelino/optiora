@@ -33,13 +33,14 @@ For `./deploy/deploy-oci.sh full` (and menu option `1`), the execution order is:
 1. Validate local prerequisites and OCI credentials.
 2. Run Terraform `init`, `validate`, and `plan`.
 3. Optionally run Terraform `apply` (prompted).
-4. Create or reuse compute instance and ensure it is `RUNNING`.
-5. Attach extra block volume when enabled.
-6. Upload local source archive to the VM.
-7. Run Ansible provisioning (packages, venv, dashboard build, `.env`, systemd units, migrations).
-8. Run end-to-end verification (`tests/smoke_test_0_9.sh`).
+4. Read Terraform `public_subnet_id`/`vcn_id` outputs when available so compute is launched into the just-applied network baseline.
+5. Create or reuse compute instance and ensure it is `RUNNING`.
+6. Attach extra block volume when enabled.
+7. Upload local source archive to the VM.
+8. Run Ansible provisioning (packages, venv, dashboard build, `.env`, systemd units, migrations).
+9. Run end-to-end verification (`tests/smoke_test_0_9.sh`).
 
-For `./deploy/deploy-oci.sh compute`, Terraform is skipped and the flow starts from step 4.
+For `./deploy/deploy-oci.sh compute`, Terraform execution is skipped, but existing Terraform outputs are still used for subnet/VCN resolution before falling back to OCI auto-discovery.
 
 ## Recommended End-to-End Setup (Interactive)
 
@@ -56,6 +57,7 @@ What the deploy script does for a fresh environment:
 - writes/updates `terraform/terraform.tfvars`
 - runs `terraform init`, `terraform validate`, `terraform plan`
 - optionally runs `terraform apply`
+- wires the compute launch to Terraform `public_subnet_id`/`vcn_id` outputs when present
 - creates or reuses the OCI compute instance
 - creates and attaches an extra OCI block volume when enabled in `terraform.tfvars`
 - uploads the source archive and runs Ansible provisioning automatically

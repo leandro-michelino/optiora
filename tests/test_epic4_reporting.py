@@ -15,6 +15,8 @@ import json
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 TEST_DB = os.path.join(tempfile.gettempdir(), "optiora_epic4_test.db")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DB}")
@@ -239,6 +241,35 @@ class CostTrendEndpointTest(unittest.TestCase):
         data = resp.json()
         self.assertIn("data_source", data)
         self.assertIn(data["data_source"], ("raw_records", "empty", "computed"))
+
+    def test_live_required_trend_uses_current_live_cost_context_without_snapshots(self):
+        live_required_config = SimpleNamespace(
+            require_live_provider_data=True,
+            retention_hot_months=3,
+            retention_enabled=False,
+            oci_archive_bucket="",
+        )
+        live_context = {
+            "source": "live_provider_api",
+            "total_cost": 42.5,
+            "breakdown": {"oci": {"cost": 42.5, "percentage": 100.0}},
+            "provider_errors": {},
+        }
+
+        with patch("finops_mcp.api.Config", return_value=live_required_config):
+            with patch("finops_mcp.api._cost_context", new=AsyncMock(return_value=live_context)):
+                resp = self.client.get(
+                    "/api/v1/reports/cost-trend?period_type=monthly&lookback=3",
+                    headers={"Authorization": f"Bearer {self.token}"},
+                )
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertEqual(data["data_source"], "live_provider_api_current_period")
+        self.assertEqual(data["grand_total_usd"], 42.5)
+        self.assertEqual(data["provider_totals"], {"oci": 42.5})
+        self.assertEqual(len(data["points"]), 1)
+        self.assertEqual(data["points"][0]["provider"], "oci")
 
     def test_trend_after_compute(self):
         """After compute, data_source should be 'computed'."""

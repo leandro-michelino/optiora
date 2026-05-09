@@ -37,6 +37,11 @@ error handling, validation order, documentation, and local cleanup behavior.
   top of each other.
 - Public dashboard warning alerts no longer leak raw HTML error pages when the
   backend is unavailable or API paths return 404.
+- End-to-end OCI deployment now resolves Terraform `public_subnet_id`/`vcn_id`
+  outputs before compute launch, so `full` mode provisions into the network
+  baseline it just applied.
+- Live-provider cost trends now emit a current-period trend point when live
+  costs are available but historical scan snapshots have not been captured yet.
 
 ### Validation
 
@@ -49,6 +54,8 @@ error handling, validation order, documentation, and local cleanup behavior.
 - `python -m unittest discover -s tests -p 'test_*.py'` (`278` passing, `2` skipped)
 - tracked Terraform `fmt -check` + `validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
+- Live OCI `./deploy/deploy-oci.sh full`, follow-up `compute`, and
+  `./deploy/deploy-oci.sh verify` (`48` passing, `0` failed, `3` skipped)
 - Production browser smoke: `/optiora-animated.svg`, desktop `/dashboard`,
   mobile `/dashboard`, and friendly backend error state.
 

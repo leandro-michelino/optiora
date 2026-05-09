@@ -386,6 +386,16 @@ run_terraform() {
     terraform -chdir="${ROOT_DIR}/terraform" "$@"
 }
 
+get_terraform_output_raw() {
+    local output_name="$1"
+
+    if ! command -v terraform >/dev/null 2>&1; then
+        return 0
+    fi
+
+    terraform -chdir="${ROOT_DIR}/terraform" output -raw "$output_name" 2>/dev/null || true
+}
+
 is_true() {
     local value
     value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
@@ -644,8 +654,23 @@ resolve_subnet_id() {
         return
     fi
 
+    local terraform_subnet_id
+    terraform_subnet_id="$(get_terraform_output_raw public_subnet_id)"
+    if [ -n "$terraform_subnet_id" ] && [ "$terraform_subnet_id" != "null" ]; then
+        RESOLVED_SUBNET_ID="$terraform_subnet_id"
+        log_success "Using Terraform public_subnet_id output: $RESOLVED_SUBNET_ID"
+        return
+    fi
+
     local resolved_vcn_id
     resolved_vcn_id="$VCN_ID"
+
+    if [ -z "$resolved_vcn_id" ]; then
+        resolved_vcn_id="$(get_terraform_output_raw vcn_id)"
+        if [ -n "$resolved_vcn_id" ] && [ "$resolved_vcn_id" != "null" ]; then
+            log_success "Using Terraform vcn_id output: $resolved_vcn_id"
+        fi
+    fi
 
     if [ -z "$resolved_vcn_id" ]; then
         resolved_vcn_id=$(oci network vcn list \
