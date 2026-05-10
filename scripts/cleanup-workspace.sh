@@ -21,14 +21,23 @@ find . \
 rm -rf \
   .tmp \
   tmp \
+  artifacts \
+  .coverage \
+  htmlcov \
+  .tox \
   dashboard/.next \
+  dashboard/out \
+  dashboard/build \
+  dashboard/dist \
   dashboard/test-results \
   dashboard/playwright-report \
   terraform/.terraform
 
 rm -f \
   dashboard/tsconfig.tsbuildinfo \
-  terraform/tfplan
+  terraform/tfplan \
+  terraform/crash.log \
+  terraform/crash.*.log
 
 echo "Preserved dependency/runtime state: .venv, dashboard/node_modules, optiora.db, terraform/*.tfstate, terraform/terraform.tfvars."
 echo "Cleanup complete."

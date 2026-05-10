@@ -49,14 +49,20 @@ By default, `optiora_manage_source` is `false`, so Ansible expects the app sourc
 ```bash
 tar -czf /tmp/optiora-deploy.tar.gz \
   --exclude=.git \
+  --exclude=.env \
   --exclude=.venv \
   --exclude=dashboard/node_modules \
   --exclude=dashboard/.next \
+  --exclude=terraform/terraform.tfvars \
+  --exclude=terraform/*.tfstate \
+  --exclude=optiora.db \
   .
 scp /tmp/optiora-deploy.tar.gz opc@<host>:/tmp/optiora-deploy.tar.gz
 ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml \
   -e optiora_manage_source=true
 ```
+
+When `optiora_manage_source=true`, the role removes local-only generated artifacts from earlier deployments before unpacking the new archive. This keeps stale dashboard builds, `node_modules`, cache folders, Terraform state/tfvars, and test reports out of `/opt/optiora` while preserving runtime files such as `.env`, `.oci`, `venv`, and `optiora.db`.
 
 ## Runtime Credentials And Secrets
 

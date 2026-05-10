@@ -13,6 +13,8 @@
 
 ### Changed
 
+- OCI deployment archives now align with repository hygiene rules by excluding local env files, virtualenvs, dashboard build output, `node_modules`, test reports, Terraform state/tfvars, local databases, logs, and scratch/evidence folders.
+- Ansible source deployments now remove stale generated dashboard/cache/Terraform artifacts from earlier deployments before unpacking fresh source, while preserving runtime `.env`, `.oci`, `venv`, and `optiora.db`.
 - Rightsizing live refresh now allows up to `120s` in the dashboard client. The deployed OCI live scan has been observed returning in about `50s`, which exceeded the previous `45s` client timeout.
 - Rightsizing overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status and action summaries discoverable.
 - Cost Advisor chat auto-scroll now scrolls only the conversation panel, preventing page-level scroll jumps and sticky-header overlap.

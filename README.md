@@ -310,6 +310,7 @@ Treat these as planning bands. Verify region-specific list prices in the OCI cos
 - Direct app ports can be closed behind the nginx front door.
 - Smoke verification auto-detects direct-port versus front-door exposure.
 - Workspace cleanup preserves dependency/runtime state while removing generated build, cache, report, and scratch artifacts.
+- OCI deploy archives exclude local secrets, Terraform state/tfvars, databases, build outputs, `node_modules`, reports, and scratch folders; Ansible also removes stale generated deploy artifacts before unpacking new source.
 
 ## License
 

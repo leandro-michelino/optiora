@@ -46,6 +46,7 @@ Thumbs.db
 dashboard/.next/
 dashboard/out/
 dashboard/build/
+dashboard/dist/
 dashboard/node_modules/
 dashboard/test-results/
 dashboard/playwright-report/
@@ -62,6 +63,8 @@ terraform/*.tfstate
 terraform/*.tfstate.*
 terraform/terraform.tfvars
 terraform/tfplan
+terraform/crash.log
+terraform/crash.*.log
 
 # Local scratch / generated artifacts
 tmp/

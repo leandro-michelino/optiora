@@ -1028,16 +1028,42 @@ sync_local_project() {
     log_info "Creating deployment archive from local workspace..."
     COPYFILE_DISABLE=1 tar -czf "$archive_path" \
         --exclude=".git" \
+        --exclude=".claude" \
         --exclude=".env" \
+        --exclude=".env.local" \
+        --exclude=".env.*.local" \
         --exclude=".venv" \
+        --exclude=".venv313" \
+        --exclude="venv" \
+        --exclude="env" \
+        --exclude="ENV" \
         --exclude=".pytest_cache" \
+        --exclude=".mypy_cache" \
+        --exclude=".ruff_cache" \
+        --exclude=".coverage" \
+        --exclude="htmlcov" \
+        --exclude=".tox" \
         --exclude="__pycache__" \
         --exclude=".DS_Store" \
         --exclude="._*" \
+        --exclude="*.log" \
         --exclude="dashboard/node_modules" \
         --exclude="dashboard/.next" \
+        --exclude="dashboard/out" \
+        --exclude="dashboard/build" \
+        --exclude="dashboard/dist" \
+        --exclude="dashboard/test-results" \
+        --exclude="dashboard/playwright-report" \
         --exclude="dashboard/tsconfig.tsbuildinfo" \
+        --exclude="terraform/.terraform" \
+        --exclude="terraform/terraform.tfvars" \
+        --exclude="terraform/*.tfstate" \
+        --exclude="terraform/*.tfstate.*" \
+        --exclude="terraform/tfplan" \
         --exclude="optiora.db" \
+        --exclude="tmp" \
+        --exclude=".tmp" \
+        --exclude="artifacts" \
         .
 
     log_info "Copying archive to ${REMOTE_USER}@${public_ip} ..."

@@ -372,6 +372,59 @@
     group: "{{ optiora_app_user }}"
     mode: "0755"
 
+- name: Remove local-only artifacts from previous deployments
+  ansible.builtin.shell: |
+    set -euo pipefail
+    removed=0
+    remove_path() {
+      local path="$1"
+      if [ -e "$path" ]; then
+        rm -rf "$path"
+        removed=1
+      fi
+    }
+
+    remove_path "{{ optiora_app_dir }}/dashboard/node_modules"
+    remove_path "{{ optiora_app_dir }}/dashboard/.next"
+    remove_path "{{ optiora_app_dir }}/dashboard/out"
+    remove_path "{{ optiora_app_dir }}/dashboard/build"
+    remove_path "{{ optiora_app_dir }}/dashboard/dist"
+    remove_path "{{ optiora_app_dir }}/dashboard/test-results"
+    remove_path "{{ optiora_app_dir }}/dashboard/playwright-report"
+    remove_path "{{ optiora_app_dir }}/dashboard/tsconfig.tsbuildinfo"
+    remove_path "{{ optiora_app_dir }}/.pytest_cache"
+    remove_path "{{ optiora_app_dir }}/.mypy_cache"
+    remove_path "{{ optiora_app_dir }}/.ruff_cache"
+    remove_path "{{ optiora_app_dir }}/.coverage"
+    remove_path "{{ optiora_app_dir }}/htmlcov"
+    remove_path "{{ optiora_app_dir }}/.tox"
+    remove_path "{{ optiora_app_dir }}/tmp"
+    remove_path "{{ optiora_app_dir }}/.tmp"
+    remove_path "{{ optiora_app_dir }}/artifacts"
+    remove_path "{{ optiora_app_dir }}/terraform/.terraform"
+    remove_path "{{ optiora_app_dir }}/terraform/terraform.tfvars"
+    remove_path "{{ optiora_app_dir }}/terraform/tfplan"
+
+    find "{{ optiora_app_dir }}" \
+      \( -path "{{ optiora_app_dir }}/.git" -o -path "{{ optiora_app_dir }}/.oci" -o -path "{{ optiora_app_dir }}/venv" \) -prune \
+      -o -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".mypy_cache" -o -name ".ruff_cache" \) \
+      -print -exec rm -rf {} + | grep -q . && removed=1 || true
+
+    find "{{ optiora_app_dir }}/terraform" -maxdepth 1 -type f \
+      \( -name "*.tfstate" -o -name "*.tfstate.*" \) \
+      -print -delete 2>/dev/null | grep -q . && removed=1 || true
+
+    if [ "$removed" -eq 1 ]; then
+      echo "removed"
+    else
+      echo "clean"
+    fi
+  args:
+    executable: /bin/bash
+  register: optiora_local_artifact_cleanup
+  changed_when: optiora_local_artifact_cleanup.stdout == "removed"
+  when: optiora_manage_source | bool
+
 - name: Unpack uploaded source archive
   ansible.builtin.unarchive:
     src: "{{ optiora_remote_archive }}"

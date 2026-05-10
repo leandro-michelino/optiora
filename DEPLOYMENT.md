@@ -239,7 +239,9 @@ sudo systemctl status optiora-dashboard
 ## What The Deploy Script Applies Automatically
 
 - uploads your local workspace snapshot (no VM-side git clone)
+- excludes local-only artifacts from the deployment archive, including virtualenvs, dashboard builds, `node_modules`, test reports, Terraform state/tfvars, local databases, logs, and scratch/evidence folders
 - runs Ansible provisioning on Oracle Linux
+- removes stale generated dashboard/cache/Terraform artifacts from previous deployments before unpacking the new source archive
 - renders `/opt/optiora/.env` from Ansible template values (including `FRONTEND_URL`, `NEXT_PUBLIC_API_URL`, GenAI/runtime settings)
 - renders `REQUIRE_LIVE_PROVIDER_DATA=true` by default unless an operator explicitly overrides it for CSV-only PoC mode
 - installs/updates backend and dashboard dependencies
