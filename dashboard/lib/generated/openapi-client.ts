@@ -1479,6 +1479,48 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     })
   }
 
+  async function get_api_v1_recommendations_ledger(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/recommendations/ledger"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
+  async function get_api_v1_recommendations_ledger_csv(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/recommendations/ledger.csv"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'GET',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
+  async function patch_api_v1_recommendations_ledger_by_ledger_id(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
+    let resolvedPath = "/api/v1/recommendations/ledger/{ledger_id}"
+    for (const [k, v] of Object.entries(args.pathParams || {})) {
+      resolvedPath = resolvedPath.replace(`{${k}}`, encodeURIComponent(String(v)))
+    }
+    return request({
+      method: 'PATCH',
+      path: resolvedPath,
+      query: args.query,
+      body: args.body,
+      headers: args.headers,
+    })
+  }
+
   async function get_api_v1_recommendations_rightsizing(args: { pathParams?: Record<string, string | number>; query?: Record<string, string | number | boolean | undefined | null>; body?: unknown; headers?: HeadersInit } = {}) {
     let resolvedPath = "/api/v1/recommendations/rightsizing"
     for (const [k, v] of Object.entries(args.pathParams || {})) {
@@ -2185,6 +2227,9 @@ export function createOpenApiClient(baseUrl: string, fetcher: typeof fetch = fet
     get_api_v1_provider_diagnostics,
     get_api_v1_recommendations,
     get_api_v1_recommendations_decision_grade,
+    get_api_v1_recommendations_ledger,
+    get_api_v1_recommendations_ledger_csv,
+    patch_api_v1_recommendations_ledger_by_ledger_id,
     get_api_v1_recommendations_rightsizing,
     get_api_v1_reports_chargeback_csv,
     get_api_v1_reports_chargeback_xlsx,

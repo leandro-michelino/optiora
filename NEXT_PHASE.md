@@ -9,7 +9,7 @@ Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, an
 Local validation snapshot recorded on **May 10, 2026**:
 
 - Backend regression suite passing.
-- Targeted rightsizing backend tests passing (`21` via pytest).
+- Targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest).
 - Frontend production build, type-check, and lint passing.
 - Animated route integrity gate passing.
 - Tracked Terraform format/validation and Ansible syntax gates passing.
@@ -40,32 +40,36 @@ Use canonical docs for execution details so commands are maintained in one place
 
 ## Next In Line To Implement
 
-**Recommendation Lifecycle and Realized Savings Ledger** is the next product implementation slice.
+**Recommendation Lifecycle Dashboard Experience** is the next product implementation slice.
 
-Reason: OptiOra already generates deterministic recommendations, rightsizing opportunities, advisory narratives, and finance-ready exports. The next step is to prove execution value by tracking each recommendation from discovery to approval, action, verification, and realized savings. This is the clearest differentiation item after the current UIX, wiring, deployment, and documentation cleanup work.
+Reason: OptiOra now persists generated rightsizing recommendations into an organization-scoped ledger with planned, realized, and variance savings fields. The next step is to turn that backend ledger into a guided execution board for owners, approvals, evidence, and realization reviews.
 
-MVP scope:
+Implemented backend slice:
 
-1. Add a recommendation ledger table keyed by organization, provider, resource, recommendation source, and recommendation fingerprint.
-2. Track lifecycle states: `new`, `reviewing`, `approved`, `planned`, `executed`, `verified`, `dismissed`, and `expired`.
-3. Store expected monthly savings, planned execution date, actual execution date, owner, notes, and evidence links.
-4. Add realized-vs-expected savings fields and variance reason after post-action validation.
-5. Expose backend endpoints to list, update state, assign owner, add notes, and record realization evidence.
-6. Add a dashboard experience that turns recommendations into an execution board with expanders for evidence, approval notes, and realized savings.
-7. Include export/report fields so finance can see planned savings, realized savings, and variance.
+1. Added `recommendation_ledger`, keyed by organization, provider, resource, recommendation source, and recommendation fingerprint.
+2. Rightsizing recommendations are upserted into the ledger when `GET /api/v1/recommendations/rightsizing` returns real recommendation rows.
+3. Ledger rows store planned monthly/annual savings, realized monthly/annual savings, variance, status, owner, evidence, source, and console URL context.
+4. Added `GET /api/v1/recommendations/ledger`, `PATCH /api/v1/recommendations/ledger/{ledger_id}`, and `GET /api/v1/recommendations/ledger.csv`.
+5. Finance workbook exports now include a `Recommendation Ledger` sheet with planned, realized, and variance fields.
+
+Remaining MVP scope:
+
+1. Add a dashboard execution-board experience with expanders for evidence, approval notes, and realized savings.
+2. Add richer state-transition audit events and optional approval policies.
+3. Add owner assignment workflows and realization evidence upload/linking in the UI.
+4. Add realized savings scorecards by provider, owner, business unit, and month.
 
 Suggested first files/modules to touch:
 
-- `finops_mcp/models.py` and Alembic migrations for the ledger schema.
-- `finops_mcp/api.py` for lifecycle endpoints and recommendation hydration.
-- `tests/` for lifecycle state transitions, org isolation, and realized-savings calculations.
 - `dashboard/lib/types.ts` and `dashboard/lib/api.ts` for typed frontend contracts.
 - `dashboard/app/dashboard/recommendations/page.tsx` for the execution-board UI.
+- `dashboard/app/dashboard/rightsizing/page.tsx` for links from discovered recommendations to ledger realization.
+- `tests/` for UI-facing ledger state transitions, org isolation, and realized-savings calculations.
 
 Definition of done:
 
-- A recommendation can be promoted from generated insight to tracked execution item.
-- State transitions are audited and organization-scoped.
+- A recommendation can be reviewed from generated insight through tracked execution item in the dashboard.
+- State transitions are organization-scoped and visible to operators.
 - The recommendations dashboard shows expected savings, owner, next action, and realization status.
 - Reports and exports include realized-vs-expected savings.
 - Empty states remain explicit when no real recommendation data exists.
@@ -89,7 +93,7 @@ Additional backlog:
 - vault-backed secret orchestration for credential storage
 - deeper Kubernetes metrics integration (Prometheus/cost-model)
 - stronger SaaS multi-tenancy isolation hardening
-- recommendation realization tracking (planned vs realized savings)
+- dashboard execution board for recommendation realization tracking
 
 ## Deferred Optional Hardening
 

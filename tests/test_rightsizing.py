@@ -221,6 +221,66 @@ class RightsizingTest(unittest.TestCase):
         self.assertIn("Network and traffic service", resource_types)
         self.assertTrue(all("Compute (account aggregate)" not in rec.resource_type for rec in recs))
 
+    def test_15_rightsizing_populates_finance_recommendation_ledger(self) -> None:
+        rightsizing_resp = self.client.get(
+            "/api/v1/recommendations/rightsizing?min_savings=0&limit=10",
+            headers=self.headers,
+        )
+        self.assertEqual(rightsizing_resp.status_code, 200, rightsizing_resp.text)
+        self.assertGreater(len(rightsizing_resp.json()["recommendations"]), 0)
+
+        ledger_resp = self.client.get("/api/v1/recommendations/ledger", headers=self.headers)
+        self.assertEqual(ledger_resp.status_code, 200, ledger_resp.text)
+        ledger = ledger_resp.json()
+        self.assertGreater(ledger["total_count"], 0)
+        self.assertIn("total_planned_monthly_savings_usd", ledger)
+        self.assertIn("total_realized_monthly_savings_usd", ledger)
+        self.assertIn("total_variance_monthly_usd", ledger)
+
+        item = ledger["items"][0]
+        for field in (
+            "recommendation_source",
+            "recommendation_fingerprint",
+            "planned_monthly_savings_usd",
+            "realized_monthly_savings_usd",
+            "variance_monthly_usd",
+        ):
+            self.assertIn(field, item)
+        self.assertGreaterEqual(item["planned_monthly_savings_usd"], 0.0)
+
+    def test_16_finance_can_update_realized_savings_and_export_ledger(self) -> None:
+        self.client.get(
+            "/api/v1/recommendations/rightsizing?min_savings=0&limit=10",
+            headers=self.headers,
+        )
+        ledger = self.client.get("/api/v1/recommendations/ledger", headers=self.headers).json()
+        if not ledger["items"]:
+            self.skipTest("No ledger rows were generated")
+        item = ledger["items"][0]
+        update_resp = self.client.patch(
+            f"/api/v1/recommendations/ledger/{item['id']}",
+            json={
+                "realized_monthly_savings_usd": 25.0,
+                "status": "verified",
+                "owner": "finance@example.com",
+                "variance_reason": "Validated from post-change billing run.",
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(update_resp.status_code, 200, update_resp.text)
+        updated = update_resp.json()
+        self.assertEqual(updated["status"], "verified")
+        self.assertEqual(updated["owner"], "finance@example.com")
+        self.assertEqual(updated["realized_monthly_savings_usd"], 25.0)
+        expected_variance = round(25.0 - item["planned_monthly_savings_usd"], 2)
+        self.assertAlmostEqual(updated["variance_monthly_usd"], expected_variance, delta=0.01)
+
+        csv_resp = self.client.get("/api/v1/recommendations/ledger.csv", headers=self.headers)
+        self.assertEqual(csv_resp.status_code, 200, csv_resp.text)
+        self.assertIn("planned_monthly_savings_usd", csv_resp.text)
+        self.assertIn("realized_monthly_savings_usd", csv_resp.text)
+        self.assertIn("variance_monthly_usd", csv_resp.text)
+
 
 if __name__ == "__main__":
     unittest.main()

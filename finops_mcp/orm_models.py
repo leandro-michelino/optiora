@@ -817,6 +817,72 @@ class CostPeriodSummary(Base):
         )
 
 
+class RecommendationLedger(Base):
+    """Persistent recommendation lifecycle ledger for finance reconciliation.
+
+    One row represents one discovered recommendation fingerprint for a resource.
+    The unique key lets OptiOra track a recommendation from planned savings to
+    realized savings without duplicating repeated provider scans.
+    """
+
+    __tablename__ = "recommendation_ledger"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "provider",
+            "resource_id",
+            "recommendation_source",
+            "recommendation_fingerprint",
+            name="uq_recommendation_ledger_fingerprint",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=False, index=True)
+    provider = Column(String(50), nullable=False, index=True)
+    resource_id = Column(String(1024), nullable=False)
+    resource_name = Column(String(512), nullable=True)
+    resource_type = Column(String(255), nullable=True)
+    account_id = Column(String(512), nullable=True)
+    region = Column(String(100), nullable=True)
+    recommendation_source = Column(String(120), nullable=False, index=True)
+    recommendation_fingerprint = Column(String(64), nullable=False, index=True)
+    action = Column(String(50), nullable=False, default="downsize")
+    confidence = Column(String(20), nullable=False, default="medium")
+    effort = Column(String(20), nullable=False, default="medium")
+    current_size = Column(String(255), nullable=True)
+    recommended_size = Column(String(255), nullable=True)
+    current_monthly_cost_usd = Column(Float, nullable=False, default=0.0)
+    projected_monthly_cost_usd = Column(Float, nullable=False, default=0.0)
+    planned_monthly_savings_usd = Column(Float, nullable=False, default=0.0)
+    planned_annual_savings_usd = Column(Float, nullable=False, default=0.0)
+    realized_monthly_savings_usd = Column(Float, nullable=False, default=0.0)
+    realized_annual_savings_usd = Column(Float, nullable=False, default=0.0)
+    variance_monthly_usd = Column(Float, nullable=False, default=0.0)
+    variance_annual_usd = Column(Float, nullable=False, default=0.0)
+    variance_percent = Column(Float, nullable=False, default=0.0)
+    variance_reason = Column(Text, nullable=True)
+    status = Column(String(40), nullable=False, default="open", index=True)
+    owner = Column(String(255), nullable=True)
+    reason = Column(Text, nullable=True)
+    evidence_json = Column(Text, nullable=False, default="{}")
+    resource_console_url = Column(Text, nullable=True)
+    first_seen_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    last_seen_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+    planned_at = Column(DateTime, nullable=True)
+    realized_at = Column(DateTime, nullable=True)
+    last_exported_at = Column(DateTime, nullable=True)
+    times_seen = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def __repr__(self):
+        return (
+            f"<RecommendationLedger(org_id={self.organization_id}, provider={self.provider}, "
+            f"resource_id={self.resource_id}, planned=${self.planned_monthly_savings_usd:.2f})>"
+        )
+
+
 class VirtualTagRule(Base):
     """Virtual tag rule — assigns a tag key/value to matching resources without touching the cloud.
 

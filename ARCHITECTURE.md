@@ -381,6 +381,42 @@ No synthetic recommendation tier
 If no eligible real signals exist: empty recommendation list with no_data_available source
 ```
 
+## Recommendation Ledger
+
+```text
+GET /api/v1/recommendations/rightsizing
+    |
+    +--> normalize recommendation row
+    |       provider
+    |       resource_id / resource_name / resource_type
+    |       evidence_source
+    |       action, confidence, effort
+    |       planned monthly and annual savings
+    |
+    +--> fingerprint
+    |       sha256(provider + resource + source + action + sizing + savings + reason)
+    |
+    +--> recommendation_ledger upsert
+            unique key:
+              organization_id
+              provider
+              resource_id
+              recommendation_source
+              recommendation_fingerprint
+
+Finance visibility
+    |
+    +--> GET /api/v1/recommendations/ledger
+    +--> PATCH /api/v1/recommendations/ledger/{ledger_id}
+    |       realized savings, owner, status, variance reason
+    +--> GET /api/v1/recommendations/ledger.csv
+    +--> /api/v1/reports/finance-workbook.xlsx
+            Recommendation Ledger sheet:
+              planned savings
+              realized savings
+              variance
+```
+
 ## Rightsizing Dashboard UX Wiring
 
 ```text

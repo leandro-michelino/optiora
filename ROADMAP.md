@@ -198,8 +198,9 @@ Based on current platform state vs. mainstream FinOps products (Cloudability, Fl
 
 - **Recommendation lifecycle and realized savings accounting**
   - Competitor pattern: explicit recommendation lifecycle and post-action savings tracking.
-  - OptiOra gap: we generate recommendations but do not yet track plan -> approved -> executed -> realized with variance.
-  - Roadmap action: add recommendation ledger, owner assignment, execution timestamping, and realized-vs-expected savings scorecards.
+  - Current OptiOra state: backend recommendation ledger is implemented for rightsizing recommendations, including organization/provider/resource/source/fingerprint identity, planned savings, realized savings, variance, finance CSV export, and finance workbook fields.
+  - Remaining gap: dashboard execution board, richer approval/audit events, owner workflows, and realized-vs-expected scorecards.
+  - Roadmap action: add the execution-board UI and finance scorecards on top of the ledger.
 
 - **Policy-as-code automation engine for FinOps controls**
   - Competitor pattern: customizable policy engines with dry-run, approvals, and automated actions.
@@ -399,7 +400,7 @@ Implementation detail for this release is tracked in `NEXT_PHASE.md`.
 Goal: move from visibility into guided cost action.
 
 - add commitment purchase workflows beyond analysis
-- deepen rightsizing workflow with approval, execution history, realized savings, and real cloud utilization metrics
+- deepen rightsizing workflow with approval UI, execution history UX, realized savings scorecards, and real cloud utilization metrics
 - add idle-resource remediation previews tied to provider actions
 - deepen approval-based auto-remediation from guardrail simulation into operator-controlled execution
 - add advanced anomaly workflows, mute windows, escalation policies, and noise analytics

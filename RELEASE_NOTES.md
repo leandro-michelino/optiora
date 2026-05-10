@@ -6,6 +6,9 @@
 
 - Cost Advisor decision snapshot with expandable quick wins, efficiency, evidence, provider-signal, and prompt-shortcut sections.
 - Cost Advisor narrative selector now exposes every backend-supported advisory mode: roadmap, waste insights, tagging plan, operating review, executive summary, and sustainability.
+- Recommendation ledger persistence for rightsizing recommendations, keyed by organization, provider, resource, recommendation source, and recommendation fingerprint.
+- Finance-facing recommendation ledger endpoints: `GET /api/v1/recommendations/ledger`, `PATCH /api/v1/recommendations/ledger/{ledger_id}`, and `GET /api/v1/recommendations/ledger.csv`.
+- Finance workbook `Recommendation Ledger` sheet with planned savings, realized savings, and variance columns.
 - Rightsizing scan-status cockpit with scan mode, evidence source, provider scope, visible card count, live-scan running state, and fallback guidance.
 - Rightsizing resource search across resource name, OCID, account, region, evidence source, action, and recommendation reason.
 - Inline expandable execution details for each rightsizing card, including rationale, validation steps, rollout checks, and rollback plan.
@@ -33,8 +36,8 @@
 - `npm run type-check --prefix dashboard`
 - `npm run build --prefix dashboard`
 - `npm audit --audit-level=high --prefix dashboard`
-- `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`279` passing, `2` skipped)
-- `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py` (`21` passing)
+- `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`281` passing, `2` skipped)
+- `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py tests/test_deep_finops_analytics.py` (`35` passing)
 - `terraform fmt -check` for tracked Terraform files and `terraform -chdir=terraform validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
 - Public live Rightsizing API: `GET /api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=1000&refresh_live=true` returned in about `50s` with `730` OCI recommendations.
@@ -69,7 +72,7 @@
 
 - `bash -n deploy/deploy-oci.sh scripts/cleanup-workspace.sh dashboard/scripts/playwright-backend.sh dashboard/scripts/playwright-frontend.sh`
 - `python3 -m py_compile $(find ./finops_mcp -name '*.py')`
-- `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`279` passing, `2` skipped)
+- `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`281` passing, `2` skipped)
 - `terraform fmt -check` on tracked `.tf` files
 - `terraform validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`

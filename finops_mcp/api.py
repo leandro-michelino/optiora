@@ -93,6 +93,7 @@ from .orm_models import (
     ProviderAccount,
     ProviderAccountLink,
     ProviderAccountSnapshot,
+    RecommendationLedger,
     ScanRunRecord,
     ScanningPermissionRecord,
     SessionLocal,
@@ -9325,12 +9326,59 @@ async def download_executive_summary_xlsx(
 
     chargeback_header, chargeback_data = _chargeback_csv_rows(org_id, customer_id, db)
     chargeback_rows = [chargeback_header] + chargeback_data
+    ledger_rows_raw = _query_recommendation_ledger(
+        db=db,
+        organization_id=org_id,
+        provider="all",
+        status_filter="all",
+        limit=5000,
+    )
+    ledger_rows = [[
+        "ledger_id",
+        "provider",
+        "resource_id",
+        "resource_name",
+        "recommendation_source",
+        "action",
+        "status",
+        "planned_monthly_savings_usd",
+        "realized_monthly_savings_usd",
+        "variance_monthly_usd",
+        "planned_annual_savings_usd",
+        "realized_annual_savings_usd",
+        "variance_annual_usd",
+        "variance_percent",
+        "variance_reason",
+        "last_seen_at",
+    ]]
+    ledger_rows.extend([
+        [
+            row.id,
+            row.provider or "",
+            row.resource_id or "",
+            row.resource_name or "",
+            row.recommendation_source or "",
+            row.action or "",
+            row.status or "",
+            round(float(row.planned_monthly_savings_usd or 0.0), 2),
+            round(float(row.realized_monthly_savings_usd or 0.0), 2),
+            round(float(row.variance_monthly_usd or 0.0), 2),
+            round(float(row.planned_annual_savings_usd or 0.0), 2),
+            round(float(row.realized_annual_savings_usd or 0.0), 2),
+            round(float(row.variance_annual_usd or 0.0), 2),
+            round(float(row.variance_percent or 0.0), 2),
+            row.variance_reason or "",
+            row.last_seen_at.isoformat() if row.last_seen_at else "",
+        ]
+        for row in ledger_rows_raw
+    ])
 
     xlsx_bytes = _build_xlsx_workbook([
         ("Executive Summary", exec_rows),
         ("Trend by Provider", provider_rows),
         ("Trend by Region", region_rows),
         ("Chargeback Detail", chargeback_rows),
+        ("Recommendation Ledger", ledger_rows),
     ])
     return Response(
         content=xlsx_bytes,
@@ -12251,6 +12299,66 @@ class RightsizingResponse(BaseModel):
     total_monthly_savings_usd: float
     total_annual_savings_usd: float
     recommendations: List[RightsizingRecommendation]
+
+
+class RecommendationLedgerItem(BaseModel):
+    id: int
+    organization_id: int
+    provider: str
+    resource_id: str
+    resource_name: Optional[str] = None
+    resource_type: Optional[str] = None
+    account_id: Optional[str] = None
+    region: Optional[str] = None
+    recommendation_source: str
+    recommendation_fingerprint: str
+    action: str
+    confidence: str
+    effort: str
+    status: str
+    owner: Optional[str] = None
+    current_size: Optional[str] = None
+    recommended_size: Optional[str] = None
+    current_monthly_cost_usd: float
+    projected_monthly_cost_usd: float
+    planned_monthly_savings_usd: float
+    planned_annual_savings_usd: float
+    realized_monthly_savings_usd: float
+    realized_annual_savings_usd: float
+    variance_monthly_usd: float
+    variance_annual_usd: float
+    variance_percent: float
+    variance_reason: Optional[str] = None
+    reason: Optional[str] = None
+    resource_console_url: Optional[str] = None
+    first_seen_at: Optional[str] = None
+    last_seen_at: Optional[str] = None
+    planned_at: Optional[str] = None
+    realized_at: Optional[str] = None
+    last_exported_at: Optional[str] = None
+    times_seen: int
+
+
+class RecommendationLedgerResponse(BaseModel):
+    generated_at: str
+    organization_id: int
+    total_count: int
+    total_planned_monthly_savings_usd: float
+    total_realized_monthly_savings_usd: float
+    total_variance_monthly_usd: float
+    total_planned_annual_savings_usd: float
+    total_realized_annual_savings_usd: float
+    total_variance_annual_usd: float
+    items: List[RecommendationLedgerItem]
+
+
+class RecommendationLedgerFinanceUpdateRequest(BaseModel):
+    realized_monthly_savings_usd: Optional[float] = Field(default=None, ge=0)
+    realized_annual_savings_usd: Optional[float] = Field(default=None, ge=0)
+    variance_reason: Optional[str] = None
+    status: Optional[Literal["open", "planned", "approved", "executed", "verified", "rejected", "expired"]] = None
+    owner: Optional[str] = None
+    realized_at: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -15202,6 +15310,240 @@ def _rightsizing_from_imported_costs(
     return out
 
 
+def _recommendation_fingerprint(rec: RightsizingRecommendation) -> str:
+    payload = {
+        "provider": str(rec.provider or "").lower(),
+        "resource_id": rec.resource_id or "",
+        "resource_name": rec.resource_name or "",
+        "resource_type": rec.resource_type or "",
+        "account_id": rec.account_id or "",
+        "region": rec.region or "",
+        "source": rec.evidence_source or "",
+        "action": rec.action or "",
+        "current_size": rec.current_size or "",
+        "recommended_size": rec.recommended_size or "",
+        "planned_monthly_savings_usd": round(float(rec.monthly_savings_usd or 0.0), 2),
+        "reason": rec.reason or "",
+    }
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _ledger_variance(planned_monthly: float, realized_monthly: float) -> tuple[float, float, float]:
+    planned = round(float(planned_monthly or 0.0), 2)
+    realized = round(float(realized_monthly or 0.0), 2)
+    variance_monthly = round(realized - planned, 2)
+    variance_annual = round(variance_monthly * 12.0, 2)
+    variance_percent = round((variance_monthly / planned) * 100.0, 2) if planned > 0 else 0.0
+    return variance_monthly, variance_annual, variance_percent
+
+
+def _ledger_item_from_row(row: RecommendationLedger) -> RecommendationLedgerItem:
+    return RecommendationLedgerItem(
+        id=int(row.id),
+        organization_id=int(row.organization_id),
+        provider=row.provider or "",
+        resource_id=row.resource_id or "",
+        resource_name=row.resource_name,
+        resource_type=row.resource_type,
+        account_id=row.account_id,
+        region=row.region,
+        recommendation_source=row.recommendation_source or "",
+        recommendation_fingerprint=row.recommendation_fingerprint or "",
+        action=row.action or "",
+        confidence=row.confidence or "medium",
+        effort=row.effort or "medium",
+        status=row.status or "open",
+        owner=row.owner,
+        current_size=row.current_size,
+        recommended_size=row.recommended_size,
+        current_monthly_cost_usd=round(float(row.current_monthly_cost_usd or 0.0), 2),
+        projected_monthly_cost_usd=round(float(row.projected_monthly_cost_usd or 0.0), 2),
+        planned_monthly_savings_usd=round(float(row.planned_monthly_savings_usd or 0.0), 2),
+        planned_annual_savings_usd=round(float(row.planned_annual_savings_usd or 0.0), 2),
+        realized_monthly_savings_usd=round(float(row.realized_monthly_savings_usd or 0.0), 2),
+        realized_annual_savings_usd=round(float(row.realized_annual_savings_usd or 0.0), 2),
+        variance_monthly_usd=round(float(row.variance_monthly_usd or 0.0), 2),
+        variance_annual_usd=round(float(row.variance_annual_usd or 0.0), 2),
+        variance_percent=round(float(row.variance_percent or 0.0), 2),
+        variance_reason=row.variance_reason,
+        reason=row.reason,
+        resource_console_url=row.resource_console_url,
+        first_seen_at=row.first_seen_at.isoformat() if row.first_seen_at else None,
+        last_seen_at=row.last_seen_at.isoformat() if row.last_seen_at else None,
+        planned_at=row.planned_at.isoformat() if row.planned_at else None,
+        realized_at=row.realized_at.isoformat() if row.realized_at else None,
+        last_exported_at=row.last_exported_at.isoformat() if row.last_exported_at else None,
+        times_seen=int(row.times_seen or 0),
+    )
+
+
+def _upsert_recommendation_ledger(
+    *,
+    db: Session,
+    organization_id: int,
+    customer_id: str,
+    recommendations_in: List[RightsizingRecommendation],
+    response_data_source: str,
+) -> None:
+    if not recommendations_in:
+        return
+
+    now = _utcnow()
+    for rec in recommendations_in:
+        provider_key = str(rec.provider or "unknown").strip().lower() or "unknown"
+        source = str(rec.evidence_source or response_data_source or "unknown").strip() or "unknown"
+        resource_id = str(rec.resource_id or rec.resource_name or rec.resource_type or "unknown").strip() or "unknown"
+        fingerprint = _recommendation_fingerprint(rec)
+        planned_monthly = round(float(rec.monthly_savings_usd or 0.0), 2)
+        planned_annual = round(float(rec.annual_savings_usd or planned_monthly * 12.0), 2)
+        evidence = {
+            "response_data_source": response_data_source,
+            "cpu_utilization_avg_percent": rec.cpu_utilization_avg_percent,
+            "memory_utilization_avg_percent": rec.memory_utilization_avg_percent,
+            "analysis_points": rec.analysis_points,
+            "trend_slope_usd": rec.trend_slope_usd,
+            "trend_percent": rec.trend_percent,
+            "latest_monthly_cost_usd": rec.latest_monthly_cost_usd,
+            "peak_monthly_cost_usd": rec.peak_monthly_cost_usd,
+            "top_regions": rec.top_regions,
+            "regional_breakdown": rec.regional_breakdown,
+            "last_observed_at": rec.last_observed_at,
+            "risk_note": rec.risk_note,
+        }
+
+        existing = (
+            db.query(RecommendationLedger)
+            .filter(
+                RecommendationLedger.organization_id == organization_id,
+                RecommendationLedger.provider == provider_key,
+                RecommendationLedger.resource_id == resource_id,
+                RecommendationLedger.recommendation_source == source,
+                RecommendationLedger.recommendation_fingerprint == fingerprint,
+            )
+            .first()
+        )
+
+        if existing is None:
+            variance_monthly, variance_annual, variance_percent = _ledger_variance(planned_monthly, 0.0)
+            db.add(
+                RecommendationLedger(
+                    organization_id=organization_id,
+                    customer_id=customer_id,
+                    provider=provider_key,
+                    resource_id=resource_id,
+                    resource_name=rec.resource_name,
+                    resource_type=rec.resource_type,
+                    account_id=rec.account_id,
+                    region=rec.region,
+                    recommendation_source=source,
+                    recommendation_fingerprint=fingerprint,
+                    action=rec.action,
+                    confidence=rec.confidence,
+                    effort=rec.effort,
+                    current_size=rec.current_size,
+                    recommended_size=rec.recommended_size,
+                    current_monthly_cost_usd=round(float(rec.current_monthly_cost_usd or 0.0), 2),
+                    projected_monthly_cost_usd=round(float(rec.projected_monthly_cost_usd or 0.0), 2),
+                    planned_monthly_savings_usd=planned_monthly,
+                    planned_annual_savings_usd=planned_annual,
+                    realized_monthly_savings_usd=0.0,
+                    realized_annual_savings_usd=0.0,
+                    variance_monthly_usd=variance_monthly,
+                    variance_annual_usd=variance_annual,
+                    variance_percent=variance_percent,
+                    status="open",
+                    reason=rec.reason,
+                    evidence_json=json.dumps(evidence, sort_keys=True),
+                    resource_console_url=rec.resource_console_url,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                    planned_at=now,
+                    times_seen=1,
+                    updated_at=now,
+                )
+            )
+            continue
+
+        existing.resource_name = rec.resource_name
+        existing.resource_type = rec.resource_type
+        existing.account_id = rec.account_id
+        existing.region = rec.region
+        existing.action = rec.action
+        existing.confidence = rec.confidence
+        existing.effort = rec.effort
+        existing.current_size = rec.current_size
+        existing.recommended_size = rec.recommended_size
+        existing.current_monthly_cost_usd = round(float(rec.current_monthly_cost_usd or 0.0), 2)
+        existing.projected_monthly_cost_usd = round(float(rec.projected_monthly_cost_usd or 0.0), 2)
+        existing.planned_monthly_savings_usd = planned_monthly
+        existing.planned_annual_savings_usd = planned_annual
+        realized_monthly = round(float(existing.realized_monthly_savings_usd or 0.0), 2)
+        existing.realized_annual_savings_usd = round(
+            float(existing.realized_annual_savings_usd or realized_monthly * 12.0),
+            2,
+        )
+        variance_monthly, variance_annual, variance_percent = _ledger_variance(planned_monthly, realized_monthly)
+        existing.variance_monthly_usd = variance_monthly
+        existing.variance_annual_usd = variance_annual
+        existing.variance_percent = variance_percent
+        existing.reason = rec.reason
+        existing.evidence_json = json.dumps(evidence, sort_keys=True)
+        existing.resource_console_url = rec.resource_console_url
+        existing.last_seen_at = now
+        existing.times_seen = int(existing.times_seen or 0) + 1
+        existing.updated_at = now
+
+    db.commit()
+
+
+def _query_recommendation_ledger(
+    *,
+    db: Session,
+    organization_id: int,
+    provider: str = "all",
+    status_filter: str = "all",
+    limit: int = 200,
+) -> List[RecommendationLedger]:
+    query = db.query(RecommendationLedger).filter(
+        RecommendationLedger.organization_id == organization_id
+    )
+    if provider != "all":
+        query = query.filter(RecommendationLedger.provider == provider.lower())
+    if status_filter != "all":
+        query = query.filter(RecommendationLedger.status == status_filter)
+    return (
+        query.order_by(
+            RecommendationLedger.last_seen_at.desc(),
+            RecommendationLedger.planned_monthly_savings_usd.desc(),
+        )
+        .limit(limit)
+        .all()
+    )
+
+
+def _recommendation_ledger_response(
+    *,
+    organization_id: int,
+    rows: List[RecommendationLedger],
+) -> RecommendationLedgerResponse:
+    planned_monthly = sum(float(row.planned_monthly_savings_usd or 0.0) for row in rows)
+    realized_monthly = sum(float(row.realized_monthly_savings_usd or 0.0) for row in rows)
+    variance_monthly = realized_monthly - planned_monthly
+    return RecommendationLedgerResponse(
+        generated_at=_utcnow().isoformat(),
+        organization_id=organization_id,
+        total_count=len(rows),
+        total_planned_monthly_savings_usd=round(planned_monthly, 2),
+        total_realized_monthly_savings_usd=round(realized_monthly, 2),
+        total_variance_monthly_usd=round(variance_monthly, 2),
+        total_planned_annual_savings_usd=round(planned_monthly * 12.0, 2),
+        total_realized_annual_savings_usd=round(realized_monthly * 12.0, 2),
+        total_variance_annual_usd=round(variance_monthly * 12.0, 2),
+        items=[_ledger_item_from_row(row) for row in rows],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
@@ -15565,6 +15907,18 @@ async def get_rightsizing_recommendations(
     recommendations_out.sort(key=lambda r: r.monthly_savings_usd, reverse=True)
     recommendations_out = recommendations_out[:limit]
 
+    try:
+        _upsert_recommendation_ledger(
+            db=db,
+            organization_id=org_id,
+            customer_id=customer_id,
+            recommendations_in=recommendations_out,
+            response_data_source=data_source,
+        )
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Recommendation ledger upsert failed; returning rightsizing response: %s", exc)
+
     total_monthly = sum(r.monthly_savings_usd for r in recommendations_out)
     return RightsizingResponse(
         generated_at=now_str,
@@ -15576,6 +15930,190 @@ async def get_rightsizing_recommendations(
         total_annual_savings_usd=round(total_monthly * 12, 2),
         recommendations=recommendations_out,
     )
+
+
+@router.get("/recommendations/ledger", response_model=RecommendationLedgerResponse)
+async def get_recommendation_ledger(
+    provider: str = Query("all"),
+    status_filter: str = Query("all", alias="status"),
+    limit: int = Query(200, ge=1, le=1000),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> RecommendationLedgerResponse:
+    """Return the recommendation execution ledger for finance reconciliation."""
+    _ = current_user
+    org_id = _organization_id_for_membership(membership)
+    rows = _query_recommendation_ledger(
+        db=db,
+        organization_id=org_id,
+        provider=provider,
+        status_filter=status_filter,
+        limit=limit,
+    )
+    return _recommendation_ledger_response(organization_id=org_id, rows=rows)
+
+
+@router.get("/recommendations/ledger.csv")
+async def download_recommendation_ledger_csv(
+    provider: str = Query("all"),
+    status_filter: str = Query("all", alias="status"),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Download a finance-ready ledger export with planned, realized, and variance fields."""
+    _ = current_user
+    org_id = _organization_id_for_membership(membership)
+    rows = _query_recommendation_ledger(
+        db=db,
+        organization_id=org_id,
+        provider=provider,
+        status_filter=status_filter,
+        limit=5000,
+    )
+    now = _utcnow()
+    for row in rows:
+        row.last_exported_at = now
+    db.commit()
+
+    header = [
+        "ledger_id",
+        "organization_id",
+        "provider",
+        "account_id",
+        "region",
+        "resource_id",
+        "resource_name",
+        "resource_type",
+        "recommendation_source",
+        "recommendation_fingerprint",
+        "action",
+        "confidence",
+        "effort",
+        "status",
+        "owner",
+        "planned_monthly_savings_usd",
+        "realized_monthly_savings_usd",
+        "variance_monthly_usd",
+        "planned_annual_savings_usd",
+        "realized_annual_savings_usd",
+        "variance_annual_usd",
+        "variance_percent",
+        "variance_reason",
+        "current_monthly_cost_usd",
+        "projected_monthly_cost_usd",
+        "first_seen_at",
+        "last_seen_at",
+        "planned_at",
+        "realized_at",
+        "last_exported_at",
+        "times_seen",
+        "resource_console_url",
+        "reason",
+    ]
+    data = []
+    for row in rows:
+        item = _ledger_item_from_row(row)
+        data.append([
+            item.id,
+            item.organization_id,
+            item.provider,
+            item.account_id or "",
+            item.region or "",
+            item.resource_id,
+            item.resource_name or "",
+            item.resource_type or "",
+            item.recommendation_source,
+            item.recommendation_fingerprint,
+            item.action,
+            item.confidence,
+            item.effort,
+            item.status,
+            item.owner or "",
+            item.planned_monthly_savings_usd,
+            item.realized_monthly_savings_usd,
+            item.variance_monthly_usd,
+            item.planned_annual_savings_usd,
+            item.realized_annual_savings_usd,
+            item.variance_annual_usd,
+            item.variance_percent,
+            item.variance_reason or "",
+            item.current_monthly_cost_usd,
+            item.projected_monthly_cost_usd,
+            item.first_seen_at or "",
+            item.last_seen_at or "",
+            item.planned_at or "",
+            item.realized_at or "",
+            item.last_exported_at or "",
+            item.times_seen,
+            item.resource_console_url or "",
+            item.reason or "",
+        ])
+    return _csv_response("optiora-recommendation-ledger.csv", header, data)
+
+
+@router.patch("/recommendations/ledger/{ledger_id}", response_model=RecommendationLedgerItem)
+async def update_recommendation_ledger_finance(
+    ledger_id: int,
+    payload: RecommendationLedgerFinanceUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> RecommendationLedgerItem:
+    """Update realized savings and lifecycle fields for a ledger recommendation."""
+    _ = current_user
+    require_role(
+        membership,
+        [UserRole.OWNER, UserRole.ADMIN, UserRole.ANALYST],
+        "update recommendation ledger",
+    )
+    org_id = _organization_id_for_membership(membership)
+    row = (
+        db.query(RecommendationLedger)
+        .filter(
+            RecommendationLedger.id == ledger_id,
+            RecommendationLedger.organization_id == org_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Recommendation ledger row not found")
+
+    if payload.realized_monthly_savings_usd is not None:
+        row.realized_monthly_savings_usd = round(float(payload.realized_monthly_savings_usd), 2)
+        if payload.realized_annual_savings_usd is None:
+            row.realized_annual_savings_usd = round(float(payload.realized_monthly_savings_usd) * 12.0, 2)
+    if payload.realized_annual_savings_usd is not None:
+        row.realized_annual_savings_usd = round(float(payload.realized_annual_savings_usd), 2)
+        if payload.realized_monthly_savings_usd is None:
+            row.realized_monthly_savings_usd = round(float(payload.realized_annual_savings_usd) / 12.0, 2)
+    if payload.status is not None:
+        row.status = payload.status
+    if payload.owner is not None:
+        row.owner = payload.owner.strip() or None
+    if payload.variance_reason is not None:
+        row.variance_reason = payload.variance_reason.strip() or None
+    if payload.realized_at is not None:
+        try:
+            parsed_at = datetime.fromisoformat(payload.realized_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="realized_at must be an ISO datetime") from exc
+        row.realized_at = parsed_at.replace(tzinfo=None)
+    elif payload.realized_monthly_savings_usd is not None or payload.realized_annual_savings_usd is not None:
+        row.realized_at = _utcnow()
+
+    variance_monthly, variance_annual, variance_percent = _ledger_variance(
+        float(row.planned_monthly_savings_usd or 0.0),
+        float(row.realized_monthly_savings_usd or 0.0),
+    )
+    row.variance_monthly_usd = variance_monthly
+    row.variance_annual_usd = variance_annual
+    row.variance_percent = variance_percent
+    row.updated_at = _utcnow()
+    db.commit()
+    db.refresh(row)
+    return _ledger_item_from_row(row)
 
 
 def _is_vm_like_resource(rec: RightsizingRecommendation) -> bool:

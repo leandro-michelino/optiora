@@ -89,7 +89,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 |---|---|
 | Cost visibility | Multi-provider spend views, account hierarchy, service hotspots, resource inventory, imported billing files |
 | Forecasting | Baseline forecasts, percentile bands, budget risk, what-if scenarios, stress tests, model diagnostics |
-| Optimization | Rightsizing with stored and live provider scan modes, provider-native recommendations, commitment gaps, waste decomposition, savings sequencing |
+| Optimization | Rightsizing with stored/live provider scan modes, provider-native recommendations, recommendation ledger, commitment gaps, waste decomposition, savings sequencing |
 | Unit economics | Cost allocation, business mapping, normalized dimensions, scorecards, showback/chargeback views |
 | Kubernetes | OpenCost sync, cluster modeling, namespace/team/workload/node-pool allocation, optimization recommendations |
 | Operations | Scan history, scan diffs, alert lifecycle, routing policy simulation, evidence exports, freshness telemetry |
@@ -100,6 +100,7 @@ Recent UIX and wiring updates:
 
 - Rightsizing live provider scans now use a longer dashboard timeout for provider-native calls observed at about `50s` in OCI, while still falling back to stored results if the live path fails.
 - Rightsizing now has expandable scan status, executive summary, filters/search, action mix, and per-resource execution details.
+- Rightsizing recommendations now populate a finance-ready recommendation ledger with planned savings, realized savings, and variance, exposed through JSON, CSV, and the finance workbook.
 - Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.
 
 ## Data Policy

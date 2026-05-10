@@ -6949,6 +6949,192 @@
         }
       }
     },
+    "/api/v1/recommendations/ledger": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Get Recommendation Ledger",
+        "description": "Return the recommendation execution ledger for finance reconciliation.",
+        "operationId": "get_recommendation_ledger_api_v1_recommendations_ledger_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationLedgerResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations/ledger.csv": {
+      "get": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Download Recommendation Ledger Csv",
+        "description": "Download a finance-ready ledger export with planned, realized, and variance fields.",
+        "operationId": "download_recommendation_ledger_csv_api_v1_recommendations_ledger_csv_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "all",
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations/ledger/{ledger_id}": {
+      "patch": {
+        "tags": [
+          "api"
+        ],
+        "summary": "Update Recommendation Ledger Finance",
+        "description": "Update realized savings and lifecycle fields for a ledger recommendation.",
+        "operationId": "update_recommendation_ledger_finance_api_v1_recommendations_ledger__ledger_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ledger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Ledger Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationLedgerFinanceUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationLedgerItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/analytics/vm-utilization-hotspots": {
       "get": {
         "tags": [
@@ -11092,6 +11278,423 @@
         },
         "type": "object",
         "title": "RagGuidanceRequest"
+      },
+      "RecommendationLedgerFinanceUpdateRequest": {
+        "properties": {
+          "realized_monthly_savings_usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized Monthly Savings Usd"
+          },
+          "realized_annual_savings_usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized Annual Savings Usd"
+          },
+          "variance_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variance Reason"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "planned",
+                  "approved",
+                  "executed",
+                  "verified",
+                  "rejected",
+                  "expired"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "realized_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized At"
+          }
+        },
+        "type": "object",
+        "title": "RecommendationLedgerFinanceUpdateRequest"
+      },
+      "RecommendationLedgerItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "organization_id": {
+            "type": "integer",
+            "title": "Organization Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "resource_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Name"
+          },
+          "resource_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Type"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "recommendation_source": {
+            "type": "string",
+            "title": "Recommendation Source"
+          },
+          "recommendation_fingerprint": {
+            "type": "string",
+            "title": "Recommendation Fingerprint"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "confidence": {
+            "type": "string",
+            "title": "Confidence"
+          },
+          "effort": {
+            "type": "string",
+            "title": "Effort"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "current_size": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Size"
+          },
+          "recommended_size": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Size"
+          },
+          "current_monthly_cost_usd": {
+            "type": "number",
+            "title": "Current Monthly Cost Usd"
+          },
+          "projected_monthly_cost_usd": {
+            "type": "number",
+            "title": "Projected Monthly Cost Usd"
+          },
+          "planned_monthly_savings_usd": {
+            "type": "number",
+            "title": "Planned Monthly Savings Usd"
+          },
+          "planned_annual_savings_usd": {
+            "type": "number",
+            "title": "Planned Annual Savings Usd"
+          },
+          "realized_monthly_savings_usd": {
+            "type": "number",
+            "title": "Realized Monthly Savings Usd"
+          },
+          "realized_annual_savings_usd": {
+            "type": "number",
+            "title": "Realized Annual Savings Usd"
+          },
+          "variance_monthly_usd": {
+            "type": "number",
+            "title": "Variance Monthly Usd"
+          },
+          "variance_annual_usd": {
+            "type": "number",
+            "title": "Variance Annual Usd"
+          },
+          "variance_percent": {
+            "type": "number",
+            "title": "Variance Percent"
+          },
+          "variance_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variance Reason"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "resource_console_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Console Url"
+          },
+          "first_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen At"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "planned_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned At"
+          },
+          "realized_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized At"
+          },
+          "last_exported_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Exported At"
+          },
+          "times_seen": {
+            "type": "integer",
+            "title": "Times Seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "organization_id",
+          "provider",
+          "resource_id",
+          "recommendation_source",
+          "recommendation_fingerprint",
+          "action",
+          "confidence",
+          "effort",
+          "status",
+          "current_monthly_cost_usd",
+          "projected_monthly_cost_usd",
+          "planned_monthly_savings_usd",
+          "planned_annual_savings_usd",
+          "realized_monthly_savings_usd",
+          "realized_annual_savings_usd",
+          "variance_monthly_usd",
+          "variance_annual_usd",
+          "variance_percent",
+          "times_seen"
+        ],
+        "title": "RecommendationLedgerItem"
+      },
+      "RecommendationLedgerResponse": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "organization_id": {
+            "type": "integer",
+            "title": "Organization Id"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "total_planned_monthly_savings_usd": {
+            "type": "number",
+            "title": "Total Planned Monthly Savings Usd"
+          },
+          "total_realized_monthly_savings_usd": {
+            "type": "number",
+            "title": "Total Realized Monthly Savings Usd"
+          },
+          "total_variance_monthly_usd": {
+            "type": "number",
+            "title": "Total Variance Monthly Usd"
+          },
+          "total_planned_annual_savings_usd": {
+            "type": "number",
+            "title": "Total Planned Annual Savings Usd"
+          },
+          "total_realized_annual_savings_usd": {
+            "type": "number",
+            "title": "Total Realized Annual Savings Usd"
+          },
+          "total_variance_annual_usd": {
+            "type": "number",
+            "title": "Total Variance Annual Usd"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationLedgerItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "organization_id",
+          "total_count",
+          "total_planned_monthly_savings_usd",
+          "total_realized_monthly_savings_usd",
+          "total_variance_monthly_usd",
+          "total_planned_annual_savings_usd",
+          "total_realized_annual_savings_usd",
+          "total_variance_annual_usd",
+          "items"
+        ],
+        "title": "RecommendationLedgerResponse"
       },
       "RefreshTokenRequest": {
         "properties": {

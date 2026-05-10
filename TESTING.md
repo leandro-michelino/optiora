@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 10, 2026): backend regression suite passing (`279` unittest cases, `2` skipped), targeted rightsizing tests passing (`21` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
+Validation snapshot (May 10, 2026): backend regression suite passing (`281` unittest cases, `2` skipped), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
 
 ## Backend
 
@@ -115,6 +115,14 @@ Current backend coverage includes:
 - decision-intelligence frontier contract (`GET /api/v1/analytics/decision-intelligence`)
 - decision-intelligence narrative contract (`POST /api/v1/genai/analyze` with `analysis_type=decision_intelligence`)
 - GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, vendor negotiation, and operating reviews
+
+**Rightsizing and recommendation ledger** (`tests/test_rightsizing.py`, `tests/test_rightsizing_oci_storage.py`):
+
+- stored/imported rightsizing response contract and provider filters
+- OCI storage and provider recommendation row normalization
+- ledger upsert from `GET /api/v1/recommendations/rightsizing`
+- finance ledger JSON/CSV fields for planned savings, realized savings, and variance
+- finance update flow via `PATCH /api/v1/recommendations/ledger/{ledger_id}`
 
 **Kubernetes and partner portfolio** (`tests/test_kubernetes.py`, `tests/test_partner_portfolio.py`):
 
