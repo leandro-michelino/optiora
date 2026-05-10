@@ -96,9 +96,9 @@ const PREVIEW_SCENES: Array<{
   },
   {
     id: 'kubernetes',
-    label: 'K8s Namespaces',
+    label: 'Kubernetes',
     metric: '$9.3k tracked',
-    detail: 'OpenCost namespace allocation with pod context',
+    detail: 'OpenCost allocation with namespace and pod context',
     icon: Box,
   },
 ]

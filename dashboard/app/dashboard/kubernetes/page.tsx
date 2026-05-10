@@ -1,7 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { AlertTriangle, Box, Calculator, Info, Loader, RefreshCw } from 'lucide-react'
+import type { FormEvent, ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  AlertTriangle,
+  Box,
+  Calculator,
+  CheckCircle2,
+  Cloud,
+  Cpu,
+  Layers3,
+  Loader,
+  Network,
+  RefreshCw,
+  Server,
+  Settings2,
+  Sparkles,
+  Wrench,
+} from 'lucide-react'
 import { fetchKubernetesSummary, calculateKubernetesClusterCost, fetchKubernetesProviderCatalog, syncOpenCostCosts, autoInstallOpenCost } from '@/lib/api'
 import {
   KubernetesSummaryResponse,
@@ -12,11 +28,26 @@ import {
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Expander } from '@/components/ui/expander'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtCompact(n: number) {
+  return n.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: Math.abs(n) >= 10000 ? 'compact' : 'standard',
+    maximumFractionDigits: Math.abs(n) >= 10000 ? 1 : 0,
+  })
+}
+
+function fmtDate(value?: string) {
+  if (!value) return 'Not available'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return 'Not available'
+  return parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 type KubernetesProvider = 'aws' | 'azure' | 'gcp' | 'oci'
@@ -51,13 +82,9 @@ function providerProfileFromCatalog(entry: KubernetesProviderCatalogEntry): Prov
 }
 
 function formatNodeTypeLabel(option: { value: string; vcpu?: number | null; memoryGiB?: number | null }): string {
-  const parts = [option.value]
-  if (option.vcpu) {
-    parts.push(`${option.vcpu} vCPU`)
-  }
-  if (option.memoryGiB) {
-    parts.push(`${option.memoryGiB} GiB`)
-  }
+  const parts = [option.value || 'Manual node type']
+  if (option.vcpu) parts.push(`${option.vcpu} vCPU`)
+  if (option.memoryGiB) parts.push(`${option.memoryGiB} GiB`)
   return parts.join(' · ')
 }
 
@@ -68,6 +95,224 @@ const defaultForm = {
   node_count: 5,
   node_type: '',
   monthly_node_cost_usd: 0,
+}
+
+function StatTile({
+  icon,
+  label,
+  value,
+  helper,
+  tone,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+  helper: string
+  tone: 'blue' | 'emerald' | 'amber' | 'purple' | 'slate'
+}) {
+  const tones = {
+    blue: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
+    purple: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300',
+    slate: 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300',
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{value}</p>
+        </div>
+        <span className={`rounded-lg border p-2 ${tones[tone]}`}>{icon}</span>
+      </div>
+      <p className="mt-3 text-sm leading-5 text-slate-500 dark:text-slate-400">{helper}</p>
+    </div>
+  )
+}
+
+function Notice({
+  tone,
+  icon,
+  children,
+}: {
+  tone: 'amber' | 'blue' | 'red'
+  icon: ReactNode
+  children: ReactNode
+}) {
+  const cls = {
+    amber: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
+    blue: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200',
+    red: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300',
+  }
+
+  return (
+    <div className={`rounded-lg border p-3 text-sm ${cls[tone]}`}>
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 shrink-0">{icon}</span>
+        <div className="min-w-0">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function EmptyResultPanel() {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
+      <Box className="mx-auto mb-4 h-12 w-12 text-slate-400" />
+      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No cluster result yet</p>
+      <p className="mx-auto mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+        Fill the calculator and run it to see namespace, team, workload, node pool, and recommendation breakdowns here.
+      </p>
+    </div>
+  )
+}
+
+function ClusterResultPanel({ result }: { result: KubernetesClusterCostResponse }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Calculated Cluster</p>
+            <h3 className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
+              {result.cluster_name} · {result.provider.toUpperCase()} · {result.region || 'region unset'}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{result.node_count} node(s) · {result.node_type || 'manual node type'}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-950/60">
+              <p className="text-xs text-slate-500">Cluster Cost</p>
+              <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{fmt(result.total_cluster_cost_usd)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-950/60">
+              <p className="text-xs text-slate-500">Per Node</p>
+              <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{fmt(result.cost_per_node_usd)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <p className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-200">Namespace Allocation</p>
+        <div className="space-y-2">
+          {result.namespace_breakdown.map((namespace) => (
+            <div key={namespace.namespace}>
+              <div className="mb-1 flex justify-between gap-3 text-xs">
+                <span className="font-mono font-medium text-slate-700 dark:text-slate-300">{namespace.namespace}</span>
+                <span className="text-slate-500">{fmt(namespace.estimated_cost_usd)} · {namespace.share_percent.toFixed(0)}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500"
+                  style={{ width: `${Math.min(namespace.share_percent, 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <p className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-200">Team Allocation</p>
+          <div className="space-y-2">
+            {result.team_breakdown.slice(0, 6).map((team) => (
+              <div key={team.team} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-950 dark:text-white">{team.team}</p>
+                    <p className="truncate text-xs text-slate-500">{team.workload_count} workload(s) · {team.namespaces.join(', ')}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold text-slate-950 dark:text-white">{fmt(team.estimated_cost_usd)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <p className="mb-3 text-sm font-semibold text-slate-800 dark:text-slate-200">Node Pools</p>
+          <div className="space-y-2">
+            {result.node_pool_breakdown.map((pool) => (
+              <div key={pool.node_pool} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-medium text-slate-950 dark:text-white">{pool.node_pool}</span>
+                  <span className="text-slate-600 dark:text-slate-300">{pool.utilization_percent.toFixed(1)}%</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {pool.node_count} node(s) · {fmt(pool.estimated_cost_usd)} capacity · {fmt(pool.idle_cost_usd)} idle
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {result.workload_breakdown.length > 0 && (
+        <Expander
+          title="Workloads"
+          description="Open for pod/workload-level allocation detail."
+          icon={<Server className="h-5 w-5 text-blue-600" />}
+        >
+          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+            <table className="w-full min-w-[680px] text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60">
+                <tr className="text-left text-slate-500">
+                  <th className="px-3 py-2 font-medium">Workload</th>
+                  <th className="px-3 py-2 font-medium">Team</th>
+                  <th className="px-3 py-2 font-medium">Pool</th>
+                  <th className="px-3 py-2 text-right font-medium">Cost</th>
+                  <th className="px-3 py-2 text-right font-medium">Req Efficiency</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.workload_breakdown.slice(0, 8).map((row) => (
+                  <tr key={`${row.namespace}-${row.workload_name}`} className="border-t border-slate-100 dark:border-slate-800">
+                    <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">{row.namespace}/{row.workload_name}</td>
+                    <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{row.team}</td>
+                    <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{row.node_pool}</td>
+                    <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">{fmt(row.estimated_cost_usd)}</td>
+                    <td className="px-3 py-2 text-right text-slate-500">{row.request_efficiency_percent.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Expander>
+      )}
+
+      {result.recommendations.length > 0 && (
+        <Expander
+          title="Optimization Recommendations"
+          description={`${result.recommendations.length} request, workload, or node-pool actions detected.`}
+          icon={<Sparkles className="h-5 w-5 text-amber-600" />}
+          defaultOpen
+        >
+          <div className="space-y-2">
+            {result.recommendations.slice(0, 5).map((recommendation) => (
+              <div key={recommendation.recommendation_id} className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-100">{recommendation.target}</p>
+                    <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{recommendation.rationale}</p>
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{recommendation.action}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold text-amber-900 dark:text-amber-100">{fmt(recommendation.estimated_monthly_savings_usd)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Expander>
+      )}
+
+      <Notice tone="blue" icon={<CheckCircle2 className="h-4 w-4" />}>
+        <p>{result.efficiency_note}</p>
+        <p className="mt-1 opacity-80">{result.opencost_integration}</p>
+      </Notice>
+    </div>
+  )
 }
 
 export default function KubernetesPage() {
@@ -120,18 +365,11 @@ export default function KubernetesPage() {
           continue
         }
         mappedProfiles[provider] = providerProfileFromCatalog(entry)
-        if (entry.source === 'live') {
-          liveProviders += 1
-        } else {
-          noDataProviders += 1
-        }
+        if (entry.source === 'live') liveProviders += 1
+        else noDataProviders += 1
       }
       setProviderProfiles(mappedProfiles as Record<KubernetesProvider, ProviderProfile>)
-      setCatalogMeta({
-        fetchedAt: catalog.generated_at,
-        liveProviders,
-        noDataProviders,
-      })
+      setCatalogMeta({ fetchedAt: catalog.generated_at, liveProviders, noDataProviders })
     } catch (error) {
       setProviderProfiles(emptyProviderProfiles)
       setCatalogMeta({
@@ -148,15 +386,15 @@ export default function KubernetesPage() {
   }, [])
 
   function handleFormChange(key: keyof typeof defaultForm, value: string | number) {
-    setForm(f => ({ ...f, [key]: value }))
+    setForm((current) => ({ ...current, [key]: value }))
   }
 
-  async function handleCalc(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleCalc(event: FormEvent) {
+    event.preventDefault()
     setCalcLoading(true)
     setCalcError(null)
     try {
-      const res = await calculateKubernetesClusterCost({
+      const result = await calculateKubernetesClusterCost({
         cluster_name: form.cluster_name,
         provider: form.provider,
         region: form.region,
@@ -167,7 +405,7 @@ export default function KubernetesPage() {
         opencost_url: opencostEnabled ? opencostUrl : undefined,
         opencost_window_days: opencostEnabled ? opencostWindowDays : undefined,
       })
-      setCalcResult(res)
+      setCalcResult(result)
     } catch (err) {
       setCalcResult(null)
       setCalcError(err instanceof Error ? err.message : 'Cluster cost calculation failed.')
@@ -176,8 +414,8 @@ export default function KubernetesPage() {
     }
   }
 
-  async function handleOpenCostSync(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleOpenCostSync(event: FormEvent) {
+    event.preventDefault()
     setOpencostSyncLoading(true)
     setOpencostSyncError(null)
     try {
@@ -218,7 +456,7 @@ export default function KubernetesPage() {
   const selectedProviderProfile = providerProfiles[form.provider]
   const regionOptions = selectedProviderProfile.regions.includes(form.region)
     ? [...selectedProviderProfile.regions]
-    : [form.region, ...selectedProviderProfile.regions]
+    : [form.region, ...selectedProviderProfile.regions].filter((region, index, list) => region || index === list.length - 1)
   const nodeTypeOptions = selectedProviderProfile.nodeTypes.some((option) => option.value === form.node_type)
     ? [...selectedProviderProfile.nodeTypes]
     : [{
@@ -227,544 +465,406 @@ export default function KubernetesPage() {
       source: 'manual',
     }, ...selectedProviderProfile.nodeTypes]
 
+  const catalogStatus = useMemo(() => {
+    if (catalogMeta.error) return { label: 'Catalog unavailable', tone: 'red' as const }
+    if (catalogMeta.liveProviders === 4) return { label: 'All catalogs live', tone: 'emerald' as const }
+    if (catalogMeta.liveProviders > 0) return { label: 'Partially live', tone: 'amber' as const }
+    return { label: 'Manual mode', tone: 'slate' as const }
+  }, [catalogMeta])
+  const catalogStatusClasses = {
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
+    red: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  }[catalogStatus.tone]
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <div className="mb-2 flex flex-wrap gap-2">
-            <Badge variant="outline" className="rounded-md">Kubernetes Cost Allocation</Badge>
-            <Badge variant="outline" className="rounded-md border-purple-300 bg-purple-50 text-purple-800 dark:bg-purple-950/30">OpenCost-Ready</Badge>
-            <Badge variant="outline" className="rounded-md border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30">
-              {catalogMeta.liveProviders}/4 providers live catalog
-            </Badge>
-            {catalogMeta.noDataProviders > 0 && (
-              <Badge variant="outline" className="rounded-md border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/30">
-                {catalogMeta.noDataProviders} no data
-              </Badge>
-            )}
+        <div className="max-w-4xl">
+          <div className="mb-3 flex flex-wrap gap-2">
+            <Badge variant="outline" className="rounded-md">Single Kubernetes workspace</Badge>
+            <Badge variant="outline" className="rounded-md border-purple-300 bg-purple-50 text-purple-800 dark:bg-purple-950/30">OpenCost-ready</Badge>
+            <Badge variant="outline" className="rounded-md">Catalog updated {fmtDate(catalogMeta.fetchedAt)}</Badge>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2">Kubernetes Namespace Costs</h1>
-          <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
-            Estimate and break down Kubernetes cluster costs by namespace. OpenCost sync brings live namespace allocation, and the calculator models any cluster configuration.
+          <h1 className="text-3xl font-semibold text-slate-950 dark:text-white md:text-4xl">Kubernetes Cost Allocation</h1>
+          <p className="mt-2 max-w-3xl text-base leading-7 text-slate-600 dark:text-slate-400">
+            One workspace for Kubernetes cluster modeling, namespace allocation, OpenCost sync, and workload optimization signals.
           </p>
         </div>
-        <Button variant="outline" onClick={() => { void loadSummary(); void loadProviderCatalog() }} className="rounded-lg">
-          <RefreshCw className="mr-2 h-4 w-4" />Refresh
+        <Button variant="outline" onClick={() => { void loadSummary(); void loadProviderCatalog() }} disabled={loading}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
         </Button>
       </div>
 
-      {catalogMeta.error && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          Provider catalog is unavailable: {catalogMeta.error}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_0.72fr]">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Why one page</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                The visible navigation now uses only <strong>Kubernetes</strong>. The old <code>/dashboard/k8s-namespaces</code> URL is handled by a Next.js redirect, so there is no second page to maintain.
+              </p>
+            </div>
+            <Badge className="w-fit rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
+              Canonical route
+            </Badge>
+          </div>
         </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Catalog Readiness</p>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <Badge className={`rounded-md border ${catalogStatusClasses}`}>{catalogStatus.label}</Badge>
+            <Badge variant="outline" className="rounded-md">{catalogMeta.liveProviders}/4 live</Badge>
+          </div>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{catalogMeta.noDataProviders} provider catalog(s) still need credentials or provider API data.</p>
+        </div>
+      </div>
+
+      {catalogMeta.error && (
+        <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
+          Provider catalog is unavailable: {catalogMeta.error}
+        </Notice>
       )}
       {catalogMeta.noDataProviders > 0 && !catalogMeta.error && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          {catalogMeta.noDataProviders} provider catalog(s) have no live regions or shapes yet. Connect provider credentials in Settings so OptiOra can fetch live catalog data from provider APIs.
-        </div>
+        <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
+          <p>{catalogMeta.noDataProviders} provider catalog(s) have no live regions or shapes yet.</p>
+          <p className="mt-1 text-xs opacity-80">Connect provider credentials in Settings to fetch live catalog data. The calculator still supports manual modeling.</p>
+        </Notice>
       )}
       {summaryError && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+        <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
           Kubernetes summary is unavailable: {summaryError}
-        </div>
+        </Notice>
       )}
 
       {loading ? (
-        <div className="flex min-h-[200px] items-center justify-center text-slate-500">
-          <Loader className="h-6 w-6 animate-spin mr-2" /> Loading Kubernetes summary...
+        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center gap-2">
+            <Loader className="h-4 w-4 animate-spin" />
+            Loading Kubernetes summary...
+          </div>
         </div>
       ) : summary ? (
         <>
-          {/* Summary overview */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: 'K8s Enabled', value: summary.kubernetes_enabled ? 'Yes' : 'Not yet', color: summary.kubernetes_enabled ? 'from-emerald-500 to-emerald-600' : 'from-slate-400 to-slate-500' },
-              { label: 'Clusters Configured', value: summary.clusters_configured.toString(), color: 'from-blue-500 to-blue-600' },
-              { label: 'Estimated K8s Share', value: `${summary.estimated_k8s_share_percent.toFixed(1)}%`, color: 'from-purple-500 to-purple-600' },
-              { label: 'Estimated K8s Cost', value: fmt(summary.estimated_k8s_cost_usd), color: 'from-indigo-500 to-indigo-600' },
-            ].map(kpi => (
-              <Card key={kpi.label} className="rounded-xl overflow-hidden">
-                <CardContent className="p-0">
-                  <div className={`bg-gradient-to-br ${kpi.color} p-4 text-white`}>
-                    <p className="text-2xl font-bold">{kpi.value}</p>
-                    <p className="text-xs opacity-80 mt-1">{kpi.label}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <StatTile
+              icon={summary.kubernetes_enabled ? <CheckCircle2 className="h-5 w-5" /> : <Settings2 className="h-5 w-5" />}
+              label="Kubernetes"
+              value={summary.kubernetes_enabled ? 'Enabled' : 'Setup needed'}
+              helper={summary.setup_hint}
+              tone={summary.kubernetes_enabled ? 'emerald' : 'slate'}
+            />
+            <StatTile
+              icon={<Cloud className="h-5 w-5" />}
+              label="Clusters"
+              value={summary.clusters_configured.toString()}
+              helper="Configured clusters in this workspace"
+              tone="blue"
+            />
+            <StatTile
+              icon={<Layers3 className="h-5 w-5" />}
+              label="K8s Share"
+              value={`${summary.estimated_k8s_share_percent.toFixed(1)}%`}
+              helper={`${fmtCompact(summary.estimated_k8s_cost_usd)} estimated Kubernetes cost`}
+              tone="purple"
+            />
+            <StatTile
+              icon={<Network className="h-5 w-5" />}
+              label="Cloud Baseline"
+              value={fmtCompact(summary.total_cloud_cost_usd)}
+              helper="Total cloud cost used for Kubernetes share"
+              tone="amber"
+            />
           </div>
 
           {!summary.kubernetes_enabled && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30">
-              <div className="flex items-start gap-3">
-                <Info className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
-                <div className="text-sm text-blue-800 dark:text-blue-200">
-                  <p className="font-semibold mb-1">{summary.setup_hint}</p>
-                  <p>
-                    Integrate{' '}
-                    <a href={summary.opencost_docs} target="_blank" rel="noopener noreferrer" className="underline hover:no-underline">
-                      OpenCost
-                    </a>{' '}
-                    to get real-time, per-namespace Kubernetes cost allocation inside Optiora.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <Notice tone="blue" icon={<Wrench className="h-4 w-4" />}>
+              <p className="font-semibold">{summary.setup_hint}</p>
+              <p className="mt-1 text-xs opacity-80">
+                Add OpenCost when you need live namespace and pod allocation. Manual calculator mode remains available for planning.
+              </p>
+            </Notice>
           )}
         </>
       ) : null}
 
       <Expander
-        title="Cluster Cost Calculator"
-        description="Model cluster spend and review calculated namespace, workload, team, and node-pool allocation."
-        icon={<Calculator className="h-5 w-5" />}
+        title="Cluster calculator"
+        description="Model cluster cost and generate namespace, team, workload, node-pool, and savings breakdowns."
+        icon={<Calculator className="h-5 w-5 text-blue-600" />}
         defaultOpen
       >
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-            <CardTitle className="flex items-center gap-2">
-              <Calculator className="h-5 w-5" />
-              Cluster Cost Calculator
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-5">
-            <form onSubmit={(e) => void handleCalc(e)} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Cluster Name</label>
-                  <input
-                    type="text"
-                    value={form.cluster_name}
-                    onChange={e => handleFormChange('cluster_name', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Provider</label>
-                  <select
-                    value={form.provider}
-                    onChange={e => {
-                      const provider = e.target.value as KubernetesProvider
-                      const profile = providerProfiles[provider]
-                      const defaultNode = profile.nodeTypes[0]
-                      setForm((current) => ({
-                        ...current,
-                        provider,
-                        region: profile.regions[0] ?? current.region,
-                        node_type: defaultNode?.value ?? current.node_type,
-                        monthly_node_cost_usd: defaultNode?.monthlyCost ?? current.monthly_node_cost_usd,
-                      }))
-                    }}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    {(Object.keys(providerProfiles) as KubernetesProvider[]).map((provider) => (
-                      <option key={provider} value={provider}>{provider.toUpperCase()}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Region</label>
-                  <select
-                    value={form.region}
-                    onChange={e => handleFormChange('region', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    {regionOptions.map((region) => (
-                      <option key={region} value={region}>{region}</option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Source: {selectedProviderProfile.source || 'no live catalog'}.
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Node Type</label>
-                  <select
-                    value={form.node_type}
-                    onChange={e => {
-                      const nodeType = e.target.value
-                      const matched = selectedProviderProfile.nodeTypes.find((option) => option.value === nodeType)
-                      setForm((current) => ({
-                        ...current,
-                        node_type: nodeType,
-                        monthly_node_cost_usd: matched?.monthlyCost ?? current.monthly_node_cost_usd,
-                      }))
-                    }}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    {nodeTypeOptions.map((nodeType) => (
-                      <option key={nodeType.value} value={nodeType.value}>{formatNodeTypeLabel(nodeType)}</option>
-                    ))}
-                  </select>
-                  {selectedProviderProfile.message && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {selectedProviderProfile.message}
-                    </p>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+          <form onSubmit={(event) => void handleCalc(event)} className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Cluster name</span>
+                <input
+                  type="text"
+                  value={form.cluster_name}
+                  onChange={(event) => handleFormChange('cluster_name', event.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Provider</span>
+                <select
+                  value={form.provider}
+                  onChange={(event) => {
+                    const provider = event.target.value as KubernetesProvider
+                    const profile = providerProfiles[provider]
+                    const defaultNode = profile.nodeTypes[0]
+                    setForm((current) => ({
+                      ...current,
+                      provider,
+                      region: profile.regions[0] ?? current.region,
+                      node_type: defaultNode?.value ?? current.node_type,
+                      monthly_node_cost_usd: defaultNode?.monthlyCost ?? current.monthly_node_cost_usd,
+                    }))
+                  }}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {(Object.keys(providerProfiles) as KubernetesProvider[]).map((provider) => (
+                    <option key={provider} value={provider}>{provider.toUpperCase()}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Region</span>
+                <select
+                  value={form.region}
+                  onChange={(event) => handleFormChange('region', event.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {regionOptions.map((region) => (
+                    <option key={region || 'manual-region'} value={region}>{region || 'Manual region'}</option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Source: {selectedProviderProfile.source || 'manual'}.</span>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Node type</span>
+                <select
+                  value={form.node_type}
+                  onChange={(event) => {
+                    const nodeType = event.target.value
+                    const matched = selectedProviderProfile.nodeTypes.find((option) => option.value === nodeType)
+                    setForm((current) => ({
+                      ...current,
+                      node_type: nodeType,
+                      monthly_node_cost_usd: matched?.monthlyCost ?? current.monthly_node_cost_usd,
+                    }))
+                  }}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {nodeTypeOptions.map((nodeType) => (
+                    <option key={nodeType.value || 'manual-node'} value={nodeType.value}>{formatNodeTypeLabel(nodeType)}</option>
+                  ))}
+                </select>
+                {selectedProviderProfile.message && (
+                  <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{selectedProviderProfile.message}</span>
+                )}
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Node count</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={form.node_count}
+                  onChange={(event) => handleFormChange('node_count', Number(event.target.value))}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Monthly cost per node</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.monthly_node_cost_usd}
+                  onChange={(event) => handleFormChange('monthly_node_cost_usd', Number(event.target.value))}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </label>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              Estimated baseline: <span className="font-semibold">{fmt(estimatedMonthlyCost)}</span> / month ({form.node_count} node(s) x {fmt(Number(form.monthly_node_cost_usd || 0))}).
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+              <label className="flex cursor-pointer select-none items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={opencostEnabled}
+                  onChange={(event) => setOpencostEnabled(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Use live OpenCost allocation
+              </label>
+              {opencostEnabled && (
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <label className="block md:col-span-2">
+                    <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">OpenCost URL</span>
+                    <input
+                      type="text"
+                      value={opencostUrl}
+                      onChange={(event) => setOpencostUrl(event.target.value)}
+                      className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+                      placeholder="http://localhost:9003"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Window days</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={opencostWindowDays}
+                      onChange={(event) => setOpencostWindowDays(Number(event.target.value))}
+                      className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+                    />
+                  </label>
+                  {opencostOnLocalhost && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 md:col-span-2">
+                      localhost resolves on the OptiOra API server, not the browser.
+                    </div>
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Node Count</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.node_count}
-                    onChange={e => handleFormChange('node_count', Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Monthly Cost per Node ($)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={form.monthly_node_cost_usd}
-                    onChange={e => handleFormChange('monthly_node_cost_usd', Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                Estimated baseline from inputs:
-                {' '}
-                <span className="font-semibold">{fmt(estimatedMonthlyCost)}</span>
-                {' '}
-                per month ({form.node_count} node(s) × {fmt(Number(form.monthly_node_cost_usd || 0))}).
-              </div>
-
-              <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                <label className="mb-3 flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-slate-700 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={opencostEnabled}
-                    onChange={(e) => setOpencostEnabled(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  Use live OpenCost allocation
-                </label>
-                {opencostEnabled && (
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div className="col-span-2">
-                      <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">OpenCost URL</label>
-                      <input
-                        type="text"
-                        value={opencostUrl}
-                        onChange={e => setOpencostUrl(e.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                        placeholder="http://localhost:9003"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">Window (days)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="30"
-                        value={opencostWindowDays}
-                        onChange={e => setOpencostWindowDays(Number(e.target.value))}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                      />
-                    </div>
-                    {opencostOnLocalhost && (
-                      <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                        <strong>Important:</strong> `localhost` is resolved on the OptiOra API server (not your laptop browser).
-                        Use this only if OpenCost is running on the same VM as OptiOra.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              {calcError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                  {calcError}
-                </div>
               )}
+            </div>
 
-              <Button type="submit" disabled={calcLoading} className="w-full rounded-lg">
-                {calcLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
-                Calculate Cluster Cost
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+            {calcError && (
+              <Notice tone="red" icon={<AlertTriangle className="h-4 w-4" />}>
+                {calcError}
+              </Notice>
+            )}
 
-        {/* Calculation result */}
-        {calcResult ? (
-          <Card>
-            <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-              <CardTitle className="flex items-center gap-2">
-                <Box className="h-5 w-5" />
-                {calcResult.cluster_name} — {calcResult.provider.toUpperCase()} {calcResult.region}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-5 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg bg-slate-50 dark:bg-slate-900 p-3">
-                  <p className="text-xs text-slate-500 mb-1">Total Cluster Cost</p>
-                  <p className="text-xl font-bold text-slate-900 dark:text-white">{fmt(calcResult.total_cluster_cost_usd)}<span className="text-xs text-slate-400">/mo</span></p>
-                </div>
-                <div className="rounded-lg bg-slate-50 dark:bg-slate-900 p-3">
-                  <p className="text-xs text-slate-500 mb-1">Cost per Node</p>
-                  <p className="text-xl font-bold text-slate-900 dark:text-white">{fmt(calcResult.cost_per_node_usd)}<span className="text-xs text-slate-400">/mo</span></p>
-                </div>
-              </div>
+            <Button type="submit" disabled={calcLoading} className="w-full">
+              {calcLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
+              Calculate Cluster Cost
+            </Button>
+          </form>
 
-              <div>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Namespace Breakdown</p>
-                <div className="space-y-2">
-                  {calcResult.namespace_breakdown.map(ns => (
-                    <div key={ns.namespace}>
-                      <div className="flex justify-between text-xs mb-0.5">
-                        <span className="font-medium text-slate-700 dark:text-slate-300 font-mono">{ns.namespace}</span>
-                        <span className="text-slate-500">{fmt(ns.estimated_cost_usd)} ({ns.share_percent.toFixed(0)}%)</span>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                        <div
-                          className="h-1.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500"
-                          style={{ width: `${Math.min(ns.share_percent, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Team Allocation</p>
-                  <div className="space-y-2">
-                    {calcResult.team_breakdown.slice(0, 6).map(team => (
-                      <div key={team.team} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium text-slate-900 dark:text-white">{team.team}</p>
-                            <p className="text-xs text-slate-500">{team.workload_count} workload(s) · {team.namespaces.join(', ')}</p>
-                          </div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{fmt(team.estimated_cost_usd)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Node Pools</p>
-                  <div className="space-y-2">
-                    {calcResult.node_pool_breakdown.map(pool => (
-                      <div key={pool.node_pool} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="font-medium text-slate-900 dark:text-white">{pool.node_pool}</span>
-                          <span className="text-slate-600 dark:text-slate-300">{pool.utilization_percent.toFixed(1)}% utilized</span>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {pool.node_count} node(s) · {fmt(pool.estimated_cost_usd)} capacity · {fmt(pool.idle_cost_usd)} idle
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {calcResult.workload_breakdown.length > 0 && (
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Top Workloads</p>
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                    <table className="w-full min-w-[680px] text-xs">
-                      <thead className="bg-slate-50 dark:bg-slate-800/60">
-                        <tr className="text-left text-slate-500">
-                          <th className="px-3 py-2 font-medium">Workload</th>
-                          <th className="px-3 py-2 font-medium">Team</th>
-                          <th className="px-3 py-2 font-medium">Pool</th>
-                          <th className="px-3 py-2 font-medium text-right">Cost</th>
-                          <th className="px-3 py-2 font-medium text-right">Req Efficiency</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {calcResult.workload_breakdown.slice(0, 8).map(row => (
-                          <tr key={`${row.namespace}-${row.workload_name}`} className="border-t border-slate-100 dark:border-slate-800">
-                            <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">{row.namespace}/{row.workload_name}</td>
-                            <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{row.team}</td>
-                            <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{row.node_pool}</td>
-                            <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">{fmt(row.estimated_cost_usd)}</td>
-                            <td className="px-3 py-2 text-right text-slate-500">{row.request_efficiency_percent.toFixed(1)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {calcResult.recommendations.length > 0 && (
-                <div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Request & Node Pool Recommendations</p>
-                  <div className="space-y-2">
-                    {calcResult.recommendations.slice(0, 5).map(rec => (
-                      <div key={rec.recommendation_id} className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium text-amber-900 dark:text-amber-100">{rec.target}</p>
-                            <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{rec.rationale}</p>
-                            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{rec.action}</p>
-                          </div>
-                          <p className="shrink-0 text-sm font-semibold text-amber-900 dark:text-amber-100">{fmt(rec.estimated_monthly_savings_usd)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-950/30">
-                <p className="text-xs text-purple-800 dark:text-purple-200">{calcResult.efficiency_note}</p>
-                <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">{calcResult.opencost_integration}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center min-h-[300px] text-slate-400">
-              <Box className="h-12 w-12 mb-4" />
-              <p className="text-sm">Run the calculator to see namespace cost breakdown.</p>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Tip: select your provider first. Presets auto-fill region and node type for faster setup.
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          {calcResult ? <ClusterResultPanel result={calcResult} /> : <EmptyResultPanel />}
+        </div>
       </Expander>
 
       <Expander
-        title="OpenCost Sync And Live Breakdown"
-        description="Install, wire, and sync OpenCost only when live Kubernetes allocation details are needed."
-        icon={<Box className="h-5 w-5" />}
+        title="OpenCost sync"
+        description="Install, wire, and sync OpenCost when live namespace and pod allocation is needed."
+        icon={<Box className="h-5 w-5 text-violet-600" />}
       >
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-            <CardTitle>OpenCost Namespace/Pod Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-5">
-            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
-              <p className="font-semibold">How to use OpenCost</p>
-              <ol className="mt-2 list-decimal space-y-1 pl-4">
-                <li>Install OpenCost in the Kubernetes cluster you want to measure (or click <strong>Auto-install &amp; Wire OpenCost</strong>).</li>
-                <li>Set an OpenCost API URL that is reachable from the OptiOra API server VM.</li>
-                <li>If OpenCost runs on the same VM as OptiOra, use <code>http://localhost:9003</code>.</li>
-                <li>If OpenCost runs on another host/cluster endpoint, use <code>http://&lt;host-or-lb&gt;:9003</code>, then click <strong>Sync OpenCost</strong>.</li>
-              </ol>
-              <p className="mt-2 text-[11px] text-blue-700 dark:text-blue-300">
-                Note: <code>localhost</code> is always resolved on the OptiOra API VM, not in your browser.
-              </p>
-            </div>
-            <form onSubmit={(e) => void handleOpenCostSync(e)} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">OpenCost URL</label>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+          <form onSubmit={(event) => void handleOpenCostSync(event)} className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+            <Notice tone="blue" icon={<Box className="h-4 w-4" />}>
+              <p className="font-semibold">OpenCost runs from the API server perspective.</p>
+              <p className="mt-1 text-xs opacity-80">Use localhost only when OpenCost is running on the same OptiOra VM.</p>
+            </Notice>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">OpenCost URL</span>
+              <input
+                type="text"
+                value={opencostUrl}
+                onChange={(event) => setOpencostUrl(event.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+              />
+            </label>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Cluster name</span>
                 <input
                   type="text"
-                  value={opencostUrl}
-                  onChange={e => setOpencostUrl(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+                  value={form.cluster_name}
+                  onChange={(event) => handleFormChange('cluster_name', event.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
                 />
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Cluster Name</label>
-                  <input
-                    type="text"
-                    value={form.cluster_name}
-                    onChange={e => handleFormChange('cluster_name', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Window (days)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={opencostWindowDays}
-                    onChange={e => setOpencostWindowDays(Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
-                  />
-                </div>
-              </div>
-              {opencostSyncError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                  {opencostSyncError}
-                </div>
-              )}
-              {opencostInstallError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-                  {opencostInstallError}
-                </div>
-              )}
-              {opencostOnLocalhost && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      OpenCost URL uses localhost. This works only when OpenCost runs on the same OptiOra server VM.
-                    </span>
-                  </div>
-                </div>
-              )}
-              <Button type="button" variant="outline" className="w-full rounded-lg" onClick={() => void handleOpenCostAutoInstall()} disabled={opencostInstallLoading}>
-                {opencostInstallLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Auto-install & Wire OpenCost
-              </Button>
-              <Button type="submit" className="w-full rounded-lg" disabled={opencostSyncLoading}>
-                {opencostSyncLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Sync OpenCost
-              </Button>
-              {opencostInstallResult && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                  <p className="font-semibold">Auto-install status: {opencostInstallResult.status}</p>
-                  <p className="mt-1">{opencostInstallResult.message}</p>
-                  {opencostInstallResult.api_url && (
-                    <p className="mt-1 font-mono">API URL: {opencostInstallResult.api_url}</p>
-                  )}
-                  {opencostInstallResult.command_log.length > 0 && (
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-slate-600 dark:text-slate-400">Command log</summary>
-                      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-100 p-2 text-[11px] dark:bg-slate-800">
-                        {opencostInstallResult.command_log.join('\n')}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-              )}
-            </form>
-          </CardContent>
-        </Card>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Window days</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={opencostWindowDays}
+                  onChange={(event) => setOpencostWindowDays(Number(event.target.value))}
+                  className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-900"
+                />
+              </label>
+            </div>
 
-        <Card>
-          <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-            <CardTitle>Namespace & Pod Panel</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-5 space-y-4">
+            {opencostSyncError && (
+              <Notice tone="red" icon={<AlertTriangle className="h-4 w-4" />}>
+                {opencostSyncError}
+              </Notice>
+            )}
+            {opencostInstallError && (
+              <Notice tone="red" icon={<AlertTriangle className="h-4 w-4" />}>
+                {opencostInstallError}
+              </Notice>
+            )}
+            {opencostOnLocalhost && (
+              <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
+                OpenCost URL uses localhost. This works only when OpenCost runs on the same OptiOra server VM.
+              </Notice>
+            )}
+
+            <Button type="button" variant="outline" className="w-full" onClick={() => void handleOpenCostAutoInstall()} disabled={opencostInstallLoading}>
+              {opencostInstallLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Wrench className="mr-2 h-4 w-4" />}
+              Auto-install and Wire OpenCost
+            </Button>
+            <Button type="submit" className="w-full" disabled={opencostSyncLoading}>
+              {opencostSyncLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Sync OpenCost
+            </Button>
+
+            {opencostInstallResult && (
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                <p className="font-semibold">Auto-install status: {opencostInstallResult.status}</p>
+                <p className="mt-1">{opencostInstallResult.message}</p>
+                {opencostInstallResult.api_url && <p className="mt-1 font-mono">API URL: {opencostInstallResult.api_url}</p>}
+                {opencostInstallResult.command_log.length > 0 && (
+                  <Expander
+                    title="Command log"
+                    description="Open for install command output."
+                    icon={<Server className="h-5 w-5" />}
+                    className="mt-3 shadow-none"
+                  >
+                    <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-slate-100 p-2 text-[11px] dark:bg-slate-800">
+                      {opencostInstallResult.command_log.join('\n')}
+                    </pre>
+                  </Expander>
+                )}
+              </div>
+            )}
+          </form>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             {opencostSyncResult ? (
-              <>
-                <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                  <p className="text-sm text-slate-600 dark:text-slate-400">Source: {opencostSyncResult.source}</p>
-                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                    {fmt(opencostSyncResult.total_cost_usd)} total / {opencostSyncResult.window_days} days
-                  </p>
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Live OpenCost Result</p>
+                    <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{fmt(opencostSyncResult.total_cost_usd)} / {opencostSyncResult.window_days} days</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{opencostSyncResult.namespace_count} namespace(s) · source {opencostSyncResult.source}</p>
+                  </div>
+                  <Badge variant="outline" className="rounded-md">{opencostSyncResult.cluster_name}</Badge>
                 </div>
 
                 <div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Namespace breakdown (live)</p>
+                  <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">Namespace Breakdown</p>
                   <div className="space-y-2">
                     {opencostSyncResult.namespaces.map((row) => (
                       <div key={row.namespace}>
-                        <div className="mb-0.5 flex justify-between text-xs">
+                        <div className="mb-1 flex justify-between gap-3 text-xs">
                           <span className="font-mono text-slate-700 dark:text-slate-300">{row.namespace}</span>
-                          <span className="text-slate-500">{fmt(row.cost_usd)} ({row.share_percent.toFixed(1)}%)</span>
+                          <span className="text-slate-500">{fmt(row.cost_usd)} · {row.share_percent.toFixed(1)}%</span>
                         </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                           <div
-                            className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-indigo-500"
+                            className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-indigo-500"
                             style={{ width: `${Math.min(row.share_percent, 100)}%` }}
                           />
                         </div>
@@ -774,23 +874,26 @@ export default function KubernetesPage() {
                 </div>
 
                 {podRows.length > 0 ? (
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Pod-level breakdown (compact)</p>
-                    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                  <Expander
+                    title="Pod Breakdown"
+                    description="Compact pod-level cost rows from OpenCost."
+                    icon={<Cpu className="h-5 w-5 text-blue-600" />}
+                  >
+                    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
                       <table className="w-full min-w-[520px] text-xs">
                         <thead className="bg-slate-50 dark:bg-slate-800/60">
                           <tr className="text-left text-slate-500">
                             <th className="px-3 py-2 font-medium">Namespace</th>
                             <th className="px-3 py-2 font-medium">Pod</th>
-                            <th className="px-3 py-2 font-medium text-right">Cost</th>
-                            <th className="px-3 py-2 font-medium text-right">Share</th>
+                            <th className="px-3 py-2 text-right font-medium">Cost</th>
+                            <th className="px-3 py-2 text-right font-medium">Share</th>
                           </tr>
                         </thead>
                         <tbody>
                           {podRows.slice(0, 12).map((pod, idx) => (
                             <tr key={`${pod.namespace}-${pod.pod_name}-${idx}`} className="border-t border-slate-100 dark:border-slate-800">
-                              <td className="px-3 py-2 text-slate-700 dark:text-slate-300 font-mono">{pod.namespace}</td>
-                              <td className="px-3 py-2 text-slate-700 dark:text-slate-300 font-mono">{pod.pod_name}</td>
+                              <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">{pod.namespace}</td>
+                              <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">{pod.pod_name}</td>
                               <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300">{fmt(pod.cost_usd)}</td>
                               <td className="px-3 py-2 text-right text-slate-500">{pod.share_percent.toFixed(2)}%</td>
                             </tr>
@@ -798,21 +901,24 @@ export default function KubernetesPage() {
                         </tbody>
                       </table>
                     </div>
-                    <p className="mt-2 text-xs text-slate-500">Showing up to 12 pod rows from OpenCost payload.</p>
-                  </div>
+                  </Expander>
                 ) : (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
                     Pod-level breakdown will appear automatically when OpenCost sync returns pod aggregation fields.
-                  </div>
+                  </Notice>
                 )}
-
-              </>
+              </div>
             ) : (
-              <p className="text-sm text-slate-500">Sync OpenCost to load live namespace breakdown for this cluster.</p>
+              <div className="flex min-h-[260px] flex-col items-center justify-center text-center">
+                <Box className="mb-4 h-12 w-12 text-slate-400" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No live OpenCost sync yet</p>
+                <p className="mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+                  Sync OpenCost to load live namespace and pod cost allocation for this cluster.
+                </p>
+              </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
       </Expander>
     </div>
   )

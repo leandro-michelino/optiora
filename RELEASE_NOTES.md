@@ -11,7 +11,7 @@
 ### Changed
 
 - Dashboard navigation active-state matching now treats `/dashboard` as the Overview page only, avoiding false active highlights on every nested dashboard route.
-- The duplicate Kubernetes namespace alias was removed from the visible sidebar while preserving the route redirect.
+- The duplicate Kubernetes namespace page was consolidated into the canonical Kubernetes page, with the old URL handled by a Next.js redirect.
 - Credential setup and scan approval forms now use consistent shared form styling, stronger dark-mode support, lucide icons, and typed scan-frequency handling.
 - Operations export tests now open the relevant expander before asserting controls, matching the lower-density UI.
 - Playwright backend startup now explicitly sets `REQUIRE_LIVE_PROVIDER_DATA=false` so local `.env` live-provider requirements cannot break the CSV/import-mode e2e harness.
