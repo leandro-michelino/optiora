@@ -83,6 +83,7 @@ import { authorizedFetch } from './auth-fetch'
 
 const DEFAULT_TIMEOUT_MS = 10000
 const LIVE_DATA_TIMEOUT_MS = 45000
+const RIGHTSIZING_LIVE_TIMEOUT_MS = 120000
 
 interface ListQuery {
   limit?: number
@@ -1077,7 +1078,7 @@ export function fetchRightsizingRecommendations(params?: {
   return requestJson<RightsizingResponse>(
     `/api/v1/recommendations/rightsizing${qs ? `?${qs}` : ''}`,
     {},
-    { timeoutMs: params?.refresh_live ? LIVE_DATA_TIMEOUT_MS : DEFAULT_TIMEOUT_MS },
+    { timeoutMs: params?.refresh_live ? RIGHTSIZING_LIVE_TIMEOUT_MS : DEFAULT_TIMEOUT_MS },
   )
 }
 

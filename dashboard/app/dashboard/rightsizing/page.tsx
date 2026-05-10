@@ -1,7 +1,25 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, ArrowRight, CheckCircle, DollarSign, ExternalLink, Loader, RefreshCw, Zap } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  CheckCircle,
+  ChevronDown,
+  Clock3,
+  Database,
+  DollarSign,
+  ExternalLink,
+  Filter,
+  Info,
+  Loader,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react'
 import { fetchRightsizingRecommendations } from '@/lib/api'
 import { RightsizingResponse, RightsizingRecommendation } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +53,39 @@ function fmtDate(v: string | null) {
   const d = new Date(v)
   if (Number.isNaN(d.getTime())) return v
   return d.toLocaleString()
+}
+
+function compactSource(source?: string): string {
+  if (!source) return 'No source yet'
+  return source.replace(/_/g, ' ')
+}
+
+function scanModeLabel(refreshLive: boolean): string {
+  return refreshLive ? 'Live provider scan' : 'Stored scan results'
+}
+
+function scanModeDescription(refreshLive: boolean, data: RightsizingResponse | null): string {
+  if (refreshLive) {
+    return data
+      ? `Live refresh completed from ${compactSource(data.data_source)}.`
+      : 'Live refresh asks provider APIs for fresh recommendations before using stored signals.'
+  }
+  return data
+    ? `Fast dashboard mode using ${compactSource(data.data_source)}.`
+    : 'Fast dashboard mode uses the latest stored scan and imported-cost signals.'
+}
+
+function sourceQuality(source?: string): { label: string; tone: 'emerald' | 'blue' | 'amber' | 'slate' } {
+  const normalized = (source || '').toLowerCase()
+  if (!normalized || normalized === 'no_data_available') return { label: 'No data', tone: 'slate' }
+  if (normalized.includes('live') || normalized.includes('cloudwatch') || normalized.includes('advisor') || normalized.includes('inventory')) {
+    return { label: 'Live provider evidence', tone: 'emerald' }
+  }
+  if (normalized.includes('multi')) return { label: 'Blended evidence', tone: 'blue' }
+  if (normalized.includes('snapshot') || normalized.includes('trend') || normalized.includes('imported')) {
+    return { label: 'Stored evidence', tone: 'amber' }
+  }
+  return { label: 'Backend evidence', tone: 'blue' }
 }
 
 function requestErrorMessage(error: unknown): string {
@@ -80,6 +131,98 @@ function effortColor(e: string) {
     medium: 'text-amber-600 dark:text-amber-400',
     high: 'text-rose-600 dark:text-rose-400',
   }[e] ?? 'text-slate-500'
+}
+
+function toneClasses(tone: 'emerald' | 'blue' | 'amber' | 'slate' | 'rose' | 'violet'): string {
+  return {
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200',
+    blue: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200',
+    amber: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
+    rose: 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200',
+    violet: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-200',
+  }[tone]
+}
+
+function StatusTile({
+  label,
+  value,
+  helper,
+  icon,
+  tone,
+}: {
+  label: string
+  value: string
+  helper: string
+  icon: ReactNode
+  tone: 'emerald' | 'blue' | 'amber' | 'slate' | 'rose' | 'violet'
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start gap-3">
+        <span className={`rounded-lg border p-2 ${toneClasses(tone)}`}>{icon}</span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="mt-1 text-base font-semibold leading-6 text-slate-950 [overflow-wrap:anywhere] dark:text-white">{value}</p>
+          <p className="mt-2 text-sm leading-5 text-slate-600 [overflow-wrap:anywhere] dark:text-slate-400">{helper}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FriendlyNotice({
+  tone,
+  icon,
+  title,
+  children,
+}: {
+  tone: 'emerald' | 'blue' | 'amber' | 'rose'
+  icon: ReactNode
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <div className={`rounded-lg border p-4 text-sm ${toneClasses(tone)}`}>
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 shrink-0">{icon}</span>
+        <div className="min-w-0">
+          <p className="font-semibold">{title}</p>
+          <div className="mt-1 leading-6 [overflow-wrap:anywhere]">{children}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InlineDisclosure({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description?: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-start gap-3 px-3 py-2 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200">{title}</span>
+          {description ? <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</span> : null}
+        </span>
+        <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open ? <div className="border-t border-slate-200 p-3 dark:border-slate-700">{children}</div> : null}
+    </div>
+  )
 }
 
 function providerColor(p: string) {
@@ -219,7 +362,6 @@ function rollbackPlan(rec: RightsizingRecommendation): string {
 }
 
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
-  const [expanded, setExpanded] = useState(false)
   const consoleUrl = resourceConsoleUrl(rec)
   const product = productCategory(rec)
   const aggregateScope = rec.resource_type.toLowerCase().includes('aggregate')
@@ -345,12 +487,11 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
             </div>
           )}
 
-          {/* Expand button */}
-          <button onClick={() => setExpanded(e => !e)} className="text-xs text-blue-600 dark:text-blue-400 hover:underline text-left">
-            {expanded ? 'Hide full details ▲' : 'Show full details ▼'}
-          </button>
-          {expanded && (
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-3">
+          <InlineDisclosure
+            title="Execution details"
+            description="Rationale, validation steps, rollout checks, and rollback plan."
+          >
+            <div className="text-xs text-slate-600 dark:text-slate-400 space-y-3">
               <div>
                 <p className="font-semibold text-slate-800 dark:text-slate-200 mb-1">Recommendation rationale</p>
                 <p>{rec.reason}</p>
@@ -396,7 +537,7 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
                 <p>Rollback plan: {rollbackPlan(rec)}</p>
               </div>
             </div>
-          )}
+          </InlineDisclosure>
         </div>
       </CardContent>
     </Card>
@@ -410,7 +551,9 @@ export default function RightsizingPage() {
   const [provider, setProvider] = useState('all')
   const [actionFilter, setActionFilter] = useState('all')
   const [productFilter, setProductFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [refreshLive, setRefreshLive] = useState(false)
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -418,12 +561,14 @@ export default function RightsizingPage() {
     try {
       const result = await fetchRightsizingRecommendations({ provider, min_savings: 0, limit: 1000, refresh_live: refreshLive })
       setData(result)
+      setLastLoadedAt(new Date())
     } catch (error) {
       const reason = requestErrorMessage(error)
       if (refreshLive) {
         try {
           const fallback = await fetchRightsizingRecommendations({ provider, min_savings: 0, limit: 1000, refresh_live: false })
           setData(fallback)
+          setLastLoadedAt(new Date())
           setError(`Live provider scan failed: ${reason}. Showing stored scan results instead.`)
         } catch (fallbackError) {
           setData(null)
@@ -441,6 +586,7 @@ export default function RightsizingPage() {
   useEffect(() => { void load() }, [load])
 
   const recommendations = data?.recommendations ?? []
+  const sourceInfo = sourceQuality(data?.data_source)
   const productSummaries = Object.entries(
     recommendations.reduce<Record<string, { count: number; savings: number }>>((acc, rec) => {
       const product = productCategory(rec)
@@ -455,7 +601,21 @@ export default function RightsizingPage() {
     .filter((rec) => productCategory(rec) !== 'compute')
     .reduce((sum, rec) => sum + rec.monthly_savings_usd, 0)
   const productScoped = recommendations.filter((r) => productFilter === 'all' || productCategory(r) === productFilter)
-  const filtered = productScoped.filter((r) => actionFilter === 'all' || r.action === actionFilter)
+  const actionScoped = productScoped.filter((r) => actionFilter === 'all' || r.action === actionFilter)
+  const searchNormalized = searchQuery.trim().toLowerCase()
+  const filtered = searchNormalized
+    ? actionScoped.filter((rec) => [
+      rec.resource_name,
+      rec.resource_id,
+      rec.resource_type,
+      rec.account_id,
+      rec.region,
+      rec.provider,
+      rec.action,
+      rec.evidence_source,
+      rec.reason,
+    ].some((value) => String(value || '').toLowerCase().includes(searchNormalized)))
+    : actionScoped
   const selectProductFilter = (product: string) => {
     setProductFilter(product)
     setActionFilter('all')
@@ -469,18 +629,20 @@ export default function RightsizingPage() {
           <div className="mb-2 flex flex-wrap gap-2">
             <Badge variant="outline" className="rounded-md">Resource-Level Rightsizing</Badge>
             <Badge variant="outline" className="rounded-md border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-950/30">Compute · Storage · Commitments · Services</Badge>
+            <Badge className={`rounded-md border ${toneClasses(sourceInfo.tone)}`}>{sourceInfo.label}</Badge>
           </div>
           <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Rightsizing</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
             Product-level optimization recommendations from provider inventory, billing trends, and utilization signals. Compare compute, storage, commitment, database, network, Kubernetes, and governance savings from one view.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
             <input
               type="checkbox"
               checked={refreshLive}
               onChange={(event) => setRefreshLive(event.target.checked)}
+              disabled={loading}
               className="h-4 w-4 rounded border-slate-300 text-blue-600"
             />
             Live provider scan
@@ -491,19 +653,80 @@ export default function RightsizingPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>{error}</p>
+      <Expander
+        title="Scan Status"
+        description={scanModeDescription(refreshLive, data)}
+        icon={loading ? <Loader className="h-5 w-5 animate-spin" /> : <Database className="h-5 w-5" />}
+        defaultOpen={Boolean(error) || loading}
+      >
+        <div className="space-y-4">
+          {error && (
+            <FriendlyNotice
+              tone={refreshLive ? 'amber' : 'rose'}
+              icon={<AlertTriangle className="h-4 w-4" />}
+              title={refreshLive ? 'Live scan fell back safely' : 'Rightsizing data is unavailable'}
+            >
+              {error}
+            </FriendlyNotice>
+          )}
+          {loading && refreshLive && (
+            <FriendlyNotice tone="blue" icon={<Clock3 className="h-4 w-4" />} title="Live provider scan is running">
+              Provider-native rightsizing APIs can take around a minute for large OCI or multi-cloud inventories. The request timeout is now long enough for the current live scan path, and stored results remain available if the provider call fails.
+            </FriendlyNotice>
+          )}
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+            <StatusTile
+              label="Mode"
+              value={scanModeLabel(refreshLive)}
+              helper={refreshLive ? 'Fresh provider APIs first, stored signals second.' : 'Responsive dashboard path from the latest stored evidence.'}
+              icon={<RefreshCw className="h-5 w-5" />}
+              tone={refreshLive ? 'emerald' : 'blue'}
+            />
+            <StatusTile
+              label="Source"
+              value={compactSource(data?.data_source)}
+              helper={lastLoadedAt ? `Loaded ${lastLoadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` : 'Waiting for the first response.'}
+              icon={<Database className="h-5 w-5" />}
+              tone={sourceInfo.tone}
+            />
+            <StatusTile
+              label="Provider scope"
+              value={provider === 'all' ? 'All configured providers' : provider.toUpperCase()}
+              helper="Use filters to isolate one provider before running a live refresh."
+              icon={<ShieldCheck className="h-5 w-5" />}
+              tone="slate"
+            />
+            <StatusTile
+              label="Visible now"
+              value={`${filtered.length.toLocaleString()} cards`}
+              helper={`${recommendations.length.toLocaleString()} total recommendations loaded before filters.`}
+              icon={<BarChart3 className="h-5 w-5" />}
+              tone="violet"
+            />
+          </div>
         </div>
-      )}
+      </Expander>
 
       <Expander
-        title="Filters"
-        description="Narrow recommendations by provider, action, and product category."
-        icon={<Zap className="h-5 w-5" />}
+        title="Filters And Search"
+        description="Narrow recommendations by provider, action, product category, region, account, or resource ID."
+        icon={<Filter className="h-5 w-5" />}
+        defaultOpen={Boolean(searchQuery) || provider !== 'all' || actionFilter !== 'all' || productFilter !== 'all'}
       >
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="space-y-4">
+        <label className="block">
+          <span className="sr-only">Search rightsizing recommendations</span>
+          <span className="relative block max-w-2xl">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search resource, OCID, account, region, evidence, or reason"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            />
+          </span>
+        </label>
         <div className="flex flex-wrap gap-2">
           {PROVIDERS.map(p => (
             <button
@@ -519,7 +742,7 @@ export default function RightsizingPage() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2 ml-4">
+        <div className="flex flex-wrap gap-2">
           {ACTIONS.map(a => (
             <button
               key={a}
@@ -534,7 +757,7 @@ export default function RightsizingPage() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700 sm:basis-full">
+        <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-700">
           {productFilterOptions.map(product => (
             <button
               key={product}
@@ -554,6 +777,12 @@ export default function RightsizingPage() {
 
       {/* KPI strip */}
       {data && (
+        <Expander
+          title="Executive Summary"
+          description="Top-line impact from the current scan and filter state."
+          icon={<DollarSign className="h-5 w-5" />}
+          defaultOpen
+        >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: 'Resources Analyzed', value: data.total_resources_analyzed.toLocaleString(), icon: Zap, color: 'from-blue-500 to-blue-600' },
@@ -575,6 +804,7 @@ export default function RightsizingPage() {
             )
           })}
         </div>
+        </Expander>
       )}
 
       {/* Product breakdown */}
@@ -678,7 +908,7 @@ export default function RightsizingPage() {
       <Expander
         title="How Rightsizing Works"
         description="Data sources and recommendation logic behind the list."
-        icon={<Zap className="h-5 w-5" />}
+        icon={<Info className="h-5 w-5" />}
       >
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
         <strong>How rightsizing works:</strong> Optiora combines live provider inventory, provider recommendation APIs, cost trends, and utilization signals. Storage cleanup actions such as unattached boot/block volumes are included alongside VM downsize and commitment opportunities.
