@@ -19,6 +19,7 @@ import {
   LogOut,
   Menu,
   MessageCircle,
+  Search,
   Server,
   Settings,
   ShieldCheck,
@@ -76,7 +77,6 @@ const navSections: NavSection[] = [
       { href: '/dashboard/advanced-finops', label: 'Advanced FinOps', icon: ShieldCheck },
       { href: '/dashboard/inventory', label: 'Cloud Resources', icon: Server },
       { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box },
-      { href: '/dashboard/k8s-namespaces', label: 'K8s Namespaces', icon: Box },
       { href: '/dashboard/virtual-tags', label: 'Virtual Tags', icon: Tag },
       { href: '/dashboard/rightsizing', label: 'Rightsizing', icon: BarChart2 },
     ],
@@ -113,19 +113,56 @@ const flatNavItems = navSections.flatMap((section) =>
 )
 
 function isActivePath(pathname: string, href: string): boolean {
+  if (href === '/dashboard') {
+    return pathname === href
+  }
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
 function DashboardNav({
   pathname,
   onNavigate,
+  navQuery,
+  onNavQueryChange,
 }: {
   pathname: string
   onNavigate?: () => void
+  navQuery: string
+  onNavQueryChange: (value: string) => void
 }) {
+  const normalizedQuery = navQuery.trim().toLowerCase()
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: normalizedQuery
+        ? section.items.filter((item) => item.label.toLowerCase().includes(normalizedQuery))
+        : section.items,
+    }))
+    .filter((section) => section.items.length > 0)
+
   return (
     <nav className="space-y-6" aria-label="Dashboard navigation">
-      {navSections.map((section) => (
+      <label className="block px-1">
+        <span className="sr-only">Find dashboard screen</span>
+        <span className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={navQuery}
+            onChange={(event) => onNavQueryChange(event.target.value)}
+            placeholder="Find screen"
+            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-blue-500 dark:focus:bg-slate-900"
+          />
+        </span>
+      </label>
+
+      {visibleSections.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 px-3 py-5 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          No screens match that search.
+        </div>
+      ) : null}
+
+      {visibleSections.map((section) => (
         <section key={section.label} className="space-y-2">
           <div className="px-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
             {section.label}
@@ -176,6 +213,7 @@ function DashboardLayoutContent({
   const pathname = usePathname()
   const { user, logout, organizations, activeOrganization, switchOrganization } = useAuth()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [navQuery, setNavQuery] = useState('')
 
   const activeItem = useMemo(() => {
     return [...flatNavItems]
@@ -189,6 +227,13 @@ function DashboardLayoutContent({
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
+      <a
+        href="#dashboard-main"
+        className="sr-only fixed left-4 top-4 z-[60] rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      >
+        Skip to dashboard content
+      </a>
+
       {mobileNavOpen && (
         <button
           type="button"
@@ -229,7 +274,12 @@ function DashboardLayoutContent({
         </div>
 
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-3 py-5">
-          <DashboardNav pathname={pathname} onNavigate={() => setMobileNavOpen(false)} />
+          <DashboardNav
+            pathname={pathname}
+            navQuery={navQuery}
+            onNavQueryChange={setNavQuery}
+            onNavigate={() => setMobileNavOpen(false)}
+          />
         </div>
 
         <div className="space-y-3 border-t border-slate-200 p-3 dark:border-slate-800">
@@ -317,7 +367,7 @@ function DashboardLayoutContent({
           </div>
         </header>
 
-        <main className="min-h-[calc(100vh-4rem)]">
+        <main id="dashboard-main" className="min-h-[calc(100vh-4rem)]" tabIndex={-1}>
           <div className="mx-auto w-full max-w-[1800px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
             {children}
           </div>

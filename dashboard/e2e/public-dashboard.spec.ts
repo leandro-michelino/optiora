@@ -28,9 +28,25 @@ test('public dashboard uses imported CSV as a fallback source and keeps exports 
 
   await page.goto('/dashboard/operations')
   await expect(page.getByTestId('data-source-banner')).toHaveAttribute('data-state', 'partial')
+  await page.getByRole('button', { name: /Scan Evidence And Timeline/i }).click()
   await expect(page.getByTestId('scan-history-export')).toBeVisible()
+  await page.getByRole('button', { name: /Alerts, Reports, Exports, And Audit/i }).click()
   await expect(page.getByTestId('alerts-export')).toBeVisible()
   await expect(page.getByTestId('audit-export')).toBeVisible()
   await expect(page.getByTestId('executive-csv-export')).toBeVisible()
   await expect(page.getByTestId('executive-excel-export')).toBeVisible()
+})
+
+test('dashboard navigation search narrows screens and active route is precise', async ({ page }) => {
+  await page.goto('/dashboard/rightsizing')
+
+  await expect(page.getByRole('link', { name: /^Overview$/ })).not.toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('link', { name: /^Rightsizing$/ })).toHaveAttribute('aria-current', 'page')
+
+  await page.getByRole('searchbox', { name: 'Find dashboard screen' }).fill('kubernetes')
+  await expect(page.getByRole('link', { name: /^Kubernetes$/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: /^Rightsizing$/ })).toBeHidden()
+
+  await page.getByRole('searchbox', { name: 'Find dashboard screen' }).fill('no screen here')
+  await expect(page.getByText('No screens match that search.')).toBeVisible()
 })

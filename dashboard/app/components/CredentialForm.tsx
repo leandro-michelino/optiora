@@ -66,12 +66,12 @@ type Provider = keyof typeof PROVIDER_HELP;
 function ProviderHelp({ provider }: { provider: Provider }) {
   const help = PROVIDER_HELP[provider];
   return (
-    <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm">
+    <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm dark:border-blue-900 dark:bg-blue-950/30">
       <div className="flex items-start gap-2 mb-2">
-        <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-        <p className="text-blue-800 font-medium">{help.summary}</p>
+        <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0 dark:text-blue-300" />
+        <p className="text-blue-800 font-medium dark:text-blue-200">{help.summary}</p>
       </div>
-      <ol className="ml-6 mt-2 space-y-1 list-decimal text-blue-700">
+      <ol className="ml-6 mt-2 space-y-1 list-decimal text-blue-700 dark:text-blue-300">
         {help.steps.map((step, i) => (
           <li key={i} className="text-xs leading-relaxed">{step}</li>
         ))}
@@ -80,7 +80,7 @@ function ProviderHelp({ provider }: { provider: Provider }) {
         href={help.docHref}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 mt-3 text-xs text-blue-600 hover:underline"
+        className="inline-flex items-center gap-1 mt-3 text-xs font-medium text-blue-600 hover:underline dark:text-blue-300"
       >
         <ExternalLink className="w-3 h-3" />
         {help.docLabel}
@@ -90,7 +90,7 @@ function ProviderHelp({ provider }: { provider: Provider }) {
 }
 
 const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingOciFiles, setUploadingOciFiles] = useState(false);
@@ -122,11 +122,13 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   const [ociConfigUpload, setOciConfigUpload] = useState<File | null>(null);
   const [ociKeyUpload, setOciKeyUpload] = useState<File | null>(null);
 
-  const currentCredentials = () =>
-    selectedProvider === 'aws' ? awsForm :
-    selectedProvider === 'azure' ? azureForm :
-    selectedProvider === 'gcp' ? gcpForm :
-    ociForm;
+  const currentCredentials = (): Record<string, string> => {
+    if (selectedProvider === 'aws') return awsForm;
+    if (selectedProvider === 'azure') return azureForm;
+    if (selectedProvider === 'gcp') return gcpForm;
+    if (selectedProvider === 'oci') return ociForm;
+    return {};
+  };
 
   // Reset validation when provider or form changes.
   const resetValidation = () => {
@@ -267,38 +269,39 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
             <label className="block text-sm font-medium mb-3">Cloud Provider</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
               {(['aws', 'azure', 'gcp', 'oci'] as const).map(provider => (
-                <div
+                <button
                   key={provider}
-                  className={`p-3 rounded-lg border-2 transition-all ${
+                  type="button"
+                  onClick={() => { setSelectedProvider(provider); resetValidation(); }}
+                  aria-pressed={selectedProvider === provider}
+                  className={`rounded-lg border-2 p-3 text-left transition-all ${
                     selectedProvider === provider
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200'
+                      ? 'border-blue-500 bg-blue-50 shadow-sm dark:bg-blue-950/30'
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-900'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold uppercase text-sm">{provider}</div>
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedProvider(provider); resetValidation(); }}
-                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                    <div className="font-semibold uppercase text-sm text-slate-900 dark:text-white">{provider}</div>
+                    <span
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
                         selectedProvider === provider
                           ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
                       }`}
                     >
-                      {selectedProvider === provider ? 'Connected Form' : 'Connect'}
-                    </button>
+                      {selectedProvider === provider ? 'Selected' : 'Connect'}
+                    </span>
                   </div>
-                  <p className="mt-2 text-xs text-slate-600">
+                  <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
                     Click Connect to enter {provider.toUpperCase()} credentials.
                   </p>
-                </div>
+                </button>
               ))}
             </div>
           </div>
 
           {!selectedProvider && (
-            <div className="p-3 rounded-lg flex items-start gap-2 text-sm bg-blue-50 text-blue-700">
+            <div className="p-3 rounded-lg flex items-start gap-2 text-sm bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
               <Info className="w-4 h-4 mt-0.5 shrink-0" />
               <span>Select a provider and click Connect to request credentials.</span>
             </div>
@@ -306,7 +309,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
 
           {/* AWS Form */}
           {selectedProvider === 'aws' && (
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
               <ProviderHelp provider="aws" />
               <div>
                 <label className="block text-sm font-medium mb-1">Access Key ID</label>
@@ -316,7 +319,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setAwsForm({...awsForm, access_key_id: e.target.value})}
                   placeholder="AKIA..."
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
               <div>
@@ -327,7 +330,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setAwsForm({...awsForm, secret_access_key: e.target.value})}
                   placeholder="wJalr..."
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
               <div>
@@ -337,7 +340,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   value={awsForm.region}
                   onChange={e => setAwsForm({...awsForm, region: e.target.value})}
                   placeholder="us-east-1"
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
             </div>
@@ -345,7 +348,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
 
           {/* Azure Form */}
           {selectedProvider === 'azure' && (
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
               <ProviderHelp provider="azure" />
               <div>
                 <label className="block text-sm font-medium mb-1">Subscription ID</label>
@@ -355,7 +358,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setAzureForm({...azureForm, subscription_id: e.target.value})}
                   placeholder="UUID format"
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
               <div>
@@ -366,7 +369,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setAzureForm({...azureForm, tenant_id: e.target.value})}
                   placeholder="UUID format"
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
               <div>
@@ -377,7 +380,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setAzureForm({...azureForm, client_id: e.target.value})}
                   placeholder="UUID format"
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
               <div>
@@ -388,7 +391,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setAzureForm({...azureForm, client_secret: e.target.value})}
                   placeholder="Secret value"
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
             </div>
@@ -396,7 +399,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
 
           {/* GCP Form */}
           {selectedProvider === 'gcp' && (
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
               <ProviderHelp provider="gcp" />
               <div>
                 <label className="block text-sm font-medium mb-1">Project ID</label>
@@ -406,7 +409,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setGcpForm({...gcpForm, project_id: e.target.value})}
                   placeholder="project-id"
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
               <div>
@@ -417,7 +420,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   placeholder='{"type": "service_account", ...}'
                   required
                   rows={6}
-                  className="w-full px-3 py-2 border rounded-md font-mono text-xs"
+                  className="form-field min-h-40 font-mono text-xs"
                 />
               </div>
             </div>
@@ -425,7 +428,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
 
           {/* OCI Form */}
           {selectedProvider === 'oci' && (
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
               <ProviderHelp provider="oci" />
               <div>
                 <label className="block text-sm font-medium mb-1">Config File Path</label>
@@ -435,9 +438,9 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   onChange={e => setOciForm({...ociForm, config_file: e.target.value})}
                   placeholder="~/.oci/config"
                   required
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   This path is resolved on the API server host. If your profile is shown like <code>[JNB]</code> in the file, enter <code>JNB</code> here.
                 </p>
               </div>
@@ -448,11 +451,11 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   value={ociForm.profile}
                   onChange={e => setOciForm({...ociForm, profile: e.target.value})}
                   placeholder="DEFAULT"
-                  className="w-full px-3 py-2 border rounded-md"
+                  className="form-field"
                 />
               </div>
-              <div className="rounded-md border border-slate-200 bg-white p-3 space-y-3">
-                <p className="text-xs text-slate-600">
+              <div className="space-y-3 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                <p className="text-xs text-slate-600 dark:text-slate-400">
                   Optional for test environments: upload OCI config/private-key files to the server VM and use those server paths as the credential source.
                 </p>
                 <div>
@@ -461,7 +464,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                     type="file"
                     accept=".ini,.cfg,.config,text/plain"
                     onChange={e => setOciConfigUpload(e.target.files?.[0] ?? null)}
-                    className="w-full text-sm"
+                    className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
                   />
                 </div>
                 <div>
@@ -470,14 +473,14 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                     type="file"
                     accept=".pem,.key,text/plain"
                     onChange={e => setOciKeyUpload(e.target.files?.[0] ?? null)}
-                    className="w-full text-sm"
+                    className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleUploadOciFiles}
                   disabled={uploadingOciFiles || !ociConfigUpload}
-                  className="px-3 py-2 border border-slate-400 text-slate-700 rounded-md hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
                   {uploadingOciFiles ? 'Uploading…' : 'Upload OCI Files To Server'}
                 </button>
@@ -488,10 +491,10 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           {/* Validation / Save status banner */}
           {validationStatus !== 'idle' && (
             <div className={`p-3 rounded-lg flex items-start gap-2 text-sm ${
-              validationStatus === 'validating' ? 'bg-blue-50 text-blue-700' :
-              validationStatus === 'valid'      ? 'bg-green-50 text-green-700' :
-              validationStatus === 'saved'      ? 'bg-green-100 text-green-800' :
-              'bg-red-50 text-red-700'
+              validationStatus === 'validating' ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300' :
+              validationStatus === 'valid'      ? 'bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300' :
+              validationStatus === 'saved'      ? 'bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-200' :
+              'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
             }`}>
               {validationStatus === 'validating' && <Loader className="w-4 h-4 animate-spin mt-0.5 shrink-0" />}
               {(validationStatus === 'valid' || validationStatus === 'saved') && <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />}
@@ -501,12 +504,12 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           )}
 
           {/* Action buttons */}
-          <div className="flex gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {/* Test Connection — always available, submits the form */}
             <button
               type="submit"
               disabled={validating || saving}
-              className="flex-1 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              className="rounded-lg border border-blue-600 px-4 py-2 font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-400 dark:text-blue-300 dark:hover:bg-blue-950/30"
             >
               {validating ? (
                 <span className="flex items-center justify-center gap-2">
@@ -520,7 +523,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
               type="button"
               onClick={handleSave}
               disabled={validationStatus !== 'valid' || saving}
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
+              className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 dark:disabled:bg-slate-700"
             >
               {saving ? (
                 <span className="flex items-center justify-center gap-2">

@@ -1,5 +1,28 @@
 # Release Notes
 
+## Unreleased - UIX and Navigation Polish (May 10, 2026)
+
+### Added
+
+- Searchable dashboard navigation so operators can jump to dense FinOps screens without scanning the full sidebar.
+- Accessible skip-to-content link in the dashboard shell for keyboard and assistive-technology users.
+- Playwright coverage for precise active navigation state and sidebar search behavior.
+
+### Changed
+
+- Dashboard navigation active-state matching now treats `/dashboard` as the Overview page only, avoiding false active highlights on every nested dashboard route.
+- The duplicate Kubernetes namespace alias was removed from the visible sidebar while preserving the route redirect.
+- Credential setup and scan approval forms now use consistent shared form styling, stronger dark-mode support, lucide icons, and typed scan-frequency handling.
+- Operations export tests now open the relevant expander before asserting controls, matching the lower-density UI.
+- Playwright backend startup now explicitly sets `REQUIRE_LIVE_PROVIDER_DATA=false` so local `.env` live-provider requirements cannot break the CSV/import-mode e2e harness.
+
+### Validation
+
+- `cd dashboard && npm run lint`
+- `cd dashboard && npm run build`
+- `cd dashboard && npm run type-check`
+- `cd dashboard && npm run test:e2e`
+
 ## 0.9.1 - Dashboard Wiring and Repository Hygiene (May 10, 2026)
 
 This maintenance release tightens the animated dashboard experience, production

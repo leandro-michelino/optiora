@@ -28,6 +28,7 @@ export default defineConfig({
       env: {
         ENABLE_AUTH: 'false',
         ENVIRONMENT: 'test',
+        REQUIRE_LIVE_PROVIDER_DATA: 'false',
         DATABASE_URL: `sqlite:///${e2eDatabasePath}`,
         SECRET_KEY: 'optiora-e2e-secret-key',
       },
