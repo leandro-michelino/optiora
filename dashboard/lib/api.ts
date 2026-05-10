@@ -32,6 +32,7 @@ import {
   EfficiencyScoreResponse,
   CommitmentGapResponse,
   OptimizationPortfolioResponse,
+  AdvisorNarrativeType,
   HybridAdvisorResponse,
   GenAICopilotPackResponse,
   ImportedCostSummaryResponse,
@@ -401,7 +402,7 @@ export async function fetchOptimizationPortfolio(): Promise<OptimizationPortfoli
 }
 
 export async function fetchHybridAdvisor(
-  narrativeType: 'waste_insights' | 'optimization_roadmap' | 'executive_narrative' = 'optimization_roadmap',
+  narrativeType: AdvisorNarrativeType = 'optimization_roadmap',
 ): Promise<HybridAdvisorResponse> {
   return requestJson<HybridAdvisorResponse>(
     `/api/v1/advisor/hybrid${toQueryString({ narrative_type: narrativeType })}`,

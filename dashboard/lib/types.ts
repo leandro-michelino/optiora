@@ -168,6 +168,14 @@ export interface CommitmentGapResponse {
   priority_provider: string | null
 }
 
+export type AdvisorNarrativeType =
+  | 'waste_insights'
+  | 'optimization_roadmap'
+  | 'executive_narrative'
+  | 'tagging_strategy'
+  | 'sustainability_narrative'
+  | 'finops_operating_review'
+
 export interface HybridAdvisorResponse {
   generated_at: string
   cloud_provider: string
@@ -188,9 +196,10 @@ export interface HybridAdvisorResponse {
     }>
   }
   advisory: {
-    narrative_type: 'waste_insights' | 'optimization_roadmap' | 'executive_narrative'
+    narrative_type: AdvisorNarrativeType
     narrative: string | null
     prompt: string
+    rag?: unknown
     genai_configured: boolean
     fallback_mode: boolean
   }

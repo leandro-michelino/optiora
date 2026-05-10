@@ -4,28 +4,33 @@ import type { FormEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  BarChart3,
   Bot,
   Brain,
   CheckCircle2,
   Clipboard,
+  Database,
   Download,
   Eraser,
   FileText,
   Gauge,
   Lightbulb,
+  ListChecks,
   Loader,
   MessageCircle,
   RefreshCw,
+  Route,
   Send,
   Share2,
   ShieldCheck,
   Sparkles,
   Target,
+  TrendingUp,
   User,
   Zap,
 } from 'lucide-react'
 import { fetchHybridAdvisor } from '@/lib/api'
-import { HybridAdvisorResponse } from '@/lib/types'
+import { AdvisorNarrativeType, HybridAdvisorResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Expander } from '@/components/ui/expander'
@@ -43,13 +48,23 @@ interface Suggestion {
   icon: ReactNode
 }
 
-type NarrativeType = 'waste_insights' | 'optimization_roadmap' | 'executive_narrative'
-
-const narrativeLabels: Record<NarrativeType, string> = {
+const narrativeLabels: Record<AdvisorNarrativeType, string> = {
   waste_insights: 'Waste Insights',
   optimization_roadmap: '30/60/90 Roadmap',
   executive_narrative: 'Executive Summary',
+  tagging_strategy: 'Tagging Plan',
+  sustainability_narrative: 'Sustainability',
+  finops_operating_review: 'Operating Review',
 }
+
+const narrativeOrder: AdvisorNarrativeType[] = [
+  'optimization_roadmap',
+  'waste_insights',
+  'tagging_strategy',
+  'finops_operating_review',
+  'executive_narrative',
+  'sustainability_narrative',
+]
 
 function formatCurrency(value: number): string {
   return value.toLocaleString('en-US', {
@@ -66,6 +81,25 @@ function formatDateTime(value?: string): string {
   return parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+function formatPercent(value?: number | null, digits = 1): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '0.0%'
+  return `${value.toFixed(digits)}%`
+}
+
+function humanize(value: string): string {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function confidenceLabel(hybrid: HybridAdvisorResponse | null): string {
+  if (!hybrid) return 'Waiting for live data'
+  if (hybrid.advisory.genai_configured && !hybrid.advisory.fallback_mode) {
+    return 'High: deterministic metrics plus GenAI narrative'
+  }
+  return 'High: deterministic metrics, narrative fallback'
+}
+
 function resolveHybridErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
     return 'Unable to load hybrid advisor data.'
@@ -75,6 +109,9 @@ function resolveHybridErrorMessage(error: unknown): string {
   const lower = message.toLowerCase()
   if (lower.includes('timed out') || lower.includes('aborted')) {
     return 'Hybrid advisor is taking longer than expected. Please retry in a few seconds.'
+  }
+  if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('network error')) {
+    return 'Advisor backend is not reachable from this browser. Check the API URL, deployment health, or refresh after the service starts.'
   }
 
   return message || 'Unable to load hybrid advisor data.'
@@ -181,6 +218,85 @@ function StatTile({
   )
 }
 
+function DecisionCard({
+  label,
+  title,
+  helper,
+  icon,
+  tone,
+}: {
+  label: string
+  title: string
+  helper: string
+  icon: ReactNode
+  tone: 'blue' | 'emerald' | 'amber' | 'violet'
+}) {
+  const tones = {
+    blue: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
+    violet: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300',
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start gap-3">
+        <span className={`rounded-lg border p-2 ${tones[tone]}`}>{icon}</span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="mt-1 text-base font-semibold leading-6 text-slate-950 [overflow-wrap:anywhere] dark:text-white">
+            {title}
+          </p>
+          <p className="mt-2 text-sm leading-5 text-slate-600 [overflow-wrap:anywhere] dark:text-slate-400">
+            {helper}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProgressLine({
+  label,
+  value,
+  helper,
+  tone = 'blue',
+}: {
+  label: string
+  value: number
+  helper?: string
+  tone?: 'blue' | 'emerald' | 'amber' | 'rose'
+}) {
+  const clamped = Math.max(0, Math.min(value, 100))
+  const tones = {
+    blue: 'bg-blue-600',
+    emerald: 'bg-emerald-600',
+    amber: 'bg-amber-500',
+    rose: 'bg-rose-500',
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium text-slate-900 dark:text-white">{label}</span>
+        <span className="shrink-0 text-slate-600 dark:text-slate-400">{formatPercent(clamped)}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+        <div className={`h-2 rounded-full transition-all duration-700 ${tones[tone]}`} style={{ width: `${clamped}%` }} />
+      </div>
+      {helper ? <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{helper}</p> : null}
+    </div>
+  )
+}
+
+function EmptyState({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-400">
+      {children}
+    </div>
+  )
+}
+
 function Notice({
   tone,
   icon,
@@ -243,6 +359,34 @@ function MessageBubble({ message }: { message: Message }) {
   )
 }
 
+function ConversationLens({
+  label,
+  prompt,
+  icon,
+  onSelect,
+}: {
+  label: string
+  prompt: string
+  icon: ReactNode
+  onSelect: (prompt: string) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(prompt)}
+      className="rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-blue-300 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-800 dark:hover:bg-blue-950/30"
+    >
+      <span className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+        {icon}
+      </span>
+      <span className="block text-sm font-semibold text-slate-950 dark:text-white">{label}</span>
+      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400 [overflow-wrap:anywhere]">
+        {prompt}
+      </span>
+    </button>
+  )
+}
+
 export default function CostAdvisorPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -258,10 +402,11 @@ export default function CostAdvisorPage() {
   const [hybrid, setHybrid] = useState<HybridAdvisorResponse | null>(null)
   const [hybridLoading, setHybridLoading] = useState(false)
   const [hybridError, setHybridError] = useState<string | null>(null)
-  const [narrativeType, setNarrativeType] = useState<NarrativeType>('optimization_roadmap')
+  const [narrativeType, setNarrativeType] = useState<AdvisorNarrativeType>('optimization_roadmap')
   const [chatError, setChatError] = useState<string | null>(null)
   const [lastUserPrompt, setLastUserPrompt] = useState<string>('')
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const hybridRequestIdRef = useRef(0)
 
   const suggestions: Suggestion[] = useMemo(() => [
@@ -273,10 +418,12 @@ export default function CostAdvisorPage() {
   ], [])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const chatScroll = chatScrollRef.current
+    if (!chatScroll) return
+    chatScroll.scrollTo({ top: chatScroll.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
 
-  const loadHybrid = useCallback(async (type: NarrativeType) => {
+  const loadHybrid = useCallback(async (type: AdvisorNarrativeType) => {
     const requestId = hybridRequestIdRef.current + 1
     hybridRequestIdRef.current = requestId
     setHybridLoading(true)
@@ -300,9 +447,9 @@ export default function CostAdvisorPage() {
     void loadHybrid('optimization_roadmap')
   }, [loadHybrid])
 
-  async function handleSendMessage(event?: FormEvent) {
+  async function handleSendMessage(event?: FormEvent, overridePrompt?: string) {
     event?.preventDefault()
-    const prompt = input.trim()
+    const prompt = (overridePrompt ?? input).trim()
     if (!prompt || loading) return
     setChatError(null)
 
@@ -322,20 +469,26 @@ export default function CostAdvisorPage() {
     try {
       const controller = new AbortController()
       const timeout = globalThis.setTimeout(() => controller.abort(), 90000)
-
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          message: prompt,
-          conversationHistory: historyForRequest.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        }),
-      })
-      globalThis.clearTimeout(timeout)
+      let response: Response | undefined
+      try {
+        response = await fetch('/api/ai/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            message: prompt,
+            conversationHistory: historyForRequest.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+          }),
+        })
+      } finally {
+        globalThis.clearTimeout(timeout)
+      }
+      if (!response) {
+        throw new Error('No response returned from the advisor service.')
+      }
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
@@ -380,11 +533,12 @@ export default function CostAdvisorPage() {
 
   function handleSuggestion(suggestion: string) {
     setInput(suggestion)
+    requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   function handleRetry() {
     if (!loading && lastUserPrompt) {
-      setInput(lastUserPrompt)
+      void handleSendMessage(undefined, lastUserPrompt)
     }
   }
 
@@ -438,10 +592,28 @@ export default function CostAdvisorPage() {
   }
 
   const topRecommendations = hybrid?.deterministic.recommendations.slice(0, 4) || []
+  const topRecommendation = topRecommendations[0]
+  const quickWins = hybrid?.deterministic.waste.quick_wins.slice(0, 4) || []
+  const wasteCategories = hybrid?.deterministic.waste.categories.slice(0, 5) || []
+  const providerFindings = hybrid?.deterministic.analytics.provider_findings.slice(0, 4) || []
+  const providerSignals = hybrid?.deterministic.analytics.provider_signals?.slice(0, 4) || []
+  const improvementFocus = hybrid?.deterministic.efficiency.improvement_focus.slice(0, 5) || []
+  const efficiencyDimensions = Object.entries(hybrid?.deterministic.efficiency.dimensions || {}).slice(0, 5)
+  const commitmentGaps = hybrid?.deterministic.commitment_gap.provider_gaps.slice(0, 4) || []
   const monthlySpend = hybrid?.deterministic.analytics.current_monthly_spend_usd || 0
   const wasteEstimate = hybrid?.deterministic.waste.total_estimated_waste_usd || 0
+  const wasteRate = hybrid?.deterministic.waste.total_waste_rate_percent || 0
+  const budgetUtilization = hybrid?.deterministic.analytics.unit_metrics?.budget_utilization_percent || 0
+  const riskScore = hybrid?.deterministic.analytics.risk_score || 0
+  const commitmentOpportunity = hybrid?.deterministic.commitment_gap.total_annual_opportunity_usd || 0
   const efficiencyScore = hybrid?.deterministic.efficiency.overall_score || 0
   const genAiMode = hybrid?.advisory.genai_configured && !hybrid?.advisory.fallback_mode ? 'GenAI active' : 'Deterministic fallback'
+  const nextActionTitle = topRecommendation?.title || quickWins[0]?.remediation || 'Load live advisor data'
+  const nextActionHelper = topRecommendation
+    ? `${formatCurrency(topRecommendation.savings_monthly_usd || 0)} estimated monthly savings. ROI ${formatPercent(topRecommendation.roi_percent || 0, 0)}.`
+    : quickWins[0]
+      ? `${formatCurrency(quickWins[0].estimated_waste_usd || 0)} estimated waste in ${humanize(quickWins[0].category)}.`
+      : 'Refresh the brief to calculate prioritized actions from the backend.'
 
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6">
@@ -456,7 +628,7 @@ export default function CostAdvisorPage() {
           </div>
           <h1 className="text-3xl font-semibold text-slate-950 dark:text-white md:text-4xl">Cost Advisor</h1>
           <p className="mt-2 max-w-3xl text-base leading-7 text-slate-600 dark:text-slate-400">
-            Ask focused FinOps questions and review the deterministic advisor brief without turning long resource IDs into a wall of text.
+            Ask focused FinOps questions, compare deterministic evidence, and turn long telemetry into a friendly action plan.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -482,7 +654,7 @@ export default function CostAdvisorPage() {
         <StatTile
           label="Waste Estimate"
           value={hybridLoading ? 'Loading' : formatCurrency(wasteEstimate)}
-          helper="Optimization potential before approvals"
+          helper={`${formatPercent(wasteRate)} of monthly spend is marked as addressable waste`}
           icon={<Target className="h-5 w-5" />}
           tone="amber"
         />
@@ -494,6 +666,37 @@ export default function CostAdvisorPage() {
           tone={efficiencyScore >= 75 ? 'emerald' : 'slate'}
         />
       </div>
+
+      <Expander
+        title="Decision Snapshot"
+        description="A friendly first read: what matters, why, and where to go next."
+        icon={<ListChecks className="h-5 w-5 text-emerald-600" />}
+        defaultOpen
+      >
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <DecisionCard
+            label="Best next action"
+            title={nextActionTitle}
+            helper={nextActionHelper}
+            icon={<Target className="h-5 w-5" />}
+            tone="emerald"
+          />
+          <DecisionCard
+            label="Evidence confidence"
+            title={confidenceLabel(hybrid)}
+            helper={`Source of truth: ${hybrid?.source_of_truth || 'waiting for advisor payload'}. Generated ${formatDateTime(hybrid?.generated_at)}.`}
+            icon={<Database className="h-5 w-5" />}
+            tone="blue"
+          />
+          <DecisionCard
+            label="Financial posture"
+            title={`${formatCurrency(commitmentOpportunity)} annual commitment opportunity`}
+            helper={`Risk score ${riskScore.toFixed(0)} / 100. Budget utilization ${formatPercent(budgetUtilization)}.`}
+            icon={<TrendingUp className="h-5 w-5" />}
+            tone={riskScore >= 70 ? 'amber' : 'violet'}
+          />
+        </div>
+      </Expander>
 
       {hybridError && (
         <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
@@ -521,7 +724,7 @@ export default function CostAdvisorPage() {
           >
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2" role="group" aria-label="Advisor narrative type">
-                {(Object.keys(narrativeLabels) as NarrativeType[]).map((type) => (
+                {narrativeOrder.map((type) => (
                   <Button
                     key={type}
                     type="button"
@@ -590,6 +793,192 @@ export default function CostAdvisorPage() {
           </Expander>
 
           <Expander
+            title="Quick Wins And Efficiency"
+            description="Open for waste categories, quick wins, score dimensions, and commitment gaps."
+            icon={<Route className="h-5 w-5 text-violet-600" />}
+          >
+            {hybrid ? (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 gap-3">
+                  <ProgressLine
+                    label="Waste rate"
+                    value={wasteRate}
+                    helper={`${formatCurrency(wasteEstimate)} estimated monthly waste before approval and remediation.`}
+                    tone={wasteRate >= 25 ? 'rose' : wasteRate >= 15 ? 'amber' : 'emerald'}
+                  />
+                  <ProgressLine
+                    label="Efficiency score"
+                    value={efficiencyScore}
+                    helper={hybrid.deterministic.efficiency.interpretation}
+                    tone={efficiencyScore >= 75 ? 'emerald' : efficiencyScore >= 55 ? 'amber' : 'rose'}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Quick wins
+                  </p>
+                  {quickWins.length > 0 ? (
+                    <div className="space-y-2">
+                      {quickWins.map((item) => (
+                        <div key={item.category} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-950 dark:text-white">{humanize(item.category)}</p>
+                              <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400 [overflow-wrap:anywhere]">
+                                {item.remediation}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="w-fit rounded-md">
+                              {item.effort} effort
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">
+                            {formatCurrency(item.estimated_waste_usd)} potential monthly impact
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState>No quick wins are available in the current advisor payload.</EmptyState>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Improvement focus
+                  </p>
+                  {improvementFocus.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {improvementFocus.map((focus) => (
+                        <Badge key={focus} variant="outline" className="h-auto rounded-md py-1">
+                          {humanize(focus)}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState>Efficiency focus areas will appear after analytics return a score profile.</EmptyState>
+                  )}
+                </div>
+
+                {commitmentGaps.length > 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Commitment gaps
+                    </p>
+                    {commitmentGaps.map((gap) => (
+                      <div key={gap.provider} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-medium uppercase text-slate-950 dark:text-white">{gap.provider}</p>
+                          <Badge variant="outline" className="rounded-md">
+                            gap {formatPercent(gap.gap_percent)}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-400">
+                          {gap.recommendation}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <EmptyState>Refresh the brief to load quick wins, efficiency dimensions, and commitment opportunities.</EmptyState>
+            )}
+          </Expander>
+
+          <Expander
+            title="Evidence And Provider Signals"
+            description="Open for source timestamps, provider findings, and data-quality hints."
+            icon={<Database className="h-5 w-5 text-blue-600" />}
+          >
+            {hybrid ? (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Generated
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-950 dark:text-white">{formatDateTime(hybrid.generated_at)}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Narrative mode
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-950 dark:text-white">{genAiMode}</p>
+                  </div>
+                </div>
+
+                {providerFindings.length > 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Provider findings
+                    </p>
+                    {providerFindings.map((finding) => (
+                      <div key={finding.provider} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-medium uppercase text-slate-950 dark:text-white">{finding.provider}</p>
+                          <Badge variant="outline" className="rounded-md">
+                            {formatCurrency(finding.monthly_cost_usd)}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+                          <span className="rounded-md bg-slate-50 px-2 py-1 dark:bg-slate-950">
+                            Waste {formatCurrency(finding.estimated_waste_usd)}
+                          </span>
+                          <span className="rounded-md bg-slate-50 px-2 py-1 dark:bg-slate-950">
+                            Commitment {formatPercent(finding.commitment_coverage_percent)}
+                          </span>
+                          <span className="rounded-md bg-slate-50 px-2 py-1 dark:bg-slate-950">
+                            Volatility {finding.volatility_score.toFixed(0)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState>No provider-level findings were returned for this advisor payload.</EmptyState>
+                )}
+
+                {providerSignals.length > 0 ? (
+                  <div className="space-y-2">
+                    {providerSignals.map((signal) => (
+                      <Notice key={`${signal.provider}-${signal.signal}`} tone="blue" icon={<BarChart3 className="h-4 w-4" />}>
+                        <span className="font-medium uppercase">{signal.provider}</span>: {signal.message}
+                      </Notice>
+                    ))}
+                  </div>
+                ) : null}
+
+                {wasteCategories.length > 0 || efficiencyDimensions.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-3">
+                    {wasteCategories.map((category) => (
+                      <ProgressLine
+                        key={category.category}
+                        label={humanize(category.category)}
+                        value={category.estimated_waste_rate_percent}
+                        helper={category.description}
+                        tone={category.estimated_waste_rate_percent >= 25 ? 'rose' : 'amber'}
+                      />
+                    ))}
+                    {efficiencyDimensions.map(([name, dimension]) => (
+                      <ProgressLine
+                        key={name}
+                        label={humanize(name)}
+                        value={dimension.score}
+                        helper={`Current ${dimension.current} ${dimension.unit}; benchmark ${dimension.benchmark} ${dimension.unit}.`}
+                        tone={dimension.score >= 75 ? 'emerald' : 'blue'}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <EmptyState>Load a brief to see the evidence used by the advisor.</EmptyState>
+            )}
+          </Expander>
+
+          <Expander
             title="Prompt Shortcuts"
             description="Focused questions that keep answers concise and actionable."
             icon={<Clipboard className="h-5 w-5 text-emerald-600" />}
@@ -611,7 +1000,7 @@ export default function CostAdvisorPage() {
           </Expander>
         </div>
 
-        <section className="flex min-h-[680px] flex-col rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <section className="flex min-h-[620px] flex-col rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -634,10 +1023,33 @@ export default function CostAdvisorPage() {
             </div>
           </div>
 
-          <div className="flex-1 space-y-5 overflow-y-auto bg-slate-50/70 p-4 dark:bg-slate-950/30 lg:p-5">
+          <div ref={chatScrollRef} className="flex-1 space-y-5 overflow-y-auto bg-slate-50/70 p-4 dark:bg-slate-950/30 lg:p-5">
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
+
+            {messages.length <= 1 && !loading ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <ConversationLens
+                  label="Cost driver"
+                  prompt="Explain the top three cost drivers and what changed."
+                  icon={<BarChart3 className="h-4 w-4" />}
+                  onSelect={handleSuggestion}
+                />
+                <ConversationLens
+                  label="Savings order"
+                  prompt="Rank savings actions by impact, effort, and approval risk."
+                  icon={<ListChecks className="h-4 w-4" />}
+                  onSelect={handleSuggestion}
+                />
+                <ConversationLens
+                  label="Owner brief"
+                  prompt="Write a friendly action brief for engineering owners."
+                  icon={<User className="h-4 w-4" />}
+                  onSelect={handleSuggestion}
+                />
+              </div>
+            ) : null}
 
             {loading && (
               <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
@@ -645,7 +1057,6 @@ export default function CostAdvisorPage() {
                 Asking the live advisor...
               </div>
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           <form onSubmit={(event) => void handleSendMessage(event)} className="border-t border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -653,6 +1064,7 @@ export default function CostAdvisorPage() {
               <label className="min-w-0 flex-1">
                 <span className="sr-only">Ask the cost advisor</span>
                 <textarea
+                  ref={inputRef}
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={(event) => {
