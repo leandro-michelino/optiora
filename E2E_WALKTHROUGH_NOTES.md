@@ -93,6 +93,41 @@ realized_month
 
 The UIX shell pass confirms every page has searchable navigation metadata and active-page helper text. The detailed page-by-page findings are in `UIX_REVIEW.md`.
 
+## Kubernetes / Containers / Docker Focused Run
+
+Date: May 10, 2026.
+
+Goal: make the Kubernetes page show real OCI Kubernetes/container/Docker signals instead of saying there are no services running.
+
+| Step | Human Operator Action | Result | Notes / Fixes |
+|---|---|---|---|
+| OCI context check | Used the repository deployment docs and Terraform outputs to target `uk-london-1`, the existing VCN, and the public subnet. | Pass | The default OCI CLI profile region was not trusted implicitly; commands were run with explicit `--region uk-london-1`. |
+| OKE launch | Created one OKE Basic cluster named `optiora-e2e-oke`. | Pass | Cluster OCID: `ocid1.cluster.oc1.uk-london-1.aaaaaaaahlpc245e5pjju2hvvrdgi33jqemffbi2w7vcacrlocd7dr7hjoaq`; Kubernetes `v1.34.2`; lifecycle `ACTIVE`; public endpoint enabled. |
+| Container service launch | Created one OCI Container Instance named `optiora-e2e-container-instance`. | Pass | Container Instance OCID: `ocid1.computecontainerinstance.oc1.uk-london-1.anwgiljro4rzpdiakef6tagwx2wzosb6qnmcvakhcxzd6vwxbt6iqekypbxq`; image `docker.io/library/nginx:alpine`; lifecycle `ACTIVE`; container status `CONTAINER_RUNNING`. |
+| Page data wiring | Called the same live OCI inventory path used by the Kubernetes summary endpoint. | Fixed then pass | Initial page logic only read billing/service-cost rows, so new OCI resources could be invisible until cost data arrived. Added live OCI inventory for OKE, Container Instances, and OCIR. |
+| Run-rate estimate | Reviewed cost estimate behavior for resources with no billing rows yet. | Fixed then pass | The active `1 OCPU / 1 GiB` Container Instance is estimated at about `$19.71/month`; OKE Basic control plane is shown as `$0` incremental in this planning model until worker nodes or metered costs appear. |
+| Duplicate credential handling | Re-ran the live endpoint after VM deployment. | Fixed then pass | The VM discovered the same OCI credential source twice and initially doubled the Container Instance estimate. Added resource-ID de-duplication and regression coverage. |
+| API validation | Called `GET /api/v1/analytics/kubernetes/summary` on the live VM. | Fixed then pass | First pass was too slow for the dashboard fallback path, so live inventory was prioritized ahead of slower billing lookups. Final live response returned in about `12s` with `kubernetes_enabled=true`, `clusters_configured=1`, `container_service_count=2`, `estimated_k8s_cost_usd=19.71`, and `data_source=live_resource_inventory`. |
+| UI validation | Opened `/dashboard/kubernetes` after deployment. | Pass | Browser check confirmed `optiora-e2e-oke`, `optiora-e2e-container-instance`, and `Live resource inventory` are visible with no console errors and no horizontal overflow. |
+
+Focused validation commands:
+
+```bash
+OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True SUPPRESS_LABEL_WARNING=True \
+  oci ce cluster get --region uk-london-1 \
+  --cluster-id ocid1.cluster.oc1.uk-london-1.aaaaaaaahlpc245e5pjju2hvvrdgi33jqemffbi2w7vcacrlocd7dr7hjoaq
+
+OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True SUPPRESS_LABEL_WARNING=True \
+  oci container-instances container get --region uk-london-1 \
+  --container-id ocid1.computecontainer.oc1.uk-london-1.anwgiljro4rzpdiacjzqzuwjp4tkwm52fbp6uzxzppmxtzg4njcff7djvikq
+
+.venv/bin/python -m pytest tests/test_kubernetes.py -q
+npm run type-check --prefix dashboard
+npm run lint --prefix dashboard
+npm run build --prefix dashboard
+curl -fsS http://140.238.90.95/api/v1/analytics/kubernetes/summary
+```
+
 ## Repeatable Commands
 
 ```bash

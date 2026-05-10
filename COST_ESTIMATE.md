@@ -8,6 +8,7 @@ This estimate reflects the current OptiOra architecture and behavior:
 - Stored scan snapshots for default dashboard/recommendation reads, with explicit live refresh when requested.
 - Real-time telemetry query paths for Cost Advisor and operator-triggered refreshes (including cross-provider top-N operational queries).
 - Rightsizing live refresh uses a provider-native request budget of up to `120s` in the dashboard because OCI live scans have been observed at roughly `50s`; normal dashboard browsing still uses stored results.
+- Kubernetes/container visibility now includes live OCI resource inventory for OKE clusters, OCI Container Instances, and OCIR repositories. New resources can show before billing rows arrive; active Container Instances use a conservative run-rate estimate until metered cost data catches up.
 - GenAI + RAG style responses for advisory and narrative outputs.
 - Realized savings scorecards and UIX navigation improvements run on existing API/dashboard capacity and do not add a separate infrastructure service.
 
@@ -41,6 +42,7 @@ Provider telemetry collection          : scan cadence, refresh behavior, and acc
 Logging and retention                  : alert/events/history growth dependent
 GenAI + RAG inference                  : prompt volume and response size dependent
 Finance scorecard aggregation          : existing database/API CPU; normally negligible vs provider telemetry
+Kubernetes live inventory              : OCI control-plane/API calls plus container runtime run-rate estimates
 Network egress                         : export/report/API payload dependent
 ```
 
@@ -89,6 +91,7 @@ Practical effect:
 - Increased archive/export growth: **+$5 to +$35** / month.
 - Notification-heavy webhook/email patterns: usually low, but can add egress/log volume.
 - Longer scan snapshot retention: storage growth is usually modest at small scale, but high-account environments should model retention by account count, scan cadence, and export volume.
+- Temporary Kubernetes/container E2E resources: an OKE Basic control plane with no node pool is modeled as **$0 incremental control-plane run rate** here, while one `CI.Standard.E4.Flex` OCI Container Instance at `1 OCPU / 1 GiB` is estimated at about **$19.71/month** before image storage, logs, and network traffic. Confirm current regional list pricing before leaving E2E resources running.
 
 ## Autonomous Database BYOL Note
 
@@ -112,6 +115,7 @@ If using Autonomous Database with BYOL:
 6. Keep `refresh_live=false` for normal dashboard browsing and reserve live refresh for operational decision points.
 7. Run broad live rightsizing refreshes by provider scope first, then use dashboard filters/search to inspect the returned cards instead of re-running the provider scan repeatedly.
 8. Use realized savings scorecards to prioritize follow-up on high-variance owners/providers before running more live scans.
+9. For Kubernetes tests, keep OKE node pools optional unless workload-level OpenCost validation is required; a control-plane-only OKE cluster plus one small Container Instance is enough to validate live inventory wiring.
 
 ## Contact / Pilot
 

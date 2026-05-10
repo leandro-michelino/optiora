@@ -212,6 +212,7 @@ function categoryLabel(category: string) {
 function sourceLabel(source: string) {
   const labels: Record<string, string> = {
     live_provider_api: 'Live provider API',
+    live_resource_inventory: 'Live resource inventory',
     cost_snapshots_live: 'Latest scan snapshot',
     csv_import: 'Imported billing CSV',
     none: 'No cost signal',
@@ -289,7 +290,7 @@ function ContainerServicesPanel({
   return (
     <Expander
       title="Kubernetes, Containers, and Docker Services"
-      description="Provider-by-provider service spend for EKS, AKS, GKE, OKE, ECS, Fargate, Cloud Run, registries, Docker, and similar container services."
+      description="Provider-by-provider inventory and spend signals for EKS, AKS, GKE, OKE, ECS, Fargate, Cloud Run, registries, Docker, and similar container services."
       icon={<Box className="h-5 w-5 text-blue-600" />}
       defaultOpen
       className="scroll-mt-4"
@@ -299,12 +300,12 @@ function ContainerServicesPanel({
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Container Spend</p>
             <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{fmt(summary.estimated_k8s_cost_usd)}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summary.estimated_k8s_share_percent.toFixed(1)}% of cloud baseline</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summary.estimated_k8s_share_percent.toFixed(1)}% of cloud baseline, including live run-rate estimates</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Services Found</p>
             <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{summary.container_service_count}</p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summary.provider_count_with_container_spend} provider(s) with spend</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summary.provider_count_with_container_spend} provider(s) with live or billing signals</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Largest Signal</p>
@@ -379,7 +380,7 @@ function ContainerServicesPanel({
           </div>
         ) : (
           <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
-            <p className="font-semibold">No Kubernetes/container/Docker service spend matched the current filters.</p>
+            <p className="font-semibold">No Kubernetes/container/Docker services matched the current filters.</p>
             <p className="mt-1 text-xs opacity-80">{summary.setup_hint}</p>
           </Notice>
         )}

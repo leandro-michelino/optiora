@@ -91,7 +91,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 | Forecasting | Baseline forecasts, percentile bands, budget risk, what-if scenarios, stress tests, model diagnostics |
 | Optimization | Rightsizing with stored/live provider scan modes, provider-native recommendations, recommendation ledger, commitment gaps, waste decomposition, savings sequencing |
 | Unit economics | Cost allocation, business mapping, normalized dimensions, realized savings scorecards, showback/chargeback views |
-| Kubernetes | OpenCost sync, cluster modeling, namespace/team/workload/node-pool allocation, optimization recommendations |
+| Kubernetes | Live OKE/Container Instance/OCIR inventory, OpenCost sync, cluster modeling, namespace/team/workload/node-pool allocation, optimization recommendations |
 | Operations | Scan history, scan diffs, alert lifecycle, routing policy simulation, evidence exports, freshness telemetry |
 | Intelligence | Cost Advisor, AI Insights, RAG-guided narratives, operating review packs, decision intelligence frontier |
 | Governance | Virtual tags, tag quality, audit logs, data-source banners, export jobs, retention controls |
@@ -102,6 +102,7 @@ Recent UIX and wiring updates:
 - Rightsizing now has expandable scan status, executive summary, filters/search, action mix, and per-resource execution details.
 - Rightsizing recommendations now populate a finance-ready recommendation ledger with planned savings, realized savings, and variance, exposed through JSON, CSV, and the finance workbook.
 - Scorecards now include realized savings scorecards by provider, owner, business unit, and realized month, backed by the recommendation ledger.
+- Kubernetes now merges billing data with live OCI OKE, Container Instance, and OCIR inventory so newly launched container services appear before cost-management data catches up.
 - Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.
 
 ## Data Policy

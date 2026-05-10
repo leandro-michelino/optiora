@@ -127,6 +127,7 @@ Current backend coverage includes:
 **Kubernetes and partner portfolio** (`tests/test_kubernetes.py`, `tests/test_partner_portfolio.py`):
 
 - Kubernetes namespace, workload, team, node pool, and recommendation contract
+- live OCI OKE, Container Instance, and OCIR inventory rows in `GET /api/v1/analytics/kubernetes/summary` before billing data catches up
 - MSP/partner customer portfolio aggregation across accessible organizations
 - white-label response configuration
 

@@ -10433,9 +10433,291 @@ def _container_service_evidence(category: str) -> str:
 def _container_source_rank(source: str) -> int:
     return {
         "live_provider_api": 0,
-        "cost_snapshots_live": 1,
-        "csv_import": 2,
+        "live_resource_inventory": 1,
+        "cost_snapshots_live": 2,
+        "csv_import": 3,
     }.get(source, 9)
+
+
+def _estimate_oci_container_instance_monthly_cost(
+    ocpus: Optional[float],
+    memory_gib: Optional[float],
+) -> float:
+    """Conservative run-rate estimate for OCI Container Instances before billing lands."""
+    ocpu_hours = max(float(ocpus or 0.0), 0.0) * 0.0255 * 730.0
+    memory_hours = max(float(memory_gib or 0.0), 0.0) * 0.0015 * 730.0
+    return round(ocpu_hours + memory_hours, 2)
+
+
+def _oci_live_kubernetes_inventory_rows(
+    cred_json: Dict[str, Any],
+    *,
+    limit: int = 120,
+) -> List[Dict[str, Any]]:
+    """Return live OCI OKE, Container Instance, and OCIR resources for the K8s page."""
+    try:
+        import oci
+    except Exception as exc:
+        logger.info("OCI SDK unavailable for Kubernetes inventory: %s", exc)
+        return []
+
+    config_file = str(cred_json.get("config_file") or "").strip()
+    profile = _normalize_oci_profile(cred_json.get("profile"))
+    if not config_file:
+        return []
+    try:
+        resolved_config, resolved_profile = CredentialValidator._normalize_oci_inputs(
+            config_file=config_file,
+            profile=profile,
+        )
+        oci_config = oci.config.from_file(resolved_config, resolved_profile)
+    except Exception as exc:
+        logger.info("Unable to load OCI config for Kubernetes inventory: %s", exc)
+        return []
+
+    cfg = Config()
+    target_region = str(
+        cred_json.get("region")
+        or cfg.oci_region
+        or oci_config.get("region")
+        or "uk-london-1"
+    ).strip()
+    if target_region:
+        oci_config = dict(oci_config)
+        oci_config["region"] = target_region
+    region = str(oci_config.get("region") or "global").strip() or "global"
+    tenancy_id = str(oci_config.get("tenancy") or "").strip()
+    if not tenancy_id:
+        return []
+
+    client_timeout = (5, 20)
+    try:
+        identity = oci.identity.IdentityClient(oci_config, timeout=client_timeout)
+        container_engine = oci.container_engine.ContainerEngineClient(oci_config, timeout=client_timeout)
+        container_instances = oci.container_instances.ContainerInstanceClient(oci_config, timeout=client_timeout)
+        artifacts = oci.artifacts.ArtifactsClient(oci_config, timeout=client_timeout)
+    except Exception as exc:
+        logger.info("Unable to initialize OCI Kubernetes inventory clients: %s", exc)
+        return []
+
+    configured_compartments = [
+        str(cred_json.get("compartment_id") or "").strip(),
+        str(cred_json.get("compartment_ocid") or "").strip(),
+        str(os.getenv("OCI_COMPARTMENT_ID", "") or "").strip(),
+        str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip(),
+        str(cfg.oci_genai_compartment_id or "").strip(),
+    ]
+    configured_compartments.extend(
+        item.strip()
+        for item in str(cfg.oci_compartment_ids or "").split(",")
+        if item.strip()
+    )
+    compartment_ids: List[str] = []
+    seen_compartment_ids: set[str] = set()
+    for compartment_id in configured_compartments:
+        if compartment_id and compartment_id not in seen_compartment_ids:
+            compartment_ids.append(compartment_id)
+            seen_compartment_ids.add(compartment_id)
+    if not compartment_ids:
+        compartment_ids = _oci_accessible_compartment_ids(oci, identity, tenancy_id)
+    rows: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def append_row(
+        *,
+        resource_id: str,
+        service: str,
+        category: str,
+        monthly_cost_usd: float,
+        evidence: str,
+        compartment_id: str,
+    ) -> None:
+        if len(rows) >= limit:
+            return
+        key = (category, resource_id)
+        if not resource_id or key in seen:
+            return
+        seen.add(key)
+        rows.append(
+            {
+                "provider": "oci",
+                "resource_id": resource_id,
+                "service": service,
+                "category": category,
+                "monthly_cost_usd": round(float(monthly_cost_usd or 0.0), 2),
+                "source": "live_resource_inventory",
+                "region": region,
+                "account_identifier": compartment_id,
+                "evidence": evidence,
+            }
+        )
+
+    for compartment_id in compartment_ids:
+        if len(rows) >= limit:
+            break
+        try:
+            clusters_response = oci.pagination.list_call_get_all_results(
+                container_engine.list_clusters,
+                compartment_id=compartment_id,
+                limit=50,
+            )
+        except Exception as exc:
+            logger.info("Unable to list OCI OKE clusters in compartment %s: %s", compartment_id, exc)
+            clusters_response = []
+        for cluster in _oci_collection_items(clusters_response):
+            lifecycle = str(getattr(cluster, "lifecycle_state", "") or "").upper()
+            if lifecycle in {"DELETED", "DELETING", "FAILED"}:
+                continue
+            cluster_id = str(getattr(cluster, "id", "") or "").strip()
+            name = str(getattr(cluster, "name", "") or getattr(cluster, "display_name", "") or cluster_id).strip()
+            version = str(getattr(cluster, "kubernetes_version", "") or "").strip()
+            cluster_type = str(getattr(cluster, "type", "") or "BASIC_CLUSTER").strip()
+            append_row(
+                resource_id=cluster_id,
+                service=f"OKE cluster: {name}",
+                category="managed_kubernetes",
+                monthly_cost_usd=0.0,
+                evidence=(
+                    f"Live OCI OKE inventory: {lifecycle or 'ACTIVE'}"
+                    f"{f', Kubernetes {version}' if version else ''}"
+                    f", {cluster_type.replace('_', ' ').title()}."
+                ),
+                compartment_id=compartment_id,
+            )
+
+        try:
+            instances_response = oci.pagination.list_call_get_all_results(
+                container_instances.list_container_instances,
+                compartment_id=compartment_id,
+                limit=50,
+            )
+        except Exception as exc:
+            logger.info("Unable to list OCI Container Instances in compartment %s: %s", compartment_id, exc)
+            instances_response = []
+        for instance in _oci_collection_items(instances_response):
+            lifecycle = str(getattr(instance, "lifecycle_state", "") or "").upper()
+            if lifecycle in {"DELETED", "DELETING", "FAILED"}:
+                continue
+            instance_id = str(getattr(instance, "id", "") or "").strip()
+            display_name = str(getattr(instance, "display_name", "") or instance_id).strip()
+            shape = str(getattr(instance, "shape", "") or "OCI Container Instance").strip()
+            shape_config = getattr(instance, "shape_config", None)
+            ocpus = float(getattr(shape_config, "ocpus", 0.0) or 0.0) if shape_config else None
+            memory_gib = float(getattr(shape_config, "memory_in_gbs", 0.0) or 0.0) if shape_config else None
+            images: List[str] = []
+            try:
+                details = container_instances.get_container_instance(instance_id).data
+                for container in getattr(details, "containers", []) or []:
+                    image = str(getattr(container, "image_url", "") or "").strip()
+                    if image:
+                        images.append(image)
+            except Exception:
+                images = []
+            image_note = f" Images: {', '.join(images[:3])}." if images else ""
+            size_note = ""
+            if ocpus or memory_gib:
+                size_note = f" {ocpus or 0:g} OCPU / {memory_gib or 0:g} GiB."
+            append_row(
+                resource_id=instance_id,
+                service=f"OCI Container Instance: {display_name}",
+                category="container_runtime",
+                monthly_cost_usd=_estimate_oci_container_instance_monthly_cost(ocpus, memory_gib),
+                evidence=f"Live OCI Container Instance inventory: {lifecycle or 'ACTIVE'}, {shape}.{size_note}{image_note}",
+                compartment_id=compartment_id,
+            )
+
+        try:
+            repositories_response = oci.pagination.list_call_get_all_results(
+                artifacts.list_container_repositories,
+                compartment_id=compartment_id,
+                limit=50,
+            )
+        except Exception as exc:
+            logger.info("Unable to list OCI container repositories in compartment %s: %s", compartment_id, exc)
+            repositories_response = []
+        for repository in _oci_collection_items(repositories_response):
+            lifecycle = str(getattr(repository, "lifecycle_state", "") or "").upper()
+            if lifecycle in {"DELETED", "DELETING", "FAILED"}:
+                continue
+            repository_id = str(getattr(repository, "id", "") or "").strip()
+            name = str(
+                getattr(repository, "display_name", "")
+                or getattr(repository, "repository_name", "")
+                or repository_id
+            ).strip()
+            append_row(
+                resource_id=repository_id,
+                service=f"OCIR repository: {name}",
+                category="container_registry",
+                monthly_cost_usd=0.0,
+                evidence=f"Live OCI Container Registry inventory: {lifecycle or 'AVAILABLE'} repository.",
+                compartment_id=compartment_id,
+            )
+    return rows
+
+
+def _collect_oci_live_kubernetes_inventory_rows(
+    customer_id: str,
+    db: Session,
+    *,
+    limit: int = 120,
+) -> List[Dict[str, Any]]:
+    credential_payloads: List[Dict[str, Any]] = []
+    runtime_credentials = _load_runtime_provider_credentials(customer_id).get("oci")
+    if isinstance(runtime_credentials, dict):
+        credential_payloads.append(runtime_credentials)
+
+    stored_rows = (
+        db.query(CredentialRecord)
+        .filter(
+            CredentialRecord.customer_id == customer_id,
+            CredentialRecord.provider == "oci",
+            CredentialRecord.is_valid.is_(True),
+        )
+        .all()
+    )
+    for row in stored_rows:
+        try:
+            payload = json.loads(row.credential_json)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            credential_payloads.append(payload)
+
+    runtime_oci = _runtime_oci_credential_json()
+    if runtime_oci is not None:
+        credential_payloads.append(runtime_oci)
+
+    rows: List[Dict[str, Any]] = []
+    seen_credential_keys: set[tuple[str, str, str]] = set()
+    for payload in credential_payloads:
+        key = (
+            str(payload.get("config_file") or ""),
+            _normalize_oci_profile(payload.get("profile")),
+            str(payload.get("region") or ""),
+        )
+        if key in seen_credential_keys:
+            continue
+        seen_credential_keys.add(key)
+        for row in _oci_live_kubernetes_inventory_rows(payload, limit=max(limit - len(rows), 0)):
+            resource_key = (
+                str(row.get("provider") or "").lower(),
+                str(row.get("category") or "").lower(),
+                str(row.get("resource_id") or row.get("service") or "").lower(),
+            )
+            if resource_key in {
+                (
+                    str(existing.get("provider") or "").lower(),
+                    str(existing.get("category") or "").lower(),
+                    str(existing.get("resource_id") or existing.get("service") or "").lower(),
+                )
+                for existing in rows
+            }:
+                continue
+            rows.append(row)
+        if len(rows) >= limit:
+            break
+    return rows[:limit]
 
 
 async def _build_kubernetes_container_service_rollups(
@@ -10461,16 +10743,19 @@ async def _build_kubernetes_container_service_rollups(
         source: str,
         region: Optional[str] = None,
         account_identifier: Optional[str] = None,
+        category_override: Optional[str] = None,
+        evidence: Optional[str] = None,
+        allow_zero_cost: bool = False,
     ) -> None:
         provider_key = str(provider or "").strip().lower()
         if provider_key not in providers:
             return
         service = str(service_name or "").strip() or "Container service"
-        category = _kubernetes_container_service_category(service)
+        category = category_override or _kubernetes_container_service_category(service)
         if category is None:
             return
         amount = float(cost or 0.0)
-        if amount <= 0:
+        if amount <= 0 and not allow_zero_cost:
             return
         key = (provider_key, service.lower())
         bucket = grouped.setdefault(
@@ -10481,6 +10766,7 @@ async def _build_kubernetes_container_service_rollups(
                 "category": category,
                 "monthly_cost_usd": 0.0,
                 "source": source,
+                "evidence": evidence or _container_service_evidence(category),
                 "regions": set(),
                 "accounts": set(),
             },
@@ -10488,6 +10774,8 @@ async def _build_kubernetes_container_service_rollups(
         bucket["monthly_cost_usd"] = float(bucket["monthly_cost_usd"]) + amount
         if _container_source_rank(source) < _container_source_rank(str(bucket.get("source") or "")):
             bucket["source"] = source
+        if evidence and str(bucket.get("evidence") or "") == _container_service_evidence(str(bucket.get("category") or category)):
+            bucket["evidence"] = evidence
         if region:
             bucket["regions"].add(str(region))
         if account_identifier:
@@ -10497,11 +10785,20 @@ async def _build_kubernetes_container_service_rollups(
         if diagnostics.get(provider, False):
             try:
                 try:
-                    summary = await _cost_summary_for_provider(provider, "month", customer_id=customer_id)
+                    summary = await asyncio.wait_for(
+                        _cost_summary_for_provider(provider, "month", customer_id=customer_id),
+                        timeout=6.0,
+                    )
                 except TypeError as exc:
                     if "customer_id" not in str(exc) and "keyword" not in str(exc):
                         raise
-                    summary = await _cost_summary_for_provider(provider, "month")
+                    summary = await asyncio.wait_for(
+                        _cost_summary_for_provider(provider, "month"),
+                        timeout=6.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.info("Timed out collecting live container service costs for %s", provider)
+                    summary = {"error": "live provider cost summary timed out"}
                 if "error" not in summary:
                     before_count = len(grouped)
                     for service in summary.get("top_services", []) or []:
@@ -10571,6 +10868,25 @@ async def _build_kubernetes_container_service_rollups(
         if len(grouped) > before_count and provider_sources[provider] == "none":
             provider_sources[provider] = "csv_import"
 
+    try:
+        before_count = len(grouped)
+        for row in _collect_oci_live_kubernetes_inventory_rows(customer_id, db):
+            add_row(
+                provider=str(row.get("provider") or "oci"),
+                service_name=str(row.get("service") or ""),
+                cost=float(row.get("monthly_cost_usd") or 0.0),
+                source=str(row.get("source") or "live_resource_inventory"),
+                region=str(row.get("region") or ""),
+                account_identifier=str(row.get("account_identifier") or ""),
+                category_override=str(row.get("category") or ""),
+                evidence=str(row.get("evidence") or ""),
+                allow_zero_cost=True,
+            )
+        if len(grouped) > before_count and provider_sources["oci"] == "none":
+            provider_sources["oci"] = "live_resource_inventory"
+    except Exception as exc:
+        logger.info("Unable to collect OCI live Kubernetes inventory: %s", exc)
+
     rows: List[KubernetesContainerServiceCost] = []
     container_total = sum(float(bucket.get("monthly_cost_usd") or 0.0) for bucket in grouped.values())
     denominator = container_total or total_cloud_cost_usd or 0.0
@@ -10586,7 +10902,7 @@ async def _build_kubernetes_container_service_rollups(
                 monthly_cost_usd=cost,
                 share_percent=round((cost / denominator) * 100, 2) if denominator > 0 else 0.0,
                 source=str(bucket.get("source") or "unknown"),
-                evidence=_container_service_evidence(str(bucket["category"])),
+                evidence=str(bucket.get("evidence") or _container_service_evidence(str(bucket["category"]))),
                 account_count=len(accounts),
                 region_count=len(regions),
                 regions=regions[:8],
@@ -10613,7 +10929,7 @@ async def _build_kubernetes_container_service_rollups(
 
     source = "none"
     present_sources = {row.source for row in rows}
-    for candidate in ("live_provider_api", "cost_snapshots_live", "csv_import"):
+    for candidate in ("live_provider_api", "live_resource_inventory", "cost_snapshots_live", "csv_import"):
         if candidate in present_sources:
             source = candidate
             break
@@ -12372,7 +12688,11 @@ async def get_kubernetes_summary(
 ) -> KubernetesSummaryResponse:
     """Overview of Kubernetes cost allocation status for this organization."""
     _ = current_user
-    context = await _cost_context(membership, db, "month", "all")
+    try:
+        context = await asyncio.wait_for(_cost_context(membership, db, "month", "all"), timeout=8.0)
+    except asyncio.TimeoutError:
+        logger.info("Timed out collecting total cloud cost for Kubernetes summary; returning inventory-first response")
+        context = {"total_cost": 0.0, "source": "timeout"}
     total = float(context.get("total_cost") or 0.0)
     container_services, provider_breakdown, data_source = await _build_kubernetes_container_service_rollups(
         membership,
@@ -12380,9 +12700,9 @@ async def get_kubernetes_summary(
         total,
     )
     container_total = round(sum(item.monthly_cost_usd for item in container_services), 2)
-    provider_count = len([item for item in provider_breakdown if item.total_monthly_cost_usd > 0])
+    provider_count = len([item for item in provider_breakdown if item.service_count > 0])
     highest_provider = next(
-        (item.provider for item in provider_breakdown if item.total_monthly_cost_usd > 0),
+        (item.provider for item in provider_breakdown if item.service_count > 0),
         None,
     )
     highest_service = container_services[0] if container_services else None
@@ -12394,7 +12714,7 @@ async def get_kubernetes_summary(
 
     return KubernetesSummaryResponse(
         generated_at=_utcnow().isoformat() + "Z",
-        kubernetes_enabled=container_total > 0,
+        kubernetes_enabled=len(container_services) > 0,
         clusters_configured=configured_clusters,
         estimated_k8s_share_percent=share,
         estimated_k8s_cost_usd=container_total,

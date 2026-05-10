@@ -24,6 +24,8 @@ Repository release metadata:
 - `E2E_WALKTHROUGH_NOTES.md` with the human-style process log, fixes applied during the path, live OCI verification snapshot, and repeatable commands.
 - Realized savings scorecards in `GET /api/v1/analytics/scorecards`, grouped by provider, owner, business unit, and realized month from recommendation ledger data.
 - Page-by-page `UIX_REVIEW.md` covering every dashboard screen, applied improvements, cross-page standards, and a prioritized UX backlog.
+- Live OCI Kubernetes/container inventory in `GET /api/v1/analytics/kubernetes/summary`, covering OKE clusters, OCI Container Instances, and OCIR repositories before billing rows are available.
+- Focused Kubernetes E2E fixture resources in OCI: one OKE Basic cluster and one small Docker-backed OCI Container Instance for live page validation.
 
 ### Changed
 
@@ -32,6 +34,7 @@ Repository release metadata:
 - Rightsizing live refresh now allows up to `120s` in the dashboard client. The deployed OCI live scan has been observed returning in about `50s`, which exceeded the previous `45s` client timeout.
 - Rightsizing overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status and action summaries discoverable.
 - FinOps Scorecards now show finance-first realized savings summaries and expandable provider, owner, business-unit, and monthly scorecard tables.
+- Kubernetes page language now distinguishes live resource inventory from metered spend and labels run-rate estimates clearly.
 - Dashboard navigation now includes richer screen descriptions, synonym-aware search, active-page helper text, and clearer section context across every screen.
 - Cost Advisor chat auto-scroll now scrolls only the conversation panel, preventing page-level scroll jumps and sticky-header overlap.
 - Cost Advisor offline/backend-unreachable states now show operator-friendly guidance instead of raw `Failed to fetch` text.
@@ -41,6 +44,8 @@ Repository release metadata:
 
 - Fixed the live Rightsizing scan user experience where the backend completed successfully after roughly `50s`, but the frontend timed out at `45s` and incorrectly showed a fallback warning.
 - Fixed stale go-live documentation that still described live OCI evidence as pending after the deployment verify gate had passed.
+- Fixed the Kubernetes page blind spot where newly launched OCI container resources could be running but invisible until provider billing/cost APIs reported service spend.
+- Fixed Kubernetes summary latency by prioritizing configured OCI compartments and bounding slower billing lookups, so live inventory rows reach the page before the dashboard fallback path.
 - Removed generated local cache directories with `scripts/cleanup-workspace.sh`.
 - Rebuilt the local backend virtualenv with supported Python `3.13` after the operator walkthrough found an unsupported Python `3.14` virtualenv.
 - Reinitialized Terraform providers locally before validation after the walkthrough found a missing cached OCI provider package.
@@ -57,6 +62,7 @@ Repository release metadata:
 - `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`281` passing, `2` skipped)
 - `.venv/bin/python -m pytest -q` (`287` passing)
 - `.venv/bin/python -m pytest tests/test_scorecards.py -q` (`7` passing)
+- `.venv/bin/python -m pytest tests/test_kubernetes.py -q` (`17` passing)
 - `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py tests/test_deep_finops_analytics.py` (`35` passing)
 - `terraform fmt -check` for tracked Terraform files and `terraform -chdir=terraform validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
@@ -64,6 +70,8 @@ Repository release metadata:
 - Live RAG guidance contract: `POST /api/v1/genai/rag-guidance`.
 - Public live Rightsizing API: `GET /api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=1000&refresh_live=true` returned in about `50s` with `730` OCI recommendations.
 - Public browser live-toggle check on `/dashboard/rightsizing`: rendered `730` cards with no console errors and no horizontal overflow.
+- Public browser check on `/dashboard/kubernetes`: rendered `optiora-e2e-oke`, `optiora-e2e-container-instance`, and `Live resource inventory` with no console errors and no horizontal overflow.
+- Public live Kubernetes API: `GET /api/v1/analytics/kubernetes/summary` returned `container_service_count=2`, `clusters_configured=1`, `data_source=live_resource_inventory`, and `$19.71` estimated container run rate in about `12s`.
 - `./deploy/deploy-oci.sh compute` (`7m 18s` in the latest VM start + redeploy walkthrough)
 - `./deploy/deploy-oci.sh verify` (`48` passing, `0` failed, `3` skipped)
 

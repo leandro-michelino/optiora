@@ -23,8 +23,9 @@ os.environ["PASSWORD_RESET_RETURN_TOKEN"] = "true"
 try:
     from fastapi.testclient import TestClient
 
+    from finops_mcp import api as api_module
     from finops_mcp.app import app
-    from finops_mcp.orm_models import Base, engine
+    from finops_mcp.orm_models import Base, SessionLocal, engine
 except ImportError as exc:  # pragma: no cover
     raise unittest.SkipTest(f"Backend dependencies not installed: {exc}") from exc
 
@@ -116,6 +117,99 @@ class KubernetesTest(unittest.TestCase):
         self.assertIn("Amazon Elastic Kubernetes Service", services)
         self.assertIn("Docker Hub", services)
         self.assertNotIn("Amazon RDS", services)
+
+    def test_03c_summary_lists_live_oci_inventory_before_billing_catches_up(self) -> None:
+        original_inventory = api_module._collect_oci_live_kubernetes_inventory_rows
+        api_module._collect_oci_live_kubernetes_inventory_rows = lambda customer_id, db, limit=120: [
+            {
+                "provider": "oci",
+                "service": "OKE cluster: optiora-e2e-oke",
+                "category": "managed_kubernetes",
+                "monthly_cost_usd": 0.0,
+                "source": "live_resource_inventory",
+                "region": "uk-london-1",
+                "account_identifier": "compartment-1",
+                "evidence": "Live OCI OKE inventory: ACTIVE, Kubernetes v1.34.2, Basic Cluster.",
+            },
+            {
+                "provider": "oci",
+                "service": "OCI Container Instance: optiora-e2e-container-instance",
+                "category": "container_runtime",
+                "monthly_cost_usd": 19.71,
+                "source": "live_resource_inventory",
+                "region": "uk-london-1",
+                "account_identifier": "compartment-1",
+                "evidence": "Live OCI Container Instance inventory: ACTIVE, CI.Standard.E4.Flex.",
+            },
+        ]
+        try:
+            resp = self.client.get("/api/v1/analytics/kubernetes/summary", headers=self.headers)
+        finally:
+            api_module._collect_oci_live_kubernetes_inventory_rows = original_inventory
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertTrue(data["kubernetes_enabled"])
+        self.assertGreaterEqual(data["clusters_configured"], 1)
+        self.assertGreaterEqual(data["provider_count_with_container_spend"], 1)
+        self.assertEqual(data["data_source"], "live_resource_inventory")
+        services = {row["service"]: row for row in data["container_services"]}
+        self.assertIn("OKE cluster: optiora-e2e-oke", services)
+        self.assertEqual(services["OKE cluster: optiora-e2e-oke"]["monthly_cost_usd"], 0.0)
+        self.assertIn("OCI Container Instance: optiora-e2e-container-instance", services)
+        self.assertEqual(
+            services["OCI Container Instance: optiora-e2e-container-instance"]["source"],
+            "live_resource_inventory",
+        )
+
+    def test_03d_live_oci_inventory_deduplicates_same_resource_across_credential_sources(self) -> None:
+        original_runtime = api_module._load_runtime_provider_credentials
+        original_runtime_oci = api_module._runtime_oci_credential_json
+        original_live = api_module._oci_live_kubernetes_inventory_rows
+        duplicate_rows = [
+            {
+                "provider": "oci",
+                "resource_id": "cluster-1",
+                "service": "OKE cluster: optiora-e2e-oke",
+                "category": "managed_kubernetes",
+                "monthly_cost_usd": 0.0,
+                "source": "live_resource_inventory",
+                "region": "uk-london-1",
+                "account_identifier": "compartment-1",
+                "evidence": "Live OCI OKE inventory: ACTIVE, Kubernetes v1.34.2, Basic Cluster.",
+            },
+            {
+                "provider": "oci",
+                "resource_id": "container-instance-1",
+                "service": "OCI Container Instance: optiora-e2e-container-instance",
+                "category": "container_runtime",
+                "monthly_cost_usd": 19.71,
+                "source": "live_resource_inventory",
+                "region": "uk-london-1",
+                "account_identifier": "compartment-1",
+                "evidence": "Live OCI Container Instance inventory: ACTIVE, CI.Standard.E4.Flex.",
+            },
+        ]
+        api_module._load_runtime_provider_credentials = lambda customer_id: {
+            "oci": {"config_file": "/tmp/oci-config", "profile": "DEFAULT"}
+        }
+        api_module._runtime_oci_credential_json = lambda: {
+            "config_file": "/tmp/oci-config",
+            "profile": "DEFAULT",
+            "region": "uk-london-1",
+        }
+        api_module._oci_live_kubernetes_inventory_rows = lambda cred_json, limit=120: list(duplicate_rows)
+        db = SessionLocal()
+        try:
+            rows = api_module._collect_oci_live_kubernetes_inventory_rows("test-customer", db)
+        finally:
+            db.close()
+            api_module._load_runtime_provider_credentials = original_runtime
+            api_module._runtime_oci_credential_json = original_runtime_oci
+            api_module._oci_live_kubernetes_inventory_rows = original_live
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(sum(row["monthly_cost_usd"] for row in rows), 19.71)
 
     # ── POST /analytics/kubernetes/cluster-cost ───────────────────────────────
 
