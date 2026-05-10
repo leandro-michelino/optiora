@@ -130,6 +130,12 @@ Current backend coverage includes:
 - MSP/partner customer portfolio aggregation across accessible organizations
 - white-label response configuration
 
+**Scorecards** (`tests/test_scorecards.py`):
+
+- organization/team FinOps maturity scorecard response shape
+- realized savings scorecards grouped by provider, owner, business unit, and realized month
+- recommendation ledger planned, realized, variance, score, grade, verified, and open-count rollups
+
 Smoke endpoints:
 
 ```bash

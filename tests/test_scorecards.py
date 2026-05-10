@@ -10,6 +10,7 @@ Covers:
 import os
 import tempfile
 import unittest
+from datetime import datetime
 
 TEST_DB = os.path.join(tempfile.gettempdir(), f"optiora_scorecards_test_{os.getpid()}.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB}"
@@ -21,7 +22,7 @@ try:
     from fastapi.testclient import TestClient
 
     from finops_mcp.app import app
-    from finops_mcp.orm_models import Base, NormalizedCostDimension, SessionLocal, engine
+    from finops_mcp.orm_models import Base, NormalizedCostDimension, RecommendationLedger, SessionLocal, engine
 except ImportError as exc:  # pragma: no cover
     raise unittest.SkipTest(f"Backend dependencies not installed: {exc}") from exc
 
@@ -115,9 +116,117 @@ class ScorecardsTest(unittest.TestCase):
             self.assertIn("dimensions", team_entry)
             self.assertIsInstance(team_entry["dimensions"], list)
 
+    def test_06_realized_savings_scorecards_group_by_finance_dimensions(self) -> None:
+        db = SessionLocal()
+        try:
+            db.add(
+                NormalizedCostDimension(
+                    organization_id=1,
+                    customer_id="default",
+                    provider="aws",
+                    service_name="EC2",
+                    region="us-east-1",
+                    cost_usd=1000.0,
+                    cost_center="BU-Platform",
+                    team="Platform",
+                    is_mapped=True,
+                    captured_at=datetime(2026, 5, 1),
+                )
+            )
+            db.add_all(
+                [
+                    RecommendationLedger(
+                        organization_id=1,
+                        customer_id="default",
+                        provider="aws",
+                        resource_id="i-001",
+                        resource_name="EC2",
+                        resource_type="Compute service",
+                        account_id="acct-platform",
+                        region="us-east-1",
+                        recommendation_source="cloudwatch",
+                        recommendation_fingerprint="scorecard-realized-aws",
+                        action="downsize",
+                        confidence="high",
+                        effort="low",
+                        current_monthly_cost_usd=500.0,
+                        projected_monthly_cost_usd=350.0,
+                        planned_monthly_savings_usd=150.0,
+                        planned_annual_savings_usd=1800.0,
+                        realized_monthly_savings_usd=120.0,
+                        realized_annual_savings_usd=1440.0,
+                        variance_monthly_usd=-30.0,
+                        variance_annual_usd=-360.0,
+                        variance_percent=-20.0,
+                        status="verified",
+                        owner="platform@example.com",
+                        evidence_json="{}",
+                        planned_at=datetime(2026, 4, 20),
+                        realized_at=datetime(2026, 5, 15),
+                    ),
+                    RecommendationLedger(
+                        organization_id=1,
+                        customer_id="default",
+                        provider="azure",
+                        resource_id="vm-002",
+                        resource_name="Compute",
+                        resource_type="Compute service",
+                        account_id="sub-data",
+                        region="eastus",
+                        recommendation_source="azure_monitor",
+                        recommendation_fingerprint="scorecard-realized-azure",
+                        action="downsize",
+                        confidence="medium",
+                        effort="medium",
+                        current_monthly_cost_usd=400.0,
+                        projected_monthly_cost_usd=320.0,
+                        planned_monthly_savings_usd=80.0,
+                        planned_annual_savings_usd=960.0,
+                        realized_monthly_savings_usd=40.0,
+                        realized_annual_savings_usd=480.0,
+                        variance_monthly_usd=-40.0,
+                        variance_annual_usd=-480.0,
+                        variance_percent=-50.0,
+                        status="verified",
+                        owner="data@example.com",
+                        evidence_json='{"business_unit":"BU-Data"}',
+                        planned_at=datetime(2026, 5, 2),
+                        realized_at=datetime(2026, 6, 1),
+                    ),
+                ]
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        resp = self.client.get("/api/v1/analytics/scorecards", headers=self.headers)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        realized = resp.json()["realized_savings"]
+
+        self.assertEqual(realized["total_planned_monthly_savings_usd"], 230.0)
+        self.assertEqual(realized["total_realized_monthly_savings_usd"], 160.0)
+        self.assertIn("overall_score", realized)
+        self.assertIn("overall_grade", realized)
+
+        by_provider = {item["key"]: item for item in realized["by_provider"]}
+        self.assertEqual(by_provider["aws"]["realized_monthly_savings_usd"], 120.0)
+        self.assertEqual(by_provider["azure"]["planned_monthly_savings_usd"], 80.0)
+
+        by_owner = {item["key"]: item for item in realized["by_owner"]}
+        self.assertIn("platform@example.com", by_owner)
+        self.assertEqual(by_owner["data@example.com"]["verified_count"], 1)
+
+        by_business_unit = {item["key"]: item for item in realized["by_business_unit"]}
+        self.assertEqual(by_business_unit["BU-Platform"]["realized_monthly_savings_usd"], 120.0)
+        self.assertEqual(by_business_unit["BU-Data"]["realized_monthly_savings_usd"], 40.0)
+
+        by_month = {item["key"]: item for item in realized["by_month"]}
+        self.assertEqual(by_month["2026-05"]["realized_monthly_savings_usd"], 120.0)
+        self.assertEqual(by_month["2026-06"]["realized_monthly_savings_usd"], 40.0)
+
     # ── Auth enforcement ──────────────────────────────────────────────────────
 
-    def test_06_unauthenticated_rejected(self) -> None:
+    def test_07_unauthenticated_rejected(self) -> None:
         fresh = TestClient(app)
         resp = fresh.get("/api/v1/analytics/scorecards")
         self.assertIn(resp.status_code, (401, 403))

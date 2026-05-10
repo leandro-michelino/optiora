@@ -42,6 +42,8 @@
 - unit economics, scorecards, virtual tags, decision-grade recommendations, and resource-level rightsizing endpoints
 - alert lifecycle states, routing-policy simulator, destination tests/toggles/status, data freshness observability, and channel delivery telemetry
 - RAG-grounded intelligence workflows (`/api/v1/genai/rag-guidance`, `/api/v1/analytics/finops-intelligence`) with retrieved FinOps benchmark context injected into GenAI prompts
+- recommendation ledger realized-savings scorecards by provider, owner, business unit, and realized month
+- synonym-aware dashboard navigation, active-page helper text, and page-by-page UIX review documentation
 
 ## Current Deployment Stance
 
@@ -70,14 +72,14 @@ The next phase should not try to out-feature every competitor immediately. Inste
 
 ### 1. Validate deployment and customer workflow
 
-Status: **remaining live-environment gate**. Local code and automated coverage are in place, but a real OCI deployment still needs a dated evidence run.
+Status: **latest live OCI smoke gate passed**. Continue attaching dated evidence packs for customer-facing release handoffs.
 
 - deploy the current public-dashboard build onto OCI
 - validate CSV upload, imported dataset activation, and cost page correctness with real/customer-like data
 - validate credential add, scan approval, scan start, and live provider reads where live billing access is in scope
 - confirm scan history, diff, alerts, and CSV/XLSX/PDF/FOCUS exports in the deployed environment
 - verify dashboard pages are using live backend data paths rather than placeholders
-- finalize the operational runbook with the exact deploy, rollback, migration, and smoke-test commands used
+- keep the operational runbook current with the exact deploy, rollback, migration, and smoke-test commands used
 
 ### 2. Expand automated regression coverage
 
@@ -198,9 +200,9 @@ Based on current platform state vs. mainstream FinOps products (Cloudability, Fl
 
 - **Recommendation lifecycle and realized savings accounting**
   - Competitor pattern: explicit recommendation lifecycle and post-action savings tracking.
-  - Current OptiOra state: backend recommendation ledger is implemented for rightsizing recommendations, including organization/provider/resource/source/fingerprint identity, planned savings, realized savings, variance, finance CSV export, and finance workbook fields.
-  - Remaining gap: dashboard execution board, richer approval/audit events, owner workflows, and realized-vs-expected scorecards.
-  - Roadmap action: add the execution-board UI and finance scorecards on top of the ledger.
+  - Current OptiOra state: backend recommendation ledger is implemented for rightsizing recommendations, including organization/provider/resource/source/fingerprint identity, planned savings, realized savings, variance, finance CSV export, finance workbook fields, and realized savings scorecards by provider, owner, business unit, and month.
+  - Remaining gap: dashboard execution board, richer approval/audit events, owner workflows, and ledger drill-through from scorecards.
+  - Roadmap action: add the execution-board UI and drill-through workflows on top of the ledger.
 
 - **Policy-as-code automation engine for FinOps controls**
   - Competitor pattern: customizable policy engines with dry-run, approvals, and automated actions.
@@ -400,7 +402,7 @@ Implementation detail for this release is tracked in `NEXT_PHASE.md`.
 Goal: move from visibility into guided cost action.
 
 - add commitment purchase workflows beyond analysis
-- deepen rightsizing workflow with approval UI, execution history UX, realized savings scorecards, and real cloud utilization metrics
+- deepen rightsizing workflow with approval UI, execution history UX, ledger drill-through, and real cloud utilization metrics
 - add idle-resource remediation previews tied to provider actions
 - deepen approval-based auto-remediation from guardrail simulation into operator-controlled execution
 - add advanced anomaly workflows, mute windows, escalation policies, and noise analytics

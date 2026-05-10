@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.1` dashboard wiring, advisor polish, live rightsizing scan fix, and repository hygiene.
+Current release: `0.9.1` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, UIX review, and repository hygiene.
 Current documentation baseline: May 10, 2026.
 
 ![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)
@@ -90,7 +90,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 | Cost visibility | Multi-provider spend views, account hierarchy, service hotspots, resource inventory, imported billing files |
 | Forecasting | Baseline forecasts, percentile bands, budget risk, what-if scenarios, stress tests, model diagnostics |
 | Optimization | Rightsizing with stored/live provider scan modes, provider-native recommendations, recommendation ledger, commitment gaps, waste decomposition, savings sequencing |
-| Unit economics | Cost allocation, business mapping, normalized dimensions, scorecards, showback/chargeback views |
+| Unit economics | Cost allocation, business mapping, normalized dimensions, realized savings scorecards, showback/chargeback views |
 | Kubernetes | OpenCost sync, cluster modeling, namespace/team/workload/node-pool allocation, optimization recommendations |
 | Operations | Scan history, scan diffs, alert lifecycle, routing policy simulation, evidence exports, freshness telemetry |
 | Intelligence | Cost Advisor, AI Insights, RAG-guided narratives, operating review packs, decision intelligence frontier |
@@ -101,6 +101,7 @@ Recent UIX and wiring updates:
 - Rightsizing live provider scans now use a longer dashboard timeout for provider-native calls observed at about `50s` in OCI, while still falling back to stored results if the live path fails.
 - Rightsizing now has expandable scan status, executive summary, filters/search, action mix, and per-resource execution details.
 - Rightsizing recommendations now populate a finance-ready recommendation ledger with planned savings, realized savings, and variance, exposed through JSON, CSV, and the finance workbook.
+- Scorecards now include realized savings scorecards by provider, owner, business unit, and realized month, backed by the recommendation ledger.
 - Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.
 
 ## Data Policy
@@ -301,6 +302,7 @@ Treat these as planning bands. Verify region-specific list prices in the OCI cos
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | Release history, fixes, validation commands |
 | [TESTING.md](TESTING.md) | Test strategy and coverage map |
 | [E2E_WALKTHROUGH_NOTES.md](E2E_WALKTHROUGH_NOTES.md) | Human operator walkthrough notes, process outcomes, and live OCI verification snapshot |
+| [UIX_REVIEW.md](UIX_REVIEW.md) | Page-by-page UIX review, applied shell improvements, and UX backlog |
 | [ROADMAP.md](ROADMAP.md) | Product direction and capability gaps |
 | [NEXT_PHASE.md](NEXT_PHASE.md) | Near-term implementation plan |
 | [COST_ESTIMATE.md](COST_ESTIMATE.md) | Monthly cost planning and cost drivers |

@@ -1003,11 +1003,46 @@ export interface ScorecardEntry {
   trend: string
 }
 
+export interface RealizedSavingsScorecardEntry {
+  dimension: string
+  key: string
+  score: number
+  grade: string
+  recommendation_count: number
+  verified_count: number
+  open_count: number
+  planned_monthly_savings_usd: number
+  realized_monthly_savings_usd: number
+  variance_monthly_usd: number
+  planned_annual_savings_usd: number
+  realized_annual_savings_usd: number
+  variance_annual_usd: number
+  realization_rate_percent: number
+  last_realized_at: string | null
+}
+
+export interface RealizedSavingsScorecards {
+  total_planned_monthly_savings_usd: number
+  total_realized_monthly_savings_usd: number
+  total_variance_monthly_usd: number
+  total_planned_annual_savings_usd: number
+  total_realized_annual_savings_usd: number
+  total_variance_annual_usd: number
+  overall_realization_rate_percent: number
+  overall_score: number
+  overall_grade: string
+  by_provider: RealizedSavingsScorecardEntry[]
+  by_owner: RealizedSavingsScorecardEntry[]
+  by_business_unit: RealizedSavingsScorecardEntry[]
+  by_month: RealizedSavingsScorecardEntry[]
+}
+
 export interface ScorecardsResponse {
   generated_at: string
   organization_grade: string
   organization_score: number
   teams: ScorecardEntry[]
+  realized_savings: RealizedSavingsScorecards
 }
 
 // ---------------------------------------------------------------------------

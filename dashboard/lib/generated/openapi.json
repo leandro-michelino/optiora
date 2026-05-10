@@ -11279,6 +11279,180 @@
         "type": "object",
         "title": "RagGuidanceRequest"
       },
+      "RealizedSavingsScorecardEntry": {
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "title": "Dimension"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "grade": {
+            "type": "string",
+            "title": "Grade"
+          },
+          "recommendation_count": {
+            "type": "integer",
+            "title": "Recommendation Count"
+          },
+          "verified_count": {
+            "type": "integer",
+            "title": "Verified Count"
+          },
+          "open_count": {
+            "type": "integer",
+            "title": "Open Count"
+          },
+          "planned_monthly_savings_usd": {
+            "type": "number",
+            "title": "Planned Monthly Savings Usd"
+          },
+          "realized_monthly_savings_usd": {
+            "type": "number",
+            "title": "Realized Monthly Savings Usd"
+          },
+          "variance_monthly_usd": {
+            "type": "number",
+            "title": "Variance Monthly Usd"
+          },
+          "planned_annual_savings_usd": {
+            "type": "number",
+            "title": "Planned Annual Savings Usd"
+          },
+          "realized_annual_savings_usd": {
+            "type": "number",
+            "title": "Realized Annual Savings Usd"
+          },
+          "variance_annual_usd": {
+            "type": "number",
+            "title": "Variance Annual Usd"
+          },
+          "realization_rate_percent": {
+            "type": "number",
+            "title": "Realization Rate Percent"
+          },
+          "last_realized_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Realized At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dimension",
+          "key",
+          "score",
+          "grade",
+          "recommendation_count",
+          "verified_count",
+          "open_count",
+          "planned_monthly_savings_usd",
+          "realized_monthly_savings_usd",
+          "variance_monthly_usd",
+          "planned_annual_savings_usd",
+          "realized_annual_savings_usd",
+          "variance_annual_usd",
+          "realization_rate_percent"
+        ],
+        "title": "RealizedSavingsScorecardEntry"
+      },
+      "RealizedSavingsScorecards": {
+        "properties": {
+          "total_planned_monthly_savings_usd": {
+            "type": "number",
+            "title": "Total Planned Monthly Savings Usd"
+          },
+          "total_realized_monthly_savings_usd": {
+            "type": "number",
+            "title": "Total Realized Monthly Savings Usd"
+          },
+          "total_variance_monthly_usd": {
+            "type": "number",
+            "title": "Total Variance Monthly Usd"
+          },
+          "total_planned_annual_savings_usd": {
+            "type": "number",
+            "title": "Total Planned Annual Savings Usd"
+          },
+          "total_realized_annual_savings_usd": {
+            "type": "number",
+            "title": "Total Realized Annual Savings Usd"
+          },
+          "total_variance_annual_usd": {
+            "type": "number",
+            "title": "Total Variance Annual Usd"
+          },
+          "overall_realization_rate_percent": {
+            "type": "number",
+            "title": "Overall Realization Rate Percent"
+          },
+          "overall_score": {
+            "type": "number",
+            "title": "Overall Score"
+          },
+          "overall_grade": {
+            "type": "string",
+            "title": "Overall Grade"
+          },
+          "by_provider": {
+            "items": {
+              "$ref": "#/components/schemas/RealizedSavingsScorecardEntry"
+            },
+            "type": "array",
+            "title": "By Provider"
+          },
+          "by_owner": {
+            "items": {
+              "$ref": "#/components/schemas/RealizedSavingsScorecardEntry"
+            },
+            "type": "array",
+            "title": "By Owner"
+          },
+          "by_business_unit": {
+            "items": {
+              "$ref": "#/components/schemas/RealizedSavingsScorecardEntry"
+            },
+            "type": "array",
+            "title": "By Business Unit"
+          },
+          "by_month": {
+            "items": {
+              "$ref": "#/components/schemas/RealizedSavingsScorecardEntry"
+            },
+            "type": "array",
+            "title": "By Month"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_planned_monthly_savings_usd",
+          "total_realized_monthly_savings_usd",
+          "total_variance_monthly_usd",
+          "total_planned_annual_savings_usd",
+          "total_realized_annual_savings_usd",
+          "total_variance_annual_usd",
+          "overall_realization_rate_percent",
+          "overall_score",
+          "overall_grade",
+          "by_provider",
+          "by_owner",
+          "by_business_unit",
+          "by_month"
+        ],
+        "title": "RealizedSavingsScorecards"
+      },
       "RecommendationLedgerFinanceUpdateRequest": {
         "properties": {
           "realized_monthly_savings_usd": {
@@ -13193,6 +13367,9 @@
             },
             "type": "array",
             "title": "Teams"
+          },
+          "realized_savings": {
+            "$ref": "#/components/schemas/RealizedSavingsScorecards"
           }
         },
         "type": "object",
@@ -13200,7 +13377,8 @@
           "generated_at",
           "organization_grade",
           "organization_score",
-          "teams"
+          "teams",
+          "realized_savings"
         ],
         "title": "ScorecardsResponse"
       },

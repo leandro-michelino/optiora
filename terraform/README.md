@@ -15,6 +15,8 @@ The guided flow rejects placeholder values, writes the resolved `compartment_id`
 
 Deployment order is intentionally Terraform first, then compute/source upload, then Ansible runtime configuration, then smoke verification. Terraform should not be used to push application secrets; OCI config/key material is staged by `deploy/deploy-oci.sh` and installed by Ansible under `/opt/optiora/.oci`.
 
+Terraform remains infrastructure-only for the current realized-savings scorecard and UIX releases. Those features reuse the existing API/dashboard host and database schema; no new Terraform-managed service is required.
+
 ## Design Intent
 
 - OCI naming convention:

@@ -9732,11 +9732,46 @@ class ScorecardEntry(BaseModel):
     trend: str
 
 
+class RealizedSavingsScorecardEntry(BaseModel):
+    dimension: str
+    key: str
+    score: float
+    grade: str
+    recommendation_count: int
+    verified_count: int
+    open_count: int
+    planned_monthly_savings_usd: float
+    realized_monthly_savings_usd: float
+    variance_monthly_usd: float
+    planned_annual_savings_usd: float
+    realized_annual_savings_usd: float
+    variance_annual_usd: float
+    realization_rate_percent: float
+    last_realized_at: Optional[str] = None
+
+
+class RealizedSavingsScorecards(BaseModel):
+    total_planned_monthly_savings_usd: float
+    total_realized_monthly_savings_usd: float
+    total_variance_monthly_usd: float
+    total_planned_annual_savings_usd: float
+    total_realized_annual_savings_usd: float
+    total_variance_annual_usd: float
+    overall_realization_rate_percent: float
+    overall_score: float
+    overall_grade: str
+    by_provider: List[RealizedSavingsScorecardEntry]
+    by_owner: List[RealizedSavingsScorecardEntry]
+    by_business_unit: List[RealizedSavingsScorecardEntry]
+    by_month: List[RealizedSavingsScorecardEntry]
+
+
 class ScorecardsResponse(BaseModel):
     generated_at: str
     organization_grade: str
     organization_score: float
     teams: List[ScorecardEntry]
+    realized_savings: RealizedSavingsScorecards
 
 
 def _grade(score: float, max_score: float = 100.0) -> str:
@@ -9746,6 +9781,161 @@ def _grade(score: float, max_score: float = 100.0) -> str:
     if pct >= 70: return "B"
     if pct >= 55: return "C"
     return "D"
+
+
+def _realized_savings_score(planned_monthly: float, realized_monthly: float) -> tuple[float, float, str]:
+    planned = float(planned_monthly or 0.0)
+    realized = float(realized_monthly or 0.0)
+    rate = round((realized / planned) * 100.0, 1) if planned > 0 else (100.0 if realized > 0 else 0.0)
+    score = round(min(max(rate, 0.0), 125.0) / 125.0 * 100.0, 1) if planned > 0 or realized > 0 else 0.0
+    return score, rate, _grade(score)
+
+
+def _ledger_evidence(row: RecommendationLedger) -> Dict[str, Any]:
+    try:
+        payload = json.loads(row.evidence_json or "{}")
+        return payload if isinstance(payload, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _business_unit_lookup_for_org(db: Session, organization_id: int) -> Dict[str, str]:
+    lookup: Dict[str, str] = {}
+    rows = (
+        db.query(NormalizedCostDimension)
+        .filter(NormalizedCostDimension.organization_id == organization_id)
+        .all()
+    )
+    for row in rows:
+        provider = (row.provider or "").strip().lower()
+        if not provider:
+            continue
+        business_unit = row.cost_center or row.team or row.application or None
+        if not business_unit:
+            continue
+        service = (row.service_name or "").strip().lower()
+        region = (row.region or "").strip().lower()
+        if service and region:
+            lookup.setdefault(f"{provider}|{service}|{region}", business_unit)
+        if service:
+            lookup.setdefault(f"{provider}|{service}|", business_unit)
+        lookup.setdefault(f"{provider}||", business_unit)
+    return lookup
+
+
+def _business_unit_for_ledger_row(
+    row: RecommendationLedger,
+    business_unit_lookup: Dict[str, str],
+) -> str:
+    evidence = _ledger_evidence(row)
+    for key in ("business_unit", "cost_center", "team", "application"):
+        value = evidence.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    provider = (row.provider or "").strip().lower()
+    region = (row.region or "").strip().lower()
+    labels = [
+        (row.resource_name or "").strip().lower(),
+        (row.resource_type or "").strip().lower(),
+        (row.account_id or "").strip().lower(),
+    ]
+    for label in labels:
+        if not label:
+            continue
+        if region:
+            match = business_unit_lookup.get(f"{provider}|{label}|{region}")
+            if match:
+                return match
+        match = business_unit_lookup.get(f"{provider}|{label}|")
+        if match:
+            return match
+
+    return business_unit_lookup.get(f"{provider}||", "(unassigned)")
+
+
+def _realized_savings_entry(
+    dimension: str,
+    key: str,
+    rows: List[RecommendationLedger],
+) -> RealizedSavingsScorecardEntry:
+    planned_monthly = sum(float(row.planned_monthly_savings_usd or 0.0) for row in rows)
+    realized_monthly = sum(float(row.realized_monthly_savings_usd or 0.0) for row in rows)
+    variance_monthly = realized_monthly - planned_monthly
+    score, rate, grade = _realized_savings_score(planned_monthly, realized_monthly)
+    last_realized = max((row.realized_at for row in rows if row.realized_at), default=None)
+    return RealizedSavingsScorecardEntry(
+        dimension=dimension,
+        key=key,
+        score=score,
+        grade=grade,
+        recommendation_count=len(rows),
+        verified_count=sum(1 for row in rows if (row.status or "").lower() == "verified"),
+        open_count=sum(1 for row in rows if (row.status or "").lower() in {"open", "planned", "approved"}),
+        planned_monthly_savings_usd=round(planned_monthly, 2),
+        realized_monthly_savings_usd=round(realized_monthly, 2),
+        variance_monthly_usd=round(variance_monthly, 2),
+        planned_annual_savings_usd=round(planned_monthly * 12.0, 2),
+        realized_annual_savings_usd=round(realized_monthly * 12.0, 2),
+        variance_annual_usd=round(variance_monthly * 12.0, 2),
+        realization_rate_percent=rate,
+        last_realized_at=last_realized.isoformat() if last_realized else None,
+    )
+
+
+def _build_realized_savings_scorecards(
+    *,
+    db: Session,
+    organization_id: int,
+) -> RealizedSavingsScorecards:
+    rows = (
+        db.query(RecommendationLedger)
+        .filter(RecommendationLedger.organization_id == organization_id)
+        .all()
+    )
+    business_unit_lookup = _business_unit_lookup_for_org(db, organization_id)
+
+    def grouped_entries(dimension: str, key_for_row) -> List[RealizedSavingsScorecardEntry]:
+        grouped: Dict[str, List[RecommendationLedger]] = {}
+        for row in rows:
+            key = key_for_row(row) or "(unassigned)"
+            grouped.setdefault(str(key), []).append(row)
+        entries = [_realized_savings_entry(dimension, key, group_rows) for key, group_rows in grouped.items()]
+        return sorted(
+            entries,
+            key=lambda entry: (
+                -entry.realized_monthly_savings_usd,
+                -entry.planned_monthly_savings_usd,
+                entry.key,
+            ),
+        )
+
+    planned_monthly = sum(float(row.planned_monthly_savings_usd or 0.0) for row in rows)
+    realized_monthly = sum(float(row.realized_monthly_savings_usd or 0.0) for row in rows)
+    variance_monthly = realized_monthly - planned_monthly
+    overall_score, overall_rate, overall_grade = _realized_savings_score(planned_monthly, realized_monthly)
+
+    return RealizedSavingsScorecards(
+        total_planned_monthly_savings_usd=round(planned_monthly, 2),
+        total_realized_monthly_savings_usd=round(realized_monthly, 2),
+        total_variance_monthly_usd=round(variance_monthly, 2),
+        total_planned_annual_savings_usd=round(planned_monthly * 12.0, 2),
+        total_realized_annual_savings_usd=round(realized_monthly * 12.0, 2),
+        total_variance_annual_usd=round(variance_monthly * 12.0, 2),
+        overall_realization_rate_percent=overall_rate,
+        overall_score=overall_score,
+        overall_grade=overall_grade,
+        by_provider=grouped_entries("provider", lambda row: (row.provider or "unknown").lower()),
+        by_owner=grouped_entries("owner", lambda row: row.owner or "(unassigned)"),
+        by_business_unit=grouped_entries(
+            "business_unit",
+            lambda row: _business_unit_for_ledger_row(row, business_unit_lookup),
+        ),
+        by_month=grouped_entries(
+            "month",
+            lambda row: row.realized_at.strftime("%Y-%m") if row.realized_at else "(unrealized)",
+        ),
+    )
 
 
 @router.get("/analytics/scorecards", response_model=ScorecardsResponse)
@@ -9825,6 +10015,7 @@ async def get_scorecards(
         "organization_grade": _grade(org_score),
         "organization_score": org_score,
         "teams": teams,
+        "realized_savings": _build_realized_savings_scorecards(db=db, organization_id=org_id),
     }
 
 

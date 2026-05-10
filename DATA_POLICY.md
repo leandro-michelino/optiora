@@ -21,6 +21,7 @@ Disallowed sources:
 2. If no real source data exists, endpoints return an empty state (`no_data_available`) instead of fabricated recommendations.
 3. Forecasting must not backfill invented historical points.
 4. Virtual-tag previews must use observed resources only.
+5. Realized savings scorecards must be derived from recommendation ledger rows and finance/operator updates; they must not invent realized savings.
 
 ## Recommendation Sources
 
@@ -32,6 +33,15 @@ Optimization recommendations are collected from provider APIs and live inventory
 - OCI: Optimizer recommendations/resource actions plus live compute, boot volume, and block volume inventory.
 
 If a provider API or permission is unavailable, the system returns the remaining live/snapshot/imported signals and records the gap in logs or diagnostics. It must not create synthetic recommendation rows to fill missing provider data.
+
+## Realized Savings Accounting
+
+Recommendation ledger rows track planned savings from real recommendation inputs.
+Realized savings are entered through the finance update path or derived from
+future real billing evidence. Scorecards may aggregate those values by provider,
+owner, business unit, and month, but missing realized values remain `0` or
+explicitly unassigned. They are never estimated by GenAI or replaced with demo
+values.
 
 ## Configuration
 

@@ -9,6 +9,7 @@ This estimate reflects the current OptiOra architecture and behavior:
 - Real-time telemetry query paths for Cost Advisor and operator-triggered refreshes (including cross-provider top-N operational queries).
 - Rightsizing live refresh uses a provider-native request budget of up to `120s` in the dashboard because OCI live scans have been observed at roughly `50s`; normal dashboard browsing still uses stored results.
 - GenAI + RAG style responses for advisory and narrative outputs.
+- Realized savings scorecards and UIX navigation improvements run on existing API/dashboard capacity and do not add a separate infrastructure service.
 
 ## Assumptions
 
@@ -39,6 +40,7 @@ DB platform                            : SQLite / PostgreSQL / optional ADB BYOL
 Provider telemetry collection          : scan cadence, refresh behavior, and account count dependent
 Logging and retention                  : alert/events/history growth dependent
 GenAI + RAG inference                  : prompt volume and response size dependent
+Finance scorecard aggregation          : existing database/API CPU; normally negligible vs provider telemetry
 Network egress                         : export/report/API payload dependent
 ```
 
@@ -109,6 +111,7 @@ If using Autonomous Database with BYOL:
 5. Use proxy-based operational rankings only when native monitoring is unavailable, then connect provider monitoring to improve precision.
 6. Keep `refresh_live=false` for normal dashboard browsing and reserve live refresh for operational decision points.
 7. Run broad live rightsizing refreshes by provider scope first, then use dashboard filters/search to inspect the returned cards instead of re-running the provider scan repeatedly.
+8. Use realized savings scorecards to prioritize follow-up on high-variance owners/providers before running more live scans.
 
 ## Contact / Pilot
 

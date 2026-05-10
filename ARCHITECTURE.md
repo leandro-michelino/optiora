@@ -71,6 +71,7 @@ Current as of May 10, 2026.
 | - export_jobs, export_runs  |
 | - business_mapping_rules    |
 | - normalized_dimensions     |
+| - recommendation_ledger     |
 | - virtual_tag_rules         |
 | - audit_logs                |
 +-----------------------------+
@@ -146,6 +147,73 @@ cost context + provider mix + budget policy + recommendations
         +--> GenAI narrative overlay (optional)
              - generate_finops_operating_review()
              - prompt fallback when GenAI is not configured
+```
+
+## Recommendation Ledger And Realized Savings
+
+```text
+rightsizing recommendations
+        |
+        v
+/api/v1/recommendations/rightsizing
+        |
+        +--> deterministic recommendation rows
+        |    - provider, account, resource, source, fingerprint
+        |    - current/projected monthly cost
+        |    - planned monthly and annual savings
+        |
+        v
+recommendation_ledger
+        |
+        +--> finance update path
+        |    PATCH /api/v1/recommendations/ledger/{ledger_id}
+        |    - owner
+        |    - status
+        |    - realized savings
+        |    - variance reason
+        |
+        +--> finance exports
+        |    GET /api/v1/recommendations/ledger
+        |    GET /api/v1/recommendations/ledger.csv
+        |    executive workbook: Recommendation Ledger sheet
+        |
+        +--> realized savings scorecards
+             GET /api/v1/analytics/scorecards
+             - by provider
+             - by owner
+             - by business unit
+             - by realized month
+```
+
+Business-unit grouping is derived from recommendation evidence first, then from
+normalized cost dimensions (`cost_center`, `team`, or `application`) when a
+ledger row can be matched to observed provider/service/region context. Missing
+business-unit attribution remains explicit as `(unassigned)`.
+
+## Dashboard UIX Information Architecture
+
+```text
+Dashboard shell
+        |
+        +--> Workspace
+        |    Overview, My Dashboards, Cloud Costs, Account Hierarchy, Portfolio
+        |
+        +--> Intelligence
+        |    AI Insights, Cost Advisor, Forecasting
+        |
+        +--> FinOps
+        |    Unit Economics, Scorecards, Advanced FinOps, Inventory,
+        |    Kubernetes, Virtual Tags, Rightsizing
+        |
+        +--> Operations
+             Operations, Admin Diagnostics, Anomalies, Recommendations, Settings
+
+Shared UIX behavior
+        |
+        +--> synonym-aware navigation search
+        +--> active-page helper text in sticky header
+        +--> expandable evidence/details sections on dense pages
+        +--> explicit empty/unavailable states when real data is missing
 ```
 
 ## Decision Intelligence Frontier

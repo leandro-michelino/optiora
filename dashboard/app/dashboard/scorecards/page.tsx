@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Award, Loader, RefreshCw, TrendingUp } from 'lucide-react'
+import { Award, BarChart3, Building2, CalendarDays, CircleDollarSign, Loader, RefreshCw, TrendingUp, UserRound } from 'lucide-react'
 import { fetchScorecards } from '@/lib/api'
-import { ScorecardsResponse, ScorecardEntry } from '@/lib/types'
+import { RealizedSavingsScorecardEntry, ScorecardsResponse, ScorecardEntry } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,6 +39,21 @@ function DimensionBar({ score, maxScore, label }: { score: number; maxScore: num
       </div>
     </div>
   )
+}
+
+function fmtMoney(value: number): string {
+  const rounded = Math.round(value || 0)
+  const sign = rounded < 0 ? '-' : ''
+  return `${sign}$${Math.abs(rounded).toLocaleString()}`
+}
+
+function fmtPct(value: number): string {
+  return `${(value || 0).toFixed(1)}%`
+}
+
+function varianceColor(value: number): string {
+  if (value >= 0) return 'text-emerald-600 dark:text-emerald-400'
+  return 'text-rose-600 dark:text-rose-400'
 }
 
 function ScorecardCard({ team }: { team: ScorecardEntry }) {
@@ -92,6 +107,66 @@ function ScorecardCard({ team }: { team: ScorecardEntry }) {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function RealizedSavingsTable({
+  entries,
+  emptyLabel,
+}: {
+  entries: RealizedSavingsScorecardEntry[]
+  emptyLabel: string
+}) {
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        {emptyLabel}
+      </div>
+    )
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold">Scorecard</th>
+              <th className="px-4 py-3 text-right font-semibold">Score</th>
+              <th className="px-4 py-3 text-right font-semibold">Planned / mo</th>
+              <th className="px-4 py-3 text-right font-semibold">Realized / mo</th>
+              <th className="px-4 py-3 text-right font-semibold">Variance</th>
+              <th className="px-4 py-3 text-right font-semibold">Realization</th>
+              <th className="px-4 py-3 text-right font-semibold">Verified</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-950">
+            {entries.map(entry => (
+              <tr key={`${entry.dimension}-${entry.key}`}>
+                <td className="px-4 py-3">
+                  <div className="font-medium text-slate-900 dark:text-white">{entry.key}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {entry.recommendation_count} recommendation{entry.recommendation_count === 1 ? '' : 's'} · {entry.open_count} open
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Badge className={`rounded-md border ${gradeBg(entry.grade)}`}>
+                    {entry.grade} · {entry.score.toFixed(0)}
+                  </Badge>
+                </td>
+                <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{fmtMoney(entry.planned_monthly_savings_usd)}</td>
+                <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">{fmtMoney(entry.realized_monthly_savings_usd)}</td>
+                <td className={`px-4 py-3 text-right font-medium ${varianceColor(entry.variance_monthly_usd)}`}>
+                  {fmtMoney(entry.variance_monthly_usd)}
+                </td>
+                <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{fmtPct(entry.realization_rate_percent)}</td>
+                <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{entry.verified_count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
 
@@ -168,6 +243,74 @@ export default function ScorecardsPage() {
               </div>
             </CardContent>
           </Card>
+
+          <Expander
+            title="Realized Savings Scorecards"
+            description="Finance view of planned versus realized savings by provider, owner, business unit, and month."
+            icon={<CircleDollarSign className="h-5 w-5" />}
+            defaultOpen
+          >
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  { label: 'Realized / mo', value: fmtMoney(data.realized_savings.total_realized_monthly_savings_usd), icon: CircleDollarSign },
+                  { label: 'Planned / mo', value: fmtMoney(data.realized_savings.total_planned_monthly_savings_usd), icon: BarChart3 },
+                  { label: 'Variance / mo', value: fmtMoney(data.realized_savings.total_variance_monthly_usd), icon: TrendingUp },
+                  { label: 'Realization', value: fmtPct(data.realized_savings.overall_realization_rate_percent), icon: Award },
+                ].map(metric => {
+                  const Icon = metric.icon
+                  return (
+                    <Card key={metric.label} className="rounded-xl">
+                      <CardContent className="flex items-center gap-3 p-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{metric.label}</p>
+                          <p className="text-xl font-semibold text-slate-900 dark:text-white">{metric.value}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <Expander
+                  title="By Provider"
+                  description="Cloud-level realization accountability."
+                  icon={<BarChart3 className="h-5 w-5" />}
+                  defaultOpen
+                >
+                  <RealizedSavingsTable entries={data.realized_savings.by_provider} emptyLabel="No realized savings ledger rows yet." />
+                </Expander>
+
+                <Expander
+                  title="By Owner"
+                  description="Owner-level follow-through on verified savings."
+                  icon={<UserRound className="h-5 w-5" />}
+                >
+                  <RealizedSavingsTable entries={data.realized_savings.by_owner} emptyLabel="Assign owners on recommendation ledger rows to populate this scorecard." />
+                </Expander>
+
+                <Expander
+                  title="By Business Unit"
+                  description="Business-unit realization using mapped cost dimensions when available."
+                  icon={<Building2 className="h-5 w-5" />}
+                >
+                  <RealizedSavingsTable entries={data.realized_savings.by_business_unit} emptyLabel="Map cost records to teams, applications, or cost centers to populate this scorecard." />
+                </Expander>
+
+                <Expander
+                  title="By Month"
+                  description="Realized savings grouped by realized date."
+                  icon={<CalendarDays className="h-5 w-5" />}
+                >
+                  <RealizedSavingsTable entries={data.realized_savings.by_month} emptyLabel="Update realized dates in the recommendation ledger to populate monthly savings scorecards." />
+                </Expander>
+              </div>
+            </div>
+          </Expander>
 
           {/* Dimension legend */}
           <Expander

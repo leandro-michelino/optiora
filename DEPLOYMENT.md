@@ -26,6 +26,8 @@ By default, deployed dashboards are directly accessible with no login wall. Auth
 
 Current packaged release metadata is tracked in [RELEASE_NOTES.md](RELEASE_NOTES.md). The deployed API `/health` and OpenAPI schema report the same backend version.
 
+Current operator experience notes are tracked in [UIX_REVIEW.md](UIX_REVIEW.md) and [E2E_WALKTHROUGH_NOTES.md](E2E_WALKTHROUGH_NOTES.md). After each deploy, the browser walkthrough should still load every dashboard route, including the Scorecards realized-savings view and the consolidated Kubernetes page.
+
 ## Deployment Execution Order
 
 For `./deploy/deploy-oci.sh full` (and menu option `1`), the execution order is:
@@ -193,6 +195,15 @@ The verify flow now includes:
 - export endpoint coverage for CSV/XLS/XLSX/PDF/FOCUS
 - GenAI contracts in both configured and fallback modes
 - auto-detection of direct-port (`:3000/:8000`) vs front-door (`:80/:443`) exposure
+
+Dashboard/operator UX gate:
+
+```bash
+cd dashboard
+npx playwright test e2e/operator-walkthrough.spec.ts
+```
+
+This route-level walkthrough checks every main dashboard screen, sidebar search, precise active navigation, and the legacy Kubernetes namespace redirect.
 
 Rightsizing live refresh note:
 

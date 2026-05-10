@@ -16,6 +16,8 @@ Local validation snapshot recorded on **May 10, 2026**:
 - Workspace cleanup gate passing with dependency/runtime state preserved.
 - Live OCI deployment evidence passing: `deploy-oci.sh verify` (`48` passed, `0` failed, `3` skipped).
 - Live Rightsizing provider scan evidence passing: broad OCI refresh returned about `730` recommendations in roughly `50s`.
+- Realized savings scorecards implemented in `GET /api/v1/analytics/scorecards` and surfaced in the Scorecards dashboard.
+- Page-by-page UIX review documented in `UIX_REVIEW.md`, with shell-level navigation and context improvements implemented.
 
 ## Release 1.0 Exit Criteria
 
@@ -42,7 +44,7 @@ Use canonical docs for execution details so commands are maintained in one place
 
 **Recommendation Lifecycle Dashboard Experience** is the next product implementation slice.
 
-Reason: OptiOra now persists generated rightsizing recommendations into an organization-scoped ledger with planned, realized, and variance savings fields. The next step is to turn that backend ledger into a guided execution board for owners, approvals, evidence, and realization reviews.
+Reason: OptiOra now persists generated rightsizing recommendations into an organization-scoped ledger with planned, realized, and variance savings fields, and finance can view realized savings scorecards by provider, owner, business unit, and month. The next step is to turn that ledger into a guided execution board for owners, approvals, evidence, drill-through, and realization reviews.
 
 Implemented backend slice:
 
@@ -51,19 +53,21 @@ Implemented backend slice:
 3. Ledger rows store planned monthly/annual savings, realized monthly/annual savings, variance, status, owner, evidence, source, and console URL context.
 4. Added `GET /api/v1/recommendations/ledger`, `PATCH /api/v1/recommendations/ledger/{ledger_id}`, and `GET /api/v1/recommendations/ledger.csv`.
 5. Finance workbook exports now include a `Recommendation Ledger` sheet with planned, realized, and variance fields.
+6. Scorecards now expose realized savings by provider, owner, business unit, and realized month.
 
 Remaining MVP scope:
 
 1. Add a dashboard execution-board experience with expanders for evidence, approval notes, and realized savings.
 2. Add richer state-transition audit events and optional approval policies.
 3. Add owner assignment workflows and realization evidence upload/linking in the UI.
-4. Add realized savings scorecards by provider, owner, business unit, and month.
+4. Add drill-through from realized savings scorecards to filtered ledger rows.
 
 Suggested first files/modules to touch:
 
 - `dashboard/lib/types.ts` and `dashboard/lib/api.ts` for typed frontend contracts.
 - `dashboard/app/dashboard/recommendations/page.tsx` for the execution-board UI.
 - `dashboard/app/dashboard/rightsizing/page.tsx` for links from discovered recommendations to ledger realization.
+- `dashboard/app/dashboard/scorecards/page.tsx` for scorecard-to-ledger drill-through.
 - `tests/` for UI-facing ledger state transitions, org isolation, and realized-savings calculations.
 
 Definition of done:

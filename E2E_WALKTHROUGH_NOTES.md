@@ -82,6 +82,17 @@ recommendation_source
 recommendation_fingerprint
 ```
 
+The latest dashboard scorecards implementation also confirms realized savings rollups by:
+
+```text
+provider
+owner
+business_unit
+realized_month
+```
+
+The UIX shell pass confirms every page has searchable navigation metadata and active-page helper text. The detailed page-by-page findings are in `UIX_REVIEW.md`.
+
 ## Repeatable Commands
 
 ```bash

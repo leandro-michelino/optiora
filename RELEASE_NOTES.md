@@ -1,6 +1,13 @@
 # Release Notes
 
-## Unreleased - Advisor and Rightsizing Live-Scan Polish (May 10, 2026)
+## Unreleased - Advisor, Scorecards, and UIX Polish (May 10, 2026)
+
+Repository release metadata:
+
+- Current package version: `0.9.1`
+- Current git tag: `v0.9.1`
+- Current documentation baseline: May 10, 2026
+- GitHub release notes source of truth: this file
 
 ### Added
 
@@ -15,6 +22,8 @@
 - Public browser verification for the Rightsizing live provider scan path.
 - Repeatable operator walkthrough Playwright coverage for every main dashboard screen, active navigation state, consolidated Kubernetes routing, and broken UI state detection.
 - `E2E_WALKTHROUGH_NOTES.md` with the human-style process log, fixes applied during the path, live OCI verification snapshot, and repeatable commands.
+- Realized savings scorecards in `GET /api/v1/analytics/scorecards`, grouped by provider, owner, business unit, and realized month from recommendation ledger data.
+- Page-by-page `UIX_REVIEW.md` covering every dashboard screen, applied improvements, cross-page standards, and a prioritized UX backlog.
 
 ### Changed
 
@@ -22,6 +31,8 @@
 - Ansible source deployments now remove stale generated dashboard/cache/Terraform artifacts from earlier deployments before unpacking fresh source, while preserving runtime `.env`, `.oci`, `venv`, and `optiora.db`.
 - Rightsizing live refresh now allows up to `120s` in the dashboard client. The deployed OCI live scan has been observed returning in about `50s`, which exceeded the previous `45s` client timeout.
 - Rightsizing overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status and action summaries discoverable.
+- FinOps Scorecards now show finance-first realized savings summaries and expandable provider, owner, business-unit, and monthly scorecard tables.
+- Dashboard navigation now includes richer screen descriptions, synonym-aware search, active-page helper text, and clearer section context across every screen.
 - Cost Advisor chat auto-scroll now scrolls only the conversation panel, preventing page-level scroll jumps and sticky-header overlap.
 - Cost Advisor offline/backend-unreachable states now show operator-friendly guidance instead of raw `Failed to fetch` text.
 - README, cost estimate, testing notes, deployment notes, architecture diagrams, and next-phase planning were refreshed to match the current deployed state.
@@ -45,6 +56,7 @@
 - `cd dashboard && npx playwright test e2e/operator-walkthrough.spec.ts`
 - `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`281` passing, `2` skipped)
 - `.venv/bin/python -m pytest -q` (`287` passing)
+- `.venv/bin/python -m pytest tests/test_scorecards.py -q` (`7` passing)
 - `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py tests/test_deep_finops_analytics.py` (`35` passing)
 - `terraform fmt -check` for tracked Terraform files and `terraform -chdir=terraform validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
