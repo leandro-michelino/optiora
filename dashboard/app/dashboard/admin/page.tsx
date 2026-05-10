@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Activity, RefreshCw, ShieldCheck } from 'lucide-react'
-import { fetchAdminDiagnostics } from '@/lib/api'
+import { fetchAdminDiagnostics, forceNextApiRefresh } from '@/lib/api'
 import { AdminDiagnosticsSnapshot } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -47,7 +47,7 @@ export default function AdminDiagnosticsPage() {
             Health, scheduler, data freshness, and destination status in one operational view.
           </p>
         </div>
-        <Button onClick={() => void loadSnapshot()} disabled={loading} className="rounded-lg">
+        <Button onClick={() => { forceNextApiRefresh(); void loadSnapshot() }} disabled={loading} className="rounded-lg">
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>

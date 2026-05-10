@@ -51,6 +51,14 @@ Current backend coverage includes:
 - OCI-only runtime guardrails and metadata preflight behavior
 - live-provider readiness with copied example placeholders treated as unset
 - CSV/import mode allowance when `REQUIRE_LIVE_PROVIDER_DATA=false`
+- API response cache environment controls for enablement, TTL, warmer interval, and max entries
+
+**API response cache** (`tests/test_response_cache.py`):
+
+- successful JSON `GET /api/v1/*` responses are cached and returned with cache-hit headers
+- `force_refresh=true` bypasses the cache and repopulates the stored response
+- successful mutating API calls invalidate cached reads so follow-up GETs reflect writes
+- non-API health paths remain uncached
 
 **Auth and organization flows** (`tests/test_auth_flow.py`):
 

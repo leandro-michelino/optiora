@@ -207,6 +207,20 @@ class Config:
         default_factory=lambda: _env_int("SCAN_SCHEDULER_INTERVAL_MINUTES", 60)
     )
 
+    # Dashboard/API response cache
+    enable_api_response_cache: bool = field(
+        default_factory=lambda: _env_bool("ENABLE_API_RESPONSE_CACHE", "true")
+    )
+    api_response_cache_ttl_seconds: int = field(
+        default_factory=lambda: _env_int("API_RESPONSE_CACHE_TTL_SECONDS", 300)
+    )
+    api_response_cache_refresh_interval_seconds: int = field(
+        default_factory=lambda: _env_int("API_RESPONSE_CACHE_REFRESH_INTERVAL_SECONDS", 300)
+    )
+    api_response_cache_max_entries: int = field(
+        default_factory=lambda: _env_int("API_RESPONSE_CACHE_MAX_ENTRIES", 256)
+    )
+
     # Data retention / archival
     # Rows older than retention_hot_months are archived to OCI Object Storage then deleted from DB.
     # The bucket lifecycle rule (Terraform) handles deletion after 1 year in object storage.

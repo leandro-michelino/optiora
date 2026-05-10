@@ -8,6 +8,7 @@ import {
   updateVirtualTagRule,
   deleteVirtualTagRule,
   previewVirtualTags,
+  forceNextApiRefresh,
 } from '@/lib/api'
 import {
   VirtualTagRuleOut,
@@ -230,7 +231,7 @@ export default function VirtualTagsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void loadRules()} className="rounded-lg">
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadRules() }} className="rounded-lg">
             <RefreshCw className="mr-2 h-4 w-4" />Refresh
           </Button>
           <Button onClick={() => { setEditingRule(null); setShowForm(true) }} className="rounded-lg">
@@ -407,7 +408,7 @@ export default function VirtualTagsPage() {
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Tag Coverage Preview</h2>
             <p className="text-sm text-slate-500">See which resources would be tagged by active rules without committing any changes.</p>
           </div>
-          <Button variant="outline" onClick={() => void loadPreview()} disabled={previewLoading} className="rounded-lg">
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadPreview() }} disabled={previewLoading} className="rounded-lg">
             {previewLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
             Run Preview
           </Button>

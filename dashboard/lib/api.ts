@@ -84,6 +84,7 @@ import { authorizedFetch } from './auth-fetch'
 const DEFAULT_TIMEOUT_MS = 10000
 const LIVE_DATA_TIMEOUT_MS = 45000
 const RIGHTSIZING_LIVE_TIMEOUT_MS = 120000
+let forceRefreshUntil = 0
 
 interface ListQuery {
   limit?: number
@@ -136,7 +137,7 @@ async function responseErrorMessage(response: Response, fallbackPrefix: string):
 async function requestJson<T>(
   path: string,
   init: RequestInit = {},
-  options: { authenticated?: boolean; timeoutMs?: number } = {},
+  options: { authenticated?: boolean; timeoutMs?: number; forceRefresh?: boolean } = {},
 ): Promise<T> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000))
@@ -166,13 +167,19 @@ async function requestJson<T>(
   try {
     const headers = new Headers(init.headers)
     headers.set('Content-Type', 'application/json')
+    const forceRefresh = Boolean(options.forceRefresh || Date.now() < forceRefreshUntil)
+    if (forceRefresh) {
+      headers.set('Cache-Control', 'no-cache')
+      headers.set('X-OptiOra-Force-Refresh', 'true')
+    }
 
     const requestInit: RequestInit = {
       ...init,
       headers,
       signal: controller.signal,
     }
-    const url = backendUrl(path)
+    const requestPath = forceRefresh ? withForceRefreshQuery(path) : path
+    const url = backendUrl(requestPath)
     const response = options.authenticated === false
       ? await fetch(url, requestInit)
       : await authorizedFetch(url, requestInit)
@@ -203,6 +210,19 @@ async function requestJson<T>(
     }
     globalThis.clearTimeout(timeout)
   }
+}
+
+function withForceRefreshQuery(path: string): string {
+  if (!path.startsWith('/api/v1/')) return path
+  const [base, query = ''] = path.split('?')
+  const params = new URLSearchParams(query)
+  params.set('force_refresh', 'true')
+  const serialized = params.toString()
+  return serialized ? `${base}?${serialized}` : base
+}
+
+export function forceNextApiRefresh(durationMs = 5000) {
+  forceRefreshUntil = Date.now() + Math.max(1000, durationMs)
 }
 
 export async function fetchCosts(): Promise<CostResponse> {

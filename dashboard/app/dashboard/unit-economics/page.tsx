@@ -15,7 +15,7 @@ import {
   TrendingDown,
   Zap,
 } from 'lucide-react'
-import { fetchUnitEconomicsCockpit, recordUnitEconomicsMetric, downloadFocusCsv } from '@/lib/api'
+import { fetchUnitEconomicsCockpit, recordUnitEconomicsMetric, downloadFocusCsv, forceNextApiRefresh } from '@/lib/api'
 import { UnitEconomicsCockpitResponse, UnitEconomicsMetricResult } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -230,7 +230,7 @@ export default function UnitEconomicsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>

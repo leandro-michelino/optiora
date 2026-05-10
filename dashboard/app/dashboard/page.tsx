@@ -44,6 +44,7 @@ import {
   fetchRecommendations,
   fetchScanningPermission,
   fetchCostTrend,
+  forceNextApiRefresh,
 } from '@/lib/api'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
 import { useCloudVisibility } from '@/lib/cloud-visibility'
@@ -415,7 +416,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={() => void loadDashboard()} className="rounded-lg">
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadDashboard() }} className="rounded-lg">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>

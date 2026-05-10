@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Building2, Loader, RefreshCw } from 'lucide-react'
-import { fetchPartnerCustomerPortfolio } from '@/lib/api'
+import { fetchPartnerCustomerPortfolio, forceNextApiRefresh } from '@/lib/api'
 import { PartnerCustomerPortfolioResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -67,7 +67,7 @@ export default function PortfolioPage() {
             Consolidated customer health, spend, savings, and alert posture across organizations available to your account.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void loadPortfolio()} disabled={loading} className="rounded-lg">
+        <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadPortfolio() }} disabled={loading} className="rounded-lg">
           {loading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Refresh
         </Button>

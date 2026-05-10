@@ -21,7 +21,7 @@ import {
   Sparkles,
   Wrench,
 } from 'lucide-react'
-import { fetchKubernetesSummary, calculateKubernetesClusterCost, fetchKubernetesProviderCatalog, syncOpenCostCosts, autoInstallOpenCost } from '@/lib/api'
+import { fetchKubernetesSummary, calculateKubernetesClusterCost, fetchKubernetesProviderCatalog, syncOpenCostCosts, autoInstallOpenCost, forceNextApiRefresh } from '@/lib/api'
 import {
   KubernetesSummaryResponse,
   KubernetesClusterCostResponse,
@@ -892,7 +892,7 @@ export default function KubernetesPage() {
             One workspace for Kubernetes cluster modeling, namespace allocation, OpenCost sync, and workload optimization signals.
           </p>
         </div>
-        <Button variant="outline" onClick={() => { void loadSummary(); void loadProviderCatalog() }} disabled={loading}>
+        <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadSummary(); void loadProviderCatalog() }} disabled={loading}>
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>

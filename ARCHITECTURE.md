@@ -18,6 +18,7 @@ Current as of May 10, 2026.
 | - Overview, costs, anomalies, recommendations, forecasting    |
 | - FinOps analytics, inventory, scorecards, chargeback, tags   |
 | - Kubernetes, MSP/customer portfolio, AI advisor              |
+| - Refresh buttons send force-refresh hints for fresh reads    |
 |                                                               |
 | Frontend GenAI path                                           |
 | - /api/ai/chat -> dashboard/lib/ai-service.ts -> OCI GenAI    |
@@ -27,6 +28,11 @@ Current as of May 10, 2026.
         v
 +---------------------------------------------------------------+
 | FastAPI backend, port 8000                                    |
+|                                                               |
+| Response cache                                                |
+| - JSON GET /api/v1/* cache, 5-minute TTL by default           |
+| - active-entry warmer refreshes cached keys every 5 minutes   |
+| - force_refresh=true / no-cache bypasses and repopulates      |
 |                                                               |
 | Core APIs                                                     |
 | - Auth and RBAC                 /auth/*                       |
@@ -87,6 +93,41 @@ mode is enabled.
 OptiOra uses a Next.js dashboard as the user-facing control plane and a FastAPI backend as the system of record for FinOps analytics, forecasting, alerts, imports, and advisory flows. The backend stores normalized operational data in SQLite for local development or PostgreSQL for production. Runtime cost data enters the platform from live cloud-provider APIs or from imported CSV billing files. Deterministic analytics are computed first and remain authoritative for cost, savings, risk, and forecast math. OCI Generative AI is then used as a narrative and prioritization layer on top of those deterministic outputs, not as the source of truth for numbers.
 
 ## FinOps Analytics Pipeline
+
+## Dashboard Response Cache
+
+```text
+dashboard page load
+        |
+        | GET /api/v1/* JSON
+        v
+FastAPI response cache
+        |
+        +-- HIT: return recent real API/CSV/provider-derived response
+        |
+        +-- MISS: execute backend endpoint and store successful JSON
+        |
+        +-- BYPASS: user Refresh sends force_refresh=true/no-cache
+             |
+             v
+        execute backend endpoint and replace cached entry
+
+successful POST/PUT/PATCH/DELETE /api/v1/* or /auth/*
+        |
+        v
+clear cached reads so writes are visible immediately
+
+background warmer, every 5 minutes
+        |
+        v
+refresh active cached keys through the same ASGI app with force_refresh=true
+```
+
+The cache is process-local and bounded. It is intentionally used only for
+dashboard JSON `GET /api/v1/*` responses. Health/info endpoints, export/download
+routes, scan-progress polling, and live rightsizing requests are excluded. Cached
+responses are still real responses from provider APIs, stored snapshots, or
+customer CSV imports; the cache never creates synthetic data.
 
 ```text
 source data (live providers and/or imported CSV)

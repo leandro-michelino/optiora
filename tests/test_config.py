@@ -23,6 +23,10 @@ class ConfigTest(unittest.TestCase):
                 "DEPLOYMENT_TARGET": "oci",
                 "OCI_RUNTIME_REQUIRED": "false",
                 "REQUIRE_LIVE_PROVIDER_DATA": "false",
+                "ENABLE_API_RESPONSE_CACHE": "true",
+                "API_RESPONSE_CACHE_TTL_SECONDS": "123",
+                "API_RESPONSE_CACHE_REFRESH_INTERVAL_SECONDS": "456",
+                "API_RESPONSE_CACHE_MAX_ENTRIES": "789",
             },
             clear=False,
         ):
@@ -33,6 +37,10 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(cfg.deployment_target, "oci")
         self.assertFalse(cfg.oci_runtime_required)
         self.assertFalse(cfg.require_live_provider_data)
+        self.assertTrue(cfg.enable_api_response_cache)
+        self.assertEqual(cfg.api_response_cache_ttl_seconds, 123)
+        self.assertEqual(cfg.api_response_cache_refresh_interval_seconds, 456)
+        self.assertEqual(cfg.api_response_cache_max_entries, 789)
 
     def test_validate_rejects_non_oci_deployment_target(self) -> None:
         with patch.dict(

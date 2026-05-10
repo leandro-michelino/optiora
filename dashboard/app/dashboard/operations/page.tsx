@@ -42,6 +42,7 @@ import {
   fetchScanDiff,
   fetchScanHistory,
   fetchScanningPermission,
+  forceNextApiRefresh,
   listExportJobRuns,
   listExportJobs,
   runExportJob,
@@ -523,7 +524,7 @@ export default function OperationsPage() {
             Run checks, confirm provider readiness, and start approved cost scans.
           </p>
         </div>
-        <Button onClick={() => void loadOperations()} disabled={loading} className="rounded-lg">
+        <Button onClick={() => { forceNextApiRefresh(); void loadOperations() }} disabled={loading} className="rounded-lg">
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Refresh
         </Button>

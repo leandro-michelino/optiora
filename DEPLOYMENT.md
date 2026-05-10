@@ -264,6 +264,30 @@ sudo systemctl status optiora-dashboard
 
 The Ansible-rendered `.env` values matter because the dashboard is browser-executed. A localhost API URL in deployed mode would break browser API calls.
 
+### Dashboard/API response cache
+
+The deployed backend enables a bounded process-local response cache for
+dashboard JSON `GET /api/v1/*` calls:
+
+```env
+ENABLE_API_RESPONSE_CACHE=true
+API_RESPONSE_CACHE_TTL_SECONDS=300
+API_RESPONSE_CACHE_REFRESH_INTERVAL_SECONDS=300
+API_RESPONSE_CACHE_MAX_ENTRIES=256
+```
+
+Normal page loads reuse recent real backend responses for speed. The backend
+warms active cached entries every `5` minutes. Dashboard Refresh buttons add
+`force_refresh=true`, `Cache-Control: no-cache`, and
+`X-OptiOra-Force-Refresh: true`, which bypasses the cache and repopulates it
+with a fresh backend read.
+
+The cache does not apply to health/info, export/download, scan progress, or
+live rightsizing requests that already use explicit provider refresh semantics.
+Successful mutating API calls (`POST`, `PUT`, `PATCH`, `DELETE`) clear cached
+reads so imports, settings changes, scan approvals, virtual tag updates, and
+finance edits are visible on the next page refresh.
+
 ## Command Reference
 
 ```bash

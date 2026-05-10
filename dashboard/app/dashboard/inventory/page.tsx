@@ -20,7 +20,7 @@ import {
   Tags,
   X,
 } from 'lucide-react'
-import { fetchProviderAccountInventory, fetchResourceInventory } from '@/lib/api'
+import { fetchProviderAccountInventory, fetchResourceInventory, forceNextApiRefresh } from '@/lib/api'
 import { ResourceInventoryResponse, ResourceInventoryItem, ProviderAccountInventoryResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -723,7 +723,7 @@ export default function InventoryPage() {
             The canonical resource-cost explorer for provider, account, region, service type, tag, monthly cost, and waste investigation.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading}>
+        <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} disabled={loading}>
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>

@@ -19,11 +19,15 @@ from .api import router as api_router, run_scheduled_scans_once
 from .auth_routes import router as auth_router
 from .orm_models import ensure_public_workspace, init_db
 from .retention import run_retention
+from .response_cache import ApiResponseCache, ApiResponseCacheMiddleware, run_response_cache_refresher
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 _scheduler_task: asyncio.Task | None = None
 _retention_task: asyncio.Task | None = None
+_response_cache_task: asyncio.Task | None = None
+_response_cache_enabled = False
+api_response_cache = ApiResponseCache()
 
 
 @asynccontextmanager
@@ -75,20 +79,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_resolve_allowed_origins(),
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Authorization",
-        "Content-Type",
-        "Accept",
-        "X-Requested-With",
-        "X-Request-ID",
-    ],
-    expose_headers=["X-Request-ID", "X-Response-Time-Ms"],
+    ApiResponseCacheMiddleware,
+    cache=api_response_cache,
+    enabled=lambda: _response_cache_enabled,
 )
 
 
@@ -102,6 +96,34 @@ async def request_context_middleware(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Response-Time-Ms"] = f"{duration_ms:.2f}"
     return response
+
+
+# CORS middleware is added after application middleware so it remains the
+# outermost layer and decorates cached hits as well as live responses.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_resolve_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Cache-Control",
+        "Pragma",
+        "X-Requested-With",
+        "X-Request-ID",
+        "X-OptiOra-Force-Refresh",
+    ],
+    expose_headers=[
+        "X-Request-ID",
+        "X-Response-Time-Ms",
+        "X-OptiOra-Cache",
+        "X-OptiOra-Cache-Age",
+        "X-OptiOra-Cache-TTL",
+        "X-OptiOra-Cache-Invalidated",
+    ],
+)
 
 
 # Initialize database
@@ -128,6 +150,26 @@ async def startup_event():
             global _scheduler_task
             _scheduler_task = asyncio.create_task(_scheduler_loop())
             logger.info("Scheduled scan runner enabled (interval=%ss)", interval_seconds)
+
+        global _response_cache_task, _response_cache_enabled, api_response_cache
+        _response_cache_enabled = bool(cfg.enable_api_response_cache)
+        if _response_cache_enabled:
+            api_response_cache.ttl_seconds = max(30, int(cfg.api_response_cache_ttl_seconds))
+            api_response_cache.max_entries = max(1, int(cfg.api_response_cache_max_entries))
+            refresh_interval = max(60, int(cfg.api_response_cache_refresh_interval_seconds))
+            _response_cache_task = asyncio.create_task(
+                run_response_cache_refresher(
+                    app=app,
+                    cache=api_response_cache,
+                    interval_seconds=refresh_interval,
+                )
+            )
+            logger.info(
+                "API response cache enabled (ttl=%ss, refresh_interval=%ss, max_entries=%s)",
+                api_response_cache.ttl_seconds,
+                refresh_interval,
+                api_response_cache.max_entries,
+            )
 
         if cfg.retention_enabled:
             retention_interval = max(3600, cfg.retention_run_interval_hours * 3600)
@@ -157,8 +199,8 @@ async def startup_event():
 
 async def shutdown_event():
     """Stop background scheduler task cleanly."""
-    global _scheduler_task, _retention_task
-    for task in (_scheduler_task, _retention_task):
+    global _scheduler_task, _retention_task, _response_cache_task
+    for task in (_scheduler_task, _retention_task, _response_cache_task):
         if task is not None:
             task.cancel()
             try:
@@ -167,6 +209,7 @@ async def shutdown_event():
                 pass
     _scheduler_task = None
     _retention_task = None
+    _response_cache_task = None
 
 
 # Health check endpoint

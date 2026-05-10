@@ -13,6 +13,7 @@ import {
   fetchChargebackSummary,
   fetchFinOpsOperatingReview,
   fetchDecisionIntelligence,
+  forceNextApiRefresh,
 } from '@/lib/api'
 import {
   DecisionRecommendationResponse,
@@ -162,7 +163,7 @@ export default function AdvancedFinOpsPage() {
             Unified view of tag completeness scoring, decision-grade optimization ranking, and multi-account federation insights.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void load()} className="rounded-lg">
+        <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} className="rounded-lg">
           <RefreshCw className="mr-2 h-4 w-4" />Refresh
         </Button>
       </div>

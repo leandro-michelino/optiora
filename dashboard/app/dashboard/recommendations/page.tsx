@@ -21,6 +21,7 @@ import {
   fetchProviderDiagnostics,
   fetchRecommendationsStrict,
   fetchRightsizingRecommendations,
+  forceNextApiRefresh,
 } from '@/lib/api'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
@@ -313,7 +314,7 @@ export default function RecommendationsPage() {
             />
             Live provider sync
           </label>
-          <Button variant="outline" onClick={() => void loadRecommendations()} className="rounded-lg" disabled={loading}>
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadRecommendations() }} className="rounded-lg" disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh
           </Button>
         </div>

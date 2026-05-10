@@ -38,6 +38,13 @@ The playbook prints two operator-facing summaries:
 - a provisioning plan before changes begin, covering target host, runtime, ports, auth posture, data policy, scheduler/retention, and storage mode
 - a completion summary with dashboard/API/doc URLs, local health checks, service active/enabled state, runtime versions, storage usage, GenAI settings, verification commands, log commands, restart/migration commands, next steps, and reachability troubleshooting hints
 
+The rendered runtime environment also enables the dashboard/API response cache
+by default. `ENABLE_API_RESPONSE_CACHE=true`,
+`API_RESPONSE_CACHE_TTL_SECONDS=300`,
+`API_RESPONSE_CACHE_REFRESH_INTERVAL_SECONDS=300`, and
+`API_RESPONSE_CACHE_MAX_ENTRIES=256` keep normal dashboard refreshes fast while
+still allowing user Refresh actions to bypass and repopulate the cache.
+
 Current release documentation expects the deployed dashboard to include the UIX shell improvements and realized savings scorecards. After Ansible completes, run the root `./deploy/deploy-oci.sh verify` gate and, when validating a UI change, the dashboard operator walkthrough from `dashboard/e2e/operator-walkthrough.spec.ts`.
 
 Recommended data disk sizing: `200 GiB` at `10 VPUs/GB` (balanced). That is enough headroom for the database, imported billing files, exports, and dashboard build artifacts without wasting money on a very large boot disk.

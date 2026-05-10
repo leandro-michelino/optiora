@@ -29,7 +29,7 @@ import {
   User,
   Zap,
 } from 'lucide-react'
-import { fetchHybridAdvisor } from '@/lib/api'
+import { fetchHybridAdvisor, forceNextApiRefresh } from '@/lib/api'
 import { AdvisorNarrativeType, HybridAdvisorResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -632,7 +632,7 @@ export default function CostAdvisorPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => void loadHybrid(narrativeType)} disabled={hybridLoading}>
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadHybrid(narrativeType) }} disabled={hybridLoading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${hybridLoading ? 'animate-spin' : ''}`} />
             Refresh Brief
           </Button>
@@ -729,7 +729,7 @@ export default function CostAdvisorPage() {
                     key={type}
                     type="button"
                     variant={narrativeType === type ? 'default' : 'outline'}
-                    onClick={() => void loadHybrid(type)}
+                    onClick={() => { forceNextApiRefresh(); void loadHybrid(type) }}
                     disabled={hybridLoading}
                   >
                     {narrativeLabels[type]}

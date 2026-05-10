@@ -27,6 +27,7 @@ Repository release metadata:
 - Live OCI Kubernetes/container inventory in `GET /api/v1/analytics/kubernetes/summary`, covering OKE clusters, OCI Container Instances, and OCIR repositories before billing rows are available.
 - Focused Kubernetes E2E fixture resources in OCI: one OKE Basic cluster and one small Docker-backed OCI Container Instance for live page validation. These temporary resources were deleted after validation.
 - Cloud Resources & Costs cockpit for the canonical resource-cost explorer, including provider share, type/region/account rollups, top resources, local search/sort, expandable rows, and a resource details drawer.
+- Bounded API response cache for dashboard JSON `GET /api/v1/*` calls, with default `5` minute TTL, active-entry background warming every `5` minutes, and cache status headers.
 
 ### Changed
 
@@ -41,6 +42,9 @@ Repository release metadata:
 - Removed legacy Kubernetes namespace route wiring so `/dashboard/kubernetes` is the only Kubernetes, container, Docker, namespace, and OpenCost page.
 - Cost Advisor chat auto-scroll now scrolls only the conversation panel, preventing page-level scroll jumps and sticky-header overlap.
 - Cost Advisor offline/backend-unreachable states now show operator-friendly guidance instead of raw `Failed to fetch` text.
+- Dashboard Refresh buttons now send `force_refresh=true`, `Cache-Control: no-cache`, and `X-OptiOra-Force-Refresh: true` so customer-initiated refreshes always bypass and repopulate the response cache.
+- CORS now allows the force-refresh request header and exposes `X-OptiOra-Cache`, `X-OptiOra-Cache-Age`, and `X-OptiOra-Cache-TTL` for browser diagnostics.
+- Successful mutating API calls now invalidate cached reads so imports, approvals, alert lifecycle actions, credentials, virtual tags, and finance updates are visible immediately.
 - README, cost estimate, testing notes, deployment notes, architecture diagrams, and next-phase planning were refreshed to match the current deployed state.
 
 ### Fixed
@@ -65,6 +69,7 @@ Repository release metadata:
 - `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`281` passing, `2` skipped)
 - `.venv/bin/python -m pytest -q` (`287` passing)
 - `.venv/bin/python -m pytest tests/test_scorecards.py -q` (`7` passing)
+- `.venv/bin/python -m pytest tests/test_response_cache.py tests/test_config.py -q` (`17` passing)
 - `.venv/bin/python -m pytest tests/test_kubernetes.py -q` (`17` passing)
 - `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py tests/test_deep_finops_analytics.py` (`35` passing)
 - `terraform fmt -check` for tracked Terraform files and `terraform -chdir=terraform validate`

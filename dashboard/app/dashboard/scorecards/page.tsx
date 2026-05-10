@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Award, BarChart3, Building2, CalendarDays, CircleDollarSign, Loader, RefreshCw, TrendingUp, UserRound } from 'lucide-react'
-import { fetchScorecards } from '@/lib/api'
+import { fetchScorecards, forceNextApiRefresh } from '@/lib/api'
 import { RealizedSavingsScorecardEntry, ScorecardsResponse, ScorecardEntry } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -203,7 +203,7 @@ export default function ScorecardsPage() {
             Per-team FinOps maturity scores across allocation coverage, waste reduction, tagging hygiene, and commitment coverage. Configure business mapping rules to enable team-level attribution.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void load()} className="rounded-lg">
+        <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} className="rounded-lg">
           <RefreshCw className="mr-2 h-4 w-4" />Refresh
         </Button>
       </div>

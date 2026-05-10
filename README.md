@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, canonical resource-cost explorer, UIX review, and repository hygiene.
+Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, canonical resource-cost explorer, 5-minute API response cache, UIX review, and repository hygiene.
 Current documentation baseline: May 10, 2026.
 
 ![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)
@@ -42,6 +42,7 @@ Users / Operators
 | Next.js Dashboard                                           |
 | - FinOps cockpit, Cost Advisor, inventory, Kubernetes       |
 | - Forecasting, scorecards, recommendations, operations      |
+| - Refresh controls can bypass backend response cache        |
 | - /api/ai/chat route for OCI GenAI advisor conversations    |
 +----------------------------+--------------------------------+
                              |
@@ -52,6 +53,7 @@ Users / Operators
 | - Costs, scans, imports, forecasts, anomalies, exports       |
 | - Rightsizing, recommendations, decision intelligence        |
 | - Hybrid advisor contract: deterministic data + narrative    |
+| - 5-minute JSON response cache + active-entry warmer         |
 +-------------+----------------------+------------------------+
               |                      |
               | SQLAlchemy           | provider / GenAI APIs
@@ -95,6 +97,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 | Operations | Scan history, scan diffs, alert lifecycle, routing policy simulation, evidence exports, freshness telemetry |
 | Intelligence | Cost Advisor, AI Insights, RAG-guided narratives, operating review packs, decision intelligence frontier |
 | Governance | Virtual tags, tag quality, audit logs, data-source banners, export jobs, retention controls |
+| Performance | Process-local API response cache for dashboard JSON GETs, refreshed every 5 minutes and bypassed by user Refresh actions |
 
 Recent UIX and wiring updates:
 
@@ -104,6 +107,7 @@ Recent UIX and wiring updates:
 - Scorecards now include realized savings scorecards by provider, owner, business unit, and realized month, backed by the recommendation ledger.
 - Kubernetes now merges billing data with live OCI OKE, Container Instance, and OCIR inventory so newly launched container services appear before cost-management data catches up.
 - Cloud Resources is now the canonical resource-cost explorer, with provider/type/region/account/top-resource breakdowns, local search/sort, and expandable details.
+- Dashboard JSON GETs now use a bounded backend response cache so normal navigation is fast; active entries are warmed every `5` minutes and Refresh buttons request a fresh backend read.
 - Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, removing confusing overlap with resource investigation.
 - The legacy Kubernetes namespace route wiring was removed; `/dashboard/kubernetes` is the only Kubernetes/container/Docker page.
 - Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.

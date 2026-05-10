@@ -20,7 +20,7 @@ import {
   ShieldCheck,
   Zap,
 } from 'lucide-react'
-import { fetchRightsizingRecommendations } from '@/lib/api'
+import { fetchRightsizingRecommendations, forceNextApiRefresh } from '@/lib/api'
 import { RightsizingResponse, RightsizingRecommendation } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -647,7 +647,7 @@ export default function RightsizingPage() {
             />
             Live provider scan
           </label>
-          <Button variant="outline" onClick={() => void load()} className="rounded-lg" disabled={loading}>
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} className="rounded-lg" disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh
           </Button>
         </div>
