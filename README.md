@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.1` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, UIX review, and repository hygiene.
+Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, UIX review, and repository hygiene.
 Current documentation baseline: May 10, 2026.
 
 ![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)

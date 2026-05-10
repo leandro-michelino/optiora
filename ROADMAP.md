@@ -370,7 +370,7 @@ This is the best near-term commercial path.
 
 Goal: make the product deployable, demoable, and operationally credible with direct dashboard access.
 
-Status: **readiness baseline (`0.9.0`) with current packaged maintenance release `0.9.1`**. See [RELEASE_NOTES.md](RELEASE_NOTES.md).
+Status: **readiness baseline (`0.9.0`) with current packaged maintenance release `0.9.2`**. See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 - keep dashboard access public by default
 - preserve auth and RBAC only as optional hardening

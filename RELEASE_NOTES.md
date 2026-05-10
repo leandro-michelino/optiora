@@ -1,11 +1,11 @@
 # Release Notes
 
-## Unreleased - Advisor, Scorecards, and UIX Polish (May 10, 2026)
+## 0.9.2 - Advisor, Scorecards, and UIX Polish (May 10, 2026)
 
 Repository release metadata:
 
-- Current package version: `0.9.1`
-- Current git tag: `v0.9.1`
+- Current package version: `0.9.2`
+- Current git tag: `v0.9.2`
 - Current documentation baseline: May 10, 2026
 - GitHub release notes source of truth: this file
 

@@ -62,7 +62,7 @@ It also verifies that the old `/dashboard/k8s-namespaces` path redirects to `/da
 ```text
 Dashboard: http://140.238.90.95/dashboard
 API:       http://140.238.90.95
-Health:   HTTP 200, version 0.9.1
+Health:   HTTP 200, version 0.9.2 after the release metadata bump is deployed
 Services: optiora-api active/enabled, optiora-dashboard active/enabled, nginx active/enabled
 Deploy:   End-to-end compute deploy time 7m 18s
 Verify:   48 passed, 0 failed, 3 skipped

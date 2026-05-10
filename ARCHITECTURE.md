@@ -742,7 +742,7 @@ dashboard/app/dashboard/page.tsx
 pyproject.toml + finops_mcp/__init__.py + dashboard/package.json
         |
         v
-version 0.9.1
+version 0.9.2
         |
         +--> FastAPI /health and OpenAPI schema
         +--> dashboard package metadata
