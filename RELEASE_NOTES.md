@@ -45,6 +45,8 @@ Repository release metadata:
 - Dashboard Refresh buttons now send `force_refresh=true`, `Cache-Control: no-cache`, and `X-OptiOra-Force-Refresh: true` so customer-initiated refreshes always bypass and repopulate the response cache.
 - CORS now allows the force-refresh request header and exposes `X-OptiOra-Cache`, `X-OptiOra-Cache-Age`, and `X-OptiOra-Cache-TTL` for browser diagnostics.
 - Successful mutating API calls now invalidate cached reads so imports, approvals, alert lifecycle actions, credentials, virtual tags, and finance updates are visible immediately.
+- Cleanup documentation now treats `/dashboard/kubernetes` as the only Kubernetes/container/Docker route, with no stale legacy redirect expectation.
+- Workspace cleanup now removes broader duplicate-copy, editor leftover, and OS metadata artifacts while preserving runtime state and local dependency caches.
 - README, cost estimate, testing notes, deployment notes, architecture diagrams, and next-phase planning were refreshed to match the current deployed state.
 
 ### Fixed
@@ -95,7 +97,7 @@ Repository release metadata:
 ### Changed
 
 - Dashboard navigation active-state matching now treats `/dashboard` as the Overview page only, avoiding false active highlights on every nested dashboard route.
-- The duplicate Kubernetes namespace page was consolidated into the canonical Kubernetes page, with the old URL handled by a Next.js redirect.
+- The duplicate Kubernetes namespace page was consolidated into the canonical Kubernetes page; later cleanup removed the legacy route wiring entirely.
 - Credential setup and scan approval forms now use consistent shared form styling, stronger dark-mode support, lucide icons, and typed scan-frequency handling.
 - Operations export tests now open the relevant expander before asserting controls, matching the lower-density UI.
 - Playwright backend startup now explicitly sets `REQUIRE_LIVE_PROVIDER_DATA=false` so local `.env` live-provider requirements cannot break the CSV/import-mode e2e harness.

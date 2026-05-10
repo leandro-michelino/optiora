@@ -193,7 +193,7 @@ Browser E2E coverage now validates the public dashboard optional CSV fallback wo
 - uploads `dashboard/e2e/fixtures/import-costs.csv`
 - confirms the imported CSV becomes the active source on overview, costs, forecasting, AI insights, and recommendations pages
 - confirms operations still exposes the export/report controls after the imported dataset becomes active
-- walks every main dashboard screen as an operator, confirms each main content heading renders, verifies there is exactly one active navigation target, and checks that the legacy Kubernetes namespace route redirects into the single consolidated Kubernetes page
+- walks every main dashboard screen as an operator, confirms each main content heading renders, verifies there is exactly one active navigation target, and checks that no duplicate `K8s Namespaces` navigation entry remains next to the canonical Kubernetes page
 
 Playwright harness files:
 
@@ -229,7 +229,7 @@ terraform -chdir=terraform validate
 - `tests/test_auth_flow.py` forces `ENABLE_AUTH=true` internally so auth-specific regressions remain covered even though the default deployment mode is public access.
 - Alembic migrations require a single linear head before running the auth flow roundtrip migration test.
 - The backend suite is `unittest`-compatible. If pytest is unavailable locally, run the canonical `unittest discover` command.
-- Run `./scripts/cleanup-workspace.sh` to remove redundant duplicate-copy artifacts, `.tmp` scratch databases, Playwright reports, dashboard build output, Terraform plugin/plan cache, and Python cache folders before packaging or handoff. It intentionally preserves `.venv`, `dashboard/node_modules`, `optiora.db`, `terraform/*.tfstate`, and `terraform/terraform.tfvars`.
+- Run `./scripts/cleanup-workspace.sh` to remove redundant duplicate-copy artifacts, editor leftovers, OS metadata, `.tmp` scratch databases, Playwright reports, dashboard build output, Terraform plugin/plan cache, and Python cache folders before packaging or handoff. It intentionally preserves `.venv`, `dashboard/node_modules`, `optiora.db`, `terraform/*.tfstate`, and `terraform/terraform.tfvars`.
 - Dashboard linting requires ESLint flat config (`eslint.config.mjs`) when using ESLint 9.
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.

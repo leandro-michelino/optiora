@@ -203,7 +203,7 @@ cd dashboard
 npx playwright test e2e/operator-walkthrough.spec.ts
 ```
 
-This route-level walkthrough checks every main dashboard screen, sidebar search, precise active navigation, and the legacy Kubernetes namespace redirect.
+This route-level walkthrough checks every main dashboard screen, sidebar search, precise active navigation, and confirms Kubernetes/container/Docker workflows live only on the canonical `/dashboard/kubernetes` page.
 
 Rightsizing live refresh note:
 

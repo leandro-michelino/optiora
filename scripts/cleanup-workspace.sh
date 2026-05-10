@@ -6,10 +6,22 @@ cd "$ROOT_DIR"
 
 echo "Cleaning duplicate copy artifacts and generated local caches..."
 
-# Remove common duplicate-copy files from Finder/Downloads style naming.
+# Remove common duplicate-copy and editor/OS artifacts from Finder, Downloads,
+# and one-off merge/edit workflows.
 find . \
   \( -path './.git' -o -path './.venv' -o -path './.venv313' -o -path './dashboard/node_modules' -o -path './dashboard/.next' \) -prune \
-  -o -type f \( -name '* (1).*' -o -name '* (1)' -o -name '*.orig' -o -name '*.rej' -o -name '*.tmp' \) \
+  -o -type f \( \
+    -name '* ([0-9]).*' \
+    -o -name '* ([0-9])' \
+    -o -iname '* copy.*' \
+    -o -iname '* copy' \
+    -o -name '*.bak' \
+    -o -name '*.orig' \
+    -o -name '*.rej' \
+    -o -name '*.tmp' \
+    -o -name '.DS_Store' \
+    -o -name 'Thumbs.db' \
+  \) \
   -print -delete
 
 # Remove Python and pytest cache directories.
