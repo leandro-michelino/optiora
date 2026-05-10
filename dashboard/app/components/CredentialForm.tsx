@@ -48,13 +48,11 @@ const PROVIDER_HELP = {
     docHref: 'https://cloud.google.com/billing/docs/how-to/export-data-bigquery',
   },
   oci: {
-    summary: 'OptiOra reads OCI cost and usage data via the Usage API using the local OCI CLI config file on the server.',
+    summary: 'For the deployed OCI VM, OptiOra normally needs only the server config path and profile. Upload files only when the server config is missing or you want to replace it.',
     steps: [
-      'Install the OCI CLI on the server using Oracle Linux packages (`dnf`) from Oracle repositories.',
-      'Run oci setup config and follow the prompts — this creates ~/.oci/config.',
-      'The user/API key must have the policy: Allow group <YourGroup> to read usage-reports in tenancy.',
-      'Enter the config path as it exists on the API server (default: ~/.oci/config), not a browser/local-machine-only path.',
-      'Enter profile without brackets (use JNB, not [JNB]).',
+      'Use the deployed VM path /opt/optiora/.oci/config unless you intentionally uploaded a different config.',
+      'Use profile DEFAULT unless the config file has another profile such as [JNB].',
+      'The OCI user/API key needs read access to usage reports and inventory APIs for the target compartment/tenancy.',
     ],
     docLabel: 'OCI Usage API guide',
     docHref: 'https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/usagereportsoverview.htm',
@@ -116,7 +114,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   });
 
   const [ociForm, setOciForm] = useState({
-    config_file: '~/.oci/config',
+    config_file: '/opt/optiora/.oci/config',
     profile: 'DEFAULT'
   });
   const [ociConfigUpload, setOciConfigUpload] = useState<File | null>(null);
@@ -293,7 +291,9 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                     </span>
                   </div>
                   <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
-                    Click Connect to enter {provider.toUpperCase()} credentials.
+                    {provider === 'oci'
+                      ? 'Use the server OCI config path and profile. Upload files only as a fallback.'
+                      : `Click Connect to enter ${provider.toUpperCase()} credentials.`}
                   </p>
                 </button>
               ))}
@@ -430,18 +430,24 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
           {selectedProvider === 'oci' && (
             <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
               <ProviderHelp provider="oci" />
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                <div className="font-semibold">Recommended for this VM</div>
+                <div className="mt-1 text-xs">
+                  Keep the deployed server config path and profile, then test the connection. No tenancy, user OCID, fingerprint, local upload, or private key paste is needed here.
+                </div>
+              </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Config File Path</label>
                 <input
                   type="text"
                   value={ociForm.config_file}
                   onChange={e => setOciForm({...ociForm, config_file: e.target.value})}
-                  placeholder="~/.oci/config"
+                  placeholder="/opt/optiora/.oci/config"
                   required
                   className="form-field"
                 />
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  This path is resolved on the API server host. If your profile is shown like <code>[JNB]</code> in the file, enter <code>JNB</code> here.
+                  This path is resolved on the API server host, not in your browser.
                 </p>
               </div>
               <div>
@@ -453,38 +459,46 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   placeholder="DEFAULT"
                   className="form-field"
                 />
-              </div>
-              <div className="space-y-3 rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Optional for test environments: upload OCI config/private-key files to the server VM and use those server paths as the credential source.
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Enter the profile name without brackets: use <code>DEFAULT</code> or <code>JNB</code>, not <code>[JNB]</code>.
                 </p>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Upload OCI Config File</label>
-                  <input
-                    type="file"
-                    accept=".ini,.cfg,.config,text/plain"
-                    onChange={e => setOciConfigUpload(e.target.files?.[0] ?? null)}
-                    className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Upload OCI Private Key (optional)</label>
-                  <input
-                    type="file"
-                    accept=".pem,.key,text/plain"
-                    onChange={e => setOciKeyUpload(e.target.files?.[0] ?? null)}
-                    className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleUploadOciFiles}
-                  disabled={uploadingOciFiles || !ociConfigUpload}
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  {uploadingOciFiles ? 'Uploading…' : 'Upload OCI Files To Server'}
-                </button>
               </div>
+              <details className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Advanced: upload a different OCI config
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    Use this only when the API server does not already have the OCI config/private key you want OptiOra to use.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Upload OCI Config File</label>
+                    <input
+                      type="file"
+                      accept=".ini,.cfg,.config,text/plain"
+                      onChange={e => setOciConfigUpload(e.target.files?.[0] ?? null)}
+                      className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Upload OCI Private Key</label>
+                    <input
+                      type="file"
+                      accept=".pem,.key,text/plain"
+                      onChange={e => setOciKeyUpload(e.target.files?.[0] ?? null)}
+                      className="w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUploadOciFiles}
+                    disabled={uploadingOciFiles || !ociConfigUpload}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    {uploadingOciFiles ? 'Uploading...' : 'Upload OCI Files To Server'}
+                  </button>
+                </div>
+              </details>
             </div>
           )}
 
