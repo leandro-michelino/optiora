@@ -7,6 +7,7 @@ import { ScorecardsResponse, ScorecardEntry } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 function gradeColor(grade: string): string {
   if (grade === 'A+' || grade === 'A') return 'text-emerald-600 dark:text-emerald-400'
@@ -169,6 +170,11 @@ export default function ScorecardsPage() {
           </Card>
 
           {/* Dimension legend */}
+          <Expander
+            title="Score Dimensions"
+            description="Point weighting for allocation, waste, tagging, and commitment coverage."
+            icon={<Award className="h-5 w-5" />}
+          >
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {[
               { name: 'Allocation Coverage', max: 40, description: 'Cost mapped to a business dimension' },
@@ -185,18 +191,32 @@ export default function ScorecardsPage() {
               </div>
             ))}
           </div>
+          </Expander>
 
           {/* Team scorecards */}
+          <Expander
+            title="Team Scorecards"
+            description="Per-team maturity cards with optional dimension detail on each card."
+            icon={<TrendingUp className="h-5 w-5" />}
+            defaultOpen
+          >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {data.teams.map(team => (
               <ScorecardCard key={team.team} team={team} />
             ))}
           </div>
+          </Expander>
 
           {/* Call to action */}
+          <Expander
+            title="Improve Scores"
+            description="Next step for better allocation and FinOps maturity scores."
+            icon={<TrendingUp className="h-5 w-5" />}
+          >
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
             <strong>Improve your scores:</strong> Add business mapping rules under Cloud Costs → Business Mapping, then run a scan. Scores are calculated from real allocation coverage, waste signals, tagging, and commitment data.
           </div>
+          </Expander>
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">

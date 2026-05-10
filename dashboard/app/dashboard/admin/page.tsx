@@ -7,6 +7,7 @@ import { AdminDiagnosticsSnapshot } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 function formatDateTime(value?: string | null): string {
   if (!value) return 'n/a'
@@ -92,14 +93,12 @@ export default function AdminDiagnosticsPage() {
         </Card>
       </div>
 
-      <Card className="rounded-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5" />
-            Notification Destinations
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+      <Expander
+        title="Notification Destinations"
+        description="Open when you need delivery channels, enablement, and last delivery telemetry."
+        icon={<ShieldCheck className="h-5 w-5" />}
+      >
+        <div className="space-y-2 text-sm">
           {(snapshot?.notification_destinations?.destinations || []).map((destination) => (
             <div key={destination.channel} className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
               <div className="font-medium">{destination.channel.toUpperCase()}</div>
@@ -114,17 +113,15 @@ export default function AdminDiagnosticsPage() {
           {(snapshot?.notification_destinations?.destinations || []).length === 0 && (
             <p className="text-slate-500">No destination telemetry available.</p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Expander>
 
-      <Card className="rounded-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Provider Diagnostics
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
+      <Expander
+        title="Provider Diagnostics"
+        description="Runtime provider configuration detail, collapsed by default to keep the health summary scannable."
+        icon={<Activity className="h-5 w-5" />}
+      >
+        <div className="space-y-2 text-sm">
           {(snapshot?.provider_diagnostics || []).map((item) => (
             <div key={item.provider} className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
               <div className="font-medium uppercase">{item.provider}</div>
@@ -133,8 +130,8 @@ export default function AdminDiagnosticsPage() {
               </div>
             </div>
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </Expander>
     </div>
   )
 }

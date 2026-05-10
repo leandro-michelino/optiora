@@ -13,6 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -313,7 +314,12 @@ export default function KubernetesPage() {
         </>
       ) : null}
 
-      {/* Cluster cost calculator */}
+      <Expander
+        title="Cluster Cost Calculator"
+        description="Model cluster spend and review calculated namespace, workload, team, and node-pool allocation."
+        icon={<Calculator className="h-5 w-5" />}
+        defaultOpen
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
@@ -627,7 +633,13 @@ export default function KubernetesPage() {
           </Card>
         )}
       </div>
+      </Expander>
 
+      <Expander
+        title="OpenCost Sync And Live Breakdown"
+        description="Install, wire, and sync OpenCost only when live Kubernetes allocation details are needed."
+        icon={<Box className="h-5 w-5" />}
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
@@ -801,6 +813,7 @@ export default function KubernetesPage() {
           </CardContent>
         </Card>
       </div>
+      </Expander>
     </div>
   )
 }

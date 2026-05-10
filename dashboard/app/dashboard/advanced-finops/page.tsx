@@ -29,6 +29,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', {
@@ -209,6 +210,12 @@ export default function AdvancedFinOpsPage() {
             </Card>
           </div>
 
+          <Expander
+            title="Core Advanced FinOps Panels"
+            description="Tag quality dimensions and decision-grade optimization ranking."
+            icon={<Bot className="h-5 w-5" />}
+            defaultOpen
+          >
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
@@ -262,7 +269,13 @@ export default function AdvancedFinOpsPage() {
               </CardContent>
             </Card>
           </div>
+          </Expander>
 
+          <Expander
+            title="Federation And Remediation Controls"
+            description="Multi-account rollups and guarded remediation state."
+            icon={<Users className="h-5 w-5" />}
+          >
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
@@ -331,7 +344,13 @@ export default function AdvancedFinOpsPage() {
               </CardContent>
             </Card>
           </div>
+          </Expander>
 
+          <Expander
+            title="Decision Intelligence Frontier"
+            description="Compare optimization scenarios by utility, risk, confidence, and payback."
+            icon={<BarChart3 className="h-5 w-5" />}
+          >
           <Card>
             <CardHeader className="border-b border-slate-200 dark:border-slate-700">
               <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />Decision Intelligence Frontier</CardTitle>
@@ -357,8 +376,14 @@ export default function AdvancedFinOpsPage() {
               )}
             </CardContent>
           </Card>
+          </Expander>
 
           {/* New deep analytics section */}
+          <Expander
+            title="Deep Analytics"
+            description="Allocation readiness, sustainability, cross-provider comparison, anomalies, chargeback, and operating review."
+            icon={<AlertTriangle className="h-5 w-5" />}
+          >
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
@@ -594,6 +619,7 @@ export default function AdvancedFinOpsPage() {
               )}
             </CardContent>
           </Card>
+          </Expander>
         </>
       )}
 

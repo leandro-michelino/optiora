@@ -48,6 +48,7 @@ import {
 } from '@/lib/api'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
+import { Expander } from '@/components/ui/expander'
 import {
   AllocationCoverageResponse,
   ApiHealth,
@@ -286,6 +287,12 @@ export default function CostsPage() {
         </div>
       </div>
 
+      <Expander
+        title="Provider Charts"
+        description="Open for spend comparison bars and provider distribution charts."
+        icon={<Cloud className="w-5 h-5 text-blue-600" />}
+        defaultOpen
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="card">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -344,7 +351,13 @@ export default function CostsPage() {
           )}
         </div>
       </div>
+      </Expander>
 
+      <Expander
+        title="Account And Region Detail"
+        description="Open for account rollups and regional cost rows."
+        icon={<Layers3 className="w-5 h-5 text-indigo-600" />}
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <div className="card">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
@@ -407,7 +420,14 @@ export default function CostsPage() {
           )}
         </div>
       </div>
+      </Expander>
 
+      <Expander
+        title="Top Recommendations"
+        description="Open for the paginated optimization queue."
+        icon={<Zap className="w-5 h-5 text-emerald-600" />}
+        defaultOpen={state.recommendations.items.length > 0}
+      >
       <div className="card">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-4">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
@@ -496,7 +516,13 @@ export default function CostsPage() {
           )}
         </div>
       </div>
+      </Expander>
 
+      <Expander
+        title="Trend And Exports"
+        description="Open for the monthly trend chart and finance export actions."
+        icon={<Download className="w-5 h-5 text-blue-600" />}
+      >
       <div className="flex flex-wrap gap-4">
         {/* Trend chart */}
         {state.trend && state.trend.points.length > 0 && (
@@ -562,8 +588,14 @@ export default function CostsPage() {
           Open AI Insights
         </a>
       </div>
+      </Expander>
 
       {/* ── Business Mapping & Allocation Coverage ───────────────────── */}
+      <Expander
+        title="Business Mapping And Chargeback"
+        description="Open for allocation coverage, chargeback by team, and mapping rule tables."
+        icon={<Tag className="w-5 h-5 text-violet-500" />}
+      >
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -752,6 +784,7 @@ export default function CostsPage() {
           )}
         </div>
       </div>
+      </Expander>
     </div>
   )
 }

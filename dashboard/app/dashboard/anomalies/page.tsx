@@ -10,6 +10,7 @@ import {
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildLiveDataSourceStatus } from '@/lib/data-source'
 import { AnomalyResponse, ApiHealth, ProviderDiagnostic } from '@/lib/types'
+import { Expander } from '@/components/ui/expander'
 
 interface PageState {
   items: AnomalyResponse[]
@@ -121,54 +122,61 @@ export default function AnomaliesPage() {
         </div>
       )}
 
-      {state.loading ? (
-        <div className="text-slate-600 dark:text-slate-400">Loading anomalies...</div>
-      ) : state.items.length === 0 ? (
-        <div className="card py-12 text-center">
-          <p className="text-slate-600 dark:text-slate-400">
-            No anomalies detected. Recent cost movement looks stable.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {state.items.map((anomaly) => (
-            <div
-              key={anomaly.id}
-              className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex gap-4">
-                  <AlertTriangle className="mt-1 h-6 w-6 flex-shrink-0 text-amber-500" />
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                        {anomaly.service}
-                      </h3>
-                      <span className="rounded bg-slate-100 px-2 py-1 text-xs uppercase text-slate-600 dark:bg-slate-700 dark:text-slate-200">
-                        {anomaly.cloud}
-                      </span>
-                      <span className="rounded bg-amber-50 px-2 py-1 text-xs font-medium uppercase text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                        {anomaly.severity}
-                      </span>
+      <Expander
+        title={`Anomaly Feed (${state.total})`}
+        description="Open to review individual spend movements; keep collapsed when you only need the health banner."
+        icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+        defaultOpen={state.items.length > 0}
+      >
+        {state.loading ? (
+          <div className="text-slate-600 dark:text-slate-400">Loading anomalies...</div>
+        ) : state.items.length === 0 ? (
+          <div className="py-8 text-center">
+            <p className="text-slate-600 dark:text-slate-400">
+              No anomalies detected. Recent cost movement looks stable.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {state.items.map((anomaly) => (
+              <div
+                key={anomaly.id}
+                className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex gap-4">
+                    <AlertTriangle className="mt-1 h-6 w-6 flex-shrink-0 text-amber-500" />
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                          {anomaly.service}
+                        </h3>
+                        <span className="rounded bg-slate-100 px-2 py-1 text-xs uppercase text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                          {anomaly.cloud}
+                        </span>
+                        <span className="rounded bg-amber-50 px-2 py-1 text-xs font-medium uppercase text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                          {anomaly.severity}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                        {anomaly.message}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
+                        {new Date(anomaly.timestamp).toLocaleString()}
+                      </p>
                     </div>
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                      {anomaly.message}
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-                      {new Date(anomaly.timestamp).toLocaleString()}
-                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-right text-red-600 dark:text-red-400">
+                    <TrendingUp className="h-5 w-5" />
+                    <span className="text-2xl font-bold">+{anomaly.change}%</span>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2 text-right text-red-600 dark:text-red-400">
-                  <TrendingUp className="h-5 w-5" />
-                  <span className="text-2xl font-bold">+{anomaly.change}%</span>
-                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </Expander>
 
       {!state.loading && state.total > state.limit && (
         <div className="flex items-center gap-3">

@@ -7,6 +7,7 @@ import { ResourceInventoryResponse, ResourceInventoryItem, ProviderAccountInvent
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
 
@@ -296,6 +297,11 @@ export default function InventoryPage() {
         </Button>
       </div>
 
+      <Expander
+        title="Filters"
+        description="Open to change provider, region, and waste-only filters."
+        icon={<Filter className="h-5 w-5 text-amber-500" />}
+      >
       <div className="flex flex-wrap items-center gap-3">
         {PROVIDERS.map(p => (
           <button
@@ -330,6 +336,7 @@ export default function InventoryPage() {
           </label>
         </div>
       </div>
+      </Expander>
 
       {data && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -355,6 +362,12 @@ export default function InventoryPage() {
           <Loader className="h-6 w-6 animate-spin mr-2" /> Loading resource inventory...
         </div>
       ) : data && data.items.length > 0 ? (
+        <Expander
+          title={`Resources (${data.items.length} shown${data.items.length < data.total_resources ? ` of ${data.total_resources}` : ''})`}
+          description="Open the inventory table only when you need per-resource details."
+          icon={<Server className="h-5 w-5" />}
+          defaultOpen
+        >
         <Card>
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="flex items-center gap-2">
@@ -394,6 +407,7 @@ export default function InventoryPage() {
             </div>
           </CardContent>
         </Card>
+        </Expander>
       ) : data ? (
         <div className="rounded-lg border border-dashed border-slate-300 p-10 text-center dark:border-slate-700">
           <Server className="mx-auto h-10 w-10 text-slate-400 mb-3" />

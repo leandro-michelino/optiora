@@ -7,6 +7,7 @@ import { UnitEconomicsCockpitResponse, UnitEconomicsMetricResult } from '@/lib/t
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
 type SpendPoint = { month: string; cost_usd: number }
@@ -109,6 +110,11 @@ export default function UnitEconomicsPage() {
       </div>
 
       {/* Provider filter */}
+      <Expander
+        title="Provider Filter"
+        description="Scope the cockpit to one provider or all connected clouds."
+        icon={<BarChart3 className="h-5 w-5" />}
+      >
       <div className="flex flex-wrap gap-2">
         {PROVIDERS.map(p => (
           <button
@@ -124,6 +130,7 @@ export default function UnitEconomicsPage() {
           </button>
         ))}
       </div>
+      </Expander>
 
       {loading ? (
         <div className="flex min-h-[300px] items-center justify-center text-slate-500">
@@ -155,6 +162,12 @@ export default function UnitEconomicsPage() {
           </div>
 
           {/* Provider breakdown + business metric form */}
+          <Expander
+            title="Provider Efficiency And Cost-Per-Unit"
+            description="Review provider efficiency and calculate business-unit cost from your own operating metric."
+            icon={<DollarSign className="h-5 w-5" />}
+            defaultOpen
+          >
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             {/* Provider metrics */}
             <Card className="xl:col-span-2">
@@ -244,9 +257,15 @@ export default function UnitEconomicsPage() {
               </CardContent>
             </Card>
           </div>
+          </Expander>
 
           {/* Historical trend */}
           {historicalSpend.length > 0 && (
+            <Expander
+              title="Monthly Spend History"
+              description="Compact trend view for historical cloud spend."
+              icon={<TrendingDown className="h-5 w-5" />}
+            >
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
                 <CardTitle>Monthly Spend History</CardTitle>
@@ -270,9 +289,15 @@ export default function UnitEconomicsPage() {
                 </div>
               </CardContent>
             </Card>
+            </Expander>
           )}
 
           {/* FOCUS info */}
+          <Expander
+            title="FOCUS Export"
+            description="Download costs in FinOps Open Cost and Usage Specification format."
+            icon={<Download className="h-5 w-5" />}
+          >
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
             <strong>FOCUS Export:</strong> Download your costs in FinOps Open Cost and Usage Specification (FOCUS 1.0) format — the industry-standard schema supported by Harness, Vantage, and all FinOps-certified platforms.
             <button
@@ -283,6 +308,7 @@ export default function UnitEconomicsPage() {
               {focusDownloading ? 'Downloading…' : 'Download FOCUS CSV'}
             </button>
           </div>
+          </Expander>
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">

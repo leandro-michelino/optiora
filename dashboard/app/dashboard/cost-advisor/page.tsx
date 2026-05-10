@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, MessageCircle, Loader, Download, Share2 } from 'lucide-react';
 import { fetchHybridAdvisor } from '@/lib/api';
 import { HybridAdvisorResponse } from '@/lib/types';
+import { Expander } from '@/components/ui/expander';
 
 interface Message {
   id: string;
@@ -248,14 +249,15 @@ export default function CostAdvisorPage() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
+      <Expander
+        title="Hybrid Advisor Brief"
+        description="Open for deterministic metrics, GenAI narrative, and recommended actions."
+        icon={<MessageCircle className="h-5 w-5 text-blue-600" />}
+      >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Hybrid Advisor Brief</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Deterministic metrics are authoritative. GenAI is used for explanation and action sequencing.
-            </p>
-          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Deterministic metrics are authoritative. GenAI is used for explanation and action sequencing.
+          </p>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => void loadHybrid('waste_insights')}
@@ -337,7 +339,7 @@ export default function CostAdvisorPage() {
             </div>
           </div>
         ) : null}
-      </div>
+      </Expander>
 
       {/* Chat Container */}
       <div className="flex-1 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col">

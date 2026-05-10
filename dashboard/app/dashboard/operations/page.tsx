@@ -73,6 +73,7 @@ import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 import {
   Table,
   TableBody,
@@ -522,36 +523,6 @@ export default function OperationsPage() {
             Run checks, confirm provider readiness, and start approved cost scans.
           </p>
         </div>
-              <Card className="rounded-lg">
-                <CardHeader>
-                  <CardTitle className="text-base text-slate-900 dark:text-white">Notification Destination Status</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {state.notificationDestinations.length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No destination status available.</p>
-                  ) : (
-                    state.notificationDestinations.map((destination) => (
-                      <div
-                        key={destination.channel}
-                        className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
-                      >
-                        <div>
-                          <div className="font-medium text-slate-900 dark:text-white">{destination.channel.toUpperCase()}</div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Last delivery: {formatDateTime(destination.last_delivery_at)}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Success: {formatDateTime(destination.last_success_at)} · Error: {formatDateTime(destination.last_error_at)}
-                          </div>
-                        </div>
-                        <Badge className={destination.configured && destination.enabled ? statusTone(true) : statusTone(false)}>
-                          {destination.configured ? (destination.enabled ? 'enabled' : 'disabled') : 'not configured'}
-                        </Badge>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
         <Button onClick={() => void loadOperations()} disabled={loading} className="rounded-lg">
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Refresh
@@ -597,6 +568,12 @@ export default function OperationsPage() {
         />
       </div>
 
+      <Expander
+        title="Operational Readiness And Controls"
+        description="Provider readiness, scan controls, scheduler policy, data freshness, and delivery destination health."
+        icon={<Activity className="h-5 w-5" />}
+        defaultOpen
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="rounded-lg xl:col-span-2">
           <CardHeader>
@@ -645,6 +622,36 @@ export default function OperationsPage() {
                 })}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+        <Card className="rounded-lg">
+          <CardHeader>
+            <CardTitle className="text-base text-slate-900 dark:text-white">Notification Destination Status</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {state.notificationDestinations.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No destination status available.</p>
+            ) : (
+              state.notificationDestinations.map((destination) => (
+                <div
+                  key={destination.channel}
+                  className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+                >
+                  <div>
+                    <div className="font-medium text-slate-900 dark:text-white">{destination.channel.toUpperCase()}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Last delivery: {formatDateTime(destination.last_delivery_at)}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Success: {formatDateTime(destination.last_success_at)} · Error: {formatDateTime(destination.last_error_at)}
+                    </div>
+                  </div>
+                  <Badge className={destination.configured && destination.enabled ? statusTone(true) : statusTone(false)}>
+                    {destination.configured ? (destination.enabled ? 'enabled' : 'disabled') : 'not configured'}
+                  </Badge>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -843,7 +850,13 @@ export default function OperationsPage() {
           </CardContent>
         </Card>
       </div>
+      </Expander>
 
+      <Expander
+        title="Scan Evidence And Timeline"
+        description="Recent scan history, latest diff exports, and scheduler event timeline."
+        icon={<RefreshCw className="h-5 w-5" />}
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card className="rounded-lg">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -948,7 +961,13 @@ export default function OperationsPage() {
           </CardContent>
         </Card>
       </div>
+      </Expander>
 
+      <Expander
+        title="Alerts, Reports, Exports, And Audit"
+        description="Alert policy editing, finance report downloads, scheduled exports, and privileged action history."
+        icon={<AlertTriangle className="h-5 w-5" />}
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card className="rounded-lg">
           <CardHeader>
@@ -1411,7 +1430,13 @@ export default function OperationsPage() {
           </CardContent>
         </Card>
       </div>
+      </Expander>
 
+      <Expander
+        title="Capability Map"
+        description="Feature availability across authentication, credentials, scan approvals, and dashboard APIs."
+        icon={<ShieldCheck className="h-5 w-5" />}
+      >
       <Card className="rounded-lg">
         <CardHeader>
           <CardTitle>Capability Map</CardTitle>
@@ -1453,6 +1478,7 @@ export default function OperationsPage() {
           ))}
         </CardContent>
       </Card>
+      </Expander>
     </div>
   )
 }

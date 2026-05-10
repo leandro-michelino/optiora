@@ -7,6 +7,7 @@ import { RightsizingResponse, RightsizingRecommendation } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
 const ACTIONS = ['all', 'downsize', 'terminate', 'reserve', 'modernize']
@@ -218,7 +219,7 @@ function rollbackPlan(rec: RightsizingRecommendation): string {
 }
 
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const consoleUrl = resourceConsoleUrl(rec)
   const product = productCategory(rec)
   const aggregateScope = rec.resource_type.toLowerCase().includes('aggregate')
@@ -497,7 +498,11 @@ export default function RightsizingPage() {
         </div>
       )}
 
-      {/* Filters */}
+      <Expander
+        title="Filters"
+        description="Narrow recommendations by provider, action, and product category."
+        icon={<Zap className="h-5 w-5" />}
+      >
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap gap-2">
           {PROVIDERS.map(p => (
@@ -545,6 +550,7 @@ export default function RightsizingPage() {
           ))}
         </div>
       </div>
+      </Expander>
 
       {/* KPI strip */}
       {data && (
@@ -573,6 +579,11 @@ export default function RightsizingPage() {
 
       {/* Product breakdown */}
       {data && productSummaries.length > 0 && (
+        <Expander
+          title="Savings And Action Breakdown"
+          description="Explore product categories and action types before opening the full resource list."
+          icon={<DollarSign className="h-5 w-5" />}
+        >
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Savings by product</h2>
@@ -592,10 +603,16 @@ export default function RightsizingPage() {
             ))}
           </div>
         </div>
+        </Expander>
       )}
 
       {/* Action breakdown */}
       {data && productScoped.length > 0 && (
+        <Expander
+          title="Action Mix"
+          description="Counts and monthly savings grouped by downsize, terminate, reserve, and modernize actions."
+          icon={<AlertTriangle className="h-5 w-5" />}
+        >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           {ACTIONS.filter(a => a !== 'all').map(action => {
             const count = productScoped.filter(r => r.action === action).length
@@ -613,6 +630,7 @@ export default function RightsizingPage() {
             )
           })}
         </div>
+        </Expander>
       )}
 
       {/* Recommendations grid */}
@@ -627,9 +645,16 @@ export default function RightsizingPage() {
               Showing {filtered.length} of {data.rightsizable_count} recommendations · product: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{PRODUCT_LABELS[productFilter] ?? productFilter}</code> · scan: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{refreshLive ? 'live' : 'stored'}</code> · data source: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{data.data_source}</code>
             </p>
           )}
+          <Expander
+            title="Resource Recommendations"
+            description="Resource cards open with compact evidence first; each card can reveal execution details."
+            icon={<CheckCircle className="h-5 w-5" />}
+            defaultOpen
+          >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map(rec => <RecCard key={`${rec.provider}-${rec.resource_id}-${rec.region}-${rec.action}`} rec={rec} />)}
           </div>
+          </Expander>
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-300 p-10 text-center dark:border-slate-700">
@@ -650,9 +675,15 @@ export default function RightsizingPage() {
       )}
 
       {/* Info callout */}
+      <Expander
+        title="How Rightsizing Works"
+        description="Data sources and recommendation logic behind the list."
+        icon={<Zap className="h-5 w-5" />}
+      >
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
         <strong>How rightsizing works:</strong> Optiora combines live provider inventory, provider recommendation APIs, cost trends, and utilization signals. Storage cleanup actions such as unattached boot/block volumes are included alongside VM downsize and commitment opportunities.
       </div>
+      </Expander>
     </div>
   )
 }

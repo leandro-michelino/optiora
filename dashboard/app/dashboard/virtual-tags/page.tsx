@@ -18,6 +18,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 const BLANK: VirtualTagRuleCreate = {
   tag_key: '',
@@ -240,6 +241,12 @@ export default function VirtualTagsPage() {
 
       {/* Create / edit form */}
       {showForm && (
+        <Expander
+          title={editingRule ? 'Edit Virtual Tag Rule' : 'New Virtual Tag Rule'}
+          description="Define tag output, matching conditions, priority, and rule state."
+          icon={<Tag className="h-5 w-5" />}
+          defaultOpen
+        >
         <Card className="border-2 border-blue-200 dark:border-blue-800">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
@@ -275,9 +282,16 @@ export default function VirtualTagsPage() {
             />
           </CardContent>
         </Card>
+        </Expander>
       )}
 
       {/* Rules table */}
+      <Expander
+        title={`Tag Rules (${rules.length})`}
+        description="Review, edit, and delete active virtual tag rules without crowding the rest of the screen."
+        icon={<Tag className="h-5 w-5" />}
+        defaultOpen
+      >
       <Card>
         <CardHeader className="border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center justify-between">
@@ -379,8 +393,14 @@ export default function VirtualTagsPage() {
           )}
         </CardContent>
       </Card>
+      </Expander>
 
       {/* Preview section */}
+      <Expander
+        title="Tag Coverage Preview"
+        description="Run a non-committal preview to see which resources active rules would tag."
+        icon={<Eye className="h-5 w-5" />}
+      >
       <div>
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -464,11 +484,18 @@ export default function VirtualTagsPage() {
           </div>
         )}
       </div>
+      </Expander>
 
       {/* Info callout */}
+      <Expander
+        title="How Virtual Tags Work"
+        description="Rule precedence and query-time tagging behavior."
+        icon={<Tag className="h-5 w-5" />}
+      >
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
         <strong>How virtual tags work:</strong> Rules are evaluated in priority order (highest first). The first matching rule for each tag key wins. Virtual tags are applied at query time to cost records — your actual cloud resources are never modified. This enables consistent allocation across providers and retroactive tagging of historical cost data.
       </div>
+      </Expander>
     </div>
   )
 }

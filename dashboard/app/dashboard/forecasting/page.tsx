@@ -26,6 +26,7 @@ import {
 } from '@/lib/api'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
+import { Expander } from '@/components/ui/expander'
 import {
   ApiHealth,
   CostTrendResponse,
@@ -273,6 +274,12 @@ export default function PredictiveAnalyticsPage() {
             </div>
           </div>
 
+          <Expander
+            title="Forecast Detail And Scenario Controls"
+            description="Open for historical trend, forecast fan chart, scenarios, model diagnostics, and GenAI narratives."
+            icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
+            defaultOpen
+          >
           <div className="grid grid-cols-1 gap-6 lg:gap-8 lg:grid-cols-3">
             <div className="space-y-6 lg:col-span-2">
               {/* Historical Cost Trend */}
@@ -576,6 +583,7 @@ export default function PredictiveAnalyticsPage() {
               )}
             </div>
           </div>
+          </Expander>
         </>
       )}
     </div>

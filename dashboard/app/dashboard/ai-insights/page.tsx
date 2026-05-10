@@ -22,6 +22,7 @@ import {
 } from '@/lib/api'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
+import { Expander } from '@/components/ui/expander'
 import {
   AllocationCoverageResponse,
   ApiHealth,
@@ -165,6 +166,12 @@ export default function AIInsightsPage() {
         </div>
       </div>
 
+      <Expander
+        title="Insight Workbench"
+        description="Open for waste hotspots, prioritized recommendations, analysis summary, and GenAI role detail."
+        icon={<Brain className="w-5 h-5 text-purple-600" />}
+        defaultOpen
+      >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
           <div className="card bg-white dark:bg-slate-800">
@@ -279,9 +286,15 @@ export default function AIInsightsPage() {
           </Link>
         </div>
       </div>
+      </Expander>
 
       {/* ── Allocation Coverage Widget ────────────────────────────── */}
       {coverage && (
+        <Expander
+          title="Allocation Coverage"
+          description="Open for mapped cost coverage and top unmapped services."
+          icon={<Tag className="w-5 h-5 text-violet-500" />}
+        >
         <div className="card">
           <h3 className="font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
             <Tag className="w-5 h-5 text-violet-500" />
@@ -329,6 +342,7 @@ export default function AIInsightsPage() {
             </Link>
           </div>
         </div>
+        </Expander>
       )}
         </>
       )}

@@ -7,6 +7,7 @@ import { PartnerCustomerPortfolioResponse } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 
 function fmt(value: number): string {
   return value.toLocaleString('en-US', {
@@ -112,6 +113,12 @@ export default function PortfolioPage() {
             </Card>
           </div>
 
+          <Expander
+            title="Customers"
+            description="Customer health, spend, savings, providers, scans, and latest activity."
+            icon={<Building2 className="h-5 w-5" />}
+            defaultOpen
+          >
           <Card className="rounded-lg">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -165,6 +172,7 @@ export default function PortfolioPage() {
               ) : null}
             </CardContent>
           </Card>
+          </Expander>
         </>
       ) : null}
     </div>

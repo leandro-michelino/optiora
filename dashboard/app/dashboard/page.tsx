@@ -74,6 +74,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Expander } from '@/components/ui/expander'
 import { Progress, ProgressIndicator, ProgressTrack } from '@/components/ui/progress'
 import {
   Table,
@@ -483,6 +484,11 @@ export default function DashboardPage() {
         />
       </div>
 
+      <Expander
+        title="Efficiency And Waste Detail"
+        description="Open for score interpretation, waste category bars, commitment gap, and the AI prompt."
+        icon={<ShieldCheck className="h-5 w-5" />}
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="rounded-lg border-slate-200 dark:border-slate-700">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
@@ -555,7 +561,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
         <Card className="rounded-lg border-slate-200 dark:border-slate-700">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="text-xl">Commitment Gap Opportunity</CardTitle>
@@ -595,8 +601,14 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      </Expander>
 
       {/* Allocation Coverage Row — always 4 cards */}
+      <Expander
+        title="Allocation Coverage"
+        description="Open to inspect business-dimension coverage once tagged or mapped cost data is loaded."
+        icon={<Tag className="h-5 w-5" />}
+      >
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={Tag}
@@ -617,7 +629,14 @@ export default function DashboardPage() {
           )
         })}
       </div>
+      </Expander>
 
+      <Expander
+        title="Cost Trends"
+        description="Open for provider time series and month-over-month comparison."
+        icon={<Activity className="h-5 w-5" />}
+        defaultOpen
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="rounded-lg xl:col-span-2">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
@@ -659,7 +678,13 @@ export default function DashboardPage() {
           className="rounded-lg"
         />
       </div>
+      </Expander>
 
+      <Expander
+        title="Provider Coverage And Deployment Posture"
+        description="Credential visibility, provider mix, and infrastructure readiness live here."
+        icon={<KeyRound className="h-5 w-5" />}
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="rounded-lg xl:col-span-2">
           <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
@@ -792,7 +817,13 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
+      </Expander>
 
+      <Expander
+        title="Account Hierarchy Rollup"
+        description="Open for provider account, subscription, project, or compartment rollups."
+        icon={<Layers3 className="h-5 w-5" />}
+      >
       <Card className="rounded-lg">
         <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
           <div>
@@ -888,7 +919,14 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+      </Expander>
 
+      <Expander
+        title="Risk And Next Optimization"
+        description="Open for anomaly detail and the top recommended savings action."
+        icon={<AlertCircle className="h-5 w-5" />}
+        defaultOpen={Boolean(highestAnomaly || topRecommendation)}
+      >
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card className="rounded-lg">
           <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
@@ -952,8 +990,14 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      </Expander>
 
       {/* Chargeback Summary */}
+      <Expander
+        title="Business Mapping And Chargeback"
+        description="Open for attribution coverage and team-level chargeback rows."
+        icon={<Tag className="h-5 w-5 text-violet-500" />}
+      >
       <Card className="rounded-lg">
         <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
           <div>
@@ -1020,6 +1064,7 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+      </Expander>
     </div>
   )
 }

@@ -32,6 +32,7 @@ import {
   AlertRoutingPolicy,
   AlertRoutingPolicySimulationResponse,
 } from '@/lib/types';
+import { Expander } from '@/components/ui/expander';
 
 
 interface StoredCredential {
@@ -476,6 +477,12 @@ export default function SettingsPage() {
         </div>
       )}
 
+      <Expander
+        title="Cloud Connections And Cost Imports"
+        description="Credentials, optional CSV billing import, scan approval, connected providers, and imported data status."
+        icon={<Upload className="h-5 w-5" />}
+        defaultOpen
+      >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Left Column: Forms */}
@@ -786,8 +793,14 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      </Expander>
 
       {/* Info Section */}
+      <Expander
+        title="Setup Flow"
+        description="Preferred live-provider setup path and optional manual import fallback."
+        icon={<Eye className="h-5 w-5" />}
+      >
       <div className="card bg-white dark:bg-slate-800">
         <h3 className="font-semibold mb-3 text-slate-900 dark:text-white">How it works</h3>
         <ol className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
@@ -797,8 +810,14 @@ export default function SettingsPage() {
           <li><strong>4. Optional fallback:</strong> Upload a billing CSV only when you need a manual source for backfill or when live runtime access is not configured</li>
         </ol>
       </div>
+      </Expander>
 
       {/* Preferences */}
+      <Expander
+        title="Preferences, Notifications, Routing, And Exports"
+        description="Workspace plan, AI provider, alert delivery destinations, routing simulation, and scheduled report jobs."
+        icon={<Send className="h-5 w-5" />}
+      >
       <div className="card">
         <h2 className="text-2xl font-semibold mb-6 text-slate-900 dark:text-white">
           Preferences
@@ -1149,8 +1168,14 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      </Expander>
 
       {/* Account */}
+      <Expander
+        title="Account"
+        description="Current account and session state."
+        icon={<EyeOff className="h-5 w-5" />}
+      >
       <div className="card">
         <h2 className="text-2xl font-semibold mb-6 text-slate-900 dark:text-white">
           Account
@@ -1191,6 +1216,7 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      </Expander>
     </div>
   )
 }

@@ -13,6 +13,7 @@ import {
   ProviderAccountRollupItem,
   ProviderAccountRollupResponse,
 } from '@/lib/types'
+import { Expander } from '@/components/ui/expander'
 
 const PROVIDER_COLORS: Record<string, string> = {
   aws: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
@@ -257,7 +258,12 @@ export default function AccountsPage() {
         </div>
       </div>
 
-      <div className="card">
+      <Expander
+        title="Account Tree"
+        description="Expand only the provider account branches you need, then click a row for region cost detail."
+        icon={<Building2 className="w-5 h-5 text-blue-600" />}
+        defaultOpen
+      >
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white flex items-center gap-2 flex-1">
             <Building2 className="w-5 h-5 text-blue-600" />
@@ -324,7 +330,7 @@ export default function AccountsPage() {
             Click an account row to view its region cost breakdown. Click again to collapse.
           </p>
         )}
-      </div>
+      </Expander>
     </div>
   )
 }

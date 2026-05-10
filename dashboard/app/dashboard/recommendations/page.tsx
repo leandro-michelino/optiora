@@ -34,6 +34,7 @@ import {
 } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Expander } from '@/components/ui/expander'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
 
@@ -369,6 +370,13 @@ export default function RecommendationsPage() {
         </div>
       ) : (
         <div className="space-y-8">
+          <Expander
+            title="Recommendation Workbench"
+            description="Provider-native opportunities, exact resource candidates, rankings, and source feeds."
+            icon={<Sparkles className="h-5 w-5" />}
+            defaultOpen
+          >
+          <div className="space-y-8">
           <section className="space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -850,6 +858,11 @@ export default function RecommendationsPage() {
             )}
           </section>
 
+          <Expander
+            title="Page Wiring"
+            description="How provider APIs, rightsizing, and decision scoring feed this screen."
+            icon={<Layers3 className="h-5 w-5" />}
+          >
           <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
             <div className="flex items-start gap-3">
               <Layers3 className="mt-0.5 h-5 w-5 shrink-0" />
@@ -858,6 +871,9 @@ export default function RecommendationsPage() {
               </div>
             </div>
           </div>
+          </Expander>
+          </div>
+          </Expander>
         </div>
       )}
     </div>

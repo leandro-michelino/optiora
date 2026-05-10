@@ -31,6 +31,7 @@ import { buildCostDataSourceStatus } from '@/lib/data-source'
 import { transformApiTrend, type ChartCostTrendPoint } from '@/lib/cost-trend'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { MonthlyComparisonCard } from '@/components/MonthlyComparisonCard'
+import { Expander } from '@/components/ui/expander'
 import {
   AllocationCoverageResponse,
   ApiHealth,
@@ -292,56 +293,74 @@ export default function MyDashboardsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <MonthlyComparisonCard
-          data={trendData}
-          title="Month-over-Month Cost"
-          className="xl:col-span-2"
-        />
-        <div className="card">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Comparison Use</h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-            Select any two months, such as April and May, to see the exact cost delta and which providers drove the change.
-          </p>
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            This view uses the same monthly series as the main dashboard, including archived periods when the selected range goes beyond the 90-day hot tier.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        {workspaceViews.map((view) => (
-          <Link
-            key={view.id}
-            href={view.href}
-            className="card hover:shadow-lg transition-all hover:border-indigo-300 dark:hover:border-indigo-700 group"
-          >
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div className="rounded-lg bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-300">
-                {view.icon}
-              </div>
-              <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-600 transition" />
-            </div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
-              {view.name}
-            </h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-              {view.description}
+      <Expander
+        title="Month-over-Month Analysis"
+        description="Compare selected months and provider movement when you need trend detail."
+        icon={<BarChart3 className="w-5 h-5 text-indigo-600" />}
+      >
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <MonthlyComparisonCard
+            data={trendData}
+            title="Month-over-Month Cost"
+            className="xl:col-span-2"
+          />
+          <div className="card">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Comparison Use</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+              Select any two months, such as April and May, to see the exact cost delta and which providers drove the change.
             </p>
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Primary Metric</p>
-                <p className="text-2xl font-bold text-slate-900 dark:text-white">{view.metric}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Context</p>
-                <p className="text-sm font-medium text-slate-900 dark:text-white">{view.submetric}</p>
-              </div>
-            </div>
-          </Link>
-        ))}
-      </div>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              This view uses the same monthly series as the main dashboard, including archived periods when the selected range goes beyond the 90-day hot tier.
+            </p>
+          </div>
+        </div>
+      </Expander>
 
+      <Expander
+        title="Workspace Dashboards"
+        description="Open the full launcher when you need to jump into a specific operational view."
+        icon={<Grid className="w-5 h-5 text-indigo-600" />}
+        defaultOpen
+      >
+        <div className="grid md:grid-cols-2 gap-6">
+          {workspaceViews.map((view) => (
+            <Link
+              key={view.id}
+              href={view.href}
+              className="card hover:shadow-lg transition-all hover:border-indigo-300 dark:hover:border-indigo-700 group"
+            >
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="rounded-lg bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-300">
+                  {view.icon}
+                </div>
+                <ArrowRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-600 transition" />
+              </div>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+                {view.name}
+              </h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                {view.description}
+              </p>
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Primary Metric</p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{view.metric}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Context</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">{view.submetric}</p>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </Expander>
+
+      <Expander
+        title="Runtime, Hierarchy, Alerts, And Chargeback Detail"
+        description="Secondary readiness signals are grouped here to keep the dashboard launcher focused."
+        icon={<Activity className="w-5 h-5 text-slate-600" />}
+      >
       <div className="grid md:grid-cols-3 gap-6">
         <div className="card">
           <div className="flex items-center gap-2 mb-3">
@@ -425,6 +444,7 @@ export default function MyDashboardsPage() {
           </Link>
         </div>
       </div>
+      </Expander>
     </div>
   )
 }
