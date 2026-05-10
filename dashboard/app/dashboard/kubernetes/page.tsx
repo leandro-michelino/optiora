@@ -100,6 +100,34 @@ const defaultForm = {
   monthly_node_cost_usd: 0,
 }
 
+function emptyKubernetesSummary(setupHint: string): KubernetesSummaryResponse {
+  return {
+    generated_at: new Date().toISOString(),
+    kubernetes_enabled: false,
+    clusters_configured: 0,
+    estimated_k8s_share_percent: 0,
+    estimated_k8s_cost_usd: 0,
+    total_cloud_cost_usd: 0,
+    container_service_count: 0,
+    provider_count_with_container_spend: 0,
+    highest_cost_provider: null,
+    highest_cost_service: null,
+    container_services: [],
+    provider_breakdown: (['aws', 'azure', 'gcp', 'oci'] as KubernetesProvider[]).map((provider) => ({
+      provider,
+      configured: false,
+      source: 'none',
+      total_monthly_cost_usd: 0,
+      share_percent: 0,
+      service_count: 0,
+      services: [],
+    })),
+    data_source: 'unavailable',
+    setup_hint: setupHint,
+    opencost_docs: 'https://www.opencost.io/docs/',
+  }
+}
+
 function StatTile({
   icon,
   label,
@@ -682,6 +710,11 @@ export default function KubernetesPage() {
     red: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300',
     slate: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
   }[catalogStatus.tone]
+  const visibleSummary = summary ?? (
+    summaryError
+      ? emptyKubernetesSummary('Kubernetes summary did not load. The service estate panel remains available; refresh after provider data returns.')
+      : null
+  )
 
   return (
     <div className="space-y-6">
@@ -752,42 +785,42 @@ export default function KubernetesPage() {
             Loading Kubernetes summary...
           </div>
         </div>
-      ) : summary ? (
+      ) : visibleSummary ? (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <StatTile
-              icon={summary.kubernetes_enabled ? <CheckCircle2 className="h-5 w-5" /> : <Settings2 className="h-5 w-5" />}
+              icon={visibleSummary.kubernetes_enabled ? <CheckCircle2 className="h-5 w-5" /> : <Settings2 className="h-5 w-5" />}
               label="Kubernetes"
-              value={summary.kubernetes_enabled ? 'Enabled' : 'Setup needed'}
-              helper={summary.setup_hint}
-              tone={summary.kubernetes_enabled ? 'emerald' : 'slate'}
+              value={visibleSummary.kubernetes_enabled ? 'Enabled' : 'Setup needed'}
+              helper={visibleSummary.setup_hint}
+              tone={visibleSummary.kubernetes_enabled ? 'emerald' : 'slate'}
             />
             <StatTile
               icon={<Cloud className="h-5 w-5" />}
               label="Container Services"
-              value={summary.container_service_count.toString()}
-              helper={`${summary.provider_count_with_container_spend} provider(s) with Kubernetes, container, registry, or Docker spend`}
+              value={visibleSummary.container_service_count.toString()}
+              helper={`${visibleSummary.provider_count_with_container_spend} provider(s) with Kubernetes, container, registry, or Docker spend`}
               tone="blue"
             />
             <StatTile
               icon={<DollarSign className="h-5 w-5" />}
               label="Container Spend"
-              value={`${summary.estimated_k8s_share_percent.toFixed(1)}%`}
-              helper={`${fmtCompact(summary.estimated_k8s_cost_usd)} estimated monthly service cost`}
+              value={`${visibleSummary.estimated_k8s_share_percent.toFixed(1)}%`}
+              helper={`${fmtCompact(visibleSummary.estimated_k8s_cost_usd)} estimated monthly service cost`}
               tone="purple"
             />
             <StatTile
               icon={<Network className="h-5 w-5" />}
               label="Cloud Baseline"
-              value={fmtCompact(summary.total_cloud_cost_usd)}
+              value={fmtCompact(visibleSummary.total_cloud_cost_usd)}
               helper="Total cloud cost used for Kubernetes share"
               tone="amber"
             />
           </div>
 
-          {!summary.kubernetes_enabled && (
+          {!visibleSummary.kubernetes_enabled && (
             <Notice tone="blue" icon={<Wrench className="h-4 w-4" />}>
-              <p className="font-semibold">{summary.setup_hint}</p>
+              <p className="font-semibold">{visibleSummary.setup_hint}</p>
               <p className="mt-1 text-xs opacity-80">
                 Add OpenCost when you need live namespace and pod allocation. Manual calculator mode remains available for planning.
               </p>
@@ -796,9 +829,9 @@ export default function KubernetesPage() {
         </>
       ) : null}
 
-      {summary && (
+      {visibleSummary && (
         <ContainerServicesPanel
-          summary={summary}
+          summary={visibleSummary}
           providerFilter={serviceProviderFilter}
           onProviderFilterChange={setServiceProviderFilter}
           serviceSearch={serviceSearch}

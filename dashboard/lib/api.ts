@@ -916,7 +916,11 @@ export async function fetchResourceInventory(params: {
 // ── Kubernetes Cost Allocation ────────────────────────────────────────────────
 
 export async function fetchKubernetesSummary(): Promise<KubernetesSummaryResponse> {
-  return requestJson<KubernetesSummaryResponse>('/api/v1/analytics/kubernetes/summary')
+  return requestJson<KubernetesSummaryResponse>(
+    '/api/v1/analytics/kubernetes/summary',
+    {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
+  )
 }
 
 export async function fetchKubernetesProviderCatalog(): Promise<KubernetesProviderCatalogResponse> {
