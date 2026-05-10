@@ -243,6 +243,16 @@ function fmtMaybeDate(value?: string | null) {
   return parsed.toLocaleString()
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function readableList(values: string[], fallback: string) {
+  if (values.length === 0) return fallback
+  if (values.length === 1) return values[0]
+  return `${values.slice(0, -1).join(', ')} and ${values[values.length - 1]}`
+}
+
 function serviceDetailPairs(service: KubernetesContainerServiceCost) {
   return [
     ['Lifecycle', service.lifecycle_state],
@@ -834,7 +844,7 @@ export default function KubernetesPage() {
   const catalogStatus = useMemo(() => {
     if (catalogMeta.error) return { label: 'Catalog unavailable', tone: 'red' as const }
     if (catalogMeta.liveProviders === 4) return { label: 'All catalogs live', tone: 'emerald' as const }
-    if (catalogMeta.liveProviders > 0) return { label: 'Partially live', tone: 'amber' as const }
+    if (catalogMeta.liveProviders > 0) return { label: 'Connected catalogs', tone: 'emerald' as const }
     return { label: 'Manual mode', tone: 'slate' as const }
   }, [catalogMeta])
   const catalogStatusClasses = {
@@ -848,6 +858,25 @@ export default function KubernetesPage() {
       ? emptyKubernetesSummary('Kubernetes summary did not load. The service estate panel remains available; refresh after provider data returns.')
       : null
   )
+  const visibleServices = visibleSummary?.container_services ?? []
+  const visibleProviderRollups = visibleSummary?.provider_breakdown ?? []
+  const managedClusterCount = visibleServices.filter((service) => service.category === 'managed_kubernetes').length
+  const runtimeCount = visibleServices.filter((service) => service.category === 'container_runtime' || service.category === 'docker').length
+  const registryCount = visibleServices.filter((service) => service.category === 'container_registry').length
+  const providersWithServices = visibleProviderRollups.filter((provider) => provider.service_count > 0)
+  const providerNamesWithServices = providersWithServices.map((provider) => providerLabel(provider.provider))
+  const liveCatalogProviderNames = (Object.entries(providerProfiles) as Array<[KubernetesProvider, ProviderProfile]>)
+    .filter(([, profile]) => profile.source === 'live')
+    .map(([provider]) => providerLabel(provider))
+  const optionalProviderNames = (['aws', 'azure', 'gcp', 'oci'] as KubernetesProvider[])
+    .filter((provider) => !liveCatalogProviderNames.includes(providerLabel(provider)))
+    .map((provider) => providerLabel(provider))
+  const kubernetesTileHelper = managedClusterCount > 0
+    ? `${pluralize(managedClusterCount, 'managed cluster')} detected from live inventory.`
+    : 'No managed cluster detected yet; use the calculator or connect provider inventory.'
+  const containerServicesHelper = providerNamesWithServices.length > 0
+    ? `${readableList(providerNamesWithServices, 'No provider')} ${providerNamesWithServices.length === 1 ? 'is' : 'are'} reporting container signals.`
+    : 'No provider is reporting Kubernetes, container, registry, or Docker spend yet.'
 
   return (
     <div className="space-y-6">
@@ -873,24 +902,35 @@ export default function KubernetesPage() {
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Estate Scope</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Live Estate</p>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                AWS, Azure, Google Cloud, and Oracle Cloud container services are normalized into one cost view, with provider source and evidence kept visible for each row.
+                {providerNamesWithServices.length > 0
+                  ? `${readableList(providerNamesWithServices, 'Oracle Cloud')} ${providerNamesWithServices.length === 1 ? 'is' : 'are'} feeding this view with live Kubernetes, container, registry, or Docker signals.`
+                  : 'Connect provider credentials to start the live Kubernetes, container, registry, and Docker estate view.'}
               </p>
             </div>
             <Badge className="w-fit rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
-              Unified view
+              {providerNamesWithServices.length > 0 ? 'Live inventory' : 'Setup ready'}
             </Badge>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Badge variant="outline" className="rounded-md">{pluralize(managedClusterCount, 'managed cluster')}</Badge>
+            <Badge variant="outline" className="rounded-md">{pluralize(runtimeCount, 'runtime signal')}</Badge>
+            <Badge variant="outline" className="rounded-md">{pluralize(registryCount, 'registry signal')}</Badge>
           </div>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Catalog Readiness</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Provider Catalog</p>
           <div className="mt-2 flex items-center justify-between gap-3">
             <Badge className={`rounded-md border ${catalogStatusClasses}`}>{catalogStatus.label}</Badge>
             <Badge variant="outline" className="rounded-md">{catalogMeta.liveProviders}/4 live</Badge>
           </div>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{catalogMeta.noDataProviders} provider catalog(s) still need credentials or provider API data.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            {liveCatalogProviderNames.length > 0
+              ? `${readableList(liveCatalogProviderNames, 'Provider catalog')} ${liveCatalogProviderNames.length === 1 ? 'pricing is' : 'catalogs are'} live. ${optionalProviderNames.length > 0 ? `${readableList(optionalProviderNames, 'Other providers')} can be added later.` : 'All provider catalogs are connected.'}`
+              : 'Manual modeling is available until live provider catalogs are connected.'}
+          </p>
         </div>
       </div>
 
@@ -899,7 +939,15 @@ export default function KubernetesPage() {
           Provider catalog is unavailable: {catalogMeta.error}
         </Notice>
       )}
-      {catalogMeta.noDataProviders > 0 && !catalogMeta.error && (
+      {catalogMeta.noDataProviders > 0 && !catalogMeta.error && catalogMeta.liveProviders > 0 && (
+        <Notice tone="blue" icon={<Info className="h-4 w-4" />}>
+          <p>Additional provider catalogs are optional for this workspace.</p>
+          <p className="mt-1 text-xs opacity-80">
+            The current live inventory remains usable; connect AWS, Azure, or Google Cloud in Settings when you want their Kubernetes and container services included.
+          </p>
+        </Notice>
+      )}
+      {catalogMeta.noDataProviders > 0 && !catalogMeta.error && catalogMeta.liveProviders === 0 && (
         <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
           <p>{catalogMeta.noDataProviders} provider catalog(s) have no live regions or shapes yet.</p>
           <p className="mt-1 text-xs opacity-80">Connect provider credentials in Settings to fetch live catalog data. The calculator still supports manual modeling.</p>
@@ -925,28 +973,28 @@ export default function KubernetesPage() {
               icon={visibleSummary.kubernetes_enabled ? <CheckCircle2 className="h-5 w-5" /> : <Settings2 className="h-5 w-5" />}
               label="Kubernetes"
               value={visibleSummary.kubernetes_enabled ? 'Enabled' : 'Setup needed'}
-              helper={visibleSummary.setup_hint}
+              helper={kubernetesTileHelper}
               tone={visibleSummary.kubernetes_enabled ? 'emerald' : 'slate'}
             />
             <StatTile
               icon={<Cloud className="h-5 w-5" />}
               label="Container Services"
               value={visibleSummary.container_service_count.toString()}
-              helper={`${visibleSummary.provider_count_with_container_spend} provider(s) with Kubernetes, container, registry, or Docker spend`}
+              helper={containerServicesHelper}
               tone="blue"
             />
             <StatTile
               icon={<DollarSign className="h-5 w-5" />}
               label="Container Spend"
               value={`${visibleSummary.estimated_k8s_share_percent.toFixed(1)}%`}
-              helper={`${fmtCompact(visibleSummary.estimated_k8s_cost_usd)} estimated monthly service cost`}
+              helper={`${fmtCompact(visibleSummary.estimated_k8s_cost_usd)} estimated monthly run rate from inventory and billing signals.`}
               tone="purple"
             />
             <StatTile
               icon={<Network className="h-5 w-5" />}
               label="Cloud Baseline"
               value={fmtCompact(visibleSummary.total_cloud_cost_usd)}
-              helper="Total cloud cost used for Kubernetes share"
+              helper="Used only to calculate the container estate share of total cloud cost."
               tone="amber"
             />
           </div>
