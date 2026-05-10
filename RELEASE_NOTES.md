@@ -13,6 +13,8 @@
 - Rightsizing resource search across resource name, OCID, account, region, evidence source, action, and recommendation reason.
 - Inline expandable execution details for each rightsizing card, including rationale, validation steps, rollout checks, and rollback plan.
 - Public browser verification for the Rightsizing live provider scan path.
+- Repeatable operator walkthrough Playwright coverage for every main dashboard screen, active navigation state, consolidated Kubernetes routing, and broken UI state detection.
+- `E2E_WALKTHROUGH_NOTES.md` with the human-style process log, fixes applied during the path, live OCI verification snapshot, and repeatable commands.
 
 ### Changed
 
@@ -29,6 +31,9 @@
 - Fixed the live Rightsizing scan user experience where the backend completed successfully after roughly `50s`, but the frontend timed out at `45s` and incorrectly showed a fallback warning.
 - Fixed stale go-live documentation that still described live OCI evidence as pending after the deployment verify gate had passed.
 - Removed generated local cache directories with `scripts/cleanup-workspace.sh`.
+- Rebuilt the local backend virtualenv with supported Python `3.13` after the operator walkthrough found an unsupported Python `3.14` virtualenv.
+- Reinitialized Terraform providers locally before validation after the walkthrough found a missing cached OCI provider package.
+- Ignored Playwright `test-results` and `playwright-report` artifacts in the ESLint flat config so lint cannot race against E2E report creation or cleanup.
 
 ### Validation
 
@@ -36,13 +41,18 @@
 - `npm run type-check --prefix dashboard`
 - `npm run build --prefix dashboard`
 - `npm audit --audit-level=high --prefix dashboard`
+- `npm run test:e2e --prefix dashboard`
+- `cd dashboard && npx playwright test e2e/operator-walkthrough.spec.ts`
 - `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`281` passing, `2` skipped)
+- `.venv/bin/python -m pytest -q` (`287` passing)
 - `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py tests/test_deep_finops_analytics.py` (`35` passing)
 - `terraform fmt -check` for tracked Terraform files and `terraform -chdir=terraform validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
+- Live recommendation ledger contracts: `GET /api/v1/recommendations/ledger`, `GET /api/v1/recommendations/ledger.csv`, and `GET /api/v1/analytics/finops-intelligence`.
+- Live RAG guidance contract: `POST /api/v1/genai/rag-guidance`.
 - Public live Rightsizing API: `GET /api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=1000&refresh_live=true` returned in about `50s` with `730` OCI recommendations.
 - Public browser live-toggle check on `/dashboard/rightsizing`: rendered `730` cards with no console errors and no horizontal overflow.
-- `./deploy/deploy-oci.sh compute` (`6m 25s`)
+- `./deploy/deploy-oci.sh compute` (`7m 18s` in the latest VM start + redeploy walkthrough)
 - `./deploy/deploy-oci.sh verify` (`48` passing, `0` failed, `3` skipped)
 
 ## 0.9.1 - UIX and Navigation Polish (May 10, 2026)

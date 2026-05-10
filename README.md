@@ -264,13 +264,16 @@ Wiring and cleanup:
 
 Important Next.js note: run `npm run build` before standalone `npm run type-check` after cleanup so `.next/types` exists before TypeScript reads generated route types.
 
-Current verified baseline is recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md) and [TESTING.md](TESTING.md).
+Current verified baseline is recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md), [TESTING.md](TESTING.md), and [E2E_WALKTHROUGH_NOTES.md](E2E_WALKTHROUGH_NOTES.md).
 
 Latest deployed OCI verification snapshot:
 
 ```text
 deploy/deploy-oci.sh verify
   48 passed, 0 failed, 3 skipped
+
+Operator dashboard walkthrough
+  all 20 main screens passed route, heading, active-nav, and Kubernetes consolidation checks
 
 Rightsizing live refresh
   provider=oci, refresh_live=true
@@ -297,6 +300,7 @@ Treat these as planning bands. Verify region-specific list prices in the OCI cos
 | [DEPLOYMENT.md](DEPLOYMENT.md) | OCI deployment, operations, networking, troubleshooting |
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | Release history, fixes, validation commands |
 | [TESTING.md](TESTING.md) | Test strategy and coverage map |
+| [E2E_WALKTHROUGH_NOTES.md](E2E_WALKTHROUGH_NOTES.md) | Human operator walkthrough notes, process outcomes, and live OCI verification snapshot |
 | [ROADMAP.md](ROADMAP.md) | Product direction and capability gaps |
 | [NEXT_PHASE.md](NEXT_PHASE.md) | Near-term implementation plan |
 | [COST_ESTIMATE.md](COST_ESTIMATE.md) | Monthly cost planning and cost drivers |

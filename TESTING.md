@@ -178,6 +178,7 @@ Browser E2E coverage now validates the public dashboard optional CSV fallback wo
 - uploads `dashboard/e2e/fixtures/import-costs.csv`
 - confirms the imported CSV becomes the active source on overview, costs, forecasting, AI insights, and recommendations pages
 - confirms operations still exposes the export/report controls after the imported dataset becomes active
+- walks every main dashboard screen as an operator, confirms each main content heading renders, verifies there is exactly one active navigation target, and checks that the legacy Kubernetes namespace route redirects into the single consolidated Kubernetes page
 
 Playwright harness files:
 
@@ -185,6 +186,11 @@ Playwright harness files:
 - `dashboard/scripts/playwright-backend.sh`
 - `dashboard/scripts/playwright-frontend.sh`
 - `dashboard/e2e/public-dashboard.spec.ts`
+- `dashboard/e2e/operator-walkthrough.spec.ts`
+
+Operator walkthrough notes:
+
+- `E2E_WALKTHROUGH_NOTES.md`
 
 Current live Rightsizing smoke:
 
