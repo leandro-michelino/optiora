@@ -1,4 +1,4 @@
-compartment_id = "ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya"
+compartment_id = "ocid1.compartment.oc1..<compartment_ocid>"
 region         = "uk-london-1"
 oci_object_storage_namespace = "your_object_storage_namespace"
 

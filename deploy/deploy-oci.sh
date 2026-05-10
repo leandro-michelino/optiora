@@ -27,7 +27,7 @@ NC='\033[0m'
 # Configuration
 DEPLOYMENT_TYPE=${1:-"compute"}
 REGION=${OCI_REGION:-"uk-london-1"}
-DEFAULT_COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya"
+DEFAULT_COMPARTMENT_ID=""
 COMPARTMENT_ID=${OCI_COMPARTMENT_ID:-$DEFAULT_COMPARTMENT_ID}
 INSTANCE_NAME=${OCI_INSTANCE_NAME:-"optiora-api"}
 SHAPE=${OCI_SHAPE:-"VM.Standard.E4.Flex"}
@@ -166,6 +166,69 @@ read_tfvar() {
             exit
         }
     ' "$file"
+}
+
+is_placeholder_value() {
+    local value
+    value="$(strip_wrapping_quotes "${1:-}")"
+
+    [[ -z "$value" ]] && return 0
+    [[ "$value" == "null" ]] && return 0
+    [[ "$value" == *"<"* || "$value" == *">"* ]] && return 0
+    [[ "$value" == *"your_"* || "$value" == *"_if_needed"* ]] && return 0
+    [[ "$value" == *"changeme"* || "$value" == *"example"* ]] && return 0
+
+    return 1
+}
+
+is_valid_compartment_id() {
+    local value
+    value="$(strip_wrapping_quotes "${1:-}")"
+
+    is_placeholder_value "$value" && return 1
+    [[ "$value" == ocid1.compartment.oc1..* || "$value" == ocid1.tenancy.oc1..* ]]
+}
+
+is_valid_cidr() {
+    local value
+    value="$(strip_wrapping_quotes "${1:-}")"
+
+    is_placeholder_value "$value" && return 1
+    [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$ ]]
+}
+
+resolve_compartment_id() {
+    local candidate=""
+
+    if is_valid_compartment_id "${COMPARTMENT_ID:-}"; then
+        return 0
+    fi
+
+    if is_valid_compartment_id "${TF_VAR_compartment_id:-}"; then
+        COMPARTMENT_ID="$(strip_wrapping_quotes "$TF_VAR_compartment_id")"
+        return 0
+    fi
+
+    candidate="$(read_tfvar compartment_id "$TFVARS_PATH" || true)"
+    if is_valid_compartment_id "$candidate"; then
+        COMPARTMENT_ID="$(strip_wrapping_quotes "$candidate")"
+        return 0
+    fi
+
+    COMPARTMENT_ID=""
+}
+
+require_compartment_id() {
+    resolve_compartment_id
+
+    if [ -z "$COMPARTMENT_ID" ]; then
+        log_error "Compartment ID is not configured."
+        log_info "Set OCI_COMPARTMENT_ID, TF_VAR_compartment_id, or terraform/terraform.tfvars compartment_id."
+        log_info "Placeholder values such as ocid1.compartment.oc1..<compartment_ocid> are rejected."
+        exit 1
+    fi
+
+    log_success "Compartment ID configured: $COMPARTMENT_ID"
 }
 
 read_tfvar_list() {
@@ -386,6 +449,102 @@ run_terraform() {
     terraform -chdir="${ROOT_DIR}/terraform" "$@"
 }
 
+ensure_tfvars_file() {
+    if [[ ! -f "$TFVARS_PATH" && -f "${ROOT_DIR}/terraform/terraform.tfvars.example" ]]; then
+        cp "${ROOT_DIR}/terraform/terraform.tfvars.example" "$TFVARS_PATH"
+        log_warning "Created terraform/terraform.tfvars from example"
+    fi
+}
+
+resolve_object_storage_namespace() {
+    local namespace=""
+
+    if ! is_placeholder_value "${TF_VAR_oci_object_storage_namespace:-}"; then
+        printf '%s' "$(strip_wrapping_quotes "$TF_VAR_oci_object_storage_namespace")"
+        return 0
+    fi
+
+    namespace="$(read_tfvar oci_object_storage_namespace "$TFVARS_PATH" || true)"
+    if ! is_placeholder_value "$namespace"; then
+        printf '%s' "$(strip_wrapping_quotes "$namespace")"
+        return 0
+    fi
+
+    namespace="$(oci os ns get --region "$REGION" --query data --raw-output 2>/dev/null || true)"
+    if ! is_placeholder_value "$namespace"; then
+        printf '%s' "$(strip_wrapping_quotes "$namespace")"
+    fi
+}
+
+resolve_laptop_cidr() {
+    local cidr=""
+
+    if is_valid_cidr "${TF_VAR_laptop_cidr:-}"; then
+        printf '%s' "$(strip_wrapping_quotes "$TF_VAR_laptop_cidr")"
+        return 0
+    fi
+
+    cidr="$(read_tfvar laptop_cidr "$TFVARS_PATH" || true)"
+    if is_valid_cidr "$cidr"; then
+        printf '%s' "$(strip_wrapping_quotes "$cidr")"
+        return 0
+    fi
+
+    local public_ip
+    public_ip="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+    if [[ "$public_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        printf '%s/32' "$public_ip"
+    fi
+}
+
+configure_terraform_inputs() {
+    local compartment
+    local namespace
+    local laptop_cidr
+
+    ensure_tfvars_file
+
+    resolve_compartment_id
+    compartment="$COMPARTMENT_ID"
+    if ! is_valid_compartment_id "$compartment"; then
+        compartment="$(prompt_value "Enter OCI compartment OCID")"
+    fi
+    if ! is_valid_compartment_id "$compartment"; then
+        log_error "A real compartment OCID is required before Terraform plan."
+        exit 1
+    fi
+    COMPARTMENT_ID="$(strip_wrapping_quotes "$compartment")"
+    export TF_VAR_compartment_id="$COMPARTMENT_ID"
+    upsert_tfvar compartment_id "$COMPARTMENT_ID" "$TFVARS_PATH"
+    log_success "Terraform compartment_id resolved"
+
+    namespace="$(resolve_object_storage_namespace)"
+    if is_placeholder_value "$namespace"; then
+        namespace="$(prompt_value "Enter OCI Object Storage namespace")"
+    fi
+    if is_placeholder_value "$namespace"; then
+        log_error "A real OCI Object Storage namespace is required before Terraform plan."
+        exit 1
+    fi
+    namespace="$(strip_wrapping_quotes "$namespace")"
+    export TF_VAR_oci_object_storage_namespace="$namespace"
+    upsert_tfvar oci_object_storage_namespace "$namespace" "$TFVARS_PATH"
+    log_success "Terraform oci_object_storage_namespace resolved"
+
+    laptop_cidr="$(resolve_laptop_cidr)"
+    if ! is_valid_cidr "$laptop_cidr"; then
+        laptop_cidr="$(prompt_value "Enter laptop/office public CIDR for ingress" "${laptop_cidr:-}")"
+    fi
+    if ! is_valid_cidr "$laptop_cidr"; then
+        log_error "A valid IPv4 CIDR such as 203.0.113.10/32 is required before Terraform plan."
+        exit 1
+    fi
+    laptop_cidr="$(strip_wrapping_quotes "$laptop_cidr")"
+    export TF_VAR_laptop_cidr="$laptop_cidr"
+    upsert_tfvar laptop_cidr "$laptop_cidr" "$TFVARS_PATH"
+    log_success "Terraform laptop_cidr resolved"
+}
+
 get_terraform_output_raw() {
     local output_name="$1"
 
@@ -541,9 +700,9 @@ ${YELLOW}COMMANDS:${NC}
     destroy              Remove deployment (WARNING: irreversible)
     --help               Show this help message
 
-${YELLOW}DEFAULT TARGET:${NC}
-    OCI compartment: ${DEFAULT_COMPARTMENT_ID}
-    Override with OCI_COMPARTMENT_ID when needed.
+${YELLOW}TARGET:${NC}
+    OCI compartment: set OCI_COMPARTMENT_ID, TF_VAR_compartment_id, or terraform/terraform.tfvars.
+    Full/menu setup writes resolved Terraform values and rejects placeholder OCIDs.
 
 ${YELLOW}COMMON ENV:${NC}
     OCI_REGION                 Region (default: uk-london-1)
@@ -573,7 +732,7 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_GENAI_COMPARTMENT_ID   Optional GenAI-specific compartment OCID
 
 ${YELLOW}EXAMPLE:${NC}
-    export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..override_if_needed
+    export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..<compartment_ocid>
     export OCI_SUBNET_ID=ocid1.subnet.oc1...
     export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
     export OCI_PROFILE=DEFAULT
@@ -581,7 +740,7 @@ ${YELLOW}EXAMPLE:${NC}
 EOF
 }
 
-check_prerequisites() {
+check_local_prerequisites() {
     log_step "Checking Prerequisites"
 
     require_command oci
@@ -599,17 +758,16 @@ check_prerequisites() {
     fi
     log_success "OCI config found"
 
-    if [ -z "$COMPARTMENT_ID" ]; then
-        log_error "Compartment ID is empty after resolution"
-        exit 1
-    fi
-    log_success "Compartment ID configured: $COMPARTMENT_ID"
-
     if [ ! -f "${ROOT_DIR}/.env.example" ]; then
         log_error ".env.example not found in project root"
         exit 1
     fi
     log_success "Project files detected"
+}
+
+check_prerequisites() {
+    check_local_prerequisites
+    require_compartment_id
 }
 
 get_instance_json() {
@@ -1385,10 +1543,7 @@ run_fancy_end_to_end_deploy() {
     full_started_at=$(date +%s)
     log_step "Fancy End-to-End Deploy (Terraform + Compute + Ansible)"
 
-    if [[ ! -f "$TFVARS_PATH" && -f "${ROOT_DIR}/terraform/terraform.tfvars.example" ]]; then
-        cp "${ROOT_DIR}/terraform/terraform.tfvars.example" "$TFVARS_PATH"
-        log_warning "Created terraform/terraform.tfvars from example"
-    fi
+    configure_terraform_inputs
 
     run_terraform init
     run_terraform validate
@@ -1576,8 +1731,8 @@ interactive_deploy_menu() {
     choice="$(prompt_value "Select option" "1")"
     case "$choice" in
         1) run_fancy_end_to_end_deploy ;;
-        2) review_and_fix_deployment ;;
-        3) manage_allowed_ips ;;
+        2) require_compartment_id; review_and_fix_deployment ;;
+        3) require_compartment_id; manage_allowed_ips ;;
         4) show_deployment_ideas ;;
         *) log_error "Invalid menu option: $choice"; return 1 ;;
     esac
@@ -1648,7 +1803,7 @@ main() {
             deploy_compute
             ;;
         full)
-            check_prerequisites
+            check_local_prerequisites
             run_fancy_end_to_end_deploy
             ;;
         provision)
@@ -1656,7 +1811,7 @@ main() {
             provision_compute_only
             ;;
         menu)
-            check_prerequisites
+            check_local_prerequisites
             interactive_deploy_menu
             ;;
         status)

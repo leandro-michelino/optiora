@@ -15,13 +15,29 @@
 - Credential setup and scan approval forms now use consistent shared form styling, stronger dark-mode support, lucide icons, and typed scan-frequency handling.
 - Operations export tests now open the relevant expander before asserting controls, matching the lower-density UI.
 - Playwright backend startup now explicitly sets `REQUIRE_LIVE_PROVIDER_DATA=false` so local `.env` live-provider requirements cannot break the CSV/import-mode e2e harness.
+- OCI deployment configuration now rejects baked or placeholder compartment OCIDs, resolves the target from env/`TF_VAR_*`/`terraform.tfvars`, and keeps Terraform plus OCI CLI calls aligned during full deployments.
+- Workspace cleanup now removes `.tmp` scratch databases and Playwright reports in addition to generated dashboard, Python, and Terraform cache artifacts.
+
+### Fixed
+
+- Scrubbed the live-looking OCI compartment OCID from examples, Ansible defaults, environment templates, and deployment docs.
+- Fixed the guided Terraform + Ansible path so `OCI_COMPARTMENT_ID` is exported to Terraform as `TF_VAR_compartment_id` and written into `terraform/terraform.tfvars`.
 
 ### Validation
 
+- `bash -n deploy/deploy-oci.sh scripts/cleanup-workspace.sh dashboard/scripts/playwright-backend.sh dashboard/scripts/playwright-frontend.sh`
+- `python3 -m py_compile $(find ./finops_mcp -name '*.py')`
+- `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`279` passing, `2` skipped)
+- `terraform fmt -check` on tracked `.tf` files
+- `terraform validate`
+- `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
+- `cd dashboard && npm audit --audit-level=high`
 - `cd dashboard && npm run lint`
 - `cd dashboard && npm run build`
 - `cd dashboard && npm run type-check`
 - `cd dashboard && npm run test:e2e`
+- `./scripts/check-animated-svg-routes.sh`
+- `./scripts/cleanup-workspace.sh`
 
 ## 0.9.1 - Dashboard Wiring and Repository Hygiene (May 10, 2026)
 

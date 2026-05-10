@@ -35,6 +35,7 @@ logs/
 # IDE / OS
 .idea/
 .vscode/
+.claude/settings.local.json
 .DS_Store
 Thumbs.db
 *.swp
@@ -47,6 +48,7 @@ dashboard/out/
 dashboard/build/
 dashboard/node_modules/
 dashboard/test-results/
+dashboard/playwright-report/
 dashboard/.env
 dashboard/.env.local
 dashboard/tsconfig.tsbuildinfo

@@ -515,6 +515,34 @@ Validation rules
   - documented placeholders like your_aws_access_key are treated as unset
 ```
 
+## Deployment Configuration Resolution
+
+```text
+Operator input
+  |
+  +--> OCI_COMPARTMENT_ID / TF_VAR_compartment_id
+  |        |
+  |        v
+  |     deploy-oci.sh
+  |        |
+  |        +--> rejects blank/placeholder OCIDs
+  |        +--> writes terraform/terraform.tfvars compartment_id
+  |        +--> exports TF_VAR_compartment_id for Terraform
+  |
+  +--> terraform/terraform.tfvars
+           |
+           +--> laptop_cidr
+           +--> oci_object_storage_namespace
+           +--> optional extra block volume settings
+
+End-to-end flow
+  Terraform network baseline
+      -> OCI compute lookup/create
+      -> source archive upload
+      -> Ansible temporary inventory + vars
+      -> systemd services + smoke verification
+```
+
 ## Dashboard Wiring Architecture
 
 ```text
@@ -551,9 +579,11 @@ dashboard/app/dashboard/page.tsx
   +--> removes generated artifacts
   |     - dashboard/.next
   |     - dashboard/test-results
+  |     - dashboard/playwright-report
   |     - dashboard/tsconfig.tsbuildinfo
   |     - terraform/.terraform
   |     - terraform/tfplan
+  |     - .tmp/tmp scratch directories
   |     - Python cache directories and duplicate-copy files
   |
   +--> preserves local runtime/dependency state

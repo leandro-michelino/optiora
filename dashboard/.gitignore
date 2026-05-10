@@ -9,6 +9,8 @@ out/
 dist/
 build/
 tsconfig.tsbuildinfo
+test-results/
+playwright-report/
 
 # env
 .env

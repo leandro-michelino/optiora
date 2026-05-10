@@ -11,6 +11,7 @@ Preferred operator flow is the interactive root setup wizard:
 ```
 
 That flow manages Terraform variables and optional apply, then hands off to the same deploy script for compute creation, extra data volume attachment, and Ansible provisioning.
+The guided flow rejects placeholder values, writes the resolved `compartment_id`, `laptop_cidr`, and `oci_object_storage_namespace` into `terraform/terraform.tfvars`, and exports `TF_VAR_compartment_id` so Terraform and OCI CLI calls target the same compartment.
 
 Deployment order is intentionally Terraform first, then compute/source upload, then Ansible runtime configuration, then smoke verification. Terraform should not be used to push application secrets; OCI config/key material is staged by `deploy/deploy-oci.sh` and installed by Ansible under `/opt/optiora/.oci`.
 
@@ -57,7 +58,7 @@ If you want a more restrictive outbound policy, override `egress_cidr`.
 terraform init
 terraform validate
 terraform plan \
-  -var="compartment_id=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya" \
+  -var="compartment_id=ocid1.compartment.oc1..<compartment_ocid>" \
   -var="region=uk-london-1" \
   -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32"
@@ -73,7 +74,7 @@ Example with restricted egress:
 
 ```bash
 terraform plan \
-  -var="compartment_id=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya" \
+  -var="compartment_id=ocid1.compartment.oc1..<compartment_ocid>" \
   -var="oci_object_storage_namespace=<your_object_storage_namespace>" \
   -var="laptop_cidr=<your_public_ip>/32" \
   -var="egress_cidr=<trusted-egress-cidr>"

@@ -53,8 +53,8 @@ Use the deploy script menu to run Terraform + Ansible in one guided flow:
 What the deploy script does for a fresh environment:
 
 - checks core tooling and local prerequisites
-- prompts for required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`)
-- writes/updates `terraform/terraform.tfvars`
+- resolves required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`) from `TF_VAR_*`, `terraform/terraform.tfvars`, OCI CLI auto-detection where possible, or prompts
+- writes/updates `terraform/terraform.tfvars` so Terraform and OCI CLI use the same target
 - runs `terraform init`, `terraform validate`, `terraform plan`
 - optionally runs `terraform apply`
 - wires the compute launch to Terraform `public_subnet_id`/`vcn_id` outputs when present
@@ -71,9 +71,10 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
 - OCI CLI installed and configured (`oci setup config`)
 - Node.js `20.9.0` or newer for dashboard dependency install/build. The
   Ansible default installs Node major `20`.
-- Deployment default compartment is pinned to:
-  `ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya`
-  (override only when needed with `OCI_COMPARTMENT_ID`)
+- Target compartment must be provided through `OCI_COMPARTMENT_ID`,
+  `TF_VAR_compartment_id`, or `terraform/terraform.tfvars`.
+  Placeholder OCIDs such as `ocid1.compartment.oc1..<compartment_ocid>` are
+  rejected before OCI CLI calls.
 - SSH keypair available locally — **must be passphrase-free** (the deploy script calls `ssh-keygen -y -f` to validate the key, which cannot use ssh-agent). Create one with:
   ```bash
   ssh-keygen -t ed25519 -f ~/.ssh/optiora-deploy -N '' -C 'optiora-deploy'
@@ -131,7 +132,7 @@ Optional Terraform baseline:
 terraform -chdir=../terraform init
 terraform -chdir=../terraform validate
 terraform -chdir=../terraform plan \
-  -var="compartment_id=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya" \
+  -var="compartment_id=ocid1.compartment.oc1..<compartment_ocid>" \
   -var="region=uk-london-1" \
   -var="laptop_cidr=<your_public_ip>/32"
 ```
@@ -147,7 +148,7 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 
 ```bash
 export OCI_REGION=uk-london-1
-export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya
+export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..<compartment_ocid>
 ./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
@@ -163,7 +164,7 @@ OCI_TENANCY_OCID='ocid1.tenancy.oc1..<tenancy_ocid>' \
 OCI_FINGERPRINT='<api_key_fingerprint>' \
 OCI_PRIVATE_KEY_PATH="$HOME/.oci/oci_api_key.pem" \
 OCI_REGION='uk-london-1' \
-OCI_COMPARTMENT_ID='ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya' \
+OCI_COMPARTMENT_ID='ocid1.compartment.oc1..<compartment_ocid>' \
 OCI_IMAGE_COMPARTMENT_ID='ocid1.tenancy.oc1..<tenancy_ocid>' \
 OCI_SUBNET_ID='ocid1.subnet.oc1..<subnet_ocid>' \
 OCI_SSH_PUBLIC_KEY_PATH="$HOME/.ssh/optiora-deploy.pub" \
@@ -277,7 +278,7 @@ Evidence packs are written under `artifacts/evidence/<UTC-timestamp>/` with:
 
 ```env
 OCI_REGION=uk-london-1
-OCI_COMPARTMENT_ID=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya
+OCI_COMPARTMENT_ID=ocid1.compartment.oc1..<compartment_ocid>
 OCI_IMAGE_COMPARTMENT_ID=ocid1.tenancy.oc1...   # set to your tenancy OCID
 OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex
@@ -307,7 +308,7 @@ PUBLIC_WORKSPACE_NAME=OptiOra Public Workspace
 PUBLIC_WORKSPACE_EMAIL=public@optiora.local
 OCI_GENAI_ENDPOINT=https://inference.generativeai.uk-london-1.oci.oraclecloud.com
 OCI_GENAI_MODEL=meta.llama-3.3-70b-instruct
-OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya
+OCI_COMPARTMENT_OCID=ocid1.compartment.oc1..<compartment_ocid>
 # Optional GenAI-specific compartment; overrides OCI_COMPARTMENT_OCID for GenAI calls.
 OCI_GENAI_COMPARTMENT_ID=ocid1.compartment.oc1..<genai_compartment_ocid>
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..<tenancy_ocid>

@@ -11,6 +11,7 @@ rm -f "$DB_PATH"
 
 export ENABLE_AUTH="${ENABLE_AUTH:-false}"
 export ENVIRONMENT="${ENVIRONMENT:-test}"
+export REQUIRE_LIVE_PROVIDER_DATA="${REQUIRE_LIVE_PROVIDER_DATA:-false}"
 export SECRET_KEY="${SECRET_KEY:-optiora-e2e-secret-key}"
 export DATABASE_URL="${DATABASE_URL:-sqlite:///${DB_PATH}}"
 

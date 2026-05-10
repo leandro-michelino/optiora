@@ -99,11 +99,11 @@ For full validation commands and coverage notes, see [TESTING.md](TESTING.md).
 
 - Frontend gates passed serially: `npm run build`, `npm run type-check`, `npm run lint`
 - Frontend audit passed: `npm audit --audit-level=high`
-- Backend syntax and regression gates passed: `python3 -m py_compile ...` and `278` tests via `unittest discover` (`2` skipped)
+- Backend syntax and regression gates passed: `python3 -m py_compile ...` and `279` tests via `unittest discover` (`2` skipped)
 - Infrastructure syntax gates passed: tracked Terraform format/validate and Ansible playbook syntax check
 - Animated dashboard wiring gate passed: `./scripts/check-animated-svg-routes.sh`
 - Production browser smoke passed for `/optiora-animated.svg`, desktop `/dashboard`, mobile `/dashboard`, and friendly backend-unavailable alerts
-- Workspace cleanup preserves dependency/runtime state while removing generated dashboard, Python, and Terraform cache artifacts
+- Workspace cleanup preserves dependency/runtime state while removing generated dashboard, Playwright, Python, Terraform, and scratch cache artifacts
 
 Run `npm run build` before standalone `npm run type-check` after cleanup so
 Next.js regenerates `.next/types` before TypeScript reads them.

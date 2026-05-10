@@ -19,8 +19,11 @@ find . \
   -print -exec rm -rf {} +
 
 rm -rf \
+  .tmp \
+  tmp \
   dashboard/.next \
   dashboard/test-results \
+  dashboard/playwright-report \
   terraform/.terraform
 
 rm -f \

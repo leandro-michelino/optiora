@@ -3,8 +3,7 @@
 Terraform stays limited to OCI infrastructure primitives: VCN, subnet, route table, internet gateway, and security list. Ansible owns host provisioning and application runtime configuration.
 
 Primary OCI region defaults to `uk-london-1` so the deployed stack can lean on OCI GenAI by default.
-Default compartment for Ansible-driven runtime values is pinned to:
-`ocid1.compartment.oc1..aaaaaaaa3qjzj6affgfpcnioxmbz6vy2ksynl6h55k3zy5jk5qrnizoxbxya`.
+Ansible-driven runtime compartment values are intentionally blank in versioned defaults. The deploy script passes the resolved `OCI_COMPARTMENT_ID` into the temporary Ansible vars file, and manual runs should provide real OCIDs through inventory, vault, or extra vars.
 
 Preferred end-to-end path:
 
