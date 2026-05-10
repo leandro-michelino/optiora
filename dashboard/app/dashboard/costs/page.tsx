@@ -210,7 +210,7 @@ export default function CostsPage() {
     importedSummary: state.importedSummary,
     diagnostics: state.diagnostics,
     primaryLoaded: Boolean(state.costs),
-    pageName: 'Cloud Costs',
+    pageName: 'Billing & Allocation',
   })
 
   const breakdownRows = Object.entries(state.costs?.breakdown || {}).sort(
@@ -234,7 +234,7 @@ export default function CostsPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">
-          Cost Breakdown & Analysis
+          Billing & Allocation
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
           Real provider spend, hierarchy rollups, and exportable finance views from the backend.

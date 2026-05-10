@@ -56,7 +56,7 @@ const navSections: NavSection[] = [
     items: [
       { href: '/dashboard', label: 'Overview', icon: BarChart3, description: 'Executive readiness, live data, waste, commitments, and allocation at a glance.', keywords: ['home', 'summary', 'command center', 'health'] },
       { href: '/dashboard/my-dashboards', label: 'My Dashboards', icon: Grid, description: 'Personalized operating views built from backend data.', keywords: ['personal', 'custom', 'workspace'] },
-      { href: '/dashboard/costs', label: 'Cloud Costs', icon: Cloud, description: 'Provider spend, services, chargeback, business mapping, and exports.', keywords: ['billing', 'spend', 'chargeback', 'mapping'] },
+      { href: '/dashboard/costs', label: 'Billing & Allocation', icon: Cloud, description: 'Provider spend, services, chargeback, business mapping, and exports.', keywords: ['billing', 'spend', 'chargeback', 'mapping', 'cloud costs'] },
       { href: '/dashboard/accounts', label: 'Account Hierarchy', icon: Building2, description: 'Provider accounts, subscriptions, projects, compartments, and regional rollups.', keywords: ['accounts', 'subscriptions', 'projects', 'compartments'] },
       { href: '/dashboard/portfolio', label: 'Customer Portfolio', icon: Grid, description: 'MSP and partner customer health, spend, savings, and alert posture.', keywords: ['customers', 'msp', 'partner', 'white label'] },
     ],
@@ -77,7 +77,7 @@ const navSections: NavSection[] = [
       { href: '/dashboard/unit-economics', label: 'Unit Economics', icon: TrendingUp, description: 'Business-unit cost, waste rate, provider efficiency, and FOCUS exports.', keywords: ['unit', 'economics', 'kpi', 'focus'] },
       { href: '/dashboard/scorecards', label: 'Scorecards', icon: Award, description: 'Team maturity and realized savings scorecards for finance follow-through.', keywords: ['maturity', 'realized savings', 'finance', 'owner'] },
       { href: '/dashboard/advanced-finops', label: 'Advanced FinOps', icon: ShieldCheck, description: 'Tagging coverage, decision intelligence, and cross-provider optimization.', keywords: ['advanced', 'decision', 'federation', 'tagging'] },
-      { href: '/dashboard/inventory', label: 'Cloud Resources', icon: Server, description: 'Resource inventory by provider, account, region, cost, tags, and waste signal.', keywords: ['resources', 'inventory', 'assets', 'tags'] },
+      { href: '/dashboard/inventory', label: 'Cloud Resources', icon: Server, description: 'Canonical resource-cost explorer by provider, account, region, type, tag, and waste signal.', keywords: ['resources', 'inventory', 'assets', 'tags', 'costs'] },
       { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box, description: 'Cluster cost allocation, namespaces, OpenCost sync, and workload optimization.', keywords: ['k8s', 'opencost', 'namespace', 'cluster'] },
       { href: '/dashboard/virtual-tags', label: 'Virtual Tags', icon: Tag, description: 'Virtual tag rules and previews without changing cloud resources.', keywords: ['tags', 'rules', 'allocation', 'governance'] },
       { href: '/dashboard/rightsizing', label: 'Rightsizing', icon: BarChart2, description: 'Stored and live provider rightsizing, execution detail, and ledger creation.', keywords: ['resize', 'savings', 'recommendations', 'ledger'] },

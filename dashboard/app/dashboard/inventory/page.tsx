@@ -4,14 +4,15 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  BarChart3,
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Cloud,
   Filter,
-  Layers3,
   Loader,
   MapPin,
+  PieChart,
   RefreshCw,
   Search,
   Server,
@@ -26,6 +27,13 @@ import { Button } from '@/components/ui/button'
 import { Expander } from '@/components/ui/expander'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
+const SORT_OPTIONS = [
+  { value: 'cost_desc', label: 'Cost high to low' },
+  { value: 'cost_asc', label: 'Cost low to high' },
+  { value: 'name_asc', label: 'Name A to Z' },
+  { value: 'provider_asc', label: 'Provider A to Z' },
+  { value: 'type_asc', label: 'Type A to Z' },
+]
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -67,6 +75,15 @@ function metadataText(meta: Record<string, unknown> | undefined, key: string, fa
   return fallback
 }
 
+function resourceDisplayName(item: ResourceInventoryItem) {
+  return item.resource_name || item.resource_id || 'Unnamed resource'
+}
+
+function resourceShare(item: ResourceInventoryItem, totalCost: number) {
+  if (totalCost <= 0) return 0
+  return (item.cost_usd / totalCost) * 100
+}
+
 function topRegions(meta?: Record<string, unknown>) {
   const raw = meta?.region_breakdown
   if (!Array.isArray(raw)) return []
@@ -80,6 +97,36 @@ function topRegions(meta?: Record<string, unknown>) {
     })
     .filter((entry): entry is { region: string; cost: number } => Boolean(entry))
     .slice(0, 3)
+}
+
+function buildRollup(items: ResourceInventoryItem[], keyOf: (item: ResourceInventoryItem) => string) {
+  const rollup: Record<string, { count: number; cost: number; waste: number }> = {}
+  for (const item of items) {
+    const key = keyOf(item) || 'Unassigned'
+    rollup[key] ??= { count: 0, cost: 0, waste: 0 }
+    rollup[key].count += 1
+    rollup[key].cost += item.cost_usd
+    if (item.waste_flag) rollup[key].waste += 1
+  }
+  return Object.entries(rollup)
+    .map(([name, summary]) => ({ name, ...summary }))
+    .sort((a, b) => b.cost - a.cost)
+}
+
+function CostBar({ value, max, tone = 'blue' }: { value: number; max: number; tone?: 'blue' | 'emerald' | 'amber' | 'slate' }) {
+  const width = max > 0 ? Math.max(3, Math.min(100, (value / max) * 100)) : 0
+  const colors = {
+    blue: 'bg-blue-500',
+    emerald: 'bg-emerald-500',
+    amber: 'bg-amber-500',
+    slate: 'bg-slate-500',
+  }
+
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+      <div className={`h-2 rounded-full ${colors[tone]}`} style={{ width: `${width}%` }} />
+    </div>
+  )
 }
 
 function ProviderBadge({ provider }: { provider: string }) {
@@ -164,6 +211,158 @@ function TagsPreview({ tags }: { tags: Record<string, string> }) {
           +{entries.length - 8} more
         </Badge>
       )}
+    </div>
+  )
+}
+
+function ResourceCostCockpit({
+  items,
+  totalCost,
+  totalResources,
+  visibleCost,
+  topResource,
+}: {
+  items: ResourceInventoryItem[]
+  totalCost: number
+  totalResources: number
+  visibleCost: number
+  topResource?: ResourceInventoryItem
+}) {
+  const providerRollup = buildRollup(items, (item) => item.provider.toLowerCase())
+  const maxProviderCost = Math.max(...providerRollup.map((entry) => entry.cost), 0)
+  const visibleShare = totalCost > 0 ? (visibleCost / totalCost) * 100 : 0
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+      <div>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Resource Cost Cockpit</p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">All visible resource cost, grouped for investigation</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+              Start with provider share, then drill into resource type, region, account, and individual cost rows without leaving Cloud Resources.
+            </p>
+          </div>
+          <Badge className="w-fit rounded-md border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
+            {items.length.toLocaleString()} loaded
+          </Badge>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Visible Monthly Cost</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{fmtCompact(visibleCost)}</p>
+            <p className="mt-1 text-xs text-slate-500">{visibleShare.toFixed(1)}% of current inventory scope</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Inventory Coverage</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{totalResources.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-slate-500">resources in the selected backend scope</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Highest Resource</p>
+            <p className="mt-2 truncate text-lg font-semibold text-slate-950 dark:text-white" title={topResource ? resourceDisplayName(topResource) : undefined}>
+              {topResource ? resourceDisplayName(topResource) : 'No resource yet'}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">{topResource ? `${fmt(topResource.cost_usd)} / month` : 'Cost data pending'}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Provider Cost Share</p>
+          <PieChart className="h-4 w-4 text-blue-500" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {providerRollup.slice(0, 5).map((entry) => (
+            <div key={entry.name}>
+              <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                <span className="font-medium text-slate-700 dark:text-slate-300">{entry.name.toUpperCase()}</span>
+                <span className="text-slate-500">{fmtCompact(entry.cost)} · {entry.count} resources</span>
+              </div>
+              <CostBar value={entry.cost} max={maxProviderCost} tone={entry.waste > 0 ? 'amber' : 'blue'} />
+            </div>
+          ))}
+          {providerRollup.length === 0 && (
+            <p className="text-sm text-slate-500 dark:text-slate-400">Provider cost share appears after inventory or imported cost data is available.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RollupPanel({
+  title,
+  description,
+  items,
+  maxCost,
+}: {
+  title: string
+  description: string
+  items: Array<{ name: string; count: number; cost: number; waste: number }>
+  maxCost: number
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+      <div className="mb-3">
+        <p className="text-sm font-semibold text-slate-950 dark:text-white">{title}</p>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{description}</p>
+      </div>
+      <div className="space-y-3">
+        {items.slice(0, 6).map((entry) => (
+          <div key={entry.name}>
+            <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+              <span className="truncate font-medium text-slate-700 dark:text-slate-300" title={entry.name}>{entry.name}</span>
+              <span className="shrink-0 text-slate-500">{fmtCompact(entry.cost)}</span>
+            </div>
+            <CostBar value={entry.cost} max={maxCost} tone={entry.waste > 0 ? 'amber' : 'emerald'} />
+            <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+              <span>{entry.count} resources</span>
+              <span>{entry.waste} waste flags</span>
+            </div>
+          </div>
+        ))}
+        {items.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No rows for this breakdown.</p>}
+      </div>
+    </div>
+  )
+}
+
+function TopResourcesPanel({ items, totalCost }: { items: ResourceInventoryItem[]; totalCost: number }) {
+  const topItems = [...items].sort((a, b) => b.cost_usd - a.cost_usd).slice(0, 5)
+  const maxCost = Math.max(...topItems.map((item) => item.cost_usd), 0)
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-950 dark:text-white">Top Cost Resources</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Highest monthly resource rows in the current view.</p>
+        </div>
+        <CircleDollarSign className="h-4 w-4 text-emerald-600" />
+      </div>
+      <div className="space-y-3">
+        {topItems.map((item) => (
+          <div key={`${item.provider}-${item.resource_id}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-900 dark:text-white" title={resourceDisplayName(item)}>{resourceDisplayName(item)}</p>
+                <p className="mt-1 text-xs text-slate-500">{item.provider.toUpperCase()} · {item.resource_type} · {item.region || 'global'}</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">{fmtCompact(item.cost_usd)}</p>
+                <p className="text-[11px] text-slate-500">{resourceShare(item, totalCost).toFixed(1)}%</p>
+              </div>
+            </div>
+            <div className="mt-2">
+              <CostBar value={item.cost_usd} max={maxCost} tone={item.waste_flag ? 'amber' : 'blue'} />
+            </div>
+          </div>
+        ))}
+        {topItems.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No resource costs in the current view.</p>}
+      </div>
     </div>
   )
 }
@@ -379,6 +578,8 @@ export default function InventoryPage() {
   const [provider, setProvider] = useState('all')
   const [wasteOnly, setWasteOnly] = useState(false)
   const [regionFilter, setRegionFilter] = useState('')
+  const [resourceSearch, setResourceSearch] = useState('')
+  const [sortBy, setSortBy] = useState('cost_desc')
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [drawerItem, setDrawerItem] = useState<ResourceInventoryItem | null>(null)
 
@@ -419,10 +620,48 @@ export default function InventoryPage() {
     return Object.entries(summary).sort((a, b) => b[1].cost - a[1].cost)
   }, [data])
 
+  const filteredItems = useMemo(() => {
+    const normalized = resourceSearch.trim().toLowerCase()
+    const rows = [...(data?.items || [])].filter((item) => {
+      if (!normalized) return true
+      return [
+        item.resource_name,
+        item.resource_id,
+        item.resource_type,
+        item.provider,
+        item.region,
+        item.account_id,
+        item.waste_reason,
+        ...Object.entries(item.tags || {}).flatMap(([key, value]) => [key, value]),
+      ].some((value) => String(value ?? '').toLowerCase().includes(normalized))
+    })
+
+    rows.sort((a, b) => {
+      if (sortBy === 'cost_asc') return a.cost_usd - b.cost_usd
+      if (sortBy === 'name_asc') return resourceDisplayName(a).localeCompare(resourceDisplayName(b))
+      if (sortBy === 'provider_asc') return a.provider.localeCompare(b.provider) || b.cost_usd - a.cost_usd
+      if (sortBy === 'type_asc') return a.resource_type.localeCompare(b.resource_type) || b.cost_usd - a.cost_usd
+      return b.cost_usd - a.cost_usd
+    })
+
+    return rows
+  }, [data, resourceSearch, sortBy])
+
+  const visibleCost = useMemo(() => filteredItems.reduce((sum, item) => sum + item.cost_usd, 0), [filteredItems])
+  const topResource = useMemo(
+    () => filteredItems.reduce<ResourceInventoryItem | undefined>((top, item) => (!top || item.cost_usd > top.cost_usd ? item : top), undefined),
+    [filteredItems],
+  )
+  const typeRollup = useMemo(() => buildRollup(filteredItems, (item) => item.resource_type || 'Unknown type'), [filteredItems])
+  const regionRollup = useMemo(() => buildRollup(filteredItems, (item) => item.region || 'global'), [filteredItems])
+  const accountRollup = useMemo(() => buildRollup(filteredItems, (item) => item.account_id || 'No account'), [filteredItems])
+  const maxTypeCost = Math.max(...typeRollup.map((entry) => entry.cost), 0)
+  const maxRegionCost = Math.max(...regionRollup.map((entry) => entry.cost), 0)
+  const maxAccountCost = Math.max(...accountRollup.map((entry) => entry.cost), 0)
   const rowKey = (item: ResourceInventoryItem) => `${item.provider}:${item.resource_id}`
   const accountKey = (item: ResourceInventoryItem) => `${item.provider}:${item.account_id}`
   const wasteRate = data && data.total_resources > 0 ? (data.flagged_waste_count / data.total_resources) * 100 : 0
-  const activeFilterCount = [provider !== 'all', Boolean(regionFilter.trim()), wasteOnly].filter(Boolean).length
+  const activeFilterCount = [provider !== 'all', Boolean(regionFilter.trim()), wasteOnly, Boolean(resourceSearch.trim())].filter(Boolean).length
 
   const toggleRow = (key: string) => {
     setExpandedRows((prev) => {
@@ -437,6 +676,8 @@ export default function InventoryPage() {
     setProvider('all')
     setRegionFilter('')
     setWasteOnly(false)
+    setResourceSearch('')
+    setSortBy('cost_desc')
   }
 
   const load = useCallback(async () => {
@@ -448,7 +689,7 @@ export default function InventoryPage() {
           provider: provider === 'all' ? undefined : provider,
           region: regionFilter || undefined,
           waste_only: wasteOnly,
-          limit: 200,
+          limit: 1000,
         }),
         fetchProviderAccountInventory(provider === 'all' ? undefined : provider),
       ])
@@ -477,9 +718,9 @@ export default function InventoryPage() {
               Updated {fmtDate(data?.generated_at)}
             </Badge>
           </div>
-          <h1 className="text-3xl font-semibold text-slate-950 dark:text-white md:text-4xl">Cloud Resource Inventory</h1>
+          <h1 className="text-3xl font-semibold text-slate-950 dark:text-white md:text-4xl">Cloud Resources & Costs</h1>
           <p className="mt-2 max-w-3xl text-base leading-7 text-slate-600 dark:text-slate-400">
-            Review cloud assets by provider, account, region, monthly cost, and waste signal without exposing raw metadata until it is needed.
+            The canonical resource-cost explorer for provider, account, region, service type, tag, monthly cost, and waste investigation.
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -490,7 +731,7 @@ export default function InventoryPage() {
 
       <Expander
         title="Filters and scope"
-        description={`${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'} - provider ${provider === 'all' ? 'all' : provider.toUpperCase()}${regionFilter ? `, region ${regionFilter}` : ''}${wasteOnly ? ', waste only' : ''}.`}
+        description={`${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'} - provider ${provider === 'all' ? 'all' : provider.toUpperCase()}${regionFilter ? `, region ${regionFilter}` : ''}${wasteOnly ? ', waste only' : ''}${resourceSearch ? ', searched' : ''}.`}
         icon={<Filter className="h-5 w-5 text-amber-500" />}
         actions={activeFilterCount > 0 ? (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -542,24 +783,61 @@ export default function InventoryPage() {
               Waste only
             </label>
           </div>
+          <div className="xl:col-span-2">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_18rem]">
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">Search resources</span>
+                <span className="relative block">
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <input
+                    type="search"
+                    placeholder="resource name, id, type, provider, account, tag..."
+                    value={resourceSearch}
+                    onChange={(event) => setResourceSearch(event.target.value)}
+                    className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                </span>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">Sort</span>
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value)}
+                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
         </div>
       </Expander>
 
       {data && (
         <>
+          <ResourceCostCockpit
+            items={filteredItems}
+            totalCost={data.total_cost_usd}
+            totalResources={data.total_resources}
+            visibleCost={visibleCost}
+            topResource={topResource}
+          />
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <StatTile
               icon={<Server className="h-5 w-5" />}
               label="Resources"
               value={data.total_resources.toLocaleString()}
-              helper={`${data.items.length.toLocaleString()} loaded in this view`}
+              helper={`${filteredItems.length.toLocaleString()} matching the current table search`}
               tone="blue"
             />
             <StatTile
               icon={<CircleDollarSign className="h-5 w-5" />}
               label="Monthly Cost"
-              value={fmtCompact(data.total_cost_usd)}
-              helper="Attributed to visible inventory scope"
+              value={fmtCompact(visibleCost)}
+              helper={`${fmtCompact(data.total_cost_usd)} in the selected backend scope`}
               tone="emerald"
             />
             <StatTile
@@ -579,28 +857,32 @@ export default function InventoryPage() {
           </div>
 
           <Expander
-            title="Provider cost mix"
-            description="Open for a compact cost, count, and waste breakdown by cloud provider."
-            icon={<Layers3 className="h-5 w-5 text-blue-600" />}
+            title="Resource cost breakdowns"
+            description="Open for provider, service type, region, account, and top resource cost distribution."
+            icon={<BarChart3 className="h-5 w-5 text-blue-600" />}
+            defaultOpen
           >
-            {providerSummary.length > 0 ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {providerSummary.map(([providerName, summary]) => (
-                  <div key={providerName} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
-                    <div className="flex items-center justify-between gap-2">
-                      <ProviderBadge provider={providerName} />
-                      <span className="text-sm font-semibold text-slate-950 dark:text-white">{fmtCompact(summary.cost)}</span>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                      <span>{summary.count} resources</span>
-                      <span>{summary.waste} waste flags</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-400">No provider mix available for the current scope.</p>
-            )}
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <RollupPanel
+                title="By Resource Type"
+                description="See whether compute, storage, databases, network, or imported cost rows dominate."
+                items={typeRollup}
+                maxCost={maxTypeCost}
+              />
+              <RollupPanel
+                title="By Region"
+                description="Find geographic hotspots before drilling into accounts or services."
+                items={regionRollup}
+                maxCost={maxRegionCost}
+              />
+              <RollupPanel
+                title="By Account"
+                description="Account, subscription, project, or compartment-level cost concentration."
+                items={accountRollup}
+                maxCost={maxAccountCost}
+              />
+              <TopResourcesPanel items={filteredItems} totalCost={visibleCost} />
+            </div>
           </Expander>
         </>
       )}
@@ -609,10 +891,10 @@ export default function InventoryPage() {
         <div className="flex min-h-[280px] items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 dark:border-slate-800 dark:bg-slate-900">
           <Loader className="mr-2 h-6 w-6 animate-spin" /> Loading resource inventory...
         </div>
-      ) : data && data.items.length > 0 ? (
+      ) : data && filteredItems.length > 0 ? (
         <Expander
-          title={`Resource table (${data.items.length} shown${data.items.length < data.total_resources ? ` of ${data.total_resources}` : ''})`}
-          description="Rows stay compact. Expand a row for account context and tags, or open the drawer for raw metadata."
+          title={`All resource costs (${filteredItems.length} shown${data.items.length < data.total_resources ? ` from ${data.items.length} loaded of ${data.total_resources}` : ''})`}
+          description="Search and sort stay local. Expand a row for account context and tags, or open the drawer for raw metadata."
           icon={<Server className="h-5 w-5" />}
           defaultOpen
           contentClassName="p-0"
@@ -620,10 +902,10 @@ export default function InventoryPage() {
           <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div className="text-sm text-slate-600 dark:text-slate-400">
-                Showing {data.items.length.toLocaleString()} rows, sorted by the backend inventory response.
+                Showing {filteredItems.length.toLocaleString()} matching resource rows, sorted by {SORT_OPTIONS.find((option) => option.value === sortBy)?.label.toLowerCase()}.
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Expand only the resource you are investigating.
+                Total visible monthly cost: {fmt(visibleCost)}.
               </div>
             </div>
           </div>
@@ -646,7 +928,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => {
+                {filteredItems.map((item) => {
                   const key = rowKey(item)
                   const accountMeta = accountMetadataLookup[accountKey(item)]
                   return (
@@ -668,10 +950,10 @@ export default function InventoryPage() {
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-700 dark:bg-slate-900">
           <Server className="mx-auto mb-3 h-10 w-10 text-slate-400" />
           <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-            {wasteOnly ? 'No waste-flagged resources found.' : 'No resources found for this scope.'}
+            {resourceSearch ? 'No resources match the current search.' : wasteOnly ? 'No waste-flagged resources found.' : 'No resources found for this scope.'}
           </p>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {wasteOnly ? 'Clear the waste-only filter to review the full inventory.' : 'Connect cloud providers, import billing data, or run a scan to populate the table.'}
+            {resourceSearch || wasteOnly ? 'Clear filters to review the full inventory.' : 'Connect cloud providers, import billing data, or run a scan to populate the table.'}
           </p>
         </div>
       ) : (
