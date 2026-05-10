@@ -121,7 +121,7 @@ Status: **core implemented with advanced ops policy + scheduler controls; schedu
 - destination toggles, test endpoint, delivery status, last-success/last-error telemetry
 - cost spike/budget alerts and external AWS/GCP anomaly ingestion
 - acknowledgement, dismissal, reactivation, and audit history
-- mute windows, escalation policies, acknowledgement SLAs, scheduler retry/backoff controls, and executive alert summary APIs ✅ implemented
+- mute windows, escalation policies, acknowledgement SLAs, scheduler retry/backoff controls, and executive alert summary APIs implemented
 - remaining: daily/weekly delivered executive summaries and deeper noise-reduction analytics
 
 ## Execution Checklist (Now / Next / Blocked-by-live-access)

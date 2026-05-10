@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 10, 2026): backend `279` tests passing (`2` skipped), dashboard audit/build/type-check/lint passing when run serially, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing for the animated SVG, desktop dashboard, mobile dashboard, and friendly backend-unavailable state.
+Validation snapshot (May 10, 2026): backend regression suite passing (`279` unittest cases, `2` skipped), targeted rightsizing tests passing (`21` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
 
 ## Backend
 
@@ -177,6 +177,15 @@ Playwright harness files:
 - `dashboard/scripts/playwright-backend.sh`
 - `dashboard/scripts/playwright-frontend.sh`
 - `dashboard/e2e/public-dashboard.spec.ts`
+
+Current live Rightsizing smoke:
+
+```bash
+curl --max-time 130 \
+  "http://<instance-ip>/api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=1000&refresh_live=true"
+```
+
+The deployed May 10, 2026 run returned in roughly `50s` with about `730` OCI recommendations. The dashboard client allows `120s` for this live path and keeps the default stored-signal path fast for normal browsing.
 
 ## Terraform
 

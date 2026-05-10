@@ -361,12 +361,17 @@ Evaluation
 ```text
 /api/v1/recommendations/rightsizing
 
-Default path (refresh_live=false)
+Dashboard client
+  refresh_live=false -> 10s responsive stored-signal path
+  refresh_live=true  -> 120s provider-native live path
+                        (observed OCI live refresh about 50s)
+
+Backend default path (refresh_live=false)
   Tier 1  Stored provider recommendation rows from previous scans
   Tier 2  Snapshot trend analysis
   Tier 3  Imported CSV cost-signal analysis
 
-Live refresh path (refresh_live=true)
+Backend live refresh path (refresh_live=true)
   Tier 1  Provider-native usage and rightsizing signals when available
   Tier 2  Provider inventory and configuration heuristics
   Tier 3  Stored scan snapshots when live context returns no data
@@ -374,6 +379,39 @@ Live refresh path (refresh_live=true)
 
 No synthetic recommendation tier
 If no eligible real signals exist: empty recommendation list with no_data_available source
+```
+
+## Rightsizing Dashboard UX Wiring
+
+```text
+/dashboard/rightsizing
+        |
+        +--> Scan Status expander
+        |     - mode: stored or live provider scan
+        |     - evidence source and load timestamp
+        |     - provider scope and visible card count
+        |     - friendly live-scan running/fallback messages
+        |
+        +--> Filters And Search expander
+        |     - provider filter
+        |     - action filter
+        |     - product filter
+        |     - search by resource, OCID, account, region, evidence, reason
+        |
+        +--> Executive Summary expander
+        |     - resources analyzed
+        |     - rightsizable count
+        |     - monthly savings
+        |     - non-compute savings
+        |
+        +--> Savings/action expanders
+        |     - product category breakdown
+        |     - downsize / terminate / reserve / modernize mix
+        |
+        +--> Resource Recommendations expander
+              - compact evidence card per recommendation
+              - inline Execution details disclosure
+              - console deep links where provider scope is known
 ```
 
 ## Data Source Fallback Architecture
@@ -628,6 +666,28 @@ deploy-oci.sh verify
    |
    v
 generate_evidence_pack.sh -> artifacts/evidence/<timestamp>/SUMMARY.md
+```
+
+## Current Live Verification Path
+
+```text
+local workspace
+   |
+   +--> npm lint/type-check/build
+   +--> targeted backend pytest slices
+   +--> deploy/deploy-oci.sh compute
+   |
+   v
+OCI VM 140.238.90.95
+   |
+   +--> API health 200
+   +--> dashboard route 200
+   +--> /api/v1/recommendations/rightsizing?provider=oci&refresh_live=true
+   |       -> completes in about 50s
+   |       -> returns OCI recommendations from real provider/snapshot signals
+   |
+   +--> deploy/deploy-oci.sh verify
+           -> 48 passed, 0 failed, 3 skipped
 ```
 
 ## Configuration and Security Notes

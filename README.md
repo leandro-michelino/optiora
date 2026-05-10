@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.1` dashboard wiring and repository hygiene.
+Current release: `0.9.1` dashboard wiring, advisor polish, live rightsizing scan fix, and repository hygiene.
 Current documentation baseline: May 10, 2026.
 
 ![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)
@@ -89,12 +89,18 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 |---|---|
 | Cost visibility | Multi-provider spend views, account hierarchy, service hotspots, resource inventory, imported billing files |
 | Forecasting | Baseline forecasts, percentile bands, budget risk, what-if scenarios, stress tests, model diagnostics |
-| Optimization | Rightsizing, provider-native recommendations, commitment gaps, waste decomposition, savings sequencing |
+| Optimization | Rightsizing with stored and live provider scan modes, provider-native recommendations, commitment gaps, waste decomposition, savings sequencing |
 | Unit economics | Cost allocation, business mapping, normalized dimensions, scorecards, showback/chargeback views |
 | Kubernetes | OpenCost sync, cluster modeling, namespace/team/workload/node-pool allocation, optimization recommendations |
 | Operations | Scan history, scan diffs, alert lifecycle, routing policy simulation, evidence exports, freshness telemetry |
 | Intelligence | Cost Advisor, AI Insights, RAG-guided narratives, operating review packs, decision intelligence frontier |
 | Governance | Virtual tags, tag quality, audit logs, data-source banners, export jobs, retention controls |
+
+Recent UIX and wiring updates:
+
+- Rightsizing live provider scans now use a longer dashboard timeout for provider-native calls observed at about `50s` in OCI, while still falling back to stored results if the live path fails.
+- Rightsizing now has expandable scan status, executive summary, filters/search, action mix, and per-resource execution details.
+- Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.
 
 ## Data Policy
 
@@ -258,6 +264,17 @@ Wiring and cleanup:
 Important Next.js note: run `npm run build` before standalone `npm run type-check` after cleanup so `.next/types` exists before TypeScript reads generated route types.
 
 Current verified baseline is recorded in [RELEASE_NOTES.md](RELEASE_NOTES.md) and [TESTING.md](TESTING.md).
+
+Latest deployed OCI verification snapshot:
+
+```text
+deploy/deploy-oci.sh verify
+  48 passed, 0 failed, 3 skipped
+
+Rightsizing live refresh
+  provider=oci, refresh_live=true
+  returned about 730 OCI recommendations in roughly 50 seconds
+```
 
 ## Cost Planning
 

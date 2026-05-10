@@ -7,6 +7,7 @@ This estimate reflects the current OptiOra architecture and behavior:
 - Multi-cloud provider connectivity (AWS, Azure, GCP, OCI).
 - Stored scan snapshots for default dashboard/recommendation reads, with explicit live refresh when requested.
 - Real-time telemetry query paths for Cost Advisor and operator-triggered refreshes (including cross-provider top-N operational queries).
+- Rightsizing live refresh uses a provider-native request budget of up to `120s` in the dashboard because OCI live scans have been observed at roughly `50s`; normal dashboard browsing still uses stored results.
 - GenAI + RAG style responses for advisory and narrative outputs.
 
 ## Assumptions
@@ -72,12 +73,13 @@ and GenAI usage.
 Cost changes materially with scan/refresh frequency and account count. The dashboard now defaults rightsizing reads to stored scan/import signals, so steady-state traffic should sit closer to the lower telemetry band when operators avoid repeated live refreshes.
 
 - Light cadence (scheduled scans, stored-snapshot dashboard reads): add ~`0.8x` to `1.0x` telemetry baseline.
-- Medium cadence (hourly-ish operational checks plus periodic manual live refresh): add ~`1.2x` to `1.5x` telemetry baseline.
-- Heavy cadence (frequent manual “real-time” requests across many accounts): add ~`1.8x` to `2.5x` telemetry baseline.
+- Medium cadence (hourly-ish operational checks plus periodic manual live refresh): add ~`1.2x` to `1.6x` telemetry baseline.
+- Heavy cadence (frequent manual live rightsizing scans, real-time top-N questions, or many accounts/regions): add ~`1.8x` to `2.7x` telemetry baseline.
 
 Practical effect:
 - Teams that use many live operational questions (for example, repeated top-N CPU/memory queries across providers) should budget closer to the **upper half** of each profile range.
 - Teams that rely on scheduled scans and stored snapshots for most dashboard usage should budget closer to the **lower half** of each profile range.
+- Live rightsizing scans can be comparatively long-running provider calls. Budget for the provider API request volume and VM CPU time when operators repeatedly run `refresh_live=true` across broad provider scopes.
 
 ## Optional Add-Ons
 
@@ -106,6 +108,7 @@ If using Autonomous Database with BYOL:
 4. Keep retention windows intentional (alerts, snapshots, exports) to avoid silent storage creep.
 5. Use proxy-based operational rankings only when native monitoring is unavailable, then connect provider monitoring to improve precision.
 6. Keep `refresh_live=false` for normal dashboard browsing and reserve live refresh for operational decision points.
+7. Run broad live rightsizing refreshes by provider scope first, then use dashboard filters/search to inspect the returned cards instead of re-running the provider scan repeatedly.
 
 ## Contact / Pilot
 

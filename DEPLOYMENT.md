@@ -194,6 +194,12 @@ The verify flow now includes:
 - GenAI contracts in both configured and fallback modes
 - auto-detection of direct-port (`:3000/:8000`) vs front-door (`:80/:443`) exposure
 
+Rightsizing live refresh note:
+
+- The dashboard uses stored scan/import rightsizing results by default for responsive browsing.
+- When `Live provider scan` is enabled, the dashboard allows up to `120s` for provider-native rightsizing collection.
+- The current OCI deployment has returned broad OCI live rightsizing scans in roughly `50s`, with hundreds of recommendations. If an operator sees a fallback banner, first check provider/API latency and then use the stored results while investigating logs.
+
 The same script also manages the extra block volume. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
 
 ### End-to-end deployment timing
@@ -206,6 +212,11 @@ The deploy script now prints total runtime at the end of each deployment run:
 Observed run on **May 1, 2026** (warm compute redeploy to an existing `RUNNING` VM, shape `VM.Standard.E4.Flex` with `1 OCPU / 4 GB`, no extra data volume):
 
 - `End-to-end compute deploy time: 6m 20s`
+
+Observed run on **May 10, 2026** (warm compute redeploy to existing `RUNNING` VM, shape `VM.Standard.E4.Flex` with `2 OCPUs / 8 GB`, nginx front-door mode):
+
+- `End-to-end compute deploy time: 6m 25s`
+- `deploy-oci.sh verify`: `48` passed, `0` failed, `3` skipped
 
 First-time cold deployments that create a new instance are typically longer.
 

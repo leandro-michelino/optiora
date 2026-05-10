@@ -1,6 +1,46 @@
 # Release Notes
 
-## Unreleased - UIX and Navigation Polish (May 10, 2026)
+## Unreleased - Advisor and Rightsizing Live-Scan Polish (May 10, 2026)
+
+### Added
+
+- Cost Advisor decision snapshot with expandable quick wins, efficiency, evidence, provider-signal, and prompt-shortcut sections.
+- Cost Advisor narrative selector now exposes every backend-supported advisory mode: roadmap, waste insights, tagging plan, operating review, executive summary, and sustainability.
+- Rightsizing scan-status cockpit with scan mode, evidence source, provider scope, visible card count, live-scan running state, and fallback guidance.
+- Rightsizing resource search across resource name, OCID, account, region, evidence source, action, and recommendation reason.
+- Inline expandable execution details for each rightsizing card, including rationale, validation steps, rollout checks, and rollback plan.
+- Public browser verification for the Rightsizing live provider scan path.
+
+### Changed
+
+- Rightsizing live refresh now allows up to `120s` in the dashboard client. The deployed OCI live scan has been observed returning in about `50s`, which exceeded the previous `45s` client timeout.
+- Rightsizing overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status and action summaries discoverable.
+- Cost Advisor chat auto-scroll now scrolls only the conversation panel, preventing page-level scroll jumps and sticky-header overlap.
+- Cost Advisor offline/backend-unreachable states now show operator-friendly guidance instead of raw `Failed to fetch` text.
+- README, cost estimate, testing notes, deployment notes, architecture diagrams, and next-phase planning were refreshed to match the current deployed state.
+
+### Fixed
+
+- Fixed the live Rightsizing scan user experience where the backend completed successfully after roughly `50s`, but the frontend timed out at `45s` and incorrectly showed a fallback warning.
+- Fixed stale go-live documentation that still described live OCI evidence as pending after the deployment verify gate had passed.
+- Removed generated local cache directories with `scripts/cleanup-workspace.sh`.
+
+### Validation
+
+- `npm run lint --prefix dashboard`
+- `npm run type-check --prefix dashboard`
+- `npm run build --prefix dashboard`
+- `npm audit --audit-level=high --prefix dashboard`
+- `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`279` passing, `2` skipped)
+- `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py` (`21` passing)
+- `terraform fmt -check` for tracked Terraform files and `terraform -chdir=terraform validate`
+- `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
+- Public live Rightsizing API: `GET /api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=1000&refresh_live=true` returned in about `50s` with `730` OCI recommendations.
+- Public browser live-toggle check on `/dashboard/rightsizing`: rendered `730` cards with no console errors and no horizontal overflow.
+- `./deploy/deploy-oci.sh compute` (`6m 25s`)
+- `./deploy/deploy-oci.sh verify` (`48` passing, `0` failed, `3` skipped)
+
+## 0.9.1 - UIX and Navigation Polish (May 10, 2026)
 
 ### Added
 
