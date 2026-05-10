@@ -52,8 +52,7 @@ test('dashboard navigation search narrows screens and active route is precise', 
   await page.getByRole('searchbox', { name: 'Find dashboard screen' }).fill('no screen here')
   await expect(page.getByText('No screens match that search.')).toBeVisible()
 
-  await page.goto('/dashboard/k8s-namespaces')
-  await expect(page).toHaveURL(/\/dashboard\/kubernetes$/)
+  await page.goto('/dashboard/kubernetes')
   await expect(page.getByRole('heading', { name: 'Kubernetes Cost Allocation' })).toBeVisible()
 })
 

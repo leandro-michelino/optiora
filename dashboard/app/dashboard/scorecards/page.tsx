@@ -357,7 +357,7 @@ export default function ScorecardsPage() {
             icon={<TrendingUp className="h-5 w-5" />}
           >
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
-            <strong>Improve your scores:</strong> Add business mapping rules under Cloud Costs → Business Mapping, then run a scan. Scores are calculated from real allocation coverage, waste signals, tagging, and commitment data.
+            <strong>Improve your scores:</strong> Add business mapping rules under Billing &amp; Allocation → Business Mapping, then run a scan. Scores are calculated from real allocation coverage, waste signals, tagging, and commitment data.
           </div>
           </Expander>
         </>

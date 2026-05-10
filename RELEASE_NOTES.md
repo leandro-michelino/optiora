@@ -25,7 +25,8 @@ Repository release metadata:
 - Realized savings scorecards in `GET /api/v1/analytics/scorecards`, grouped by provider, owner, business unit, and realized month from recommendation ledger data.
 - Page-by-page `UIX_REVIEW.md` covering every dashboard screen, applied improvements, cross-page standards, and a prioritized UX backlog.
 - Live OCI Kubernetes/container inventory in `GET /api/v1/analytics/kubernetes/summary`, covering OKE clusters, OCI Container Instances, and OCIR repositories before billing rows are available.
-- Focused Kubernetes E2E fixture resources in OCI: one OKE Basic cluster and one small Docker-backed OCI Container Instance for live page validation.
+- Focused Kubernetes E2E fixture resources in OCI: one OKE Basic cluster and one small Docker-backed OCI Container Instance for live page validation. These temporary resources were deleted after validation.
+- Cloud Resources & Costs cockpit for the canonical resource-cost explorer, including provider share, type/region/account rollups, top resources, local search/sort, expandable rows, and a resource details drawer.
 
 ### Changed
 
@@ -35,7 +36,9 @@ Repository release metadata:
 - Rightsizing overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status and action summaries discoverable.
 - FinOps Scorecards now show finance-first realized savings summaries and expandable provider, owner, business-unit, and monthly scorecard tables.
 - Kubernetes page language now distinguishes live resource inventory from metered spend and labels run-rate estimates clearly.
+- Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, while Cloud Resources owns resource-level cost investigation.
 - Dashboard navigation now includes richer screen descriptions, synonym-aware search, active-page helper text, and clearer section context across every screen.
+- Removed legacy Kubernetes namespace route wiring so `/dashboard/kubernetes` is the only Kubernetes, container, Docker, namespace, and OpenCost page.
 - Cost Advisor chat auto-scroll now scrolls only the conversation panel, preventing page-level scroll jumps and sticky-header overlap.
 - Cost Advisor offline/backend-unreachable states now show operator-friendly guidance instead of raw `Failed to fetch` text.
 - README, cost estimate, testing notes, deployment notes, architecture diagrams, and next-phase planning were refreshed to match the current deployed state.
@@ -71,6 +74,7 @@ Repository release metadata:
 - Public live Rightsizing API: `GET /api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=1000&refresh_live=true` returned in about `50s` with `730` OCI recommendations.
 - Public browser live-toggle check on `/dashboard/rightsizing`: rendered `730` cards with no console errors and no horizontal overflow.
 - Public browser check on `/dashboard/kubernetes`: rendered `optiora-e2e-oke`, `optiora-e2e-container-instance`, and `Live resource inventory` with no console errors and no horizontal overflow.
+- OCI cleanup after Kubernetes validation: deleted `optiora-e2e-container-instance` and `optiora-e2e-oke`; final states were `DELETED`.
 - Public live Kubernetes API: `GET /api/v1/analytics/kubernetes/summary` returned `container_service_count=2`, `clusters_configured=1`, `data_source=live_resource_inventory`, and `$19.71` estimated container run rate in about `12s`.
 - `./deploy/deploy-oci.sh compute` (`7m 18s` in the latest VM start + redeploy walkthrough)
 - `./deploy/deploy-oci.sh verify` (`48` passing, `0` failed, `3` skipped)

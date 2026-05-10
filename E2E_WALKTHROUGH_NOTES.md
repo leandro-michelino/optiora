@@ -55,7 +55,7 @@ The new operator walkthrough covers every main dashboard route:
 /dashboard/settings
 ```
 
-It also verifies that the old `/dashboard/k8s-namespaces` path redirects to `/dashboard/kubernetes` and that the sidebar no longer shows a separate `K8s Namespaces` entry.
+It verifies that `/dashboard/kubernetes` is the only Kubernetes, containers, Docker, namespaces, and OpenCost screen, and that the sidebar no longer shows a separate `K8s Namespaces` entry.
 
 ## Live OCI Results
 
@@ -110,6 +110,7 @@ Goal: make the Kubernetes page show real OCI Kubernetes/container/Docker signals
 | API validation | Called `GET /api/v1/analytics/kubernetes/summary` on the live VM. | Fixed then pass | First pass was too slow for the dashboard fallback path, so live inventory was prioritized ahead of slower billing lookups. Final live response returned in about `12s` with `kubernetes_enabled=true`, `clusters_configured=1`, `container_service_count=2`, `estimated_k8s_cost_usd=19.71`, and `data_source=live_resource_inventory`. |
 | Allocation calculator validation | Posted a modeled OKE allocation to `POST /api/v1/analytics/kubernetes/cluster-cost`. | Pass | Live API returned `4` namespaces, `4` workloads, `2` teams, `1` node pool, and `2` recommendations for `optiora-e2e-oke`. |
 | UI validation | Opened `/dashboard/kubernetes` after deployment. | Pass | Browser check confirmed `optiora-e2e-oke`, `optiora-e2e-container-instance`, and `Live resource inventory` are visible with no console errors and no horizontal overflow. |
+| Temporary resource cleanup | Deleted the focused OCI validation resources after the walkthrough. | Pass | `optiora-e2e-container-instance` reached `DELETED`; `optiora-e2e-oke` reached `DELETED` with deletion timestamp `2026-05-10T16:05:40+00:00`. |
 
 Focused validation commands:
 

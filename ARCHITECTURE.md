@@ -196,13 +196,13 @@ business-unit attribution remains explicit as `(unassigned)`.
 Dashboard shell
         |
         +--> Workspace
-        |    Overview, My Dashboards, Cloud Costs, Account Hierarchy, Portfolio
+        |    Overview, My Dashboards, Billing & Allocation, Account Hierarchy, Portfolio
         |
         +--> Intelligence
         |    AI Insights, Cost Advisor, Forecasting
         |
         +--> FinOps
-        |    Unit Economics, Scorecards, Advanced FinOps, Inventory,
+        |    Unit Economics, Scorecards, Advanced FinOps, Cloud Resources,
         |    Kubernetes, Virtual Tags, Rightsizing
         |
         +--> Operations

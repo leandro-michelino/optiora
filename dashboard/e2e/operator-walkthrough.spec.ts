@@ -8,7 +8,7 @@ const fixtureCsv = path.join(__dirname, 'fixtures', 'import-costs.csv')
 const dashboardScreens = [
   { route: '/dashboard', heading: 'OptiOra Command Center' },
   { route: '/dashboard/my-dashboards', heading: 'My Dashboards' },
-  { route: '/dashboard/costs', heading: 'Cost Breakdown & Analysis' },
+  { route: '/dashboard/costs', heading: 'Billing & Allocation' },
   { route: '/dashboard/accounts', heading: 'Account Hierarchy' },
   { route: '/dashboard/portfolio', heading: 'Customer Portfolio' },
   { route: '/dashboard/ai-insights', heading: 'AI Cost Intelligence' },
@@ -17,7 +17,7 @@ const dashboardScreens = [
   { route: '/dashboard/unit-economics', heading: 'Unit Economics Cockpit' },
   { route: '/dashboard/scorecards', heading: 'FinOps Scorecards' },
   { route: '/dashboard/advanced-finops', heading: 'Advanced FinOps Console' },
-  { route: '/dashboard/inventory', heading: 'Cloud Resource Inventory' },
+  { route: '/dashboard/inventory', heading: 'Cloud Resources & Costs' },
   { route: '/dashboard/kubernetes', heading: 'Kubernetes Cost Allocation' },
   { route: '/dashboard/virtual-tags', heading: 'Virtual Tags' },
   { route: '/dashboard/rightsizing', heading: 'Rightsizing' },

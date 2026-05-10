@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, UIX review, and repository hygiene.
+Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, canonical resource-cost explorer, UIX review, and repository hygiene.
 Current documentation baseline: May 10, 2026.
 
 ![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)
@@ -87,7 +87,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 
 | Area | What OptiOra Provides |
 |---|---|
-| Cost visibility | Multi-provider spend views, account hierarchy, service hotspots, resource inventory, imported billing files |
+| Cost visibility | Billing & Allocation spend views, account hierarchy, service hotspots, Cloud Resources & Costs explorer, imported billing files |
 | Forecasting | Baseline forecasts, percentile bands, budget risk, what-if scenarios, stress tests, model diagnostics |
 | Optimization | Rightsizing with stored/live provider scan modes, provider-native recommendations, recommendation ledger, commitment gaps, waste decomposition, savings sequencing |
 | Unit economics | Cost allocation, business mapping, normalized dimensions, realized savings scorecards, showback/chargeback views |
@@ -103,6 +103,9 @@ Recent UIX and wiring updates:
 - Rightsizing recommendations now populate a finance-ready recommendation ledger with planned savings, realized savings, and variance, exposed through JSON, CSV, and the finance workbook.
 - Scorecards now include realized savings scorecards by provider, owner, business unit, and realized month, backed by the recommendation ledger.
 - Kubernetes now merges billing data with live OCI OKE, Container Instance, and OCIR inventory so newly launched container services appear before cost-management data catches up.
+- Cloud Resources is now the canonical resource-cost explorer, with provider/type/region/account/top-resource breakdowns, local search/sort, and expandable details.
+- Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, removing confusing overlap with resource investigation.
+- The legacy Kubernetes namespace route wiring was removed; `/dashboard/kubernetes` is the only Kubernetes/container/Docker page.
 - Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.
 
 ## Data Policy
@@ -275,7 +278,7 @@ deploy/deploy-oci.sh verify
   48 passed, 0 failed, 3 skipped
 
 Operator dashboard walkthrough
-  all 20 main screens passed route, heading, active-nav, and Kubernetes consolidation checks
+  all 20 main screens passed route, heading, active-nav, and canonical Kubernetes checks
 
 Rightsizing live refresh
   provider=oci, refresh_live=true
