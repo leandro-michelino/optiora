@@ -9,10 +9,11 @@ import {
   CheckCircle2,
   Cloud,
   Cpu,
-  Layers3,
+  DollarSign,
   Loader,
   Network,
   RefreshCw,
+  Search,
   Server,
   Settings2,
   Sparkles,
@@ -22,6 +23,8 @@ import { fetchKubernetesSummary, calculateKubernetesClusterCost, fetchKubernetes
 import {
   KubernetesSummaryResponse,
   KubernetesClusterCostResponse,
+  KubernetesContainerServiceCost,
+  KubernetesProviderServiceRollup,
   KubernetesProviderCatalogEntry,
   OpenCostInstallResponse,
   OpenCostSyncResponse,
@@ -154,6 +157,206 @@ function Notice({
         <div className="min-w-0">{children}</div>
       </div>
     </div>
+  )
+}
+
+function providerLabel(provider: string) {
+  const labels: Record<string, string> = {
+    aws: 'AWS',
+    azure: 'Azure',
+    gcp: 'Google Cloud',
+    oci: 'Oracle Cloud',
+  }
+  return labels[provider] ?? provider.toUpperCase()
+}
+
+function categoryLabel(category: string) {
+  const labels: Record<string, string> = {
+    managed_kubernetes: 'Managed Kubernetes',
+    container_runtime: 'Container runtime',
+    container_registry: 'Container registry',
+    docker: 'Docker',
+    container_platform: 'Container platform',
+  }
+  return labels[category] ?? category.replace(/_/g, ' ')
+}
+
+function sourceLabel(source: string) {
+  const labels: Record<string, string> = {
+    live_provider_api: 'Live provider API',
+    cost_snapshots_live: 'Latest scan snapshot',
+    csv_import: 'Imported billing CSV',
+    none: 'No cost signal',
+  }
+  return labels[source] ?? source.replace(/_/g, ' ')
+}
+
+function categoryClasses(category: string) {
+  if (category === 'managed_kubernetes') return 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300'
+  if (category === 'container_runtime') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300'
+  if (category === 'container_registry') return 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-300'
+  if (category === 'docker') return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300'
+  return 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+}
+
+function ProviderRollupStrip({ rollups }: { rollups: KubernetesProviderServiceRollup[] }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {rollups.map((provider) => (
+        <div key={provider.provider} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">{providerLabel(provider.provider)}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{sourceLabel(provider.source)}</p>
+            </div>
+            <Badge variant="outline" className="shrink-0 rounded-md">{provider.configured ? 'Connected' : 'Not connected'}</Badge>
+          </div>
+          <p className="mt-3 text-2xl font-semibold text-slate-950 dark:text-white">{fmtCompact(provider.total_monthly_cost_usd)}</p>
+          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+            <span>{provider.service_count} service(s)</span>
+            <span>{provider.share_percent.toFixed(1)}% of container spend</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-900">
+            <div
+              className="h-2 rounded-full bg-blue-500"
+              style={{ width: `${Math.min(provider.share_percent, 100)}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ContainerServicesPanel({
+  summary,
+  providerFilter,
+  onProviderFilterChange,
+  serviceSearch,
+  onServiceSearchChange,
+}: {
+  summary: KubernetesSummaryResponse
+  providerFilter: string
+  onProviderFilterChange: (value: string) => void
+  serviceSearch: string
+  onServiceSearchChange: (value: string) => void
+}) {
+  const services = summary.container_services ?? []
+  const rollups = summary.provider_breakdown ?? []
+  const normalizedSearch = serviceSearch.trim().toLowerCase()
+  const filteredServices = services.filter((service) => {
+    if (providerFilter !== 'all' && service.provider !== providerFilter) return false
+    if (!normalizedSearch) return true
+    return [
+      service.provider,
+      service.service,
+      service.category,
+      service.source,
+      service.evidence,
+      ...(service.regions ?? []),
+    ].some((value) => String(value).toLowerCase().includes(normalizedSearch))
+  })
+  const providerOptions = ['all', ...rollups.map((provider) => provider.provider)]
+
+  return (
+    <Expander
+      title="Kubernetes, Containers, and Docker Services"
+      description="Provider-by-provider service spend for EKS, AKS, GKE, OKE, ECS, Fargate, Cloud Run, registries, Docker, and similar container services."
+      icon={<Box className="h-5 w-5 text-blue-600" />}
+      defaultOpen
+      className="scroll-mt-4"
+    >
+      <div className="space-y-4" data-testid="kubernetes-container-services">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Container Spend</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{fmt(summary.estimated_k8s_cost_usd)}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summary.estimated_k8s_share_percent.toFixed(1)}% of cloud baseline</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Services Found</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{summary.container_service_count}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summary.provider_count_with_container_spend} provider(s) with spend</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Largest Signal</p>
+            <p className="mt-2 truncate text-lg font-semibold text-slate-950 dark:text-white">{summary.highest_cost_service?.service ?? 'No service yet'}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {summary.highest_cost_service ? `${providerLabel(summary.highest_cost_service.provider)} · ${fmt(summary.highest_cost_service.monthly_cost_usd)}` : sourceLabel(summary.data_source)}
+            </p>
+          </div>
+        </div>
+
+        <ProviderRollupStrip rollups={rollups} />
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              aria-label="Search Kubernetes and container services"
+              value={serviceSearch}
+              onChange={(event) => onServiceSearchChange(event.target.value)}
+              placeholder="Search service, provider, source, region..."
+              className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+          </div>
+          <select
+            value={providerFilter}
+            onChange={(event) => onProviderFilterChange(event.target.value)}
+            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            {providerOptions.map((provider) => (
+              <option key={provider} value={provider}>{provider === 'all' ? 'All providers' : providerLabel(provider)}</option>
+            ))}
+          </select>
+        </div>
+
+        {filteredServices.length > 0 ? (
+          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800" data-testid="kubernetes-container-services-table">
+            <table className="w-full min-w-[920px] text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-800/60">
+                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2 font-semibold">Provider</th>
+                  <th className="px-3 py-2 font-semibold">Service</th>
+                  <th className="px-3 py-2 font-semibold">Type</th>
+                  <th className="px-3 py-2 text-right font-semibold">Monthly Cost</th>
+                  <th className="px-3 py-2 text-right font-semibold">Share</th>
+                  <th className="px-3 py-2 font-semibold">Source</th>
+                  <th className="px-3 py-2 font-semibold">Evidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredServices.map((service: KubernetesContainerServiceCost) => (
+                  <tr key={`${service.provider}-${service.service}-${service.source}`} className="border-t border-slate-100 align-top dark:border-slate-800">
+                    <td className="px-3 py-3 font-semibold text-slate-950 dark:text-white">{providerLabel(service.provider)}</td>
+                    <td className="px-3 py-3">
+                      <p className="font-medium text-slate-900 dark:text-slate-100">{service.service}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {service.account_count ? `${service.account_count} account(s)` : 'Account detail pending'}
+                        {service.regions.length ? ` · ${service.regions.join(', ')}` : ''}
+                      </p>
+                    </td>
+                    <td className="px-3 py-3">
+                      <Badge className={`rounded-md border ${categoryClasses(service.category)}`}>{categoryLabel(service.category)}</Badge>
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold text-slate-950 dark:text-white">{fmt(service.monthly_cost_usd)}</td>
+                    <td className="px-3 py-3 text-right text-slate-600 dark:text-slate-300">{service.share_percent.toFixed(1)}%</td>
+                    <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{sourceLabel(service.source)}</td>
+                    <td className="px-3 py-3 text-slate-500 dark:text-slate-400">{service.evidence}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Notice tone="amber" icon={<AlertTriangle className="h-4 w-4" />}>
+            <p className="font-semibold">No Kubernetes/container/Docker service spend matched the current filters.</p>
+            <p className="mt-1 text-xs opacity-80">{summary.setup_hint}</p>
+          </Notice>
+        )}
+      </div>
+    </Expander>
   )
 }
 
@@ -337,6 +540,8 @@ export default function KubernetesPage() {
   const [calcResult, setCalcResult] = useState<KubernetesClusterCostResponse | null>(null)
   const [calcLoading, setCalcLoading] = useState(false)
   const [calcError, setCalcError] = useState<string | null>(null)
+  const [serviceProviderFilter, setServiceProviderFilter] = useState('all')
+  const [serviceSearch, setServiceSearch] = useState('')
 
   async function loadSummary() {
     setLoading(true)
@@ -502,13 +707,13 @@ export default function KubernetesPage() {
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Why one page</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Estate Scope</p>
               <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                The visible navigation now uses only <strong>Kubernetes</strong>. The old <code>/dashboard/k8s-namespaces</code> URL is handled by a Next.js redirect, so there is no second page to maintain.
+                AWS, Azure, Google Cloud, and Oracle Cloud container services are normalized into one cost view, with provider source and evidence kept visible for each row.
               </p>
             </div>
             <Badge className="w-fit rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
-              Canonical route
+              Unified view
             </Badge>
           </div>
         </div>
@@ -559,16 +764,16 @@ export default function KubernetesPage() {
             />
             <StatTile
               icon={<Cloud className="h-5 w-5" />}
-              label="Clusters"
-              value={summary.clusters_configured.toString()}
-              helper="Configured clusters in this workspace"
+              label="Container Services"
+              value={summary.container_service_count.toString()}
+              helper={`${summary.provider_count_with_container_spend} provider(s) with Kubernetes, container, registry, or Docker spend`}
               tone="blue"
             />
             <StatTile
-              icon={<Layers3 className="h-5 w-5" />}
-              label="K8s Share"
+              icon={<DollarSign className="h-5 w-5" />}
+              label="Container Spend"
               value={`${summary.estimated_k8s_share_percent.toFixed(1)}%`}
-              helper={`${fmtCompact(summary.estimated_k8s_cost_usd)} estimated Kubernetes cost`}
+              helper={`${fmtCompact(summary.estimated_k8s_cost_usd)} estimated monthly service cost`}
               tone="purple"
             />
             <StatTile
@@ -590,6 +795,16 @@ export default function KubernetesPage() {
           )}
         </>
       ) : null}
+
+      {summary && (
+        <ContainerServicesPanel
+          summary={summary}
+          providerFilter={serviceProviderFilter}
+          onProviderFilterChange={setServiceProviderFilter}
+          serviceSearch={serviceSearch}
+          onServiceSearchChange={setServiceSearch}
+        />
+      )}
 
       <Expander
         title="Cluster calculator"

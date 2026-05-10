@@ -6500,7 +6500,10 @@ _SERVICE_FOCUS_TERMS: Dict[str, List[str]] = {
     "messaging": ["queue", "pubsub", "kafka", "event hub", "service bus", "sqs", "sns"],
     "ai-ml": ["ai", "ml", "machine learning", "gpu", "inference", "training", "bedrock", "vertex", "openai", "genai"],
     "compute": ["compute", "vm", "virtual machine", "instance", "ec2", "node"],
-    "kubernetes": ["kubernetes", "k8s", "pod", "namespace", "cluster", "gke", "aks", "eks"],
+    "kubernetes": [
+        "kubernetes", "k8s", "pod", "namespace", "cluster", "gke", "aks", "eks", "oke",
+        "container", "containers", "docker", "fargate", "ecs", "ecr", "cloud run", "artifact registry",
+    ],
 }
 
 
@@ -10273,6 +10276,47 @@ class KubernetesProviderCatalogResponse(BaseModel):
     providers: Dict[str, KubernetesProviderCatalogEntry]
 
 
+class KubernetesContainerServiceCost(BaseModel):
+    provider: str
+    service: str
+    category: Literal["managed_kubernetes", "container_runtime", "container_registry", "docker", "container_platform"]
+    monthly_cost_usd: float
+    share_percent: float = 0.0
+    source: str
+    evidence: str
+    account_count: int = 0
+    region_count: int = 0
+    regions: List[str] = Field(default_factory=list)
+
+
+class KubernetesProviderServiceRollup(BaseModel):
+    provider: str
+    configured: bool
+    source: str
+    total_monthly_cost_usd: float
+    share_percent: float = 0.0
+    service_count: int
+    services: List[KubernetesContainerServiceCost]
+
+
+class KubernetesSummaryResponse(BaseModel):
+    generated_at: str
+    kubernetes_enabled: bool
+    clusters_configured: int
+    estimated_k8s_share_percent: float
+    estimated_k8s_cost_usd: float
+    total_cloud_cost_usd: float
+    container_service_count: int = 0
+    provider_count_with_container_spend: int = 0
+    highest_cost_provider: Optional[str] = None
+    highest_cost_service: Optional[KubernetesContainerServiceCost] = None
+    container_services: List[KubernetesContainerServiceCost] = Field(default_factory=list)
+    provider_breakdown: List[KubernetesProviderServiceRollup] = Field(default_factory=list)
+    data_source: str = "none"
+    setup_hint: str
+    opencost_docs: str
+
+
 class OpenCostSyncRequest(BaseModel):
     api_url: str
     cluster_name: str
@@ -10319,6 +10363,261 @@ class OpenCostInstallResponse(BaseModel):
     namespace: str
     prometheus_namespace: str
     command_log: List[str] = Field(default_factory=list)
+
+
+_KUBERNETES_CONTAINER_SERVICE_TERMS: Dict[str, List[str]] = {
+    "managed_kubernetes": [
+        "kubernetes",
+        "k8s",
+        "elastic kubernetes service",
+        "eks",
+        "azure kubernetes service",
+        "aks",
+        "google kubernetes engine",
+        "gke",
+        "container engine for kubernetes",
+        "oke",
+    ],
+    "container_runtime": [
+        "elastic container service",
+        "ecs",
+        "fargate",
+        "container instances",
+        "container instance",
+        "container apps",
+        "cloud run",
+        "app runner",
+        "container engine",
+        "container service",
+    ],
+    "container_registry": [
+        "container registry",
+        "container repositories",
+        "elastic container registry",
+        "ecr",
+        "artifact registry",
+        "registry",
+        "image registry",
+    ],
+    "docker": [
+        "docker",
+        "docker hub",
+        "docker desktop",
+    ],
+}
+
+
+def _kubernetes_container_service_category(service_name: str) -> Optional[str]:
+    text = str(service_name or "").strip().lower()
+    if not text:
+        return None
+    for category, terms in _KUBERNETES_CONTAINER_SERVICE_TERMS.items():
+        if any(term in text for term in terms):
+            return category
+    if "container" in text:
+        return "container_platform"
+    return None
+
+
+def _container_service_evidence(category: str) -> str:
+    labels = {
+        "managed_kubernetes": "Managed Kubernetes cluster service",
+        "container_runtime": "Container runtime or serverless container service",
+        "container_registry": "Container image registry service",
+        "docker": "Docker service or Docker-related subscription",
+        "container_platform": "Container platform service",
+    }
+    return labels.get(category, "Container platform service")
+
+
+def _container_source_rank(source: str) -> int:
+    return {
+        "live_provider_api": 0,
+        "cost_snapshots_live": 1,
+        "csv_import": 2,
+    }.get(source, 9)
+
+
+async def _build_kubernetes_container_service_rollups(
+    membership: UserOrganization,
+    db: Session,
+    total_cloud_cost_usd: float,
+) -> tuple[List[KubernetesContainerServiceCost], List[KubernetesProviderServiceRollup], str]:
+    """Collect Kubernetes/container/Docker service spend across providers."""
+    customer_id = _customer_id_for_org(membership)
+    organization_id = _organization_id_for_membership(membership)
+    diagnostics = {
+        item.provider: bool(item.configured)
+        for item in _provider_diagnostics(customer_id=customer_id, db=db)
+    }
+    providers = ["aws", "azure", "gcp", "oci"]
+    grouped: Dict[tuple[str, str], Dict[str, Any]] = {}
+    provider_sources: Dict[str, str] = {provider: "none" for provider in providers}
+
+    def add_row(
+        provider: str,
+        service_name: str,
+        cost: float,
+        source: str,
+        region: Optional[str] = None,
+        account_identifier: Optional[str] = None,
+    ) -> None:
+        provider_key = str(provider or "").strip().lower()
+        if provider_key not in providers:
+            return
+        service = str(service_name or "").strip() or "Container service"
+        category = _kubernetes_container_service_category(service)
+        if category is None:
+            return
+        amount = float(cost or 0.0)
+        if amount <= 0:
+            return
+        key = (provider_key, service.lower())
+        bucket = grouped.setdefault(
+            key,
+            {
+                "provider": provider_key,
+                "service": service,
+                "category": category,
+                "monthly_cost_usd": 0.0,
+                "source": source,
+                "regions": set(),
+                "accounts": set(),
+            },
+        )
+        bucket["monthly_cost_usd"] = float(bucket["monthly_cost_usd"]) + amount
+        if _container_source_rank(source) < _container_source_rank(str(bucket.get("source") or "")):
+            bucket["source"] = source
+        if region:
+            bucket["regions"].add(str(region))
+        if account_identifier:
+            bucket["accounts"].add(str(account_identifier))
+
+    for provider in providers:
+        if diagnostics.get(provider, False):
+            try:
+                try:
+                    summary = await _cost_summary_for_provider(provider, "month", customer_id=customer_id)
+                except TypeError as exc:
+                    if "customer_id" not in str(exc) and "keyword" not in str(exc):
+                        raise
+                    summary = await _cost_summary_for_provider(provider, "month")
+                if "error" not in summary:
+                    before_count = len(grouped)
+                    for service in summary.get("top_services", []) or []:
+                        if not isinstance(service, dict):
+                            continue
+                        add_row(
+                            provider=provider,
+                            service_name=str(
+                                service.get("service")
+                                or service.get("service_name")
+                                or service.get("name")
+                                or ""
+                            ),
+                            cost=float(service.get("cost_usd") or service.get("cost") or service.get("amount") or 0.0),
+                            source="live_provider_api",
+                        )
+                    if len(grouped) > before_count:
+                        provider_sources[provider] = "live_provider_api"
+                        continue
+            except Exception as exc:
+                logger.info("Unable to collect live container services for %s: %s", provider, exc)
+
+        latest_snapshot = (
+            db.query(CostSnapshot)
+            .filter(
+                CostSnapshot.customer_id == customer_id,
+                CostSnapshot.provider == provider,
+            )
+            .order_by(CostSnapshot.captured_at.desc())
+            .first()
+        )
+        if latest_snapshot is not None:
+            before_count = len(grouped)
+            try:
+                snapshot_services = json.loads(latest_snapshot.top_services_json or "[]")
+            except Exception:
+                snapshot_services = []
+            for service in snapshot_services if isinstance(snapshot_services, list) else []:
+                if not isinstance(service, dict):
+                    continue
+                add_row(
+                    provider=provider,
+                    service_name=str(
+                        service.get("service")
+                        or service.get("service_name")
+                        or service.get("name")
+                        or ""
+                    ),
+                    cost=float(service.get("cost_usd") or service.get("cost") or service.get("amount") or 0.0),
+                    source="cost_snapshots_live",
+                )
+            if len(grouped) > before_count and provider_sources[provider] == "none":
+                provider_sources[provider] = "cost_snapshots_live"
+                continue
+
+        imported_rows = _get_imported_cost_rows(db, organization_id, customer_id, provider)
+        before_count = len(grouped)
+        for row in imported_rows:
+            add_row(
+                provider=str(row.provider or provider),
+                service_name=str(row.service_name or ""),
+                cost=float(row.cost_usd or 0.0),
+                source="csv_import",
+                region=row.region,
+                account_identifier=row.account_identifier,
+            )
+        if len(grouped) > before_count and provider_sources[provider] == "none":
+            provider_sources[provider] = "csv_import"
+
+    rows: List[KubernetesContainerServiceCost] = []
+    container_total = sum(float(bucket.get("monthly_cost_usd") or 0.0) for bucket in grouped.values())
+    denominator = container_total or total_cloud_cost_usd or 0.0
+    for bucket in grouped.values():
+        cost = round(float(bucket.get("monthly_cost_usd") or 0.0), 2)
+        regions = sorted(str(region) for region in bucket.get("regions", set()) if region)
+        accounts = bucket.get("accounts", set())
+        rows.append(
+            KubernetesContainerServiceCost(
+                provider=str(bucket["provider"]),
+                service=str(bucket["service"]),
+                category=str(bucket["category"]),  # type: ignore[arg-type]
+                monthly_cost_usd=cost,
+                share_percent=round((cost / denominator) * 100, 2) if denominator > 0 else 0.0,
+                source=str(bucket.get("source") or "unknown"),
+                evidence=_container_service_evidence(str(bucket["category"])),
+                account_count=len(accounts),
+                region_count=len(regions),
+                regions=regions[:8],
+            )
+        )
+    rows.sort(key=lambda item: item.monthly_cost_usd, reverse=True)
+
+    provider_rollups: List[KubernetesProviderServiceRollup] = []
+    for provider in providers:
+        provider_services = [row for row in rows if row.provider == provider]
+        provider_total = round(sum(row.monthly_cost_usd for row in provider_services), 2)
+        provider_rollups.append(
+            KubernetesProviderServiceRollup(
+                provider=provider,
+                configured=diagnostics.get(provider, False),
+                source=provider_sources.get(provider, "none"),
+                total_monthly_cost_usd=provider_total,
+                share_percent=round((provider_total / denominator) * 100, 2) if denominator > 0 else 0.0,
+                service_count=len(provider_services),
+                services=provider_services,
+            )
+        )
+    provider_rollups.sort(key=lambda item: item.total_monthly_cost_usd, reverse=True)
+
+    source = "none"
+    present_sources = {row.source for row in rows}
+    for candidate in ("live_provider_api", "cost_snapshots_live", "csv_import"):
+        if candidate in present_sources:
+            source = candidate
+            break
+    return rows, provider_rollups, source
 
 
 def _default_kubernetes_workloads(namespaces: List[str]) -> List[KubernetesWorkloadInput]:
@@ -12065,29 +12364,55 @@ async def get_kubernetes_provider_catalog(
     )
 
 
-@router.get("/analytics/kubernetes/summary")
+@router.get("/analytics/kubernetes/summary", response_model=KubernetesSummaryResponse)
 async def get_kubernetes_summary(
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> KubernetesSummaryResponse:
     """Overview of Kubernetes cost allocation status for this organization."""
+    _ = current_user
     context = await _cost_context(membership, db, "month", "all")
     total = float(context.get("total_cost") or 0.0)
+    container_services, provider_breakdown, data_source = await _build_kubernetes_container_service_rollups(
+        membership,
+        db,
+        total,
+    )
+    container_total = round(sum(item.monthly_cost_usd for item in container_services), 2)
+    provider_count = len([item for item in provider_breakdown if item.total_monthly_cost_usd > 0])
+    highest_provider = next(
+        (item.provider for item in provider_breakdown if item.total_monthly_cost_usd > 0),
+        None,
+    )
+    highest_service = container_services[0] if container_services else None
+    share = round((container_total / total) * 100, 2) if total > 0 else (100.0 if container_total > 0 else 0.0)
+    configured_clusters = len([
+        item for item in container_services
+        if item.category == "managed_kubernetes"
+    ])
 
-    return {
-        "generated_at": _utcnow().isoformat() + "Z",
-        "kubernetes_enabled": False,
-        "clusters_configured": 0,
-        "estimated_k8s_share_percent": 0.0,
-        "estimated_k8s_cost_usd": 0.0,
-        "total_cloud_cost_usd": round(total, 2),
-        "setup_hint": (
-            "POST /api/v1/analytics/kubernetes/cluster-cost with your cluster details to begin "
-            "namespace-level cost allocation. Connect OpenCost for pod-level granularity."
+    return KubernetesSummaryResponse(
+        generated_at=_utcnow().isoformat() + "Z",
+        kubernetes_enabled=container_total > 0,
+        clusters_configured=configured_clusters,
+        estimated_k8s_share_percent=share,
+        estimated_k8s_cost_usd=container_total,
+        total_cloud_cost_usd=round(total, 2),
+        container_service_count=len(container_services),
+        provider_count_with_container_spend=provider_count,
+        highest_cost_provider=highest_provider,
+        highest_cost_service=highest_service,
+        container_services=container_services,
+        provider_breakdown=provider_breakdown,
+        data_source=data_source,
+        setup_hint=(
+            "Connect provider credentials or import billing CSV rows with EKS, AKS, GKE, OKE, "
+            "ECS, Fargate, Cloud Run, Container Registry, Docker, or similar service names. "
+            "Use OpenCost for namespace and pod-level allocation."
         ),
-        "opencost_docs": "https://www.opencost.io/docs/",
-    }
+        opencost_docs="https://www.opencost.io/docs/",
+    )
 
 
 # ---------------------------------------------------------------------------

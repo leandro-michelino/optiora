@@ -1,0 +1,6 @@
+provider,cost_usd,service_name,account_identifier,account_name,account_type,parent_account_identifier,region,period_start,period_end,currency
+aws,320.00,Amazon Elastic Kubernetes Service,acct-aws-prod,AWS Prod,account,aws-root,us-east-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD
+azure,220.00,Azure Kubernetes Service,sub-az-finops,Azure FinOps,subscription,mg-finops,eastus,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD
+gcp,180.00,Google Kubernetes Engine,proj-gcp-prod,GCP Prod,project,folder-prod,us-central1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD
+oci,140.00,Container Engine for Kubernetes,comp-oci-finops,OCI FinOps,compartment,tenancy-main,eu-madrid-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD
+aws,90.00,Docker Hub,acct-aws-prod,AWS Prod,account,aws-root,us-east-1,2026-04-01T00:00:00Z,2026-04-30T23:59:59Z,USD

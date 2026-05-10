@@ -6629,9 +6629,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Kubernetes Summary Api V1 Analytics Kubernetes Summary Get"
+                  "$ref": "#/components/schemas/KubernetesSummaryResponse"
                 }
               }
             }
@@ -7803,7 +7801,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -7817,7 +7815,7 @@
         "properties": {
           "file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "File"
           }
         },
@@ -7836,14 +7834,14 @@
           },
           "config_file": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Config File"
           },
           "private_key_file": {
             "anyOf": [
               {
                 "type": "string",
-                "contentMediaType": "application/octet-stream"
+                "format": "binary"
               },
               {
                 "type": "null"
@@ -9761,6 +9759,73 @@
         ],
         "title": "KubernetesClusterInput"
       },
+      "KubernetesContainerServiceCost": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "managed_kubernetes",
+              "container_runtime",
+              "container_registry",
+              "docker",
+              "container_platform"
+            ],
+            "title": "Category"
+          },
+          "monthly_cost_usd": {
+            "type": "number",
+            "title": "Monthly Cost Usd"
+          },
+          "share_percent": {
+            "type": "number",
+            "title": "Share Percent",
+            "default": 0.0
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence"
+          },
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count",
+            "default": 0
+          },
+          "region_count": {
+            "type": "integer",
+            "title": "Region Count",
+            "default": 0
+          },
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Regions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "service",
+          "category",
+          "monthly_cost_usd",
+          "source",
+          "evidence"
+        ],
+        "title": "KubernetesContainerServiceCost"
+      },
       "KubernetesNamespaceCost": {
         "properties": {
           "namespace": {
@@ -10026,6 +10091,150 @@
           "monthly_cost_usd"
         ],
         "title": "KubernetesProviderNodeType"
+      },
+      "KubernetesProviderServiceRollup": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "total_monthly_cost_usd": {
+            "type": "number",
+            "title": "Total Monthly Cost Usd"
+          },
+          "share_percent": {
+            "type": "number",
+            "title": "Share Percent",
+            "default": 0.0
+          },
+          "service_count": {
+            "type": "integer",
+            "title": "Service Count"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/KubernetesContainerServiceCost"
+            },
+            "type": "array",
+            "title": "Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "configured",
+          "source",
+          "total_monthly_cost_usd",
+          "service_count",
+          "services"
+        ],
+        "title": "KubernetesProviderServiceRollup"
+      },
+      "KubernetesSummaryResponse": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "kubernetes_enabled": {
+            "type": "boolean",
+            "title": "Kubernetes Enabled"
+          },
+          "clusters_configured": {
+            "type": "integer",
+            "title": "Clusters Configured"
+          },
+          "estimated_k8s_share_percent": {
+            "type": "number",
+            "title": "Estimated K8S Share Percent"
+          },
+          "estimated_k8s_cost_usd": {
+            "type": "number",
+            "title": "Estimated K8S Cost Usd"
+          },
+          "total_cloud_cost_usd": {
+            "type": "number",
+            "title": "Total Cloud Cost Usd"
+          },
+          "container_service_count": {
+            "type": "integer",
+            "title": "Container Service Count",
+            "default": 0
+          },
+          "provider_count_with_container_spend": {
+            "type": "integer",
+            "title": "Provider Count With Container Spend",
+            "default": 0
+          },
+          "highest_cost_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highest Cost Provider"
+          },
+          "highest_cost_service": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KubernetesContainerServiceCost"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "container_services": {
+            "items": {
+              "$ref": "#/components/schemas/KubernetesContainerServiceCost"
+            },
+            "type": "array",
+            "title": "Container Services"
+          },
+          "provider_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/KubernetesProviderServiceRollup"
+            },
+            "type": "array",
+            "title": "Provider Breakdown"
+          },
+          "data_source": {
+            "type": "string",
+            "title": "Data Source",
+            "default": "none"
+          },
+          "setup_hint": {
+            "type": "string",
+            "title": "Setup Hint"
+          },
+          "opencost_docs": {
+            "type": "string",
+            "title": "Opencost Docs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "kubernetes_enabled",
+          "clusters_configured",
+          "estimated_k8s_share_percent",
+          "estimated_k8s_cost_usd",
+          "total_cloud_cost_usd",
+          "setup_hint",
+          "opencost_docs"
+        ],
+        "title": "KubernetesSummaryResponse"
       },
       "KubernetesTeamCost": {
         "properties": {
@@ -13680,13 +13889,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

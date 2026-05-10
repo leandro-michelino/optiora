@@ -1140,6 +1140,29 @@ export interface KubernetesClusterCostResponse {
   opencost_integration: string
 }
 
+export interface KubernetesContainerServiceCost {
+  provider: string
+  service: string
+  category: 'managed_kubernetes' | 'container_runtime' | 'container_registry' | 'docker' | 'container_platform' | string
+  monthly_cost_usd: number
+  share_percent: number
+  source: string
+  evidence: string
+  account_count: number
+  region_count: number
+  regions: string[]
+}
+
+export interface KubernetesProviderServiceRollup {
+  provider: string
+  configured: boolean
+  source: string
+  total_monthly_cost_usd: number
+  share_percent: number
+  service_count: number
+  services: KubernetesContainerServiceCost[]
+}
+
 export interface KubernetesSummaryResponse {
   generated_at: string
   kubernetes_enabled: boolean
@@ -1147,6 +1170,13 @@ export interface KubernetesSummaryResponse {
   estimated_k8s_share_percent: number
   estimated_k8s_cost_usd: number
   total_cloud_cost_usd: number
+  container_service_count: number
+  provider_count_with_container_spend: number
+  highest_cost_provider?: string | null
+  highest_cost_service?: KubernetesContainerServiceCost | null
+  container_services: KubernetesContainerServiceCost[]
+  provider_breakdown: KubernetesProviderServiceRollup[]
+  data_source: string
   setup_hint: string
   opencost_docs: string
 }

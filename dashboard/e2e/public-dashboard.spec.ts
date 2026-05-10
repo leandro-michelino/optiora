@@ -2,6 +2,7 @@ import path from 'node:path'
 import { expect, test } from '@playwright/test'
 
 const fixtureCsv = path.join(__dirname, 'fixtures', 'import-costs.csv')
+const kubernetesFixtureCsv = path.join(__dirname, 'fixtures', 'kubernetes-container-costs.csv')
 
 test('public dashboard uses imported CSV as a fallback source and keeps exports available', async ({ page }) => {
   await page.goto('/dashboard/settings')
@@ -54,4 +55,26 @@ test('dashboard navigation search narrows screens and active route is precise', 
   await page.goto('/dashboard/k8s-namespaces')
   await expect(page).toHaveURL(/\/dashboard\/kubernetes$/)
   await expect(page.getByRole('heading', { name: 'Kubernetes Cost Allocation' })).toBeVisible()
+})
+
+test('kubernetes page surfaces provider container services and cost evidence', async ({ page }) => {
+  await page.goto('/dashboard/settings')
+  await expect(page.getByRole('heading', { name: 'Cloud Settings' })).toBeVisible()
+  await page.getByTestId('csv-upload-input').setInputFiles(kubernetesFixtureCsv)
+  await page.getByTestId('csv-upload-submit').click()
+  await expect(page.getByTestId('csv-upload-message')).toContainText('optional manual billing source')
+
+  await page.goto('/dashboard/kubernetes')
+  await expect(page.getByRole('heading', { name: 'Kubernetes Cost Allocation' })).toBeVisible()
+  await expect(page.getByTestId('kubernetes-container-services')).toBeVisible()
+  await expect(page.getByTestId('kubernetes-container-services')).toContainText('Amazon Elastic Kubernetes Service')
+  await expect(page.getByTestId('kubernetes-container-services')).toContainText('Azure Kubernetes Service')
+  await expect(page.getByTestId('kubernetes-container-services')).toContainText('Google Kubernetes Engine')
+  await expect(page.getByTestId('kubernetes-container-services')).toContainText('Container Engine for Kubernetes')
+  await expect(page.getByTestId('kubernetes-container-services')).toContainText('Docker Hub')
+  await expect(page.getByTestId('kubernetes-container-services-table')).toContainText('Imported billing CSV')
+
+  await page.getByLabel('Search Kubernetes and container services').fill('docker')
+  await expect(page.getByTestId('kubernetes-container-services-table')).toContainText('Docker Hub')
+  await expect(page.getByTestId('kubernetes-container-services-table')).not.toContainText('Azure Kubernetes Service')
 })

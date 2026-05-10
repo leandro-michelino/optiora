@@ -88,6 +88,35 @@ class KubernetesTest(unittest.TestCase):
         resp = self.client.get("/api/v1/analytics/kubernetes/summary", headers=self.headers)
         self.assertIsInstance(resp.json()["kubernetes_enabled"], bool)
 
+    def test_03b_summary_lists_container_services_from_imported_costs(self) -> None:
+        csv_rows = (
+            "provider,cost_usd,service_name,account_identifier,account_name,account_type,region,currency\n"
+            "aws,320.00,Amazon Elastic Kubernetes Service,acct-1,AWS Prod,account,us-east-1,USD\n"
+            "azure,220.00,Azure Kubernetes Service,sub-1,Azure Prod,subscription,eastus,USD\n"
+            "gcp,180.00,Google Kubernetes Engine,proj-1,GCP Prod,project,us-central1,USD\n"
+            "oci,140.00,Container Engine for Kubernetes,tenancy-1,OCI Prod,tenancy,eu-madrid-1,USD\n"
+            "aws,90.00,Docker Hub,acct-1,AWS Prod,account,us-east-1,USD\n"
+            "aws,400.00,Amazon RDS,acct-1,AWS Prod,account,us-east-1,USD\n"
+        )
+        upload = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={"file": ("k8s_services.csv", csv_rows, "text/csv")},
+            headers=self.headers,
+        )
+        self.assertIn(upload.status_code, (200, 201), upload.text)
+
+        resp = self.client.get("/api/v1/analytics/kubernetes/summary", headers=self.headers)
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertEqual(data["data_source"], "csv_import")
+        self.assertGreaterEqual(data["container_service_count"], 5)
+        self.assertGreater(data["estimated_k8s_cost_usd"], 0)
+        self.assertEqual(data["provider_count_with_container_spend"], 4)
+        services = {row["service"] for row in data["container_services"]}
+        self.assertIn("Amazon Elastic Kubernetes Service", services)
+        self.assertIn("Docker Hub", services)
+        self.assertNotIn("Amazon RDS", services)
+
     # ── POST /analytics/kubernetes/cluster-cost ───────────────────────────────
 
     def test_04_cluster_cost_returns_200(self) -> None:
