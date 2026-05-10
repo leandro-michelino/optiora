@@ -1,6 +1,6 @@
 # Release Notes
 
-## 0.9.2 - Advisor, Scorecards, and UIX Polish (May 10, 2026)
+## 0.9.2 - Advisor, Scorecards, Control Tower, and UIX Polish (May 10, 2026)
 
 Repository release metadata:
 
