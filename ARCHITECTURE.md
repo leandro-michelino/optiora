@@ -46,6 +46,7 @@ Current as of May 10, 2026.
 | - VM utilization hotspots       /api/v1/analytics/vm-utilization-hotspots |
 | - Operating review pack         /api/v1/analytics/operating-review |
 | - Decision intelligence frontier /api/v1/analytics/decision-intelligence |
+| - FinOps control tower          /api/v1/analytics/control-tower |
 | - Hybrid advisor                /api/v1/advisor/hybrid        |
 | - GenAI narratives              /api/v1/genai/*               |
 | - Provider accounts             /api/v1/provider-accounts/*   |
@@ -92,8 +93,6 @@ mode is enabled.
 
 OptiOra uses a Next.js dashboard as the user-facing control plane and a FastAPI backend as the system of record for FinOps analytics, forecasting, alerts, imports, and advisory flows. The backend stores normalized operational data in SQLite for local development or PostgreSQL for production. Runtime cost data enters the platform from live cloud-provider APIs or from imported CSV billing files. Deterministic analytics are computed first and remain authoritative for cost, savings, risk, and forecast math. OCI Generative AI is then used as a narrative and prioritization layer on top of those deterministic outputs, not as the source of truth for numbers.
 
-## FinOps Analytics Pipeline
-
 ## Dashboard Response Cache
 
 ```text
@@ -128,6 +127,8 @@ dashboard JSON `GET /api/v1/*` responses. Health/info endpoints, export/download
 routes, scan-progress polling, and live rightsizing requests are excluded. Cached
 responses are still real responses from provider APIs, stored snapshots, or
 customer CSV imports; the cache never creates synthetic data.
+
+## FinOps Analytics Pipeline
 
 ```text
 source data (live providers and/or imported CSV)
@@ -166,7 +167,54 @@ finops_mcp/tools/finops_analytics.py
             - build_chargeback_summary()
             - build_finops_operating_review()
             - build_decision_intelligence()
+            - build_finops_control_tower()
 ```
+
+## FinOps Control Tower
+
+```text
+current cost context + historical snapshots + budget policy
+        |
+        v
+/api/v1/analytics/control-tower
+        |
+        +--> forecast risk lane
+        |    - forecast diagnostics
+        |    - budget breach guardrails
+        |    - confidence and tail-risk exposure
+        |
+        +--> waste lane
+        |    - waste categories
+        |    - quick-win execution queue
+        |
+        +--> commitment lane
+        |    - provider commitment gaps
+        |    - annual opportunity
+        |
+        +--> governance lane
+        |    - tagging/allocation coverage
+        |    - virtual-tag and policy-gate recommendations
+        |
+        +--> decision lane
+        |    - stability / balanced / acceleration frontier
+        |    - payback, confidence, execution risk
+        |
+        +--> RAG by lane
+        |    - finops_control_tower
+        |    - budget_risk
+        |    - waste_insights
+        |    - commitment_strategy
+        |    - tagging_strategy
+        |    - decision_intelligence
+        |
+        +--> GenAI advisory prompt/narrative
+             - advisory only; numeric outputs remain deterministic
+```
+
+This control tower is the consolidation layer for dense intelligence screens. It
+reduces page-to-page context switching by putting forecast, waste, commitment,
+governance, and decision signals into the Advanced FinOps page while preserving
+specialized pages where the user journey is genuinely different.
 
 ## Weekly Operating Review Pack
 

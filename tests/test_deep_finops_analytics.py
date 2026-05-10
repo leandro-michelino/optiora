@@ -319,6 +319,31 @@ class DeepFinOpsAnalyticsTest(unittest.TestCase):
         self.assertIn("rag", intelligence_data)
         self.assertIn("prompt", intelligence_data["advisory"])
 
+    def test_13_control_tower_unifies_forecast_governance_and_rag(self) -> None:
+        resp = self.client.get(
+            "/api/v1/analytics/control-tower?cloud_provider=all&months=12",
+            headers=self.headers,
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        data = resp.json()
+        self.assertIn("control_score", data)
+        self.assertIn("posture", data)
+        self.assertIn("executive_summary", data)
+        self.assertIn("control_lanes", data)
+        self.assertGreaterEqual(len(data["control_lanes"]), 5)
+        lanes = {row["lane"]: row for row in data["control_lanes"]}
+        self.assertIn("forecast_risk", lanes)
+        self.assertIn("waste", lanes)
+        self.assertIn("commitment", lanes)
+        self.assertIn("governance", lanes)
+        self.assertIn("decision", lanes)
+        self.assertIn("priority_actions", data)
+        self.assertIn("rag_by_lane", data)
+        self.assertIn("control_tower", data["rag_by_lane"])
+        self.assertGreaterEqual(data["rag_by_lane"]["control_tower"].get("retrieved_count", 0), 1)
+        self.assertIn("genai_prompt", data)
+        self.assertIn("cost_context", data)
+
 
 if __name__ == "__main__":
     unittest.main()

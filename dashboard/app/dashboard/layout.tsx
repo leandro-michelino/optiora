@@ -76,7 +76,7 @@ const navSections: NavSection[] = [
     items: [
       { href: '/dashboard/unit-economics', label: 'Unit Economics', icon: TrendingUp, description: 'Business-unit cost, waste rate, provider efficiency, and FOCUS exports.', keywords: ['unit', 'economics', 'kpi', 'focus'] },
       { href: '/dashboard/scorecards', label: 'Scorecards', icon: Award, description: 'Team maturity and realized savings scorecards for finance follow-through.', keywords: ['maturity', 'realized savings', 'finance', 'owner'] },
-      { href: '/dashboard/advanced-finops', label: 'Advanced FinOps', icon: ShieldCheck, description: 'Tagging coverage, decision intelligence, and cross-provider optimization.', keywords: ['advanced', 'decision', 'federation', 'tagging'] },
+      { href: '/dashboard/advanced-finops', label: 'Advanced FinOps', icon: ShieldCheck, description: 'Control tower for forecast risk, waste, commitments, governance, decision intelligence, and RAG evidence.', keywords: ['advanced', 'decision', 'federation', 'tagging', 'control tower', 'rag'] },
       { href: '/dashboard/inventory', label: 'Cloud Resources', icon: Server, description: 'Canonical resource-cost explorer by provider, account, region, type, tag, and waste signal.', keywords: ['resources', 'inventory', 'assets', 'tags', 'costs'] },
       { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box, description: 'Cluster cost allocation, namespaces, OpenCost sync, and workload optimization.', keywords: ['k8s', 'opencost', 'namespace', 'cluster'] },
       { href: '/dashboard/virtual-tags', label: 'Virtual Tags', icon: Tag, description: 'Virtual tag rules and previews without changing cloud resources.', keywords: ['tags', 'rules', 'allocation', 'governance'] },

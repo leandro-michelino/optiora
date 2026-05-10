@@ -43,6 +43,19 @@ owner, business unit, and month, but missing realized values remain `0` or
 explicitly unassigned. They are never estimated by GenAI or replaced with demo
 values.
 
+## GenAI, RAG, And Control Tower Outputs
+
+GenAI and RAG are advisory layers. They may explain, prioritize, summarize, and
+turn deterministic evidence into stakeholder-specific narratives for forecasting,
+budget risk, waste, commitment strategy, tagging/governance, sustainability,
+decision intelligence, operating reviews, and the FinOps Control Tower. They
+must not alter cost, savings, utilization, forecast, or scorecard numbers.
+
+The FinOps Control Tower aggregates deterministic analytics from real provider,
+snapshot, ledger, and CSV evidence. Missing source data remains visible as an
+empty or lower-confidence signal; it is not replaced with synthetic provider
+coverage.
+
 ## Configuration
 
 Key runtime controls:

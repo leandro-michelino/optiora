@@ -6145,6 +6145,167 @@ async def analytics_decision_intelligence(
     return result
 
 
+@router.get("/analytics/control-tower")
+async def analytics_control_tower(
+    cloud_provider: str = "all",
+    months: int = Query(default=12, ge=1, le=24),
+    current_user: User = Depends(get_current_user),
+    membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Unified FinOps control tower across forecast risk, waste, commitments, governance, and decisions."""
+    _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    context = await _cost_context(membership, db, "month", cloud_provider)
+    permission = ScanningManager(db).get_permission_status(customer_id)
+    budget_monthly = float(permission.get("monthly_budget_usd", 0.0) or 0.0)
+    historical_monthly_spend = _historical_monthly_spend_from_snapshots(
+        db=db,
+        customer_id=customer_id,
+        cloud_provider=cloud_provider,
+        months=18,
+    )
+    recommendation_rows = await _deterministic_recommendations(
+        cloud_provider=cloud_provider,
+        current_monthly_spend=context["total_cost"],
+        cost_breakdown=context["breakdown"],
+    )
+    analytics_result = _safe_json_load(
+        await finops_analytics.get_analytics(
+            {
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "budget_monthly": budget_monthly,
+                "monthly_savings": 0.0,
+                "anomalies": 0,
+            }
+        ),
+        {},
+    )
+    forecast_diagnostics = _safe_json_load(
+        await finops_analytics.get_forecast_diagnostics(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": budget_monthly,
+                "fallback_monthly_spend": 0,
+            }
+        ),
+        {},
+    )
+    waste_result = _safe_json_load(
+        await finops_analytics.get_cloud_waste_analysis(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    commitment_gap_result = _safe_json_load(
+        await finops_analytics.get_commitment_gap_analysis(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    tagging_result = _safe_json_load(
+        await finops_analytics.get_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+            }
+        ),
+        {},
+    )
+    decision_result = _safe_json_load(
+        await finops_analytics.get_decision_intelligence(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": budget_monthly,
+                "monthly_savings": 0.0,
+                "recommendations": recommendation_rows,
+            }
+        ),
+        {},
+    )
+    result = _safe_json_load(
+        await finops_analytics.get_finops_control_tower(
+            {
+                "months": months,
+                "cloud_provider": cloud_provider,
+                "current_monthly_spend": context["total_cost"],
+                "cost_breakdown": context["breakdown"],
+                "historical_monthly_spend": historical_monthly_spend,
+                "budget_monthly": budget_monthly,
+                "analytics_result": analytics_result,
+                "forecast_diagnostics": forecast_diagnostics,
+                "waste_result": waste_result,
+                "commitment_gap_result": commitment_gap_result,
+                "tagging_result": tagging_result,
+                "decision_result": decision_result,
+                "recommendations": recommendation_rows,
+            }
+        ),
+        {},
+    )
+    genai_context = dict(result.get("genai_context") or {})
+    rag_by_lane = {
+        "control_tower": _rag_context_for_analysis(
+            analysis_type="finops_control_tower",
+            cloud_provider=cloud_provider,
+            context=genai_context,
+        ),
+        "forecast_risk": _rag_context_for_analysis(
+            analysis_type="budget_risk",
+            cloud_provider=cloud_provider,
+            context=forecast_diagnostics,
+        ),
+        "waste": _rag_context_for_analysis(
+            analysis_type="waste_insights",
+            cloud_provider=cloud_provider,
+            context=waste_result,
+        ),
+        "commitment": _rag_context_for_analysis(
+            analysis_type="commitment_strategy",
+            cloud_provider=cloud_provider,
+            context=commitment_gap_result,
+        ),
+        "governance": _rag_context_for_analysis(
+            analysis_type="tagging_strategy",
+            cloud_provider=cloud_provider,
+            context=tagging_result,
+        ),
+        "decision": _rag_context_for_analysis(
+            analysis_type="decision_intelligence",
+            cloud_provider=cloud_provider,
+            context=decision_result,
+        ),
+    }
+    genai_context["rag_brief"] = "\n".join(
+        str(item.get("rag_brief") or "")
+        for item in rag_by_lane.values()
+        if item.get("rag_brief")
+    )
+    narrative, prompt = genai_advisor.generate_executive_narrative(genai_context)
+    result["rag"] = rag_by_lane["control_tower"]
+    result["rag_by_lane"] = rag_by_lane
+    result["genai_narrative"] = narrative
+    result["genai_prompt"] = prompt
+    result["cost_context"] = context
+    return result
+
+
 @router.get("/analytics/finops-intelligence")
 async def analytics_finops_intelligence(
     focus: Literal[

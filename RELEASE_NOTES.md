@@ -28,6 +28,8 @@ Repository release metadata:
 - Focused Kubernetes E2E fixture resources in OCI: one OKE Basic cluster and one small Docker-backed OCI Container Instance for live page validation. These temporary resources were deleted after validation.
 - Cloud Resources & Costs cockpit for the canonical resource-cost explorer, including provider share, type/region/account rollups, top resources, local search/sort, expandable rows, and a resource details drawer.
 - Bounded API response cache for dashboard JSON `GET /api/v1/*` calls, with default `5` minute TTL, active-entry background warming every `5` minutes, and cache status headers.
+- Unified FinOps Control Tower endpoint, `GET /api/v1/analytics/control-tower`, combining forecast risk, waste, commitment, governance, decision frontier, RAG evidence, and GenAI advisory prompts.
+- Advanced FinOps Control Tower panel that surfaces the consolidated posture score, lane status, and RAG-backed action queue before specialist drill-down sections.
 
 ### Changed
 
@@ -45,6 +47,7 @@ Repository release metadata:
 - Dashboard Refresh buttons now send `force_refresh=true`, `Cache-Control: no-cache`, and `X-OptiOra-Force-Refresh: true` so customer-initiated refreshes always bypass and repopulate the response cache.
 - CORS now allows the force-refresh request header and exposes `X-OptiOra-Cache`, `X-OptiOra-Cache-Age`, and `X-OptiOra-Cache-TTL` for browser diagnostics.
 - Successful mutating API calls now invalidate cached reads so imports, approvals, alert lifecycle actions, credentials, virtual tags, and finance updates are visible immediately.
+- UIX review now documents the page-consolidation decision: keep specialized workflow pages, but unify dense executive intelligence inside Advanced FinOps.
 - Cleanup documentation now treats `/dashboard/kubernetes` as the only Kubernetes/container/Docker route, with no stale legacy redirect expectation.
 - Workspace cleanup now removes broader duplicate-copy, editor leftover, and OS metadata artifacts while preserving runtime state and local dependency caches.
 - README, cost estimate, testing notes, deployment notes, architecture diagrams, and next-phase planning were refreshed to match the current deployed state.

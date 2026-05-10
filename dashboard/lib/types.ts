@@ -1786,3 +1786,38 @@ export interface DecisionIntelligenceResponse {
   rag: Record<string, unknown>
   cost_context: Record<string, unknown>
 }
+
+export interface FinOpsControlTowerLane {
+  lane: string
+  label: string
+  status: 'healthy' | 'watch' | 'attention' | string
+  primary_metric: number
+  primary_metric_label: string
+  evidence: unknown
+  next_action: string
+}
+
+export interface FinOpsControlTowerResponse {
+  generated_at: string
+  forecast_months: number
+  posture: string
+  control_score: number
+  executive_summary: {
+    monthly_spend_usd: number
+    annualized_run_rate_usd: number
+    risk_score: number
+    maturity_score: number
+    forecast_confidence_score: number
+    recommended_scenario?: string | null
+    expected_monthly_savings_pool_usd?: number
+  }
+  control_lanes: FinOpsControlTowerLane[]
+  priority_actions: string[]
+  supporting_blocks: Record<string, unknown>
+  genai_context: Record<string, unknown>
+  rag: Record<string, unknown>
+  rag_by_lane: Record<string, Record<string, unknown>>
+  genai_narrative: string | null
+  genai_prompt: string
+  cost_context: Record<string, unknown>
+}

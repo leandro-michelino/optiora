@@ -13,6 +13,7 @@ import {
   fetchChargebackSummary,
   fetchFinOpsOperatingReview,
   fetchDecisionIntelligence,
+  fetchFinOpsControlTower,
   forceNextApiRefresh,
 } from '@/lib/api'
 import {
@@ -26,6 +27,7 @@ import {
   ChargebackSummaryResponse,
   FinOpsOperatingReviewResponse,
   DecisionIntelligenceResponse,
+  FinOpsControlTowerResponse,
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,6 +41,12 @@ function fmt(n: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+}
+
+function statusTone(status: string): string {
+  if (status === 'healthy') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300'
+  if (status === 'attention') return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300'
+  return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300'
 }
 
 type ToastKind = 'success' | 'error' | 'info'
@@ -72,6 +80,7 @@ export default function AdvancedFinOpsPage() {
   const [chargeback, setChargeback] = useState<ChargebackSummaryResponse | null>(null)
   const [operatingReview, setOperatingReview] = useState<FinOpsOperatingReviewResponse | null>(null)
   const [decisionIntel, setDecisionIntel] = useState<DecisionIntelligenceResponse | null>(null)
+  const [controlTower, setControlTower] = useState<FinOpsControlTowerResponse | null>(null)
 
   const pushToast = useCallback((title: string, detail: string, kind: ToastKind = 'info') => {
     const id = Date.now() + Math.floor(Math.random() * 1000)
@@ -90,7 +99,7 @@ export default function AdvancedFinOpsPage() {
     setLoadingTagQuality(true)
     setLoadingDecision(true)
     setLoadingFederation(true)
-    const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes, opRes, diRes] = await Promise.allSettled([
+    const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes, opRes, diRes, ctRes] = await Promise.allSettled([
       fetchTagQualityScore('all'),
       fetchDecisionGradeRecommendations({ top_n: 8, provider: 'all', min_monthly_savings: 10 }),
       fetchFederatedCosts({ provider: 'all', include_regions: true }),
@@ -101,6 +110,7 @@ export default function AdvancedFinOpsPage() {
       fetchChargebackSummary('all'),
       fetchFinOpsOperatingReview('all', 12),
       fetchDecisionIntelligence('all', 12),
+      fetchFinOpsControlTower('all', 12),
     ])
 
     if (tagRes.status === 'fulfilled') {
@@ -137,6 +147,7 @@ export default function AdvancedFinOpsPage() {
     if (cbRes.status === 'fulfilled') setChargeback(cbRes.value)
     if (opRes.status === 'fulfilled') setOperatingReview(opRes.value)
     if (diRes.status === 'fulfilled') setDecisionIntel(diRes.value)
+    if (ctRes.status === 'fulfilled') setControlTower(ctRes.value)
 
     if (tagRes.status === 'rejected' && decRes.status === 'rejected' && fedRes.status === 'rejected') {
       setError('Failed to load advanced FinOps data.')
@@ -180,7 +191,7 @@ export default function AdvancedFinOpsPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Card>
               <CardContent className="p-4">
                 <p className="text-xs text-slate-500">Tag Quality</p>
@@ -209,7 +220,74 @@ export default function AdvancedFinOpsPage() {
                 <p className="text-sm text-slate-500">{fmt(decisionIntel?.expected_monthly_savings_pool_usd || 0)} savings pool / month</p>
               </CardContent>
             </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-slate-500">Control Tower</p>
+                <p className="text-2xl font-bold capitalize text-slate-900 dark:text-white">{controlTower?.posture || '—'}</p>
+                <p className="text-sm text-slate-500">{(controlTower?.control_score ?? 0).toFixed(1)} / 100 score</p>
+              </CardContent>
+            </Card>
           </div>
+
+          <Expander
+            title="FinOps Control Tower"
+            description="Unified forecast risk, waste, commitment, governance, and decision signals with RAG-backed advisory context."
+            icon={<ShieldCheck className="h-5 w-5" />}
+            defaultOpen
+          >
+            {controlTower ? (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  {[
+                    { label: 'Monthly Spend', value: fmt(controlTower.executive_summary.monthly_spend_usd) },
+                    { label: 'Annual Run Rate', value: fmt(controlTower.executive_summary.annualized_run_rate_usd) },
+                    { label: 'Forecast Confidence', value: `${controlTower.executive_summary.forecast_confidence_score.toFixed(1)} / 100` },
+                    { label: 'Scenario', value: controlTower.executive_summary.recommended_scenario || 'balanced' },
+                  ].map((metric) => (
+                    <Card key={metric.label} className="rounded-lg">
+                      <CardContent className="p-4">
+                        <p className="text-xs uppercase text-slate-500">{metric.label}</p>
+                        <p className="mt-2 text-xl font-semibold capitalize text-slate-950 dark:text-white">{metric.value}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+                  {controlTower.control_lanes.map((lane) => (
+                    <div key={lane.lane} className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="mb-3 flex items-start justify-between gap-2">
+                        <p className="font-semibold text-slate-950 dark:text-white">{lane.label}</p>
+                        <span className={`rounded-md border px-2 py-0.5 text-xs font-medium ${statusTone(lane.status)}`}>
+                          {lane.status}
+                        </span>
+                      </div>
+                      <p className="text-2xl font-bold text-slate-950 dark:text-white">
+                        {lane.primary_metric_label.includes('opportunity') || lane.primary_metric_label.includes('pool')
+                          ? fmt(lane.primary_metric)
+                          : lane.primary_metric.toFixed(1)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">{lane.primary_metric_label}</p>
+                      <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">{lane.next_action}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
+                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">RAG-backed action queue</p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {controlTower.priority_actions.map((action) => (
+                      <div key={action} className="rounded-md bg-white px-3 py-2 text-sm text-slate-700 shadow-sm dark:bg-slate-950 dark:text-slate-300">
+                        {action}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Control tower analytics are unavailable for this workspace.</p>
+            )}
+          </Expander>
 
           <Expander
             title="Core Advanced FinOps Panels"

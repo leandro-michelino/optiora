@@ -20,6 +20,28 @@ The strongest project-wide improvement made in this pass is the dashboard shell:
 - active-page descriptions in the sticky header
 - active/search-result navigation items show page purpose, reducing guesswork
 - clearer page grouping through Workspace, Intelligence, FinOps, and Operations context
+- Advanced FinOps now acts as a control tower so forecast risk, waste, commitment, governance, decision-frontier, RAG, and GenAI advisory signals are reviewed in one place before the operator drills into specialized pages
+
+## Consolidation Review
+
+```text
+Keep separate pages when the workflow/persona is different:
+  Billing & Allocation  -> finance, chargeback, exports
+  Cloud Resources       -> resource-level investigation
+  Kubernetes            -> container/cluster/OpenCost workflow
+  Cost Advisor          -> conversational advisory and prompts
+
+Unify dense intelligence signals inside Advanced FinOps:
+  forecast risk + waste + commitments + tagging/governance
+        + decision frontier + RAG evidence + GenAI prompt
+        -> /dashboard/advanced-finops control tower
+```
+
+No duplicate dashboard route remains for Kubernetes, containers, Docker,
+namespaces, or OpenCost. The only remaining route for that journey is
+`/dashboard/kubernetes`. The better reduction path is not deleting specialized
+operator pages; it is consolidating executive intelligence into a control tower
+and keeping specialist drill-down pages for real work.
 
 ## Page-By-Page Review
 
@@ -35,7 +57,7 @@ The strongest project-wide improvement made in this pass is the dashboard shell:
 | Forecasting | Good analytical depth with scenarios and diagnostics. Can overwhelm non-finance users. | Added shell context for budget risk, forecast bands, scenarios, and diagnostics. Search supports `forecast`, `budget`, `risk`, and `scenario`. | Add a simple “budget risk verdict” first, then keep bands, diagnostics, and scenario detail in expanders. |
 | Unit Economics | High-value business view, especially for FOCUS and cost-per-unit. Needs strong business-language framing. | Added shell context for business-unit cost, waste rate, provider efficiency, and FOCUS exports. Search supports `unit`, `economics`, `kpi`, and `focus`. | Add guided examples for cost-per-transaction, cost-per-customer, and cost-per-environment metrics. |
 | Scorecards | Previously team maturity oriented; now also carries finance follow-through. | Added realized savings scorecards by provider, owner, business unit, and realized month. Kept details in expanders to avoid flooding the page. Shell search supports `maturity`, `realized savings`, `finance`, and `owner`. | Add direct links from each scorecard row to the filtered recommendation ledger once ledger row filtering is available in UI. |
-| Advanced FinOps | Powerful but abstract page with tagging, decision intelligence, and federation. | Added shell context for tagging coverage, decision intelligence, and cross-provider optimization. Search supports `advanced`, `decision`, `federation`, and `tagging`. | Split the top area into “governance,” “decision,” and “federation” lanes with one primary action each. |
+| Advanced FinOps | Powerful but abstract page with tagging, decision intelligence, and federation. | Added the FinOps Control Tower, unifying forecast risk, waste, commitments, governance, decision frontier, RAG evidence, and GenAI advisory prompts before the deeper panels. Search supports `advanced`, `decision`, `federation`, and `tagging`. | Add drill-through filters from each control-tower lane into Forecasting, Recommendations, Virtual Tags, and Rightsizing. |
 | Cloud Resources | Canonical resource-cost explorer for provider, account, region, service type, tag, monthly cost, and waste investigation. | Added the Cloud Resources & Costs cockpit, provider cost share, resource type/region/account/top-resource breakdowns, local search/sort, expandable rows, and the details drawer. Search supports `resources`, `inventory`, `assets`, `tags`, and `costs`. | Add saved filter presets such as “high cost,” “waste flagged,” “untagged,” and “owner unknown.” |
 | Kubernetes | Consolidated Kubernetes page is now canonical. It owns Kubernetes, containers, Docker, namespaces, and OpenCost instead of splitting the journey. | Removed the legacy Kubernetes namespace route wiring and kept all Kubernetes/container/Docker inventory, cost, and allocation flows on `/dashboard/kubernetes`. Search supports `k8s`, `opencost`, `namespace`, `cluster`, `docker`, and `container`. | Add a quick “cluster readiness” checklist for OpenCost status, namespace allocation, and stale workload signals. |
 | Virtual Tags | Good governance workflow because it avoids changing cloud resources. | Added shell context for virtual tag rules and preview. Search supports `tags`, `rules`, `allocation`, and `governance`. | Add a before/after preview summary showing affected cost share and unmapped spend reduction. |

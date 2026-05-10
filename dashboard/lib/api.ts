@@ -77,6 +77,7 @@ import {
   ChargebackSummaryResponse,
   FinOpsOperatingReviewResponse,
   DecisionIntelligenceResponse,
+  FinOpsControlTowerResponse,
 } from './types'
 import { backendUrl } from './backend-url'
 import { authorizedFetch } from './auth-fetch'
@@ -447,6 +448,8 @@ export async function fetchGenAICopilotPack(payload: {
     | 'rightsizing_brief'
     | 'vendor_negotiation_brief'
     | 'forecast_model_diagnostics'
+    | 'finops_operating_review'
+    | 'decision_intelligence'
   >
 } = {}): Promise<GenAICopilotPackResponse> {
   return requestJson<GenAICopilotPackResponse>(
@@ -1153,6 +1156,17 @@ export function fetchDecisionIntelligence(
 ): Promise<DecisionIntelligenceResponse> {
   return requestJson<DecisionIntelligenceResponse>(
     `/api/v1/analytics/decision-intelligence${toQueryString({ cloud_provider: cloudProvider, months })}`,
+    {},
+    { timeoutMs: 45000 },
+  )
+}
+
+export function fetchFinOpsControlTower(
+  cloudProvider = 'all',
+  months = 12,
+): Promise<FinOpsControlTowerResponse> {
+  return requestJson<FinOpsControlTowerResponse>(
+    `/api/v1/analytics/control-tower${toQueryString({ cloud_provider: cloudProvider, months })}`,
     {},
     { timeoutMs: 45000 },
   )

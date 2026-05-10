@@ -121,6 +121,7 @@ Current backend coverage includes:
 - RAG guidance retrieval contract (`POST /api/v1/genai/rag-guidance`)
 - combined intelligence contract (`GET /api/v1/analytics/finops-intelligence`)
 - decision-intelligence frontier contract (`GET /api/v1/analytics/decision-intelligence`)
+- unified FinOps control tower contract (`GET /api/v1/analytics/control-tower`) with forecast-risk, waste, commitment, governance, decision, RAG, and GenAI prompt blocks
 - decision-intelligence narrative contract (`POST /api/v1/genai/analyze` with `analysis_type=decision_intelligence`)
 - GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, vendor negotiation, and operating reviews
 

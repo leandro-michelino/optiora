@@ -2557,6 +2557,206 @@ def build_decision_intelligence(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_finops_control_tower(params: dict[str, Any]) -> dict[str, Any]:
+    """Unified executive FinOps control tower across risk, savings, governance, and execution."""
+    months = int(params.get("months") or 12)
+    current_monthly = _safe_float(params.get("current_monthly_spend"), 0.0)
+    cost_breakdown = params.get("cost_breakdown") or {}
+    budget_monthly = _safe_float(params.get("budget_monthly"), 0.0)
+    historical = params.get("historical_monthly_spend") or []
+    fallback_monthly = _safe_float(params.get("fallback_monthly_spend"), 0.0)
+
+    analytics = params.get("analytics_result")
+    if not isinstance(analytics, dict):
+        analytics = build_analytics(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+                "budget_monthly": budget_monthly,
+                "monthly_savings": _safe_float(params.get("monthly_savings"), 0.0),
+                "anomalies": int(params.get("anomalies", 0) or 0),
+            }
+        )
+    forecast_diag = params.get("forecast_diagnostics")
+    if not isinstance(forecast_diag, dict):
+        forecast_diag = build_forecast_diagnostics(
+            {
+                "months": months,
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+                "historical_monthly_spend": historical,
+                "budget_monthly": budget_monthly,
+                "fallback_monthly_spend": fallback_monthly,
+            }
+        )
+    waste = params.get("waste_result")
+    if not isinstance(waste, dict):
+        waste = build_cloud_waste_analysis(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+            }
+        )
+    commitment_gap = params.get("commitment_gap_result")
+    if not isinstance(commitment_gap, dict):
+        commitment_gap = build_commitment_gap_analysis(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+            }
+        )
+    tagging = params.get("tagging_result")
+    if not isinstance(tagging, dict):
+        tagging = build_tagging_coverage_analytics(
+            {
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+            }
+        )
+    decision = params.get("decision_result")
+    if not isinstance(decision, dict):
+        decision = build_decision_intelligence(
+            {
+                "months": months,
+                "current_monthly_spend": current_monthly,
+                "cost_breakdown": cost_breakdown,
+                "historical_monthly_spend": historical,
+                "budget_monthly": budget_monthly,
+                "monthly_savings": _safe_float(params.get("monthly_savings"), 0.0),
+                "fallback_monthly_spend": fallback_monthly,
+                "recommendations": params.get("recommendations") or [],
+            }
+        )
+
+    forecast_quality = forecast_diag.get("forecast_quality") or {}
+    budget_guardrails = forecast_diag.get("budget_guardrails") or {}
+    exposure = forecast_diag.get("exposure") or {}
+    waste_rate = _safe_float((analytics.get("unit_metrics") or {}).get("estimated_waste_rate_percent"), 0.0)
+    commitment_opportunity = _safe_float(commitment_gap.get("total_annual_opportunity_usd"), 0.0)
+    annualized_spend = _safe_float(exposure.get("annualized_run_rate_usd"), current_monthly * 12)
+    realized_risk = _safe_float(analytics.get("risk_score"), 50.0)
+    maturity_score = _safe_float(analytics.get("maturity_score"), 50.0)
+    confidence_score = _safe_float(forecast_quality.get("confidence_score"), 50.0)
+    high_risk_months = exposure.get("high_risk_months") or []
+
+    control_score = round(
+        max(
+            0.0,
+            min(
+                100.0,
+                (maturity_score * 0.30)
+                + (confidence_score * 0.25)
+                + ((100.0 - realized_risk) * 0.25)
+                + (max(0.0, 100.0 - waste_rate * 3.0) * 0.20),
+            ),
+        ),
+        1,
+    )
+    posture = (
+        "optimize" if control_score >= 82
+        else "run" if control_score >= 68
+        else "walk" if control_score >= 50
+        else "crawl"
+    )
+
+    lanes = [
+        {
+            "lane": "forecast_risk",
+            "label": "Forecast Risk",
+            "status": "attention" if high_risk_months else "healthy",
+            "primary_metric": confidence_score,
+            "primary_metric_label": "forecast confidence",
+            "evidence": budget_guardrails,
+            "next_action": (
+                f"Set budget control before {high_risk_months[0]}"
+                if high_risk_months
+                else "Keep monthly forecast backtesting active"
+            ),
+        },
+        {
+            "lane": "waste",
+            "label": "Waste",
+            "status": "attention" if waste_rate >= 18 else "healthy",
+            "primary_metric": waste_rate,
+            "primary_metric_label": "estimated waste rate",
+            "evidence": waste.get("categories", [])[:5],
+            "next_action": "Execute low-effort waste quick wins first",
+        },
+        {
+            "lane": "commitment",
+            "label": "Commitment",
+            "status": "attention" if commitment_opportunity > annualized_spend * 0.03 else "watch",
+            "primary_metric": commitment_opportunity,
+            "primary_metric_label": "annual opportunity",
+            "evidence": commitment_gap.get("provider_gaps", [])[:5],
+            "next_action": "Expand commitments only on measured steady-state demand",
+        },
+        {
+            "lane": "governance",
+            "label": "Governance",
+            "status": "attention" if _safe_float(tagging.get("coverage_percent"), 0.0) < 70 else "healthy",
+            "primary_metric": _safe_float(tagging.get("coverage_percent"), 0.0),
+            "primary_metric_label": "tag coverage",
+            "evidence": tagging.get("provider_coverage", [])[:5],
+            "next_action": "Use policy gates and virtual tags to reduce unallocated spend",
+        },
+        {
+            "lane": "decision",
+            "label": "Decision Frontier",
+            "status": "healthy" if decision.get("recommended_scenario") else "watch",
+            "primary_metric": _safe_float(decision.get("expected_monthly_savings_pool_usd"), 0.0),
+            "primary_metric_label": "monthly savings pool",
+            "evidence": decision.get("frontier", [])[:3],
+            "next_action": f"Plan around the {decision.get('recommended_scenario') or 'balanced'} scenario",
+        },
+    ]
+
+    priority_actions = [
+        lane["next_action"]
+        for lane in sorted(
+            lanes,
+            key=lambda row: (0 if row["status"] == "attention" else 1 if row["status"] == "watch" else 2),
+        )
+    ][:5]
+
+    return {
+        "generated_at": _utcnow().isoformat(),
+        "forecast_months": months,
+        "posture": posture,
+        "control_score": control_score,
+        "executive_summary": {
+            "monthly_spend_usd": round(current_monthly, 2),
+            "annualized_run_rate_usd": round(annualized_spend, 2),
+            "risk_score": realized_risk,
+            "maturity_score": maturity_score,
+            "forecast_confidence_score": confidence_score,
+            "recommended_scenario": decision.get("recommended_scenario"),
+            "expected_monthly_savings_pool_usd": decision.get("expected_monthly_savings_pool_usd", 0.0),
+        },
+        "control_lanes": lanes,
+        "priority_actions": priority_actions,
+        "supporting_blocks": {
+            "analytics": analytics,
+            "forecast_diagnostics": forecast_diag,
+            "waste": waste,
+            "commitment_gap": commitment_gap,
+            "tagging": tagging,
+            "decision_intelligence": decision,
+        },
+        "genai_context": {
+            "prompt": (
+                "Write a FinOps control tower brief for finance, platform, and executives. "
+                "Use the control lanes to explain forecast risk, waste, commitment, governance, "
+                "and decision-frontier tradeoffs without changing any numbers."
+            ),
+            "posture": posture,
+            "control_score": control_score,
+            "priority_actions": priority_actions,
+            "lanes": lanes,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Async wrappers (called by api.py endpoints)
 # ---------------------------------------------------------------------------
@@ -2627,6 +2827,10 @@ async def get_forecast_diagnostics(params: dict[str, Any]) -> str:
 
 async def get_decision_intelligence(params: dict[str, Any]) -> str:
     return json.dumps(build_decision_intelligence(params))
+
+
+async def get_finops_control_tower(params: dict[str, Any]) -> str:
+    return json.dumps(build_finops_control_tower(params))
 
 
 # ---------------------------------------------------------------------------
