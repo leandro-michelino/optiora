@@ -37,15 +37,26 @@ export function buildCostDataSourceStatus({
   diagnostics,
   primaryLoaded,
   pageName,
+  isLoading = false,
 }: {
   health: ApiHealth | null
   importedSummary: ImportedCostSummaryResponse | null
   diagnostics: ProviderDiagnostic[]
   primaryLoaded: boolean
   pageName: string
+  isLoading?: boolean
 }): DataSourceBannerState {
   const healthOk = health?.status === 'healthy'
   const configuredProviders = diagnostics.filter((item) => item.configured)
+
+  if (isLoading && !healthOk && !primaryLoaded) {
+    return {
+      state: 'checking',
+      label: 'Checking backend',
+      title: `${pageName} is checking live backend data`,
+      description: 'Loading the API health check and live data signals. This page will update when the backend responds.',
+    }
+  }
 
   if (primaryLoaded && configuredProviders.length > 0) {
     return {
@@ -90,14 +101,25 @@ export function buildLiveDataSourceStatus({
   diagnostics,
   primaryLoaded,
   pageName,
+  isLoading = false,
 }: {
   health: ApiHealth | null
   diagnostics: ProviderDiagnostic[]
   primaryLoaded: boolean
   pageName: string
+  isLoading?: boolean
 }): DataSourceBannerState {
   const healthOk = health?.status === 'healthy'
   const configuredProviders = diagnostics.filter((item) => item.configured)
+
+  if (isLoading && !healthOk && !primaryLoaded) {
+    return {
+      state: 'checking',
+      label: 'Checking backend',
+      title: `${pageName} is checking live backend data`,
+      description: 'Loading the API health check and live data signals. This page will update when the backend responds.',
+    }
+  }
 
   if (primaryLoaded && configuredProviders.length > 0) {
     return {

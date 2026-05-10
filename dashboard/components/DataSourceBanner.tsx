@@ -1,12 +1,14 @@
 'use client'
 
-import { AlertTriangle, Database, Radio, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, Database, Loader2, Radio, ShieldAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { DataSourceBannerState } from '@/lib/data-source'
 
 function toneClasses(state: DataSourceBannerState['state']): string {
   switch (state) {
+    case 'checking':
+      return 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-200'
     case 'imported':
       return 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100'
     case 'live':
@@ -19,6 +21,9 @@ function toneClasses(state: DataSourceBannerState['state']): string {
 }
 
 function StateIcon({ state }: { state: DataSourceBannerState['state'] }) {
+  if (state === 'checking') {
+    return <Loader2 className="h-4 w-4 animate-spin" />
+  }
   if (state === 'imported') {
     return <Database className="h-4 w-4" />
   }

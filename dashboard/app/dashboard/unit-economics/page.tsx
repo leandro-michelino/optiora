@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
+type SpendPoint = { month: string; cost_usd: number }
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -27,14 +28,17 @@ export default function UnitEconomicsPage() {
   const [metricResult, setMetricResult] = useState<UnitEconomicsMetricResult | null>(null)
   const [metricLoading, setMetricLoading] = useState(false)
   const [focusDownloading, setFocusDownloading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await fetchUnitEconomicsCockpit(provider)
       setData(res)
-    } catch {
-      // silently keep previous data
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load unit economics data.')
+      setData(null)
     } finally {
       setLoading(false)
     }
@@ -63,6 +67,21 @@ export default function UnitEconomicsPage() {
       setFocusDownloading(false)
     }
   }
+
+  const historicalSpend: SpendPoint[] = (data?.historical_monthly_spend || [])
+    .map((point, index) => {
+      if (typeof point === 'number') {
+        return {
+          month: index === 0 ? 'Current' : `Period ${index + 1}`,
+          cost_usd: point,
+        }
+      }
+      return {
+        month: point.month || `Period ${index + 1}`,
+        cost_usd: Number(point.cost_usd || 0),
+      }
+    })
+    .filter((point) => Number.isFinite(point.cost_usd))
 
   return (
     <div className="space-y-8">
@@ -227,15 +246,15 @@ export default function UnitEconomicsPage() {
           </div>
 
           {/* Historical trend */}
-          {data.historical_monthly_spend.length > 0 && (
+          {historicalSpend.length > 0 && (
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
                 <CardTitle>Monthly Spend History</CardTitle>
               </CardHeader>
               <CardContent className="pt-5">
                 <div className="flex items-end gap-2 h-28">
-                  {data.historical_monthly_spend.map((point, i) => {
-                    const maxCost = Math.max(...data.historical_monthly_spend.map(p => p.cost_usd), 1)
+                  {historicalSpend.map((point, i) => {
+                    const maxCost = Math.max(...historicalSpend.map(p => p.cost_usd), 1)
                     const height = Math.max(8, (point.cost_usd / maxCost) * 100)
                     return (
                       <div key={i} className="flex-1 flex flex-col items-center gap-1">
@@ -267,7 +286,7 @@ export default function UnitEconomicsPage() {
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
-          Could not load unit economics data. Check backend connectivity.
+          {error || 'Could not load unit economics data. Check backend connectivity.'}
         </div>
       )}
     </div>

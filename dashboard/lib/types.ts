@@ -94,7 +94,7 @@ export interface ProviderDiagnostic {
   recommendation: string
 }
 
-export type DataSourceState = 'live' | 'imported' | 'partial' | 'fallback'
+export type DataSourceState = 'checking' | 'live' | 'imported' | 'partial' | 'fallback'
 
 // ---------------------------------------------------------------------------
 // New analytics types (Epic 5)
@@ -958,7 +958,7 @@ export interface UnitEconomicsCockpitResponse {
     dollar_efficiency_score: number
   }
   provider_metrics: UnitEconomicsProviderMetric[]
-  historical_monthly_spend: Array<{ month: string; cost_usd: number }>
+  historical_monthly_spend: Array<number | { month: string; cost_usd: number }>
   business_metrics_hint: string
 }
 

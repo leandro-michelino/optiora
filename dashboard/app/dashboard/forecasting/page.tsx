@@ -155,6 +155,7 @@ export default function PredictiveAnalyticsPage() {
     diagnostics,
     primaryLoaded: Boolean(forecast),
     pageName: 'Forecasting',
+    isLoading: loading,
   })
 
   const selectedScenarioData = forecast

@@ -89,6 +89,7 @@ export default function AIInsightsPage() {
     diagnostics,
     primaryLoaded: Boolean(analytics),
     pageName: 'AI Insights',
+    isLoading: loading,
   })
 
   const topFindings = analytics
