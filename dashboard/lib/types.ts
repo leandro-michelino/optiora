@@ -1151,6 +1151,21 @@ export interface KubernetesContainerServiceCost {
   account_count: number
   region_count: number
   regions: string[]
+  resource_id?: string | null
+  resource_name?: string | null
+  lifecycle_state?: string | null
+  resource_shape?: string | null
+  resource_version?: string | null
+  created_at?: string | null
+  availability_domain?: string | null
+  public_endpoint?: string | null
+  private_endpoint?: string | null
+  public_ip?: string | null
+  ocpus?: number | null
+  memory_gib?: number | null
+  container_count?: number | null
+  container_images: string[]
+  console_url?: string | null
 }
 
 export interface KubernetesProviderServiceRollup {

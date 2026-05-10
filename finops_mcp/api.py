@@ -10287,6 +10287,21 @@ class KubernetesContainerServiceCost(BaseModel):
     account_count: int = 0
     region_count: int = 0
     regions: List[str] = Field(default_factory=list)
+    resource_id: Optional[str] = None
+    resource_name: Optional[str] = None
+    lifecycle_state: Optional[str] = None
+    resource_shape: Optional[str] = None
+    resource_version: Optional[str] = None
+    created_at: Optional[str] = None
+    availability_domain: Optional[str] = None
+    public_endpoint: Optional[str] = None
+    private_endpoint: Optional[str] = None
+    public_ip: Optional[str] = None
+    ocpus: Optional[float] = None
+    memory_gib: Optional[float] = None
+    container_count: Optional[int] = None
+    container_images: List[str] = Field(default_factory=list)
+    console_url: Optional[str] = None
 
 
 class KubernetesProviderServiceRollup(BaseModel):
@@ -10496,6 +10511,7 @@ def _oci_live_kubernetes_inventory_rows(
         container_engine = oci.container_engine.ContainerEngineClient(oci_config, timeout=client_timeout)
         container_instances = oci.container_instances.ContainerInstanceClient(oci_config, timeout=client_timeout)
         artifacts = oci.artifacts.ArtifactsClient(oci_config, timeout=client_timeout)
+        virtual_network = oci.core.VirtualNetworkClient(oci_config, timeout=client_timeout)
     except Exception as exc:
         logger.info("Unable to initialize OCI Kubernetes inventory clients: %s", exc)
         return []
@@ -10531,6 +10547,19 @@ def _oci_live_kubernetes_inventory_rows(
         monthly_cost_usd: float,
         evidence: str,
         compartment_id: str,
+        resource_name: Optional[str] = None,
+        lifecycle_state: Optional[str] = None,
+        resource_shape: Optional[str] = None,
+        resource_version: Optional[str] = None,
+        created_at: Optional[str] = None,
+        availability_domain: Optional[str] = None,
+        public_endpoint: Optional[str] = None,
+        private_endpoint: Optional[str] = None,
+        public_ip: Optional[str] = None,
+        ocpus: Optional[float] = None,
+        memory_gib: Optional[float] = None,
+        container_count: Optional[int] = None,
+        container_images: Optional[List[str]] = None,
     ) -> None:
         if len(rows) >= limit:
             return
@@ -10549,6 +10578,26 @@ def _oci_live_kubernetes_inventory_rows(
                 "region": region,
                 "account_identifier": compartment_id,
                 "evidence": evidence,
+                "resource_name": resource_name,
+                "lifecycle_state": lifecycle_state,
+                "resource_shape": resource_shape,
+                "resource_version": resource_version,
+                "created_at": created_at,
+                "availability_domain": availability_domain,
+                "public_endpoint": public_endpoint,
+                "private_endpoint": private_endpoint,
+                "public_ip": public_ip,
+                "ocpus": ocpus,
+                "memory_gib": memory_gib,
+                "container_count": container_count,
+                "container_images": container_images or [],
+                "console_url": _rightsizing_console_url(
+                    provider="oci",
+                    resource_id=resource_id,
+                    region=region,
+                    account_id=tenancy_id,
+                    resource_type=category,
+                ),
             }
         )
 
@@ -10572,6 +10621,19 @@ def _oci_live_kubernetes_inventory_rows(
             name = str(getattr(cluster, "name", "") or getattr(cluster, "display_name", "") or cluster_id).strip()
             version = str(getattr(cluster, "kubernetes_version", "") or "").strip()
             cluster_type = str(getattr(cluster, "type", "") or "BASIC_CLUSTER").strip()
+            public_endpoint = ""
+            private_endpoint = ""
+            created_at = ""
+            try:
+                cluster_details = container_engine.get_cluster(cluster_id).data
+                endpoints = getattr(cluster_details, "endpoints", None)
+                public_endpoint = str(getattr(endpoints, "public_endpoint", "") or "").strip() if endpoints else ""
+                private_endpoint = str(getattr(endpoints, "private_endpoint", "") or "").strip() if endpoints else ""
+                metadata = getattr(cluster_details, "metadata", None)
+                created_value = getattr(metadata, "time_created", None) if metadata else None
+                created_at = created_value.isoformat() if hasattr(created_value, "isoformat") else str(created_value or "")
+            except Exception:
+                pass
             append_row(
                 resource_id=cluster_id,
                 service=f"OKE cluster: {name}",
@@ -10583,6 +10645,13 @@ def _oci_live_kubernetes_inventory_rows(
                     f", {cluster_type.replace('_', ' ').title()}."
                 ),
                 compartment_id=compartment_id,
+                resource_name=name,
+                lifecycle_state=lifecycle or None,
+                resource_shape=cluster_type.replace("_", " ").title(),
+                resource_version=version or None,
+                created_at=created_at or None,
+                public_endpoint=public_endpoint or None,
+                private_endpoint=private_endpoint or None,
             )
 
         try:
@@ -10601,16 +10670,39 @@ def _oci_live_kubernetes_inventory_rows(
             instance_id = str(getattr(instance, "id", "") or "").strip()
             display_name = str(getattr(instance, "display_name", "") or instance_id).strip()
             shape = str(getattr(instance, "shape", "") or "OCI Container Instance").strip()
+            availability_domain = str(getattr(instance, "availability_domain", "") or "").strip()
+            created_value = getattr(instance, "time_created", None)
+            created_at = created_value.isoformat() if hasattr(created_value, "isoformat") else str(created_value or "")
             shape_config = getattr(instance, "shape_config", None)
             ocpus = float(getattr(shape_config, "ocpus", 0.0) or 0.0) if shape_config else None
             memory_gib = float(getattr(shape_config, "memory_in_gbs", 0.0) or 0.0) if shape_config else None
             images: List[str] = []
+            container_count = int(getattr(instance, "container_count", 0) or 0)
+            public_ip = ""
             try:
                 details = container_instances.get_container_instance(instance_id).data
                 for container in getattr(details, "containers", []) or []:
                     image = str(getattr(container, "image_url", "") or "").strip()
-                    if image:
+                    container_id = str(getattr(container, "container_id", "") or getattr(container, "id", "") or "").strip()
+                    if not image and container_id:
+                        try:
+                            container_details = container_instances.get_container(container_id).data
+                            image = str(getattr(container_details, "image_url", "") or "").strip()
+                        except Exception:
+                            image = ""
+                    if image and image not in images:
                         images.append(image)
+                for vnic in getattr(details, "vnics", []) or []:
+                    vnic_id = str(getattr(vnic, "vnic_id", "") or getattr(vnic, "id", "") or "").strip()
+                    if not vnic_id:
+                        continue
+                    try:
+                        vnic_details = virtual_network.get_vnic(vnic_id).data
+                        public_ip = str(getattr(vnic_details, "public_ip", "") or "").strip()
+                        if public_ip:
+                            break
+                    except Exception:
+                        continue
             except Exception:
                 images = []
             image_note = f" Images: {', '.join(images[:3])}." if images else ""
@@ -10624,6 +10716,16 @@ def _oci_live_kubernetes_inventory_rows(
                 monthly_cost_usd=_estimate_oci_container_instance_monthly_cost(ocpus, memory_gib),
                 evidence=f"Live OCI Container Instance inventory: {lifecycle or 'ACTIVE'}, {shape}.{size_note}{image_note}",
                 compartment_id=compartment_id,
+                resource_name=display_name,
+                lifecycle_state=lifecycle or None,
+                resource_shape=shape,
+                created_at=created_at or None,
+                availability_domain=availability_domain or None,
+                public_ip=public_ip or None,
+                ocpus=ocpus,
+                memory_gib=memory_gib,
+                container_count=container_count or (len(images) if images else None),
+                container_images=images[:8],
             )
 
         try:
@@ -10652,6 +10754,8 @@ def _oci_live_kubernetes_inventory_rows(
                 monthly_cost_usd=0.0,
                 evidence=f"Live OCI Container Registry inventory: {lifecycle or 'AVAILABLE'} repository.",
                 compartment_id=compartment_id,
+                resource_name=name,
+                lifecycle_state=lifecycle or None,
             )
     return rows
 
@@ -10746,6 +10850,21 @@ async def _build_kubernetes_container_service_rollups(
         category_override: Optional[str] = None,
         evidence: Optional[str] = None,
         allow_zero_cost: bool = False,
+        resource_id: Optional[str] = None,
+        resource_name: Optional[str] = None,
+        lifecycle_state: Optional[str] = None,
+        resource_shape: Optional[str] = None,
+        resource_version: Optional[str] = None,
+        created_at: Optional[str] = None,
+        availability_domain: Optional[str] = None,
+        public_endpoint: Optional[str] = None,
+        private_endpoint: Optional[str] = None,
+        public_ip: Optional[str] = None,
+        ocpus: Optional[float] = None,
+        memory_gib: Optional[float] = None,
+        container_count: Optional[int] = None,
+        container_images: Optional[List[str]] = None,
+        console_url: Optional[str] = None,
     ) -> None:
         provider_key = str(provider or "").strip().lower()
         if provider_key not in providers:
@@ -10769,6 +10888,21 @@ async def _build_kubernetes_container_service_rollups(
                 "evidence": evidence or _container_service_evidence(category),
                 "regions": set(),
                 "accounts": set(),
+                "resource_id": resource_id,
+                "resource_name": resource_name,
+                "lifecycle_state": lifecycle_state,
+                "resource_shape": resource_shape,
+                "resource_version": resource_version,
+                "created_at": created_at,
+                "availability_domain": availability_domain,
+                "public_endpoint": public_endpoint,
+                "private_endpoint": private_endpoint,
+                "public_ip": public_ip,
+                "ocpus": ocpus,
+                "memory_gib": memory_gib,
+                "container_count": container_count,
+                "container_images": container_images or [],
+                "console_url": console_url,
             },
         )
         bucket["monthly_cost_usd"] = float(bucket["monthly_cost_usd"]) + amount
@@ -10780,6 +10914,26 @@ async def _build_kubernetes_container_service_rollups(
             bucket["regions"].add(str(region))
         if account_identifier:
             bucket["accounts"].add(str(account_identifier))
+        for field_name, value in {
+            "resource_id": resource_id,
+            "resource_name": resource_name,
+            "lifecycle_state": lifecycle_state,
+            "resource_shape": resource_shape,
+            "resource_version": resource_version,
+            "created_at": created_at,
+            "availability_domain": availability_domain,
+            "public_endpoint": public_endpoint,
+            "private_endpoint": private_endpoint,
+            "public_ip": public_ip,
+            "ocpus": ocpus,
+            "memory_gib": memory_gib,
+            "container_count": container_count,
+            "console_url": console_url,
+        }.items():
+            if value is not None and not bucket.get(field_name):
+                bucket[field_name] = value
+        if container_images and not bucket.get("container_images"):
+            bucket["container_images"] = container_images
 
     for provider in providers:
         if diagnostics.get(provider, False):
@@ -10881,6 +11035,21 @@ async def _build_kubernetes_container_service_rollups(
                 category_override=str(row.get("category") or ""),
                 evidence=str(row.get("evidence") or ""),
                 allow_zero_cost=True,
+                resource_id=str(row.get("resource_id") or ""),
+                resource_name=str(row.get("resource_name") or ""),
+                lifecycle_state=str(row.get("lifecycle_state") or ""),
+                resource_shape=str(row.get("resource_shape") or ""),
+                resource_version=str(row.get("resource_version") or ""),
+                created_at=str(row.get("created_at") or ""),
+                availability_domain=str(row.get("availability_domain") or ""),
+                public_endpoint=str(row.get("public_endpoint") or ""),
+                private_endpoint=str(row.get("private_endpoint") or ""),
+                public_ip=str(row.get("public_ip") or ""),
+                ocpus=row.get("ocpus"),
+                memory_gib=row.get("memory_gib"),
+                container_count=row.get("container_count"),
+                container_images=row.get("container_images") if isinstance(row.get("container_images"), list) else [],
+                console_url=str(row.get("console_url") or ""),
             )
         if len(grouped) > before_count and provider_sources["oci"] == "none":
             provider_sources["oci"] = "live_resource_inventory"
@@ -10906,6 +11075,25 @@ async def _build_kubernetes_container_service_rollups(
                 account_count=len(accounts),
                 region_count=len(regions),
                 regions=regions[:8],
+                resource_id=str(bucket.get("resource_id") or "") or None,
+                resource_name=str(bucket.get("resource_name") or "") or None,
+                lifecycle_state=str(bucket.get("lifecycle_state") or "") or None,
+                resource_shape=str(bucket.get("resource_shape") or "") or None,
+                resource_version=str(bucket.get("resource_version") or "") or None,
+                created_at=str(bucket.get("created_at") or "") or None,
+                availability_domain=str(bucket.get("availability_domain") or "") or None,
+                public_endpoint=str(bucket.get("public_endpoint") or "") or None,
+                private_endpoint=str(bucket.get("private_endpoint") or "") or None,
+                public_ip=str(bucket.get("public_ip") or "") or None,
+                ocpus=bucket.get("ocpus") if isinstance(bucket.get("ocpus"), (int, float)) else None,
+                memory_gib=bucket.get("memory_gib") if isinstance(bucket.get("memory_gib"), (int, float)) else None,
+                container_count=bucket.get("container_count") if isinstance(bucket.get("container_count"), int) else None,
+                container_images=[
+                    str(image)
+                    for image in bucket.get("container_images", [])
+                    if str(image or "").strip()
+                ][:8],
+                console_url=str(bucket.get("console_url") or "") or None,
             )
         )
     rows.sort(key=lambda item: item.monthly_cost_usd, reverse=True)
