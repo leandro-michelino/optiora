@@ -97,11 +97,16 @@ function ScorecardCard({ team }: { team: ScorecardEntry }) {
 export default function ScorecardsPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ScorecardsResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
+    setError(null)
     try {
       setData(await fetchScorecards())
+    } catch (err) {
+      setData(null)
+      setError(err instanceof Error ? err.message : 'Could not load scorecard data.')
     } finally {
       setLoading(false)
     }
@@ -182,7 +187,7 @@ export default function ScorecardsPage() {
           </div>
 
           {/* Team scorecards */}
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {data.teams.map(team => (
               <ScorecardCard key={team.team} team={team} />
             ))}
@@ -195,7 +200,7 @@ export default function ScorecardsPage() {
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
-          Could not load scorecard data. Check backend connectivity.
+          {error || 'Could not load scorecard data. Check backend connectivity.'}
         </div>
       )}
     </div>

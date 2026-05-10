@@ -548,7 +548,7 @@ export default function RightsizingPage() {
 
       {/* KPI strip */}
       {data && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: 'Resources Analyzed', value: data.total_resources_analyzed.toLocaleString(), icon: Zap, color: 'from-blue-500 to-blue-600' },
             { label: 'Rightsizable', value: data.rightsizable_count.toLocaleString(), icon: AlertTriangle, color: 'from-amber-500 to-amber-600' },
@@ -578,7 +578,7 @@ export default function RightsizingPage() {
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Savings by product</h2>
             <span className="text-sm text-slate-500">Non-compute: {fmtK(nonComputeSavings)}/mo</span>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {productSummaries.map(([product, summary]) => (
               <button
                 key={product}
@@ -596,7 +596,7 @@ export default function RightsizingPage() {
 
       {/* Action breakdown */}
       {data && productScoped.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           {ACTIONS.filter(a => a !== 'all').map(action => {
             const count = productScoped.filter(r => r.action === action).length
             const savings = productScoped.filter(r => r.action === action).reduce((s, r) => s + r.monthly_savings_usd, 0)
@@ -627,7 +627,7 @@ export default function RightsizingPage() {
               Showing {filtered.length} of {data.rightsizable_count} recommendations · product: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{PRODUCT_LABELS[productFilter] ?? productFilter}</code> · scan: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{refreshLive ? 'live' : 'stored'}</code> · data source: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{data.data_source}</code>
             </p>
           )}
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map(rec => <RecCard key={`${rec.provider}-${rec.resource_id}-${rec.region}-${rec.action}`} rec={rec} />)}
           </div>
         </>

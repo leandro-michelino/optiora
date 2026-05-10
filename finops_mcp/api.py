@@ -2285,6 +2285,7 @@ async def run_scheduler_now(
     _require_management_role(membership, "manual scheduler runs")
     return await run_scheduled_scans_once(
         requested_organization_id=_organization_id_for_membership(membership),
+        sleep_between_retries=False,
     )
 
 
@@ -15745,13 +15746,23 @@ async def analytics_vm_utilization_hotspots(
     }
 
 
-async def run_scheduled_scans_once(requested_organization_id: Optional[int] = None) -> Dict[str, Any]:
+async def run_scheduled_scans_once(
+    requested_organization_id: Optional[int] = None,
+    sleep_between_retries: bool = True,
+) -> Dict[str, Any]:
     """Trigger due scans for approved organizations based on configured cadence."""
     global _scheduler_running
     if _scheduler_running:
-        return {"status": "busy", "started": 0, "organization_id": requested_organization_id}
+        return {
+            "status": "busy",
+            "started": 0,
+            "failed": 0,
+            "export_jobs_run": 0,
+            "organization_id": requested_organization_id,
+        }
     _scheduler_running = True
     started = 0
+    failed = 0
     export_jobs_run = 0
     now = _utcnow()
     db = SessionLocal()
@@ -15919,27 +15930,29 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
                             )
                         )
                         db.commit()
-                    if attempt < max_attempts:
+                    if attempt < max_attempts and sleep_between_retries:
                         await asyncio.sleep(backoff_seconds * (2 ** (attempt - 1)))
 
-            if not attempt_succeeded and derived_org_id is not None:
-                db.add(
-                    AlertEvent(
-                        organization_id=derived_org_id,
-                        customer_id=permission.customer_id,
-                        scan_id=final_scan_id,
-                        alert_type="scheduler.scan_failure",
-                        severity="critical",
-                        title="Scheduled scan failed after retries",
-                        message=(
-                            f"Scheduled scan for {permission.customer_id} failed after "
-                            f"{max_attempts} attempt(s). Last error: {last_error or 'unknown'}"
-                        )[:1000],
-                        delivered_channels_json="[]",
-                        created_at=_utcnow(),
+            if not attempt_succeeded:
+                failed += 1
+                if derived_org_id is not None:
+                    db.add(
+                        AlertEvent(
+                            organization_id=derived_org_id,
+                            customer_id=permission.customer_id,
+                            scan_id=final_scan_id,
+                            alert_type="scheduler.scan_failure",
+                            severity="critical",
+                            title="Scheduled scan failed after retries",
+                            message=(
+                                f"Scheduled scan for {permission.customer_id} failed after "
+                                f"{max_attempts} attempt(s). Last error: {last_error or 'unknown'}"
+                            )[:1000],
+                            delivered_channels_json="[]",
+                            created_at=_utcnow(),
+                        )
                     )
-                )
-                db.commit()
+                    db.commit()
 
         jobs_query = db.query(ExportJob).filter(ExportJob.is_active == True)  # noqa: E712
         if requested_organization_id is not None:
@@ -15971,6 +15984,7 @@ async def run_scheduled_scans_once(requested_organization_id: Optional[int] = No
     return {
         "status": "ok",
         "started": started,
+        "failed": failed,
         "export_jobs_run": export_jobs_run,
         "organization_id": requested_organization_id,
     }

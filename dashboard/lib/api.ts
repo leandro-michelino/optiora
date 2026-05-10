@@ -212,8 +212,8 @@ export async function fetchCosts(): Promise<CostResponse> {
   }
 }
 
-export async function fetchCostsStrict(): Promise<CostResponse> {
-  return requestJson<CostResponse>('/api/v1/costs', {}, { timeoutMs: LIVE_DATA_TIMEOUT_MS })
+export async function fetchCostsStrict(timeoutMs = LIVE_DATA_TIMEOUT_MS): Promise<CostResponse> {
+  return requestJson<CostResponse>('/api/v1/costs', {}, { timeoutMs })
 }
 
 function paginate<T>(items: T[], query: ListQuery = {}): PaginatedResponse<T> {

@@ -272,7 +272,7 @@ export default function DashboardPage() {
     setLoading(true)
     const [costs, health, info, credentials, permission, accountRollup, importedSummary, diagnostics, anomalies, recommendations, analytics, cloudWaste, efficiencyScore, commitmentGap, coverage, chargeback] =
       await Promise.allSettled([
-        fetchCostsStrict(),
+        fetchCostsStrict(12000),
         fetchApiHealth(),
         fetchApiInfo(),
         fetchCredentials(),
@@ -362,17 +362,17 @@ export default function DashboardPage() {
     return (
       <div className="space-y-8 animate-pulse">
         <div className="h-10 w-72 rounded-lg bg-slate-200 dark:bg-slate-700" />
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-28 rounded-xl bg-slate-200 dark:bg-slate-700" />
           ))}
         </div>
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-28 rounded-xl bg-slate-200 dark:bg-slate-700" />
           ))}
         </div>
-        <div className="grid gap-6 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <div className="h-64 rounded-xl bg-slate-200 dark:bg-slate-700 xl:col-span-2" />
           <div className="h-64 rounded-xl bg-slate-200 dark:bg-slate-700" />
         </div>
@@ -435,7 +435,7 @@ export default function DashboardPage() {
 
       <DataSourceBanner status={dataSourceStatus} />
 
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={DollarSign}
           label="Monthly Cloud Cost"
@@ -462,7 +462,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <MetricCard
           icon={Target}
           label="Spend At Risk"
@@ -483,7 +483,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="rounded-lg border-slate-200 dark:border-slate-700">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="text-xl">Efficiency Score</CardTitle>
@@ -555,7 +555,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <Card className="rounded-lg border-slate-200 dark:border-slate-700">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="text-xl">Commitment Gap Opportunity</CardTitle>
@@ -597,7 +597,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Allocation Coverage Row — always 4 cards */}
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={Tag}
           label="Allocation Coverage"
@@ -618,7 +618,7 @@ export default function DashboardPage() {
         })}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="rounded-lg xl:col-span-2">
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -660,9 +660,9 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <Card className="rounded-lg xl:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
+          <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
             <CardTitle className="flex items-center gap-2 text-xl">
               <KeyRound className="h-5 w-5" />
               Cloud Provider Coverage
@@ -794,7 +794,7 @@ export default function DashboardPage() {
       </div>
 
       <Card className="rounded-lg">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
+        <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
           <div>
             <CardTitle className="flex items-center gap-2 text-xl">
               <Layers3 className="h-5 w-5" />
@@ -815,7 +815,7 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent className="pt-4">
           {state.accountRollup && (
-            <div className="mb-4 grid gap-3 sm:grid-cols-2">
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
                 <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Total rolled-up spend
@@ -889,9 +889,9 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card className="rounded-lg">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
+          <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
             <CardTitle className="text-xl">Current Risk</CardTitle>
             <Link href="/dashboard/anomalies" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
               Open anomalies <ArrowRight className="h-4 w-4" />
@@ -919,7 +919,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="rounded-lg">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
+          <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
             <CardTitle className="text-xl">Next Optimization</CardTitle>
             <Link href="/dashboard/recommendations" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
               Open recommendations <ArrowRight className="h-4 w-4" />
@@ -955,7 +955,7 @@ export default function DashboardPage() {
 
       {/* Chargeback Summary */}
       <Card className="rounded-lg">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
+        <CardHeader className="flex flex-col gap-3 border-b border-slate-200 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700">
           <div>
             <CardTitle className="flex items-center gap-2 text-xl">
               <Tag className="h-5 w-5 text-violet-500" />
@@ -971,7 +971,7 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent className="pt-4">
           {state.coverage && (
-            <div className="mb-4 grid gap-3 sm:grid-cols-4">
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
               <div className="rounded-md border border-slate-200 px-3 py-2 dark:border-slate-700">
                 <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Overall Coverage</p>
                 <p className="text-sm font-semibold text-violet-600">{state.coverage.coverage_percent.toFixed(1)}%</p>

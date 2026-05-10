@@ -289,7 +289,7 @@ export default function CostAdvisorPage() {
           </div>
         ) : hybrid ? (
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="rounded-md border border-slate-200 p-3 dark:border-slate-700">
                 <p className="text-xs uppercase text-slate-500 dark:text-slate-400">Monthly Spend</p>
                 <p className="text-xl font-semibold text-slate-900 dark:text-white">

@@ -175,7 +175,7 @@ function ResourceRow({
                 </button>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Tags</p>
                   {Object.keys(item.tags || {}).length > 0 ? (
@@ -209,6 +209,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ResourceInventoryResponse | null>(null)
   const [accountInventory, setAccountInventory] = useState<ProviderAccountInventoryResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [provider, setProvider] = useState('all')
   const [wasteOnly, setWasteOnly] = useState(false)
   const [regionFilter, setRegionFilter] = useState('')
@@ -254,6 +255,7 @@ export default function InventoryPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const [inventoryRes, accountsRes] = await Promise.all([
         fetchResourceInventory({
@@ -266,6 +268,10 @@ export default function InventoryPage() {
       ])
       setData(inventoryRes)
       setAccountInventory(accountsRes)
+    } catch (err) {
+      setData(null)
+      setAccountInventory(null)
+      setError(err instanceof Error ? err.message : 'Could not load inventory.')
     } finally {
       setLoading(false)
     }
@@ -326,7 +332,7 @@ export default function InventoryPage() {
       </div>
 
       {data && (
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {[
             { label: 'Total Resources', value: data.total_resources.toLocaleString(), color: 'from-blue-500 to-blue-600' },
             { label: 'Monthly Cost', value: fmt(data.total_cost_usd), color: 'from-indigo-500 to-indigo-600' },
@@ -399,7 +405,7 @@ export default function InventoryPage() {
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
-          Could not load inventory. Check backend connectivity.
+          {error || 'Could not load inventory. Check backend connectivity.'}
         </div>
       )}
 

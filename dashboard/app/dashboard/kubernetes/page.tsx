@@ -72,6 +72,7 @@ const defaultForm = {
 export default function KubernetesPage() {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<KubernetesSummaryResponse | null>(null)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
   const [providerProfiles, setProviderProfiles] = useState<Record<KubernetesProvider, ProviderProfile>>(emptyProviderProfiles)
   const [catalogMeta, setCatalogMeta] = useState<{ fetchedAt?: string; liveProviders: number; noDataProviders: number; error?: string }>({
     liveProviders: 0,
@@ -93,8 +94,12 @@ export default function KubernetesPage() {
 
   async function loadSummary() {
     setLoading(true)
+    setSummaryError(null)
     try {
       setSummary(await fetchKubernetesSummary())
+    } catch (err) {
+      setSummary(null)
+      setSummaryError(err instanceof Error ? err.message : 'Unable to load Kubernetes summary.')
     } finally {
       setLoading(false)
     }
@@ -257,6 +262,11 @@ export default function KubernetesPage() {
           {catalogMeta.noDataProviders} provider catalog(s) have no live regions or shapes yet. Connect provider credentials in Settings so OptiOra can fetch live catalog data from provider APIs.
         </div>
       )}
+      {summaryError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          Kubernetes summary is unavailable: {summaryError}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex min-h-[200px] items-center justify-center text-slate-500">
@@ -265,7 +275,7 @@ export default function KubernetesPage() {
       ) : summary ? (
         <>
           {/* Summary overview */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: 'K8s Enabled', value: summary.kubernetes_enabled ? 'Yes' : 'Not yet', color: summary.kubernetes_enabled ? 'from-emerald-500 to-emerald-600' : 'from-slate-400 to-slate-500' },
               { label: 'Clusters Configured', value: summary.clusters_configured.toString(), color: 'from-blue-500 to-blue-600' },
@@ -304,7 +314,7 @@ export default function KubernetesPage() {
       ) : null}
 
       {/* Cluster cost calculator */}
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle className="flex items-center gap-2">
@@ -314,7 +324,7 @@ export default function KubernetesPage() {
           </CardHeader>
           <CardContent className="pt-5">
             <form onSubmit={(e) => void handleCalc(e)} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Cluster Name</label>
                   <input
@@ -427,7 +437,7 @@ export default function KubernetesPage() {
                   Use live OpenCost allocation
                 </label>
                 {opencostEnabled && (
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div className="col-span-2">
                       <label className="block text-xs font-medium mb-1 text-slate-600 dark:text-slate-400">OpenCost URL</label>
                       <input
@@ -513,7 +523,7 @@ export default function KubernetesPage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div>
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Team Allocation</p>
                   <div className="space-y-2">
@@ -618,7 +628,7 @@ export default function KubernetesPage() {
         )}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader className="border-b border-slate-200 dark:border-slate-700">
             <CardTitle>OpenCost Namespace/Pod Breakdown</CardTitle>
@@ -646,7 +656,7 @@ export default function KubernetesPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
                 />
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Cluster Name</label>
                   <input

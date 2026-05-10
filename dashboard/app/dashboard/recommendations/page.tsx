@@ -342,7 +342,7 @@ export default function RecommendationsPage() {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: 'Provider Recommendations', value: state.items.length.toLocaleString(), detail: `${providerNativeCount} native`, icon: Sparkles, color: 'from-blue-500 to-blue-600' },
           { label: 'Provider Monthly Savings', value: fmtK(monthlyProviderSavings), detail: includeLive ? 'live sync on' : 'stored context', icon: DollarSign, color: 'from-emerald-500 to-emerald-600' },
@@ -495,7 +495,7 @@ export default function RecommendationsPage() {
                 </div>
                 <Badge variant="outline" className="rounded-md">Model: deterministic ensemble</Badge>
               </div>
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 {state.decisionTop.slice(0, 6).map((item) => (
                   <div key={item.recommendation_id} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
                     <div className="mb-2 flex items-start justify-between gap-3">
@@ -511,7 +511,7 @@ export default function RecommendationsPage() {
                         <p className="text-[11px]">score</p>
                       </div>
                     </div>
-                    <div className="grid gap-2 text-sm sm:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
                       <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-900">
                         <p className="text-xs text-slate-500">Savings</p>
                         <p className="font-semibold text-slate-900 dark:text-white">{fmt(item.estimated_monthly_savings_usd)}</p>
@@ -777,7 +777,7 @@ export default function RecommendationsPage() {
             </div>
 
             {sourceSummary.length > 0 && (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {sourceSummary.slice(0, 4).map(([source, summary]) => (
                   <div key={source} className={`rounded-xl border p-4 ${sourceTone(source)}`}>
                     <p className="text-sm font-semibold">{sourceLabel(source)}</p>
@@ -796,7 +796,7 @@ export default function RecommendationsPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {state.items.map((rec) => {
                   const consoleUrl = resourceConsoleUrl(rec)
                   const product = productCategory(`${rec.service} ${rec.title} ${rec.description}`)

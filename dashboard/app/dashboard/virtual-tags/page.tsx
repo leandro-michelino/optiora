@@ -153,15 +153,33 @@ export default function VirtualTagsPage() {
   const [editingRule, setEditingRule] = useState<VirtualTagRuleOut | null>(null)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [rulesError, setRulesError] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   async function loadRules() {
     setLoading(true)
-    try { setRulesData(await fetchVirtualTagRules()) } finally { setLoading(false) }
+    setRulesError(null)
+    try {
+      setRulesData(await fetchVirtualTagRules())
+    } catch (err) {
+      setRulesData(null)
+      setRulesError(err instanceof Error ? err.message : 'Unable to load virtual tag rules.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadPreview() {
     setPreviewLoading(true)
-    try { setPreview(await previewVirtualTags(50)) } finally { setPreviewLoading(false) }
+    setPreviewError(null)
+    try {
+      setPreview(await previewVirtualTags(50))
+    } catch (err) {
+      setPreview(null)
+      setPreviewError(err instanceof Error ? err.message : 'Unable to load virtual tag preview.')
+    } finally {
+      setPreviewLoading(false)
+    }
   }
 
   useEffect(() => { void loadRules() }, [])
@@ -274,6 +292,10 @@ export default function VirtualTagsPage() {
             <div className="flex min-h-[150px] items-center justify-center text-slate-500">
               <Loader className="h-5 w-5 animate-spin mr-2" /> Loading rules...
             </div>
+          ) : rulesError ? (
+            <div className="flex min-h-[150px] items-center justify-center px-6 text-center text-sm text-slate-500">
+              {rulesError}
+            </div>
           ) : rules.length === 0 ? (
             <div className="flex flex-col items-center justify-center min-h-[180px] text-center">
               <Tag className="h-10 w-10 text-slate-300 mb-3 dark:text-slate-600" />
@@ -374,7 +396,7 @@ export default function VirtualTagsPage() {
         {preview && (
           <>
             {/* Coverage KPIs */}
-            <div className="grid gap-4 sm:grid-cols-3 mb-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-5">
               {[
                 { label: 'Resources Analyzed', value: preview.total_resources.toLocaleString(), color: 'from-blue-500 to-blue-600' },
                 { label: 'Would Be Tagged', value: preview.tagged_resources.toLocaleString(), color: 'from-emerald-500 to-emerald-600' },
@@ -435,6 +457,11 @@ export default function VirtualTagsPage() {
               </CardContent>
             </Card>
           </>
+        )}
+        {previewError && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            {previewError}
+          </div>
         )}
       </div>
 

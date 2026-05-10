@@ -178,7 +178,7 @@ export default function AdvancedFinOpsPage() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <Card>
               <CardContent className="p-4">
                 <p className="text-xs text-slate-500">Tag Quality</p>
@@ -209,7 +209,7 @@ export default function AdvancedFinOpsPage() {
             </Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
                 <CardTitle className="flex items-center gap-2"><Tags className="h-5 w-5" />Tag Quality Dimensions</CardTitle>
@@ -263,7 +263,7 @@ export default function AdvancedFinOpsPage() {
             </Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
                 <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Multi-Account Federation</CardTitle>
@@ -275,7 +275,7 @@ export default function AdvancedFinOpsPage() {
                   </div>
                 )}
                 {loadingFederation && <p className="mb-3 text-xs text-slate-500">Loading federation section...</p>}
-                <div className="mb-4 grid gap-2 sm:grid-cols-2">
+                <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {Object.entries(federation?.provider_totals_usd ?? {}).map(([providerName, total]) => (
                     <div key={providerName} className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700">
                       <p className="text-xs font-medium uppercase text-slate-500">{providerName}</p>
@@ -359,7 +359,7 @@ export default function AdvancedFinOpsPage() {
           </Card>
 
           {/* New deep analytics section */}
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
                 <CardTitle className="flex items-center gap-2"><Tags className="h-5 w-5" />Tagging Coverage &amp; Allocation Readiness</CardTitle>
@@ -429,7 +429,7 @@ export default function AdvancedFinOpsPage() {
             </Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">
                 <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />Cross-Provider Comparison</CardTitle>

@@ -44,8 +44,8 @@ class _MockCredentialStatus:
     error_details = None
 
 
-async def _noop_cost_analysis(scan_id: str, customer_id: str, providers: list) -> None:
-    _ = (scan_id, customer_id, providers)
+async def _noop_cost_analysis(scan_id: str, customer_id: str, providers: list, **kwargs) -> None:
+    _ = (scan_id, customer_id, providers, kwargs)
 
 
 def _setup_db() -> None:

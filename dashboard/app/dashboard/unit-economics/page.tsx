@@ -132,7 +132,7 @@ export default function UnitEconomicsPage() {
       ) : data ? (
         <>
           {/* Summary KPIs */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: 'Monthly Cloud Spend', value: fmt(data.summary.total_monthly_cost_usd), icon: DollarSign, color: 'from-blue-500 to-blue-600' },
               { label: 'Estimated Waste', value: fmt(data.summary.estimated_waste_usd), icon: TrendingDown, color: 'from-rose-500 to-rose-600' },
@@ -155,7 +155,7 @@ export default function UnitEconomicsPage() {
           </div>
 
           {/* Provider breakdown + business metric form */}
-          <div className="grid gap-6 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             {/* Provider metrics */}
             <Card className="xl:col-span-2">
               <CardHeader className="border-b border-slate-200 dark:border-slate-700">

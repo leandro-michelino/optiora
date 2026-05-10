@@ -85,7 +85,7 @@ export default function PortfolioPage() {
         </div>
       ) : data ? (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Card className="rounded-lg">
               <CardContent className="p-4">
                 <p className="text-xs uppercase text-slate-500">Customers</p>
