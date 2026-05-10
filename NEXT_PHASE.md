@@ -36,6 +36,38 @@ Use canonical docs for execution details so commands are maintained in one place
 3. Strategic sequencing and release framing: [ROADMAP.md](ROADMAP.md)
 4. Release deltas and upgrade notes: [RELEASE_NOTES.md](RELEASE_NOTES.md)
 
+## Next In Line To Implement
+
+**Recommendation Lifecycle and Realized Savings Ledger** is the next product implementation slice.
+
+Reason: OptiOra already generates deterministic recommendations, rightsizing opportunities, advisory narratives, and finance-ready exports. The next step is to prove execution value by tracking each recommendation from discovery to approval, action, verification, and realized savings. This is the clearest differentiation item after the current UIX, wiring, deployment, and documentation cleanup work.
+
+MVP scope:
+
+1. Add a recommendation ledger table keyed by organization, provider, resource, recommendation source, and recommendation fingerprint.
+2. Track lifecycle states: `new`, `reviewing`, `approved`, `planned`, `executed`, `verified`, `dismissed`, and `expired`.
+3. Store expected monthly savings, planned execution date, actual execution date, owner, notes, and evidence links.
+4. Add realized-vs-expected savings fields and variance reason after post-action validation.
+5. Expose backend endpoints to list, update state, assign owner, add notes, and record realization evidence.
+6. Add a dashboard experience that turns recommendations into an execution board with expanders for evidence, approval notes, and realized savings.
+7. Include export/report fields so finance can see planned savings, realized savings, and variance.
+
+Suggested first files/modules to touch:
+
+- `finops_mcp/models.py` and Alembic migrations for the ledger schema.
+- `finops_mcp/api.py` for lifecycle endpoints and recommendation hydration.
+- `tests/` for lifecycle state transitions, org isolation, and realized-savings calculations.
+- `dashboard/lib/types.ts` and `dashboard/lib/api.ts` for typed frontend contracts.
+- `dashboard/app/dashboard/recommendations/page.tsx` for the execution-board UI.
+
+Definition of done:
+
+- A recommendation can be promoted from generated insight to tracked execution item.
+- State transitions are audited and organization-scoped.
+- The recommendations dashboard shows expected savings, owner, next action, and realization status.
+- Reports and exports include realized-vs-expected savings.
+- Empty states remain explicit when no real recommendation data exists.
+
 ## Post-1.0 Focus
 
 Recommended near-term order:
