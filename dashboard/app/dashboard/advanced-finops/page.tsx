@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Bot, Leaf, RefreshCw, ShieldCheck, Tags, Users, BarChart3, AlertTriangle, DollarSign } from 'lucide-react'
+import type { FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Bot, Leaf, RefreshCw, ShieldCheck, Tags, Users, BarChart3, AlertTriangle, DollarSign, Eraser, MessageCircle, Send, Loader } from 'lucide-react'
 import {
   fetchDecisionGradeRecommendations,
   fetchFederatedCosts,
@@ -58,6 +59,12 @@ interface ToastMessage {
   kind: ToastKind
 }
 
+interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+}
+
 export default function AdvancedFinOpsPage() {
   const [loading, setLoading] = useState(true)
   const [loadingTagQuality, setLoadingTagQuality] = useState(false)
@@ -67,6 +74,18 @@ export default function AdvancedFinOpsPage() {
   const [decisionError, setDecisionError] = useState<string | null>(null)
   const [federationError, setFederationError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: 'advanced-welcome',
+      role: 'assistant',
+      content:
+        'I can explain these control-tower actions using the live Advisor Conversation. Pick an action or ask a FinOps question.',
+    },
+  ])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
   const [tagQuality, setTagQuality] = useState<TagQualityScoreResponse | null>(null)
   const [decision, setDecision] = useState<DecisionRecommendationResponse | null>(null)
   const [federation, setFederation] = useState<FederationCostResponse | null>(null)
@@ -158,6 +177,94 @@ export default function AdvancedFinOpsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    const chatScroll = chatScrollRef.current
+    if (!chatScroll) return
+    chatScroll.scrollTo({ top: chatScroll.scrollHeight, behavior: 'smooth' })
+  }, [chatMessages, chatLoading])
+
+  const sendChatMessage = useCallback(async (event?: FormEvent, overridePrompt?: string) => {
+    event?.preventDefault()
+    const prompt = (overridePrompt ?? chatInput).trim()
+    if (!prompt || chatLoading) return
+
+    const userMessage: ChatMessage = {
+      id: `${Date.now()}-control-user`,
+      role: 'user',
+      content: prompt,
+    }
+    const history = [...chatMessages, userMessage]
+    setChatMessages(prev => [...prev, userMessage])
+    setChatInput('')
+    setChatError(null)
+    setChatLoading(true)
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: prompt,
+          conversationHistory: history.map(message => ({
+            role: message.role,
+            content: message.content,
+          })),
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(typeof payload?.message === 'string' ? payload.message : 'Advisor chat failed.')
+      }
+
+      const payload = await response.json()
+      const content =
+        typeof payload?.response === 'string' && payload.response.trim()
+          ? payload.response
+          : 'The advisor returned an empty response. Try a narrower control-tower question.'
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: `${Date.now()}-control-assistant`,
+          role: 'assistant',
+          content,
+        },
+      ])
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Advisor chat is unavailable.'
+      setChatError(detail)
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: `${Date.now()}-control-error`,
+          role: 'assistant',
+          content: 'I could not reach the Advisor Conversation right now. Please retry after refreshing telemetry.',
+        },
+      ])
+    } finally {
+      setChatLoading(false)
+    }
+  }, [chatInput, chatLoading, chatMessages])
+
+  function handleActionPrompt(action: string) {
+    void sendChatMessage(
+      undefined,
+      `Explain this FinOps Control Tower action using current telemetry, owner next steps, risks, and evidence: ${action}`,
+    )
+  }
+
+  function clearChat() {
+    setChatMessages([
+      {
+        id: `${Date.now()}-control-reset`,
+        role: 'assistant',
+        content: 'Chat reset. Pick a control-tower action or ask a FinOps question.',
+      },
+    ])
+    setChatInput('')
+    setChatError(null)
+  }
 
   return (
     <div className="space-y-8">
@@ -274,14 +381,85 @@ export default function AdvancedFinOpsPage() {
                 </div>
 
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
-                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">RAG-backed action queue</p>
-                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                    {controlTower.priority_actions.map((action) => (
-                      <div key={action} className="rounded-md bg-white px-3 py-2 text-sm text-slate-700 shadow-sm dark:bg-slate-950 dark:text-slate-300">
-                        {action}
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">Advisor Conversation</p>
+                      </div>
+                      <p className="mt-1 text-xs text-blue-800/80 dark:text-blue-200/80">
+                        Turn control-tower actions into explainable owner steps using the live chat API.
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={clearChat}>
+                      <Eraser className="mr-1 h-4 w-4" />
+                      Clear
+                    </Button>
+                  </div>
+
+                  {controlTower.priority_actions.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {controlTower.priority_actions.map((action) => (
+                        <button
+                          key={action}
+                          type="button"
+                          onClick={() => handleActionPrompt(action)}
+                          disabled={chatLoading}
+                          className="rounded-md border border-blue-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 shadow-sm transition hover:border-blue-400 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-900 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-blue-200"
+                        >
+                          {action}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div ref={chatScrollRef} className="mt-4 max-h-80 space-y-3 overflow-y-auto rounded-lg border border-blue-100 bg-white p-3 dark:border-blue-950 dark:bg-slate-950">
+                    {chatMessages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`max-w-[92%] rounded-lg px-3 py-2 text-sm leading-6 ${
+                          message.role === 'user'
+                            ? 'ml-auto bg-blue-600 text-white'
+                            : 'bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-200'
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</div>
                       </div>
                     ))}
+                    {chatLoading && (
+                      <div className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                        <Loader className="h-4 w-4 animate-spin" />
+                        Asking advisor...
+                      </div>
+                    )}
                   </div>
+
+                  {chatError && (
+                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{chatError}</p>
+                  )}
+
+                  <form onSubmit={(event) => void sendChatMessage(event)} className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <label className="min-w-0 flex-1">
+                      <span className="sr-only">Ask the Advisor Conversation</span>
+                      <textarea
+                        value={chatInput}
+                        onChange={(event) => setChatInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault()
+                            void sendChatMessage()
+                          }
+                        }}
+                        placeholder="Ask why this action matters, who should own it, or what evidence supports it..."
+                        disabled={chatLoading}
+                        className="min-h-[68px] w-full resize-none rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-70 dark:border-blue-900 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
+                      />
+                    </label>
+                    <Button type="submit" disabled={chatLoading || !chatInput.trim()} className="min-h-[68px] px-5">
+                      {chatLoading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                      Send
+                    </Button>
+                  </form>
                 </div>
               </div>
             ) : (
