@@ -61,11 +61,16 @@ export default function PortfolioPage() {
             ) : null}
           </div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-            {data?.white_label.brand_name || 'Customer Portfolio'}
+            Customer Portfolio
           </h1>
           <p className="mt-2 max-w-3xl text-slate-600 dark:text-slate-400">
             Consolidated customer health, spend, savings, and alert posture across organizations available to your account.
           </p>
+          {data?.white_label.brand_name ? (
+            <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+              White-label brand: {data.white_label.brand_name}
+            </p>
+          ) : null}
         </div>
         <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadPortfolio() }} disabled={loading} className="rounded-lg">
           {loading ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}

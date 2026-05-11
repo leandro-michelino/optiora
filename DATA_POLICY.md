@@ -9,6 +9,16 @@ Allowed sources:
 - Persisted scan snapshots derived from cloud provider APIs
 - Customer-provided CSV imports
 
+Cost-source priority:
+1. Live provider billing API
+2. Latest persisted live scan snapshot
+3. Optional customer CSV import
+
+Provider billing adapters should identify the concrete API used whenever the
+SDK response allows it. Current cost paths use AWS Cost Explorer
+`GetCostAndUsage`, Azure Cost Management Query Usage, GCP BigQuery Cloud
+Billing export tables, and OCI Usage API `RequestSummarizedUsages`.
+
 Disallowed sources:
 - Hardcoded demo datasets
 - Fabricated or synthetic cost records
@@ -17,7 +27,7 @@ Disallowed sources:
 
 ## Enforcement Rules
 
-1. Runtime endpoints must return only API- or CSV-derived results.
+1. Runtime endpoints must prefer live cloud billing APIs, then provider-derived snapshots, then optional CSV imports.
 2. If no real source data exists, endpoints return an empty state (`no_data_available`) instead of fabricated recommendations.
 3. Forecasting must not backfill invented historical points.
 4. Virtual-tag previews must use observed resources only.

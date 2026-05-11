@@ -131,11 +131,14 @@ class AWSCredentialInput(BaseModel):
     access_key_id: str
     secret_access_key: str
     region: Optional[str] = "us-east-1"
+    organization_role_arns: Optional[Union[List[str], str]] = None
 
 
 class AzureCredentialInput(BaseModel):
     provider: Literal["azure"]
-    subscription_id: str
+    subscription_id: Optional[str] = ""
+    subscription_ids: Optional[Union[List[str], str]] = None
+    management_group_id: Optional[str] = ""
     tenant_id: str
     client_id: str
     client_secret: str
@@ -144,6 +147,12 @@ class AzureCredentialInput(BaseModel):
 class GCPCredentialInput(BaseModel):
     provider: Literal["gcp"]
     project_id: str
+    project_ids: Optional[Union[List[str], str]] = None
+    billing_export_project_ids: Optional[Union[List[str], str]] = None
+    billing_export_dataset: Optional[str] = None
+    billing_export_table_prefix: Optional[str] = None
+    organization_id: Optional[str] = None
+    folder_id: Optional[str] = None
     service_account_json: Union[Dict[str, Any], str]
 
 
@@ -151,6 +160,8 @@ class OCICredentialInput(BaseModel):
     provider: Literal["oci"]
     config_file: Optional[str] = "~/.oci/config"
     profile: Optional[str] = "DEFAULT"
+    region: Optional[str] = None
+    compartment_ids: Optional[Union[List[str], str]] = None
 
 
 CredentialInput = Union[
@@ -194,10 +205,12 @@ def run_credential_validation(credential: CredentialInput) -> CredentialStatus:
         )
     if isinstance(credential, AzureCredentialInput):
         return validator.validate_azure(
-            credential.subscription_id,
+            credential.subscription_id or "",
             credential.tenant_id,
             credential.client_id,
             credential.client_secret,
+            subscription_ids=credential.subscription_ids,
+            management_group_id=credential.management_group_id,
         )
     if isinstance(credential, GCPCredentialInput):
         service_account_json = credential.service_account_json
@@ -218,7 +231,11 @@ def provider_diagnostic_requirements(config: Config) -> Dict[str, Dict[str, list
         or config.azure_subscription_ids
         or config.azure_management_group_id
     )
-    gcp_project_scope_value = config.gcp_project_id or config.gcp_project_ids
+    gcp_project_scope_value = (
+        config.gcp_project_id
+        or config.gcp_project_ids
+        or config.gcp_billing_export_project_ids
+    )
 
     return {
         "aws": {
@@ -246,7 +263,7 @@ def provider_diagnostic_requirements(config: Config) -> Dict[str, Dict[str, list
         "gcp": {
             "settings": [
                 "GOOGLE_APPLICATION_CREDENTIALS",
-                "GCP_PROJECT_ID|GCP_PROJECT_IDS",
+                "GCP_PROJECT_ID|GCP_PROJECT_IDS|GCP_BILLING_EXPORT_PROJECT_IDS",
             ],
             "values": [config.google_application_credentials, gcp_project_scope_value],
         },

@@ -96,6 +96,25 @@ function formatCurrency(value: number): string {
   })
 }
 
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 30_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`))
+    }, timeoutMs)
+
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (reason) => {
+        window.clearTimeout(timer)
+        reject(reason)
+      },
+    )
+  })
+}
+
 export default function MyDashboardsPage() {
   const [state, setState] = useState<MyDashboardsState>(initialState)
 
@@ -114,17 +133,17 @@ export default function MyDashboardsPage() {
         coverageResult,
         chargebackResult,
       ] = await Promise.allSettled([
-        fetchCostsStrict(),
-        fetchCostTrend('monthly', 12),
-        fetchProviderAccountRollups(),
-        fetchRecommendationsStrict({ limit: 6, offset: 0 }),
-        fetchScanHistory(6),
-        fetchAlerts(6),
-        fetchImportedCostSummary(),
-        fetchApiHealth(),
-        fetchProviderDiagnostics(),
-        fetchAllocationCoverage(),
-        fetchChargeback('team'),
+        withTimeout(fetchCostsStrict(), 'Workspace costs', 45_000),
+        withTimeout(fetchCostTrend('monthly', 12), 'Cost trend', 25_000),
+        withTimeout(fetchProviderAccountRollups(), 'Provider account rollups', 25_000),
+        withTimeout(fetchRecommendationsStrict({ limit: 6, offset: 0 }), 'Recommendations', 25_000),
+        withTimeout(fetchScanHistory(6), 'Scan history', 20_000),
+        withTimeout(fetchAlerts(6), 'Alerts', 20_000),
+        withTimeout(fetchImportedCostSummary(), 'Imported cost summary', 20_000),
+        withTimeout(fetchApiHealth(), 'API health', 15_000),
+        withTimeout(fetchProviderDiagnostics(), 'Provider diagnostics', 20_000),
+        withTimeout(fetchAllocationCoverage(), 'Allocation coverage', 25_000),
+        withTimeout(fetchChargeback('team'), 'Chargeback', 25_000),
       ])
 
       setState({
@@ -159,6 +178,7 @@ export default function MyDashboardsPage() {
     diagnostics: state.diagnostics,
     primaryLoaded: Boolean(state.costs),
     pageName: 'Saved Views',
+    isLoading: state.loading,
   })
 
   const workspaceViews = useMemo<WorkspaceView[]>(() => {
@@ -242,10 +262,6 @@ export default function MyDashboardsPage() {
     [state.trend],
   )
 
-  if (state.loading) {
-    return <div className="flex items-center justify-center h-64">Loading workspace dashboards...</div>
-  }
-
   return (
     <div className="space-y-8">
       <div>
@@ -266,6 +282,39 @@ export default function MyDashboardsPage() {
 
       <DataSourceBanner status={dataSourceStatus} />
 
+      <Expander
+        title="Saved Views Reading Guide"
+        description="Open for how workspace spend, saved launchers, scans, alerts, and chargeback coverage are assembled."
+        icon={<Grid className="w-5 h-5 text-indigo-600" />}
+      >
+        <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-3">
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Workspace</p>
+            <p className="mt-1">Spend and provider status come from the same backend source used by the main dashboard pages.</p>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Launchers</p>
+            <p className="mt-1">Each saved view is a shortcut into a focused workflow, with live metrics shown when backend data is ready.</p>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Readiness</p>
+            <p className="mt-1">Scans, alerts, hierarchy coverage, and chargeback mapping show whether the workspace is ready for operator action.</p>
+          </div>
+        </div>
+      </Expander>
+
+      {state.loading ? (
+        <div className="animate-pulse space-y-4">
+          <div className="h-28 rounded-lg bg-slate-200 dark:bg-slate-800" />
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="h-28 rounded-lg bg-slate-200 dark:bg-slate-800" />
+            <div className="h-28 rounded-lg bg-slate-200 dark:bg-slate-800" />
+            <div className="h-28 rounded-lg bg-slate-200 dark:bg-slate-800" />
+            <div className="h-28 rounded-lg bg-slate-200 dark:bg-slate-800" />
+          </div>
+        </div>
+      ) : (
+      <>
       <div className="grid md:grid-cols-4 gap-4">
         <div className="card">
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Workspace Spend</p>
@@ -445,6 +494,8 @@ export default function MyDashboardsPage() {
         </div>
       </div>
       </Expander>
+      </>
+      )}
     </div>
   )
 }

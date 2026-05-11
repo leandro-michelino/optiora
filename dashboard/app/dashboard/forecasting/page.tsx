@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { AlertCircle, Download, Target, TrendingUp } from 'lucide-react'
+import { AlertCircle, Download, Info, Target, TrendingUp } from 'lucide-react'
 import {
   fetchApiHealth,
   fetchCostTrend,
@@ -96,6 +96,25 @@ ${projectionRows}
   document.body.removeChild(element)
 }
 
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 30_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`))
+    }, timeoutMs)
+
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer)
+        resolve(value)
+      },
+      (reason) => {
+        window.clearTimeout(timer)
+        reject(reason)
+      },
+    )
+  })
+}
+
 export default function PredictiveAnalyticsPage() {
   const [forecast, setForecast] = useState<ForecastResponse | null>(null)
   const [trend, setTrend] = useState<CostTrendResponse | null>(null)
@@ -113,15 +132,15 @@ export default function PredictiveAnalyticsPage() {
   useEffect(() => {
     async function loadForecast() {
       const [forecastResult, importedResult, healthResult, diagnosticsResult, trendResult, modelDiagnosticsResult, stressResult, portfolioResult, copilotResult] = await Promise.allSettled([
-        fetchForecast(12),
-        fetchImportedCostSummary(),
-        fetchApiHealth(),
-        fetchProviderDiagnostics(),
-        fetchCostTrend('monthly', 6),
-        fetchForecastModelDiagnostics(12),
-        fetchForecastStressTest({ months: 12, severity: 'medium' }),
-        fetchOptimizationPortfolio(),
-        fetchGenAICopilotPack({ include: ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy', 'tagging_strategy', 'sustainability_narrative'] }),
+        withTimeout(fetchForecast(12), 'Forecast', 45_000),
+        withTimeout(fetchImportedCostSummary(), 'Imported cost summary', 20_000),
+        withTimeout(fetchApiHealth(), 'API health', 15_000),
+        withTimeout(fetchProviderDiagnostics(), 'Provider diagnostics', 20_000),
+        withTimeout(fetchCostTrend('monthly', 6), 'Cost trend', 20_000),
+        withTimeout(fetchForecastModelDiagnostics(12), 'Forecast diagnostics', 25_000),
+        withTimeout(fetchForecastStressTest({ months: 12, severity: 'medium' }), 'Forecast stress test', 25_000),
+        withTimeout(fetchOptimizationPortfolio(), 'Optimization portfolio', 25_000),
+        withTimeout(fetchGenAICopilotPack({ include: ['waste_insights', 'optimization_roadmap', 'executive_narrative', 'commitment_strategy', 'tagging_strategy', 'sustainability_narrative'] }), 'GenAI copilot pack', 30_000),
       ])
 
       if (forecastResult.status === 'fulfilled') {
@@ -198,6 +217,27 @@ export default function PredictiveAnalyticsPage() {
       </div>
 
       <DataSourceBanner status={dataSourceStatus} />
+
+      <Expander
+        title="Forecasting Reading Guide"
+        description="Open for the meaning of spend, growth, volatility, model quality, scenario savings, and budget risk."
+        icon={<Info className="h-5 w-5 text-blue-600" />}
+      >
+        <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-3">
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Baseline</p>
+            <p className="mt-1">Current spend, growth, and volatility describe the expected run rate before any optimization scenario is applied.</p>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Scenario</p>
+            <p className="mt-1">Savings compares the selected scenario against the baseline forecast and keeps deterministic math as the source of truth.</p>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Confidence</p>
+            <p className="mt-1">History coverage, MAPE/wMAPE, fan bands, and budget guardrails show how much trust to place in the projection.</p>
+          </div>
+        </div>
+      </Expander>
 
       {loading ? (
         <div className="animate-pulse space-y-4">

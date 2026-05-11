@@ -12,11 +12,26 @@ logger = logging.getLogger(__name__)
 config = Config()
 
 
-def _compartment_list(tenancy_id: str) -> list[str]:
-    """Return tenancy plus optional OCI_COMPARTMENT_IDS values, deduplicated."""
+def _csv_or_list_values(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_values = str(value or "").split(",")
+    output: list[str] = []
+    for raw in raw_values:
+        text = str(raw or "").strip()
+        if text and text not in output:
+            output.append(text)
+    return output
+
+
+def _compartment_list(tenancy_id: str, runtime_compartment_ids: Any = None) -> list[str]:
+    """Return tenancy plus optional OCI compartment OCIDs, deduplicated."""
     compartments: list[str] = []
     if tenancy_id.strip():
         compartments.append(tenancy_id.strip())
+
+    compartments.extend(_csv_or_list_values(runtime_compartment_ids))
 
     raw_extra = os.getenv("OCI_COMPARTMENT_IDS", "")
     if raw_extra.strip():
@@ -52,6 +67,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             # Initialize OCI client
             config_path = os.path.expanduser(config_file)
             oci_config = oci.config.from_file(config_path, profile)
+            runtime_region = str(credentials.get("region") or "").strip()
+            if runtime_region:
+                oci_config["region"] = runtime_region
             usage_client = UsageapiClient(oci_config)
             tenancy_id = oci_config["tenancy"]
         except ImportError:
@@ -172,9 +190,20 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                         ],
                     }
                 ],
+                "scope_context": {
+                    "tenancy_id": tenancy_id,
+                    "configured_compartment_ids": _compartment_list(
+                        tenancy_id,
+                        credentials.get("compartment_ids"),
+                    ),
+                },
                 "usage_region": used_region or None,
                 "currency": "USD",
                 "cloud_provider": "oci",
+                "data_source": "live_provider_api",
+                "api_source": "OCI Usage API RequestSummarizedUsages",
+                "cost_dimensions": ["service", "region"],
+                "scope_count": 1,
             }
         )
 

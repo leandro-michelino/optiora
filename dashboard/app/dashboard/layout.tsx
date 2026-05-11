@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -493,6 +493,8 @@ function DashboardLayoutContent({
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [navQuery, setNavQuery] = useState('')
   const [explanationOpen, setExplanationOpen] = useState(false)
+  const [explanationReady, setExplanationReady] = useState(false)
+  const explanationButtonRef = useRef<HTMLButtonElement | null>(null)
 
   const activeItem = useMemo(() => {
     return [...flatNavItems]
@@ -506,6 +508,23 @@ function DashboardLayoutContent({
   const pageExplanation = activeItem ? pageExplanations[activeItem.href] : undefined
   const userLabel = user?.full_name || user?.email || 'OptiOra user'
   const userInitial = userLabel.trim().charAt(0).toUpperCase() || 'O'
+
+  useEffect(() => {
+    setExplanationReady(false)
+    const button = explanationButtonRef.current
+    if (!button || !pageExplanation) return
+
+    const handleClick = (event: MouseEvent) => {
+      event.preventDefault()
+      setExplanationOpen((open) => !open)
+    }
+
+    button.addEventListener('click', handleClick)
+    setExplanationReady(true)
+    return () => {
+      button.removeEventListener('click', handleClick)
+    }
+  }, [pageExplanation])
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
@@ -652,8 +671,9 @@ function DashboardLayoutContent({
             </div>
             {pageExplanation ? (
               <button
+                ref={explanationButtonRef}
                 type="button"
-                onClick={() => setExplanationOpen((open) => !open)}
+                disabled={!explanationReady}
                 aria-expanded={explanationOpen}
                 aria-controls="page-explanation-panel"
                 title={`Explain ${pageTitle}`}
@@ -662,10 +682,11 @@ function DashboardLayoutContent({
                   explanationOpen
                     ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white',
+                  !explanationReady && 'cursor-wait opacity-70',
                 )}
               >
-                <Info className="h-4 w-4" />
-                <span className="hidden sm:inline">Explain page</span>
+                <Info className="pointer-events-none h-4 w-4" />
+                <span className="pointer-events-none hidden sm:inline">Explain page</span>
               </button>
             ) : null}
             <ThemeToggle className="hidden md:inline-flex lg:hidden" />

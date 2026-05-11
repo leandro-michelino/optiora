@@ -171,6 +171,8 @@ Notes:
 
 - The script reports configured/missing state for AWS, Azure, GCP, and OCI.
 - OCI validation normalizes bracketed profiles (`[JNB]` -> `JNB`) and auto-retries Usage API calls in tenancy home region when needed.
+- Cost context tests cover the platform billing-source order: live provider API, latest live scan snapshot, then optional CSV import.
+- Service Hotspots validates saved workspace runtime credentials and uses the same source order, so imported rows do not override provider-derived snapshots.
 - OCI test-only server file upload can be exercised with `POST /api/v1/credentials/oci/upload-files` (multipart form: `profile`, `config_file`, optional `private_key_file`), then validated through `POST /api/v1/credentials/validate`.
 
 Auth smoke flow:
@@ -214,14 +216,28 @@ Browser E2E coverage now validates the public dashboard optional CSV fallback wo
 Playwright harness files:
 
 - `dashboard/playwright.config.ts`
+- `dashboard/playwright.live.config.ts`
 - `dashboard/scripts/playwright-backend.sh`
 - `dashboard/scripts/playwright-frontend.sh`
 - `dashboard/e2e/public-dashboard.spec.ts`
 - `dashboard/e2e/operator-walkthrough.spec.ts`
+- `dashboard/e2e/live-operator-walkthrough.spec.ts`
 
 Operator walkthrough notes:
 
 - `E2E_WALKTHROUGH_NOTES.md`
+
+Live OCI browser walkthrough:
+
+```bash
+cd dashboard
+DASHBOARD_BASE=http://140.238.90.95 npm run test:e2e:live -- e2e/live-operator-walkthrough.spec.ts
+```
+
+This walkthrough does not start local backend or dashboard servers. It verifies
+the deployed OCI VM dashboard, explanation buttons, expander-backed details,
+provider console links, active navigation, Kubernetes route consolidation, and
+Advisor Conversation English/provider grounding.
 
 Current live Rightsizing smoke:
 
@@ -266,7 +282,7 @@ terraform -chdir=terraform validate
 - If your existing `.venv` was created on Python `3.14`, recreate it on Python `3.12` or `3.13` before running the backend suite.
 - `tests/smoke_test_0_9.sh` is the current end-to-end smoke script for a running public-dashboard deployment.
 - `./deploy/deploy-oci.sh verify` wraps `tests/smoke_test_0_9.sh` against the currently deployed OCI instance.
-- CSV import smoke is opt-in with `SMOKE_ENABLE_CSV_IMPORT=true`; leave it disabled for live customer environments so the dashboard remains backed by provider APIs, saved live scan snapshots, or customer-provided imports only.
+- CSV import smoke is opt-in with `SMOKE_ENABLE_CSV_IMPORT=true`; leave it disabled for live customer environments so the dashboard remains backed by provider APIs first, saved live scan snapshots second, and customer-provided imports only as a manual source.
 - `tests/live_data_gate.sh` is the strict release-critical route/API data-source gate (fails on fallback/placeholder sources).
 - `./scripts/generate_evidence_pack.sh` creates dated deploy/migration/smoke/live-credential-flow/rollback artifacts for release evidence.
 - For Terraform + Ansible deployments, prefer `./deploy/deploy-oci.sh full` or menu option `1` so the extra block volume attach, inventory generation, and source upload stay consistent before smoke checks.

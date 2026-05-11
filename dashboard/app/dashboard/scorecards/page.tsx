@@ -208,6 +208,27 @@ export default function ScorecardsPage() {
         </Button>
       </div>
 
+      <Expander
+        title="Scorecards Reading Guide"
+        description="Open for how maturity, planned savings, realized savings, variance, and verification counts fit together."
+        icon={<Award className="h-5 w-5" />}
+      >
+        <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300 md:grid-cols-3">
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Maturity</p>
+            <p className="mt-1">Team scores combine allocation coverage, waste reduction, tagging hygiene, and commitment coverage into a 100-point grade.</p>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Savings</p>
+            <p className="mt-1">Planned savings come from recommendation ledger opportunities; realized savings show verified finance follow-through.</p>
+          </div>
+          <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+            <p className="font-semibold text-slate-900 dark:text-white">Variance</p>
+            <p className="mt-1">Positive variance means realized savings are meeting or beating plan; negative variance needs owner follow-up.</p>
+          </div>
+        </div>
+      </Expander>
+
       {loading ? (
         <div className="flex min-h-[300px] items-center justify-center text-slate-500">
           <Loader className="h-6 w-6 animate-spin mr-2" /> Computing scorecards...

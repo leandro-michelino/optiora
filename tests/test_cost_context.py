@@ -75,6 +75,19 @@ class CostContextHelperTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(context, imported_context)
 
+    async def test_build_live_cost_context_can_skip_imported_fallback(self) -> None:
+        context = await build_live_cost_context(
+            SimpleNamespace(),
+            object(),
+            provider_diagnostics=lambda: [SimpleNamespace(provider="aws", configured=False)],
+            imported_cost_context_builder=lambda membership, db, cloud_provider: {"source": "csv_import", "total_cost": 9.0},
+            cost_summary_for_provider=self._unused_cost_summary,
+            allow_imported_fallback=False,
+        )
+
+        self.assertEqual(context["source"], "no_data_available")
+        self.assertEqual(context["source_priority"], ["live_provider_api", "cost_snapshots_live", "csv_import"])
+
     async def test_build_live_cost_context_returns_no_data_without_live_or_imported_rows(self) -> None:
         context = await build_live_cost_context(
             SimpleNamespace(),
@@ -144,6 +157,34 @@ class CostContextHelperTest(unittest.IsolatedAsyncioTestCase):
                 imported_cost_context_builder=lambda membership, db, cloud_provider: None,
                 cost_summary_for_provider=_failing_summary,
             )
+
+    async def test_build_live_cost_context_marks_partial_live_provider_api(self) -> None:
+        async def _partial_summary(provider: str, period: str):
+            if provider == "aws":
+                return {
+                    "total_cost_usd": 25.0,
+                    "region_breakdown": [{"region": "us-east-1", "cost_usd": 25.0}],
+                    "api_source": "AWS Cost Explorer GetCostAndUsage",
+                }
+            return {"error": "OCI Usage API unavailable"}
+
+        context = await build_live_cost_context(
+            SimpleNamespace(),
+            object(),
+            cloud_provider="all",
+            provider_diagnostics=lambda: [
+                SimpleNamespace(provider="aws", configured=True),
+                SimpleNamespace(provider="oci", configured=True),
+            ],
+            imported_cost_context_builder=lambda membership, db, cloud_provider: None,
+            cost_summary_for_provider=_partial_summary,
+            allow_imported_fallback=False,
+        )
+
+        self.assertEqual(context["source"], "live_provider_api_partial")
+        self.assertEqual(context["total_cost"], 25.0)
+        self.assertEqual(context["provider_api_sources"]["aws"], "AWS Cost Explorer GetCostAndUsage")
+        self.assertIn("oci", context["provider_errors"])
 
     async def _unused_cost_summary(self, provider: str, period: str):
         self.fail(f"cost summary should not be called for {provider} {period}")

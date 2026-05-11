@@ -8,6 +8,7 @@ Covers:
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 
 TEST_DB = os.path.join(tempfile.gettempdir(), f"optiora_service_hotspots_{os.getpid()}.db")
@@ -21,7 +22,7 @@ try:
 
     import optiora_backend.api as api_module
     from optiora_backend.app import app
-    from optiora_backend.orm_models import Base, engine
+    from optiora_backend.orm_models import Base, CostSnapshot, SessionLocal, engine
 except ImportError as exc:  # pragma: no cover
     raise unittest.SkipTest(f"Backend dependencies not installed: {exc}") from exc
 
@@ -44,6 +45,8 @@ class ServiceHotspotsTest(unittest.TestCase):
         cls.client = TestClient(app)
         token = _register_and_login(cls.client, "service-hotspots@example.com")
         cls.headers = {"Authorization": f"Bearer {token}"}
+        org = cls.client.get("/auth/organization", headers=cls.headers)
+        cls.customer_id = f"org-{org.json()['id']}"
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -55,7 +58,7 @@ class ServiceHotspotsTest(unittest.TestCase):
             pass
 
     def test_live_service_hotspots_with_focus(self) -> None:
-        async def _fake_cost_summary(provider: str, period: str = "month") -> dict:
+        async def _fake_cost_summary(provider: str, period: str = "month", **kwargs) -> dict:
             _ = period
             if provider == "aws":
                 return {
@@ -81,7 +84,7 @@ class ServiceHotspotsTest(unittest.TestCase):
         original_diagnostics = api_module._provider_diagnostics
         try:
             api_module._cost_summary_for_provider = _fake_cost_summary
-            api_module._provider_diagnostics = lambda: [
+            api_module._provider_diagnostics = lambda *args, **kwargs: [
                 SimpleNamespace(provider="aws", configured=True),
                 SimpleNamespace(provider="azure", configured=True),
                 SimpleNamespace(provider="gcp", configured=True),
@@ -122,7 +125,7 @@ class ServiceHotspotsTest(unittest.TestCase):
 
         original_diagnostics = api_module._provider_diagnostics
         try:
-            api_module._provider_diagnostics = lambda: [
+            api_module._provider_diagnostics = lambda *args, **kwargs: [
                 SimpleNamespace(provider="aws", configured=False),
                 SimpleNamespace(provider="azure", configured=False),
                 SimpleNamespace(provider="gcp", configured=False),
@@ -142,6 +145,55 @@ class ServiceHotspotsTest(unittest.TestCase):
                 ("database" in normalized) or ("rds" in normalized) or ("sql" in normalized),
                 f"unexpected top database-like service: {top}",
             )
+        finally:
+            api_module._provider_diagnostics = original_diagnostics
+
+    def test_service_hotspots_prefers_live_snapshot_before_csv_import(self) -> None:
+        csv_rows = (
+            "provider,cost_usd,service_name,account_identifier,account_name,account_type,region,currency\n"
+            "aws,900.00,Amazon S3,acct-1,AWS Prod,account,us-east-1,USD\n"
+        )
+        upload = self.client.post(
+            "/api/v1/imports/costs/csv",
+            files={"file": ("snapshot-vs-csv.csv", csv_rows, "text/csv")},
+            headers=self.headers,
+        )
+        self.assertIn(upload.status_code, (200, 201), upload.text)
+
+        db = SessionLocal()
+        try:
+            db.add(
+                CostSnapshot(
+                    scan_id="service-hotspots-snapshot",
+                    customer_id=self.customer_id,
+                    provider="aws",
+                    period_start=datetime(2026, 5, 1),
+                    period_end=datetime(2026, 5, 31),
+                    total_cost_usd=250.0,
+                    top_services_json='[{"service":"Amazon EC2","cost_usd":250.0}]',
+                    captured_at=datetime(2026, 5, 11, 12, 0, 0),
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+
+        original_diagnostics = api_module._provider_diagnostics
+        try:
+            api_module._provider_diagnostics = lambda *args, **kwargs: [
+                SimpleNamespace(provider="aws", configured=False),
+                SimpleNamespace(provider="azure", configured=False),
+                SimpleNamespace(provider="gcp", configured=False),
+                SimpleNamespace(provider="oci", configured=False),
+            ]
+            resp = self.client.get(
+                "/api/v1/analytics/service-hotspots?cloud_provider=aws&limit=5",
+                headers=self.headers,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            item = resp.json()["items"][0]
+            self.assertEqual(item["source"], "cost_snapshots_live")
+            self.assertEqual(item["service"], "Amazon EC2")
         finally:
             api_module._provider_diagnostics = original_diagnostics
 

@@ -124,6 +124,7 @@ Recent UIX and wiring updates:
 - The legacy Kubernetes namespace route wiring was removed; `/dashboard/kubernetes` is the only Kubernetes/container/Docker page.
 - Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.
 - Provider diagnostics now expose a per-cloud API capability envelope for AWS, Azure, GCP, and OCI: scope model, primary APIs, optimization APIs, telemetry APIs, safe page size, bounded parallelism, timeout, retryable statuses, and throttling signals. Backend provider recommendation collection uses those envelopes to avoid unbounded cross-cloud API fan-out.
+- Billing and cost context now uses an explicit provider-data order across the platform: live cloud billing APIs first, latest provider-derived scan snapshots second, and optional CSV imports only as the manual/backfill source. Provider summaries include the concrete API source used, such as AWS Cost Explorer, Azure Cost Management, GCP BigQuery Cloud Billing export, or OCI Usage API.
 
 ## Data Policy
 
@@ -131,9 +132,15 @@ OptiOra must not fabricate production cost data.
 
 Allowed runtime sources:
 
-- Cloud provider APIs from AWS, Azure, GCP, and OCI.
+- Cloud provider billing APIs from AWS, Azure, GCP, and OCI.
 - Persisted scan snapshots derived from those provider APIs.
-- Customer-provided CSV imports.
+- Customer-provided CSV imports for manual backfill or reconciliation.
+
+Cost-source priority:
+
+1. Live provider billing API.
+2. Latest persisted live scan snapshot.
+3. Optional customer CSV import.
 
 Disallowed runtime sources:
 
@@ -311,6 +318,10 @@ Health
 Operator dashboard walkthrough
   all 20 main screens passed route, heading, active-nav, and canonical Kubernetes checks
 
+Live OCI browser walkthrough
+  npx playwright test e2e/live-operator-walkthrough.spec.ts --config playwright.live.config.ts
+  2 passed against http://140.238.90.95
+
 Rightsizing live refresh
   provider=oci, refresh_live=true
   returned about 730 OCI recommendations in roughly 50 seconds
@@ -327,11 +338,15 @@ Planning ranges are tracked in [COST_ESTIMATE.md](COST_ESTIMATE.md). Current pro
 
 | Profile | Runtime Guidance | Estimated Monthly Range |
 |---|---|---:|
-| Small | `1 OCPU / 4 GB`, SQLite on VM, light telemetry | `$85-$240` |
-| Default | `2 OCPU / 8 GB`, PostgreSQL, medium telemetry and GenAI | `$240-$620` |
-| High Throughput | `4 OCPU / 16 GB`, PostgreSQL, heavier telemetry and GenAI | `$675-$2120+` |
+| Current OCI VM | Live `VM.Standard.E4.Flex`, `2 OCPU / 8 GiB`, extra data volume disabled | `$60-$120` infra baseline before GenAI/data add-ons |
+| Small | `1 OCPU / 4 GiB`, SQLite on VM, light telemetry | `$85-$240` |
+| Default | `2 OCPU / 8 GiB`, PostgreSQL, medium telemetry and GenAI | `$240-$620` |
+| High Throughput | `4 OCPU / 16 GiB`, PostgreSQL, heavier telemetry and GenAI | `$675-$2120+` |
 
-Treat these as planning bands. Verify region-specific list prices in the OCI cost estimator before purchase.
+Treat these as planning bands. The current VM shape-only basis is about
+`$46/month`; the broader baseline includes boot volume, logs, exports, normal
+operations, and buffer. Verify region-specific list prices in the OCI cost
+estimator before purchase.
 
 ## Documentation Map
 

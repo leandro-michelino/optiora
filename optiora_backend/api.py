@@ -52,6 +52,7 @@ from .notifications import (
     send_test_notification,
 )
 from .cost_context import (
+    COST_SOURCE_PRIORITY,
     LiveDataPolicyError,
     build_imported_cost_context,
     build_live_cost_context,
@@ -1358,6 +1359,7 @@ def _write_runtime_provider_credentials(
             "access_key_id": str(payload.get("access_key_id") or ""),
             "secret_access_key": str(payload.get("secret_access_key") or ""),
             "region": str(payload.get("region") or "us-east-1"),
+            "organization_role_arns": payload.get("organization_role_arns") or "",
         }
         runtime_path = os.path.join(provider_dir, "runtime.json")
         with open(runtime_path, "w", encoding="utf-8") as fh:
@@ -1369,6 +1371,8 @@ def _write_runtime_provider_credentials(
         payload = credential.model_dump()
         runtime_payload = {
             "subscription_id": str(payload.get("subscription_id") or ""),
+            "subscription_ids": payload.get("subscription_ids") or "",
+            "management_group_id": str(payload.get("management_group_id") or ""),
             "tenant_id": str(payload.get("tenant_id") or ""),
             "client_id": str(payload.get("client_id") or ""),
             "client_secret": str(payload.get("client_secret") or ""),
@@ -1396,6 +1400,12 @@ def _write_runtime_provider_credentials(
             json.dump(
                 {
                     "project_id": project_id,
+                    "project_ids": payload.get("project_ids") or "",
+                    "billing_export_project_ids": payload.get("billing_export_project_ids") or "",
+                    "billing_export_dataset": str(payload.get("billing_export_dataset") or ""),
+                    "billing_export_table_prefix": str(payload.get("billing_export_table_prefix") or ""),
+                    "organization_id": str(payload.get("organization_id") or ""),
+                    "folder_id": str(payload.get("folder_id") or ""),
                     "service_account_file": service_account_path,
                 },
                 fh,
@@ -1408,6 +1418,8 @@ def _write_runtime_provider_credentials(
         runtime_payload = {
             "config_file": str(payload.get("config_file") or ""),
             "profile": _normalize_oci_profile(payload.get("profile")),
+            "region": str(payload.get("region") or ""),
+            "compartment_ids": payload.get("compartment_ids") or "",
         }
         runtime_path = os.path.join(provider_dir, "runtime.json")
         with open(runtime_path, "w", encoding="utf-8") as fh:
@@ -1607,6 +1619,7 @@ def _cost_snapshot_context(
             for region, cost in sorted(region_totals.items(), key=lambda item: item[1], reverse=True)
         ],
         "source": "cost_snapshots_live",
+        "source_priority": COST_SOURCE_PRIORITY,
         "rows_imported": 0,
         "last_imported_at": None,
         "last_captured_at": latest_captured_at.isoformat() if latest_captured_at else None,
@@ -1701,6 +1714,7 @@ async def _cost_context(
                 requested_period,
                 customer_id=_customer_id_for_org(membership),
             ),
+            allow_imported_fallback=False,
         )
         if context.get("no_data") or context.get("source") == "no_data_available":
             snapshot_context = _cost_snapshot_context(
@@ -1711,6 +1725,12 @@ async def _cost_context(
             )
             if snapshot_context is not None:
                 return snapshot_context
+            imported_context = _imported_cost_context(membership, db, cloud_provider)
+            if imported_context is not None:
+                if context.get("provider_errors"):
+                    imported_context = dict(imported_context)
+                    imported_context["provider_errors"] = context.get("provider_errors")
+                return imported_context
         return context
     except LiveDataPolicyError as exc:
         snapshot_context = _cost_snapshot_context(
@@ -4751,9 +4771,12 @@ async def dashboard_costs(
         "regionBreakdown": context["region_breakdown"],
         "cost_context": {
             "source": context.get("source", "unknown"),
+            "source_priority": context.get("source_priority", COST_SOURCE_PRIORITY),
+            "provider_api_sources": context.get("provider_api_sources", {}),
             "provider_errors": context.get("provider_errors", {}),
             "rows_imported": int(context.get("rows_imported", 0) or 0),
             "last_imported_at": context.get("last_imported_at"),
+            "last_captured_at": context.get("last_captured_at"),
         },
     }
 
@@ -6726,6 +6749,8 @@ async def analytics_service_hotspots(
 ) -> Dict[str, Any]:
     """Top costly cloud services across providers (deterministic, non-GenAI)."""
     _ = current_user
+    customer_id = _customer_id_for_org(membership)
+    organization_id = _organization_id_for_membership(membership)
     require_live_provider_data = Config().require_live_provider_data
     providers = ["aws", "azure", "gcp", "oci"] if cloud_provider == "all" else [cloud_provider]
     providers = [p for p in providers if p in {"aws", "azure", "gcp", "oci"}]
@@ -6733,7 +6758,7 @@ async def analytics_service_hotspots(
 
     diagnostics = {
         d.provider: bool(d.configured)
-        for d in _provider_diagnostics()
+        for d in _provider_diagnostics(customer_id=customer_id, db=db)
     }
 
     if require_live_provider_data and not any(diagnostics.get(provider, False) for provider in providers):
@@ -6743,15 +6768,6 @@ async def analytics_service_hotspots(
                 "Live provider data is required, but none of the requested providers are configured "
                 "for runtime API access on this backend host."
             ),
-        )
-
-    imported_rows = []
-    if not require_live_provider_data:
-        imported_rows = _get_imported_cost_rows(
-            db,
-            _organization_id_for_membership(membership),
-            _customer_id_for_org(membership),
-            cloud_provider,
         )
 
     def add_item(bucket: Dict[tuple[str, str], Dict[str, Any]], provider_key: str, service_name: str, cost: float, source: str) -> None:
@@ -6766,13 +6782,14 @@ async def analytics_service_hotspots(
         bucket[key]["monthly_cost_usd"] += float(cost or 0.0)
 
     service_map: Dict[tuple[str, str], Dict[str, Any]] = {}
+    provider_errors: Dict[str, str] = {}
 
     for provider in providers:
         used_live = False
         if diagnostics.get(provider, False):
-            summary = await _cost_summary_for_provider(provider, period)
+            summary = await _cost_summary_for_provider(provider, period, customer_id=customer_id)
             if "error" not in summary:
-                used_live = True
+                before_count = len(service_map)
                 for row in summary.get("top_services", []):
                     if not isinstance(row, dict):
                         continue
@@ -6791,11 +6808,51 @@ async def analytics_service_hotspots(
                     if cost <= 0:
                         continue
                     add_item(service_map, provider, service_name, cost, "live_provider_api")
+                used_live = len(service_map) > before_count
+            else:
+                provider_errors[provider] = str(summary.get("error") or "Unknown provider error")
 
         if used_live:
             continue
 
+        latest_snapshot = (
+            db.query(CostSnapshot)
+            .filter(
+                CostSnapshot.customer_id == customer_id,
+                CostSnapshot.provider == provider,
+            )
+            .order_by(CostSnapshot.captured_at.desc())
+            .first()
+        )
+        if latest_snapshot is not None:
+            before_count = len(service_map)
+            try:
+                snapshot_services = json.loads(latest_snapshot.top_services_json or "[]")
+            except Exception:
+                snapshot_services = []
+            for row in snapshot_services if isinstance(snapshot_services, list) else []:
+                if not isinstance(row, dict):
+                    continue
+                service_name = str(
+                    row.get("service")
+                    or row.get("name")
+                    or row.get("service_name")
+                    or "unknown-service"
+                ).strip() or "unknown-service"
+                cost = float(row.get("cost_usd") or row.get("cost") or row.get("amount") or 0.0)
+                if cost <= 0:
+                    continue
+                add_item(service_map, provider, service_name, cost, "cost_snapshots_live")
+            if len(service_map) > before_count:
+                continue
+
         if not require_live_provider_data:
+            imported_rows = _get_imported_cost_rows(
+                db,
+                organization_id,
+                customer_id,
+                provider,
+            )
             for row in imported_rows:
                 row_provider = str(getattr(row, "provider", "") or "").strip().lower()
                 if row_provider != provider:
@@ -6822,6 +6879,8 @@ async def analytics_service_hotspots(
         "focus": focus.strip().lower() if isinstance(focus, str) and focus.strip() else None,
         "total_monthly_cost_usd": round(sum(float(item.get("monthly_cost_usd", 0.0) or 0.0) for item in items), 2),
         "items": items,
+        "source_priority": COST_SOURCE_PRIORITY,
+        "provider_errors": provider_errors,
     }
 
 
@@ -10779,13 +10838,26 @@ def _container_source_rank(source: str) -> int:
     }.get(source, 9)
 
 
+OCI_FLEX_HOURS_PER_MONTH = 730.0
+OCI_STANDARD_E4_OCPU_USD_PER_HOUR = 0.0255
+OCI_STANDARD_E4_MEMORY_GIB_USD_PER_HOUR = 0.0015
+
+
 def _estimate_oci_container_instance_monthly_cost(
     ocpus: Optional[float],
     memory_gib: Optional[float],
 ) -> float:
     """Conservative run-rate estimate for OCI Container Instances before billing lands."""
-    ocpu_hours = max(float(ocpus or 0.0), 0.0) * 0.0255 * 730.0
-    memory_hours = max(float(memory_gib or 0.0), 0.0) * 0.0015 * 730.0
+    ocpu_hours = (
+        max(float(ocpus or 0.0), 0.0)
+        * OCI_STANDARD_E4_OCPU_USD_PER_HOUR
+        * OCI_FLEX_HOURS_PER_MONTH
+    )
+    memory_hours = (
+        max(float(memory_gib or 0.0), 0.0)
+        * OCI_STANDARD_E4_MEMORY_GIB_USD_PER_HOUR
+        * OCI_FLEX_HOURS_PER_MONTH
+    )
     return round(ocpu_hours + memory_hours, 2)
 
 
@@ -14741,6 +14813,8 @@ def _runtime_oci_credential_json() -> Optional[Dict[str, Any]]:
     return {
         "config_file": config_file,
         "profile": _normalize_oci_profile(cfg.oci_profile),
+        "region": str(cfg.oci_region or ""),
+        "compartment_ids": str(cfg.oci_compartment_ids or ""),
     }
 
 
@@ -14757,6 +14831,15 @@ def _oci_scan_compartment_seeds(
         str(os.getenv("OCI_COMPARTMENT_ID", "") or "").strip(),
         str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip(),
     ]
+    runtime_compartment_ids = cred_json.get("compartment_ids")
+    if isinstance(runtime_compartment_ids, (list, tuple, set)):
+        raw_values.extend(str(item or "").strip() for item in runtime_compartment_ids)
+    else:
+        raw_values.extend(
+            item.strip()
+            for item in str(runtime_compartment_ids or "").split(",")
+            if item.strip()
+        )
     raw_values.extend(
         item.strip()
         for item in str(cfg.oci_compartment_ids or "").split(",")

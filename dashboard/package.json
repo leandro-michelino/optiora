@@ -12,6 +12,7 @@
     "type-check": "tsc --noEmit --incremental false",
     "generate-api-client": "python3 ../scripts/generate_openapi_client.py",
     "test:e2e": "playwright test",
+    "test:e2e:live": "playwright test --config playwright.live.config.ts",
     "test:e2e:headed": "playwright test --headed"
   },
   "keywords": [

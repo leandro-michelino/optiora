@@ -48,6 +48,8 @@ interface Suggestion {
   icon: ReactNode
 }
 
+const INITIAL_CHAT_TIMESTAMP = new Date('2026-05-11T00:00:00.000Z')
+
 const narrativeLabels: Record<AdvisorNarrativeType, string> = {
   waste_insights: 'Waste Insights',
   optimization_roadmap: '30/60/90 Roadmap',
@@ -79,6 +81,10 @@ function formatDateTime(value?: string): string {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return 'Not available'
   return parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function formatChatTimestamp(value: Date): string {
+  return value.toISOString().slice(11, 16)
 }
 
 function formatPercent(value?: number | null, digits = 1): string {
@@ -347,7 +353,7 @@ function MessageBubble({ message }: { message: Message }) {
           <AdvisorText content={message.content} />
         )}
         <p className={`mt-3 text-xs ${isUser ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
-          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {formatChatTimestamp(message.timestamp)}
         </p>
       </div>
       {isUser && (
@@ -394,7 +400,7 @@ export default function CostAdvisorPage() {
       role: 'assistant',
       content:
         "I'm ready to analyze your cloud cost telemetry in English. Ask about cross-cloud rightsizing, expensive resources, savings opportunities, commitment coverage, Kubernetes allocation, or migration tradeoffs.",
-      timestamp: new Date(),
+      timestamp: INITIAL_CHAT_TIMESTAMP,
     },
   ])
   const [input, setInput] = useState('')

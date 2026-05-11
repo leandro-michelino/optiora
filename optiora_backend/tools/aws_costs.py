@@ -29,6 +29,19 @@ def _parse_role_targets(raw: str) -> List[Tuple[str, str]]:
     return targets
 
 
+def _csv_or_list_values(value: Any) -> List[str]:
+    if isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_values = str(value or "").split(",")
+    output: List[str] = []
+    for raw in raw_values:
+        text = str(raw or "").strip()
+        if text and text not in output:
+            output.append(text)
+    return output
+
+
 def _assumed_ce_client(
     role_arn: str,
     region: str,
@@ -111,7 +124,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         else:  # year
             start_date = end_date - timedelta(days=365)
 
-        role_targets = _parse_role_targets(config.aws_organization_role_arns)
+        runtime_role_arns = ",".join(_csv_or_list_values(credentials.get("organization_role_arns")))
+        role_targets = _parse_role_targets(runtime_role_arns or config.aws_organization_role_arns)
         account_rows: List[Dict[str, Any]] = []
         total_cost = 0.0
         services: Dict[str, float] = {}
@@ -207,6 +221,11 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                 ],
                 "account_breakdown": account_rows,
                 "currency": "USD",
+                "cloud_provider": "aws",
+                "data_source": "live_provider_api",
+                "api_source": "AWS Cost Explorer GetCostAndUsage",
+                "cost_dimensions": ["SERVICE", "REGION"],
+                "scope_count": len(account_rows),
             }
         )
 

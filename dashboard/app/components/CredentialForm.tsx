@@ -107,11 +107,14 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
   const [awsForm, setAwsForm] = useState({
     access_key_id: '',
     secret_access_key: '',
-    region: 'us-east-1'
+    region: 'us-east-1',
+    organization_role_arns: ''
   });
 
   const [azureForm, setAzureForm] = useState({
     subscription_id: '',
+    subscription_ids: '',
+    management_group_id: '',
     tenant_id: '',
     client_id: '',
     client_secret: ''
@@ -119,12 +122,20 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
 
   const [gcpForm, setGcpForm] = useState({
     project_id: '',
+    project_ids: '',
+    billing_export_project_ids: '',
+    billing_export_dataset: 'billing',
+    billing_export_table_prefix: 'gcp_billing_export_v1_',
+    organization_id: '',
+    folder_id: '',
     service_account_json: ''
   });
 
   const [ociForm, setOciForm] = useState({
     config_file: '/opt/optiora/.oci/config',
-    profile: 'DEFAULT'
+    profile: 'DEFAULT',
+    region: '',
+    compartment_ids: ''
   });
   const [ociConfigUpload, setOciConfigUpload] = useState<File | null>(null);
   const [ociKeyUpload, setOciKeyUpload] = useState<File | null>(null);
@@ -248,6 +259,7 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
       const uploadedProfile = String(data?.profile || ociForm.profile || 'DEFAULT');
       const uploadedConfigPath = String(data?.config_file || ociForm.config_file || '~/.oci/config');
       setOciForm({
+        ...ociForm,
         config_file: uploadedConfigPath,
         profile: uploadedProfile,
       });
@@ -358,6 +370,24 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   className="form-field"
                 />
               </div>
+              <details className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Advanced billing scopes
+                </summary>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium mb-1">Organization Role ARNs</label>
+                  <textarea
+                    value={awsForm.organization_role_arns}
+                    onChange={e => setAwsForm({...awsForm, organization_role_arns: e.target.value})}
+                    placeholder="123456789012=arn:aws:iam::123456789012:role/OptiOraReadOnly, arn:aws:iam::210987654321:role/OptiOraReadOnly"
+                    rows={3}
+                    className="form-field font-mono text-xs"
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Optional comma-separated account-to-role targets for AWS Organizations cost collection.
+                  </p>
+                </div>
+              </details>
             </div>
           )}
 
@@ -376,6 +406,33 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   className="form-field"
                 />
               </div>
+              <details className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Advanced billing scopes
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Additional Subscription IDs</label>
+                    <textarea
+                      value={azureForm.subscription_ids}
+                      onChange={e => setAzureForm({...azureForm, subscription_ids: e.target.value})}
+                      placeholder="sub-id-1, sub-id-2"
+                      rows={2}
+                      className="form-field font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Management Group ID</label>
+                    <input
+                      type="text"
+                      value={azureForm.management_group_id}
+                      onChange={e => setAzureForm({...azureForm, management_group_id: e.target.value})}
+                      placeholder="mg-root"
+                      className="form-field"
+                    />
+                  </div>
+                </div>
+              </details>
               <div>
                 <label className="block text-sm font-medium mb-1">Tenant ID</label>
                 <input
@@ -438,6 +495,73 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   className="form-field min-h-40 font-mono text-xs"
                 />
               </div>
+              <details className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Advanced billing export scopes
+                </summary>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Additional Project IDs</label>
+                    <textarea
+                      value={gcpForm.project_ids}
+                      onChange={e => setGcpForm({...gcpForm, project_ids: e.target.value})}
+                      placeholder="project-a, project-b"
+                      rows={2}
+                      className="form-field font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Billing Export Project IDs</label>
+                    <textarea
+                      value={gcpForm.billing_export_project_ids}
+                      onChange={e => setGcpForm({...gcpForm, billing_export_project_ids: e.target.value})}
+                      placeholder="billing-export-project"
+                      rows={2}
+                      className="form-field font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Billing Export Dataset</label>
+                    <input
+                      type="text"
+                      value={gcpForm.billing_export_dataset}
+                      onChange={e => setGcpForm({...gcpForm, billing_export_dataset: e.target.value})}
+                      placeholder="billing"
+                      className="form-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Billing Export Table Prefix</label>
+                    <input
+                      type="text"
+                      value={gcpForm.billing_export_table_prefix}
+                      onChange={e => setGcpForm({...gcpForm, billing_export_table_prefix: e.target.value})}
+                      placeholder="gcp_billing_export_v1_"
+                      className="form-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Organization ID</label>
+                    <input
+                      type="text"
+                      value={gcpForm.organization_id}
+                      onChange={e => setGcpForm({...gcpForm, organization_id: e.target.value})}
+                      placeholder="123456789012"
+                      className="form-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Folder ID</label>
+                    <input
+                      type="text"
+                      value={gcpForm.folder_id}
+                      onChange={e => setGcpForm({...gcpForm, folder_id: e.target.value})}
+                      placeholder="folders/123456789012 or 123456789012"
+                      className="form-field"
+                    />
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 
@@ -478,6 +602,36 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
                   Enter the profile name without brackets: use <code>DEFAULT</code> or <code>JNB</code>, not <code>[JNB]</code>.
                 </p>
               </div>
+              <details className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  Advanced OCI billing scope
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Usage API Region</label>
+                    <input
+                      type="text"
+                      value={ociForm.region}
+                      onChange={e => setOciForm({...ociForm, region: e.target.value})}
+                      placeholder="uk-london-1"
+                      className="form-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Compartment OCIDs</label>
+                    <textarea
+                      value={ociForm.compartment_ids}
+                      onChange={e => setOciForm({...ociForm, compartment_ids: e.target.value})}
+                      placeholder="ocid1.compartment.oc1..aaaa..., ocid1.compartment.oc1..bbbb..."
+                      rows={3}
+                      className="form-field font-mono text-xs"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Optional scan seeds for OCI inventory. Usage billing is still requested at tenancy scope through the OCI Usage API.
+                    </p>
+                  </div>
+                </div>
+              </details>
               <details className="rounded-md border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
                 <summary className="cursor-pointer text-sm font-semibold text-slate-800 dark:text-slate-100">
                   Advanced: upload a different OCI config

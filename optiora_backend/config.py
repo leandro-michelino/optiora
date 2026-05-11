@@ -128,6 +128,15 @@ class Config:
     )
     gcp_project_id: str = field(default_factory=lambda: _env_str("GCP_PROJECT_ID"))
     gcp_project_ids: str = field(default_factory=lambda: _env_str("GCP_PROJECT_IDS"))
+    gcp_billing_export_project_ids: str = field(
+        default_factory=lambda: _env_str("GCP_BILLING_EXPORT_PROJECT_IDS")
+    )
+    gcp_billing_export_dataset: str = field(
+        default_factory=lambda: _env_str("GCP_BILLING_EXPORT_DATASET", "billing")
+    )
+    gcp_billing_export_table_prefix: str = field(
+        default_factory=lambda: _env_str("GCP_BILLING_EXPORT_TABLE_PREFIX", "gcp_billing_export_v1_")
+    )
     gcp_folder_id: str = field(default_factory=lambda: _env_str("GCP_FOLDER_ID"))
     gcp_organization_id: str = field(
         default_factory=lambda: _env_str("GCP_ORGANIZATION_ID")

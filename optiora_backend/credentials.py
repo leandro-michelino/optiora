@@ -32,6 +32,19 @@ class CredentialValidator:
     """Validate cloud provider credentials with lightweight provider API calls."""
 
     @staticmethod
+    def _csv_or_list_values(value: Any) -> list[str]:
+        if isinstance(value, (list, tuple, set)):
+            raw_values = value
+        else:
+            raw_values = str(value or "").split(",")
+        output: list[str] = []
+        for raw in raw_values:
+            text = str(raw or "").strip()
+            if text and text not in output:
+                output.append(text)
+        return output
+
+    @staticmethod
     def _normalize_oci_inputs(config_file: str, profile: str) -> tuple[str, str]:
         resolved_config = str(config_file or "~/.oci/config").strip() or "~/.oci/config"
         resolved_profile = str(profile or "DEFAULT").strip() or "DEFAULT"
@@ -145,6 +158,8 @@ class CredentialValidator:
         tenant_id: str,
         client_id: str,
         client_secret: str,
+        subscription_ids: Any = None,
+        management_group_id: Optional[str] = None,
     ) -> CredentialStatus:
         try:
             from azure.identity import ClientSecretCredential
@@ -157,7 +172,21 @@ class CredentialValidator:
             )
 
             client = CostManagementClient(credential)
-            scope = f"/subscriptions/{subscription_id}"
+            subscriptions = CredentialValidator._csv_or_list_values(subscription_ids)
+            if subscription_id and subscription_id not in subscriptions:
+                subscriptions.insert(0, subscription_id)
+            management_group = str(management_group_id or "").strip()
+            if management_group:
+                scope = f"/providers/Microsoft.Management/managementGroups/{management_group}"
+            elif subscriptions:
+                scope = f"/subscriptions/{subscriptions[0]}"
+            else:
+                return CredentialStatus(
+                    provider="azure",
+                    is_valid=False,
+                    message="Azure validation needs a subscription id or management group id",
+                    tested_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+                )
             query = {
                 "type": "Usage",
                 "timeframe": "MonthToDate",
@@ -184,9 +213,10 @@ class CredentialValidator:
             try:
                 from azure.mgmt.resource import ResourceManagementClient
 
-                rm_client = ResourceManagementClient(credential, subscription_id)
-                list(rm_client.resource_groups.list())
-                permissions_verified.append("Microsoft.Resources/resourceGroups/read")
+                if subscriptions:
+                    rm_client = ResourceManagementClient(credential, subscriptions[0])
+                    list(rm_client.resource_groups.list())
+                    permissions_verified.append("Microsoft.Resources/resourceGroups/read")
             except Exception:
                 pass
 
@@ -496,11 +526,14 @@ class CredentialManager:
             return {
                 "access_key_id_masked": self._mask_value(credentials.get("access_key_id")),
                 "region": str(credentials.get("region") or "us-east-1"),
+                "organization_role_arns_count": len(CredentialValidator._csv_or_list_values(credentials.get("organization_role_arns"))),
             }
 
         if provider == "azure":
             return {
                 "subscription_id": str(credentials.get("subscription_id") or ""),
+                "subscription_ids_count": len(CredentialValidator._csv_or_list_values(credentials.get("subscription_ids"))),
+                "management_group_id": str(credentials.get("management_group_id") or ""),
                 "tenant_id": str(credentials.get("tenant_id") or ""),
                 "client_id_masked": self._mask_value(credentials.get("client_id")),
                 "has_client_secret": bool(credentials.get("client_secret")),
@@ -519,6 +552,12 @@ class CredentialManager:
 
             return {
                 "project_id": str(credentials.get("project_id") or ""),
+                "project_ids_count": len(CredentialValidator._csv_or_list_values(credentials.get("project_ids"))),
+                "billing_export_project_ids_count": len(CredentialValidator._csv_or_list_values(credentials.get("billing_export_project_ids"))),
+                "billing_export_dataset": str(credentials.get("billing_export_dataset") or ""),
+                "billing_export_table_prefix": str(credentials.get("billing_export_table_prefix") or ""),
+                "organization_id": str(credentials.get("organization_id") or ""),
+                "folder_id": str(credentials.get("folder_id") or ""),
                 "service_account_email": email,
                 "has_service_account_json": bool(credentials.get("service_account_json")),
             }
@@ -527,6 +566,8 @@ class CredentialManager:
             return {
                 "config_file": str(credentials.get("config_file") or ""),
                 "profile": str(credentials.get("profile") or "DEFAULT"),
+                "region": str(credentials.get("region") or ""),
+                "compartment_ids_count": len(CredentialValidator._csv_or_list_values(credentials.get("compartment_ids"))),
             }
 
         return {"provider": provider, "stored_fields": sorted(credentials.keys())}

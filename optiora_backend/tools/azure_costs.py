@@ -20,6 +20,19 @@ def _subscription_list() -> List[str]:
     return unique
 
 
+def _csv_or_list_values(value: Any) -> List[str]:
+    if isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_values = str(value or "").split(",")
+    output: List[str] = []
+    for raw in raw_values:
+        text = str(raw or "").strip()
+        if text and text not in output:
+            output.append(text)
+    return output
+
+
 async def get_cost_summary(params: dict[str, Any]) -> str:
     """
     Get Azure cost summary for specified period using Cost Management API.
@@ -30,12 +43,18 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         period = params.get("period", "month")
         credentials = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
         subscription_id = str(credentials.get("subscription_id") or config.azure_subscription_id or "")
+        subscription_ids = _csv_or_list_values(credentials.get("subscription_ids"))
         tenant_id = str(credentials.get("tenant_id") or config.azure_tenant_id or "")
         client_id = str(credentials.get("client_id") or config.azure_client_id or "")
         client_secret = str(credentials.get("client_secret") or config.azure_client_secret or "")
+        management_group_id = str(
+            credentials.get("management_group_id")
+            or config.azure_management_group_id
+            or ""
+        ).strip()
         
-        if not subscription_id and not config.azure_subscription_ids and not config.azure_management_group_id:
-            return json.dumps({"error": "Azure not configured (AZURE_SUBSCRIPTION_ID not set)"})
+        if not subscription_id and not subscription_ids and not config.azure_subscription_ids and not management_group_id:
+            return json.dumps({"error": "Azure not configured (subscription id or management group id not set)"})
         
         try:
             from azure.identity import ClientSecretCredential
@@ -99,23 +118,25 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
 
         # Build scan scopes: management group first (if provided), then subscriptions.
         scopes: List[Dict[str, str]] = []
-        if config.azure_management_group_id:
+        if management_group_id:
             scopes.append(
                 {
-                    "scope": f"/providers/Microsoft.Management/managementGroups/{config.azure_management_group_id}",
-                    "identifier": config.azure_management_group_id,
+                    "scope": f"/providers/Microsoft.Management/managementGroups/{management_group_id}",
+                    "identifier": management_group_id,
                     "scope_type": "management_group",
                 }
             )
-        subscription_values = [subscription_id] if subscription_id else _subscription_list()
+        subscription_values = subscription_ids or ([subscription_id] if subscription_id else _subscription_list())
+        if subscription_id and subscription_id not in subscription_values:
+            subscription_values.insert(0, subscription_id)
         for subscription_id in subscription_values:
             scopes.append(
                 {
                     "scope": f"/subscriptions/{subscription_id}",
                     "identifier": subscription_id,
                     "scope_type": "subscription",
-                    "parent_scope_id": config.azure_management_group_id or None,
-                    "parent_scope_type": "management_group" if config.azure_management_group_id else None,
+                    "parent_scope_id": management_group_id or None,
+                    "parent_scope_type": "management_group" if management_group_id else None,
                 }
             )
 
@@ -187,6 +208,10 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             "account_breakdown": scope_breakdown,
             "currency": "USD",
             "cloud_provider": "azure",
+            "data_source": "live_provider_api",
+            "api_source": "Azure Cost Management Query Usage",
+            "cost_dimensions": ["MeterCategory", "ResourceLocation"],
+            "scope_count": len(scope_breakdown),
         })
         
     except Exception as e:

@@ -6,10 +6,36 @@
 
 - Clarified the documentation-wide deployment boundary: operator workstations may run validation, Terraform, Ansible, and packaging commands, but OptiOra application services are deployed and run on the OCI VM.
 - Standardized documentation wording around the existing `laptop_cidr` Terraform variable so it is described as the operator source CIDR rather than a local runtime target.
+- Added a live-OCI Playwright walkthrough config and npm script so deployed dashboard acceptance can run against the OCI VM without starting local app servers.
+- Updated cost planning with the current live OCI VM footprint: `VM.Standard.E4.Flex`, `2 OCPU / 8 GiB`, extra data volume disabled, about `$46/month` shape-only and `$60-$120/month` infrastructure baseline before GenAI/data add-ons.
+- Named the OCI E4 Flex pricing constants used for Kubernetes/container live run-rate estimates so UI estimates, tests, and cost documentation share the same basis.
+- Standardized billing/cost source priority across the platform: live provider API, latest provider-derived scan snapshot, then optional CSV import.
+- Added provider cost-source metadata so AWS, Azure, GCP, and OCI summaries identify their billing API path.
+- Expanded saved credential/runtime payloads for broader billing scopes: AWS organization role ARNs, Azure multi-subscription or management-group scopes, GCP billing export project/dataset/table-prefix scopes, and OCI region/compartment scan seeds.
+
+### Fixed
+
+- Customer Portfolio now keeps the page capability name as the main H1 and shows the white-label brand as supporting metadata, preventing the live page from appearing as a generic brand page.
+- Cost Advisor chat timestamps are deterministic during hydration, removing the production React text mismatch found by the live browser walkthrough.
+- Advanced FinOps now renders partial live content when one backend analytics call is slow instead of keeping the whole page in a loading state.
+- Forecasting now exposes an always-available reading guide expander and bounds optional forecast-side advisory calls, so live operators can open page explanation details even when a GenAI or diagnostics request is slow.
+- Saved Views now keeps the page heading, data-source banner, and reading guide visible while workspace metrics load, and bounds optional backend calls so the page cannot remain on a bare loading message indefinitely.
+- Dashboard page explanation buttons now route pointer hits through the button itself so clicks on the icon or label reliably open the explanation panel.
+- Scorecards now exposes a reading guide expander before scorecard data finishes loading, keeping finance maturity and realized-savings context available during live backend refreshes.
+- Service Hotspots now checks saved workspace runtime credentials, calls live provider billing APIs before fallbacks, and prefers latest live scan snapshots over CSV imports when live calls are unavailable.
 
 ### Validation
 
 - Documentation scan for stale release, backend namespace, legacy integration, workstation, and deployment-boundary wording.
+- `npm run type-check --prefix dashboard`
+- `npm run lint --prefix dashboard`
+- `npm run build --prefix dashboard`
+- `.venv/bin/python -m pytest tests/test_cost_context.py tests/test_service_hotspots.py -q` (`12` passed)
+- Live OCI `GET /api/v1/costs` returned `source=live_provider_api`, `provider_api_sources.oci=OCI Usage API RequestSummarizedUsages`, and `source_priority=["live_provider_api","cost_snapshots_live","csv_import"]`.
+- Live OCI `GET /api/v1/analytics/service-hotspots` returned OCI service rows from `live_provider_api` with the same source priority.
+- `npx playwright test e2e/live-operator-walkthrough.spec.ts --config playwright.live.config.ts` against `http://140.238.90.95` (`2` passed)
+- `./deploy/deploy-oci.sh compute` against OCI VM `140.238.90.95`
+- `./deploy/deploy-oci.sh verify` (`48` passed, `0` failed, `3` skipped)
 
 ## 0.9.3 - Advisor Grounding, Console Deep Links, and Backend Namespace Cleanup (May 11, 2026)
 

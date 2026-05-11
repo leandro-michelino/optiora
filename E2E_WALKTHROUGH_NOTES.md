@@ -28,6 +28,17 @@ These notes capture the complete operator-style pass through OptiOra using the r
 | OCI verification | Ran `./deploy/deploy-oci.sh verify`. | Pass | `48 passed, 0 failed, 3 skipped`. Skips were intentional live-environment safeguards for temporary CSV upload and optional live credential scan. |
 | New capability contracts | Called the live rightsizing, recommendation ledger, ledger CSV, FinOps intelligence, and RAG guidance endpoints. | Pass | Rightsizing returned live OCI-backed recommendations, ledger exports included planned/realized/variance fields, FinOps intelligence returned deterministic risk/execution data, and RAG guidance returned retrieved guidance. |
 | Advisor Conversation grounding | Called `/api/ai/chat` on the OCI VM with German prior chat history and the prompt `Which services are over-provisioned?`. | Pass | Response stayed in English and returned the correct provider-backed rightsizing empty-state instead of promoting tenancy, account, segment, imported, or service aggregate rows as actionable resources. |
+| Live OCI browser walkthrough | Added `dashboard/playwright.live.config.ts` and ran `dashboard/e2e/live-operator-walkthrough.spec.ts` against `http://140.238.90.95`. | Fixed then pass | The live run walks all 20 dashboard screens, explanation buttons, expander controls, provider console links, navigation search, and Advisor Conversation without starting local app servers. |
+| Page explanation click path | Clicked the global `Explain page` control as a human operator. | Fixed then pass | Chromium mouse clicks could land on the icon/text child and fail to toggle the explanation panel. The icon and label now pass pointer hits through to the actual button. |
+| Saved Views live loading | Opened `/dashboard/my-dashboards` during the live browser walkthrough and waited for the main page heading. | Fixed then pass | The page could stay on a bare loading message while bundled backend calls were slow. It now keeps the heading, source banner, and reading guide expander visible immediately, then fills metrics as data returns. |
+| Customer Portfolio page identity | Opened `/dashboard/portfolio` as a human operator and compared shell title to main content. | Fixed then pass | The page H1 was replaced by the white-label brand `OptiOra`, hiding the actual capability name. The H1 now stays `Customer Portfolio`, with the white-label brand shown as supporting metadata. |
+| Cost Advisor hydration | Loaded `/dashboard/cost-advisor` in the production browser walkthrough and watched page errors. | Fixed then pass | React hydration reported text mismatch because the initial chat timestamp used a fresh `new Date()` during server render and hydration. The initial timestamp and rendered chat time are now deterministic. |
+| Forecasting expander availability | Walked `/dashboard/forecasting` in the live browser and waited for expander-backed details. | Fixed then pass | The Forecasting detail expander was blocked until all forecast-side calls finished, so a slow optional advisory request could leave the page without expandable details. Added an always-available reading guide expander and bounded optional forecast calls. |
+| Scorecards expander availability | Walked `/dashboard/scorecards` in the live browser and waited for expander-backed details. | Fixed then pass | Scorecards only exposed expanders after the backend scorecard payload returned. Added an always-available reading guide expander so finance maturity and realized-savings context is usable during refresh. |
+| Advanced FinOps live loading | Opened `/dashboard/advanced-finops` during the live OCI walkthrough and waited for expander-backed details. | Fixed then pass | One slow analytics request could hold the whole page in loading state. The page now bounds each backend call and renders partial content when one data source is late. |
+| Cost estimate refresh | Reviewed `COST_ESTIMATE.md`, Terraform live VM variables, Kubernetes run-rate math, and README cost planning. | Fixed then pass | Added the current live OCI VM baseline: `VM.Standard.E4.Flex`, `2 OCPU / 8 GiB`, extra data volume disabled, about `$46/month` shape-only and `$60-$120/month` infra baseline before GenAI/data add-ons. The temporary Container Instance estimate remains `$19.71/month` while running and `$0/month` after cleanup. |
+| Billing API source order | Reviewed shared cost context, provider billing adapters, Settings credential scopes, and Service Hotspots. | Fixed then pass | Platform cost reads now prefer live provider billing APIs, then latest provider-derived scan snapshots, then optional CSV imports. Service Hotspots now uses saved workspace runtime credentials and no longer lets imported rows override live scan snapshots. Provider summaries expose the API source used: AWS Cost Explorer, Azure Cost Management, GCP BigQuery Cloud Billing export, or OCI Usage API. |
+| Live billing API verification | Called `/api/v1/costs` and `/api/v1/analytics/service-hotspots` on the OCI VM after deployment. | Pass | `/api/v1/costs` reported `source=live_provider_api`, `provider_api_sources.oci=OCI Usage API RequestSummarizedUsages`, and the source priority `live_provider_api > cost_snapshots_live > csv_import`. Service Hotspots returned OCI service rows from `live_provider_api`. |
 
 ## Screens Walked
 
@@ -58,6 +69,8 @@ The new operator walkthrough covers every main dashboard route:
 
 It verifies that `/dashboard/kubernetes` is the only Kubernetes, containers, Docker, namespaces, and OpenCost screen, and that the sidebar no longer shows a separate `K8s Namespaces` entry.
 
+The live OCI browser walkthrough additionally verifies every page explanation button, at least one expander-backed detail section per page, concrete provider console URLs where console actions are visible, no browser page errors, no console errors, and the English/provider-grounded Advisor Conversation response.
+
 ## Live OCI Results
 
 ```text
@@ -69,6 +82,7 @@ Deploy:   Terraform + Ansible redeploy completed from the operator workspace to 
 Verify:   48 passed, 0 failed, 3 skipped
 GenAI:    OCI GenAI configured in uk-london-1 with RAG-backed advisor wiring
 Chat:     Advisor Conversation English-only for now; over-provisioning scoped to real AWS/Azure/GCP/OCI resource rightsizing candidates
+Browser:  live Playwright walkthrough against OCI VM passed: 2 tests, 20 dashboard screens
 ```
 
 The live rightsizing and ledger checks confirmed finance-ready fields:
@@ -150,6 +164,7 @@ npm run type-check
 npm run lint
 npm run test:e2e
 npx playwright test e2e/operator-walkthrough.spec.ts
+DASHBOARD_BASE=http://140.238.90.95 npm run test:e2e:live
 
 cd ..
 ./deploy/deploy-oci.sh verify

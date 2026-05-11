@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict, Iterable, Optional
 
 SUPPORTED_CONTEXT_PROVIDERS = ("aws", "azure", "gcp", "oci")
+COST_SOURCE_PRIORITY = ["live_provider_api", "cost_snapshots_live", "csv_import"]
 
 
 class LiveDataPolicyError(RuntimeError):
@@ -25,6 +26,7 @@ def _no_data_context(
         "region_breakdown": [],
         "source": "no_data_available",
         "no_data": True,
+        "source_priority": COST_SOURCE_PRIORITY,
     }
     if provider_errors:
         response["provider_errors"] = provider_errors
@@ -104,6 +106,7 @@ def build_imported_cost_context(
             for region, cost in sorted(region_breakdown.items(), key=lambda item: item[1], reverse=True)
         ],
         "source": "csv_import",
+        "source_priority": COST_SOURCE_PRIORITY,
         "rows_imported": summary["rows_imported"],
         "last_imported_at": last_imported_at.isoformat() if last_imported_at else None,
     }
@@ -119,6 +122,7 @@ async def build_live_cost_context(
     provider_diagnostics: Callable[[], Iterable[Any]],
     imported_cost_context_builder: Callable[[Any, Any, str], Optional[Dict[str, Any]]],
     cost_summary_for_provider: Callable[[str, str], Awaitable[Dict[str, Any]]],
+    allow_imported_fallback: bool = True,
 ) -> Dict[str, Any]:
     requested_providers = (
         list(SUPPORTED_CONTEXT_PROVIDERS)
@@ -161,6 +165,8 @@ async def build_live_cost_context(
         ]
 
     if not configured_live_providers and not require_live_provider_data:
+        if not allow_imported_fallback:
+            return _no_data_context(period=period, cloud_provider=cloud_provider)
         imported_context = imported_cost_context_builder(membership, db, cloud_provider)
         if imported_context is not None:
             return imported_context
@@ -171,6 +177,7 @@ async def build_live_cost_context(
     provider_errors: Dict[str, str] = {}
     successful_provider_calls = 0
     total_cost = 0.0
+    provider_api_sources: Dict[str, str] = {}
 
     for provider in providers:
         summary = await cost_summary_for_provider(provider, period)
@@ -182,6 +189,12 @@ async def build_live_cost_context(
         cost = float(summary.get("total_cost_usd", 0) or 0)
         total_cost += cost
         breakdown[provider] = {"cost": round(cost, 2), "percentage": 0.0}
+        provider_api_sources[provider] = str(
+            summary.get("api_source")
+            or summary.get("data_source")
+            or summary.get("source")
+            or "live_provider_api"
+        )
         for region_row in summary.get("region_breakdown", []):
             region_name = str(region_row.get("region") or "global")
             region_cost = float(region_row.get("cost_usd") or 0.0)
@@ -204,6 +217,12 @@ async def build_live_cost_context(
         )
 
     if successful_provider_calls == 0:
+        if not allow_imported_fallback:
+            return _no_data_context(
+                period=period,
+                cloud_provider=cloud_provider,
+                provider_errors=provider_errors,
+            )
         imported_context = imported_cost_context_builder(membership, db, cloud_provider)
         if imported_context is not None:
             imported_context = dict(imported_context)
@@ -223,11 +242,13 @@ async def build_live_cost_context(
         "breakdown": breakdown,
         "source": (
             "live_provider_api_partial"
-            if require_live_provider_data and provider_errors
+            if provider_errors
             else "live_provider_api"
             if configured_live_providers
             else "no_data_available"
         ),
+        "source_priority": COST_SOURCE_PRIORITY,
+        "provider_api_sources": provider_api_sources,
         "region_breakdown": [
             {"region": region, "cost_usd": round(cost, 2)}
             for region, cost in sorted(region_breakdown.items(), key=lambda item: item[1], reverse=True)

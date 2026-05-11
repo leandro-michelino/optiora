@@ -50,6 +50,19 @@ function statusTone(status: string): string {
   return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300'
 }
 
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 45_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`))
+    }, timeoutMs)
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timer))
+  })
+}
+
 type ToastKind = 'success' | 'error' | 'info'
 
 interface ToastMessage {
@@ -119,17 +132,17 @@ export default function AdvancedFinOpsPage() {
     setLoadingDecision(true)
     setLoadingFederation(true)
     const [tagRes, decRes, fedRes, tcRes, susRes, cpRes, aiRes, cbRes, opRes, diRes, ctRes] = await Promise.allSettled([
-      fetchTagQualityScore('all'),
-      fetchDecisionGradeRecommendations({ top_n: 8, provider: 'all', min_monthly_savings: 10 }),
-      fetchFederatedCosts({ provider: 'all', include_regions: true }),
-      fetchTaggingCoverage('all'),
-      fetchSustainabilityMetrics('all'),
-      fetchCrossProviderComparison(),
-      fetchAnomalyIntelligence('all'),
-      fetchChargebackSummary('all'),
-      fetchFinOpsOperatingReview('all', 12),
-      fetchDecisionIntelligence('all', 12),
-      fetchFinOpsControlTower('all', 12),
+      withTimeout(fetchTagQualityScore('all'), 'Tag quality'),
+      withTimeout(fetchDecisionGradeRecommendations({ top_n: 8, provider: 'all', min_monthly_savings: 10 }), 'Decision-grade recommendations'),
+      withTimeout(fetchFederatedCosts({ provider: 'all', include_regions: true }), 'Federated costs'),
+      withTimeout(fetchTaggingCoverage('all'), 'Tagging coverage'),
+      withTimeout(fetchSustainabilityMetrics('all'), 'Sustainability metrics'),
+      withTimeout(fetchCrossProviderComparison(), 'Cross-provider comparison'),
+      withTimeout(fetchAnomalyIntelligence('all'), 'Anomaly intelligence'),
+      withTimeout(fetchChargebackSummary('all'), 'Chargeback summary'),
+      withTimeout(fetchFinOpsOperatingReview('all', 12), 'Operating review'),
+      withTimeout(fetchDecisionIntelligence('all', 12), 'Decision intelligence'),
+      withTimeout(fetchFinOpsControlTower('all', 12), 'Control Tower'),
     ])
 
     if (tagRes.status === 'fulfilled') {
