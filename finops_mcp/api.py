@@ -10629,8 +10629,14 @@ def _oci_live_kubernetes_inventory_rows(
     cred_json: Dict[str, Any],
     *,
     limit: int = 120,
+    time_budget_seconds: float = 18.0,
 ) -> List[Dict[str, Any]]:
     """Return live OCI OKE, Container Instance, and OCIR resources for the K8s page."""
+    deadline = time.monotonic() + max(float(time_budget_seconds or 0.0), 1.0)
+
+    def budget_exhausted() -> bool:
+        return time.monotonic() >= deadline
+
     try:
         import oci
     except Exception as exc:
@@ -10656,7 +10662,7 @@ def _oci_live_kubernetes_inventory_rows(
     if not tenancy_id:
         return []
 
-    client_timeout = (5, 20)
+    client_timeout = (3, 5)
     configured_region = str(
         cred_json.get("region")
         or cfg.oci_region
@@ -10753,7 +10759,7 @@ def _oci_live_kubernetes_inventory_rows(
         )
 
     for region in scan_regions:
-        if len(rows) >= limit:
+        if len(rows) >= limit or budget_exhausted():
             break
         try:
             region_config = _oci_config_for_region(home_config, region)
@@ -10766,7 +10772,7 @@ def _oci_live_kubernetes_inventory_rows(
             continue
 
         for compartment_id in compartment_ids:
-            if len(rows) >= limit:
+            if len(rows) >= limit or budget_exhausted():
                 break
             try:
                 clusters_response = oci.pagination.list_call_get_all_results(
@@ -10778,6 +10784,8 @@ def _oci_live_kubernetes_inventory_rows(
                 logger.info("Unable to list OCI OKE clusters in compartment %s region %s: %s", compartment_id, region, exc)
                 clusters_response = []
             for cluster in _oci_collection_items(clusters_response):
+                if budget_exhausted():
+                    break
                 lifecycle = str(getattr(cluster, "lifecycle_state", "") or "").upper()
                 if lifecycle in {"DELETED", "DELETING", "FAILED"}:
                     continue
@@ -10829,6 +10837,8 @@ def _oci_live_kubernetes_inventory_rows(
                 logger.info("Unable to list OCI Container Instances in compartment %s region %s: %s", compartment_id, region, exc)
                 instances_response = []
             for instance in _oci_collection_items(instances_response):
+                if budget_exhausted():
+                    break
                 lifecycle = str(getattr(instance, "lifecycle_state", "") or "").upper()
                 if lifecycle in {"DELETED", "DELETING", "FAILED"}:
                     continue
@@ -10904,6 +10914,8 @@ def _oci_live_kubernetes_inventory_rows(
                 logger.info("Unable to list OCI container repositories in compartment %s region %s: %s", compartment_id, region, exc)
                 repositories_response = []
             for repository in _oci_collection_items(repositories_response):
+                if budget_exhausted():
+                    break
                 lifecycle = str(getattr(repository, "lifecycle_state", "") or "").upper()
                 if lifecycle in {"DELETED", "DELETING", "FAILED"}:
                     continue
