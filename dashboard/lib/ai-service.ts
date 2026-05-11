@@ -51,6 +51,7 @@ interface RightsizingRecommendationLite {
   resource_type?: string;
   provider?: string;
   region?: string;
+  evidence_source?: string;
   current_size?: string;
   recommended_size?: string;
   current_monthly_cost_usd?: number;
@@ -71,6 +72,8 @@ interface ResourceInventoryItemLite {
   service?: string;
   provider?: string;
   region?: string;
+  evidence_source?: string;
+  source?: string;
   cost_usd?: number;
 }
 
@@ -385,20 +388,9 @@ const LANGUAGE_TERMS: Array<{ lang: SupportedLanguage; terms: string[] }> = [
 ];
 
 function detectPreferredLanguage(message: string, history: ConversationEntry[] = []): SupportedLanguage {
-  const sample = [message, ...history.slice(-2).map((h) => h.content)].join(' ').toLowerCase();
-  let best: SupportedLanguage = 'en';
-  let bestScore = 0;
-  for (const candidate of LANGUAGE_TERMS) {
-    let score = 0;
-    for (const term of candidate.terms) {
-      if (sample.includes(term)) score += 1;
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      best = candidate.lang;
-    }
-  }
-  return best;
+  void message;
+  void history;
+  return 'en';
 }
 
 function localizeScopeReason(reason: string, lang: SupportedLanguage): string {
@@ -509,6 +501,65 @@ const RESOURCE_FOCUS_CATALOG: ResourceFocus[] = [
 
 function includesAny(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
+}
+
+function isAggregateLikeResource(item: {
+  resource_id?: string;
+  resource_name?: string;
+  resource_type?: string;
+  evidence_source?: string;
+  source?: string;
+}): boolean {
+  const resourceId = sanitizeText(item.resource_id).toLowerCase();
+  const resourceName = sanitizeText(item.resource_name).toLowerCase();
+  const resourceType = sanitizeText(item.resource_type).toLowerCase();
+  const source = [sanitizeText(item.evidence_source), sanitizeText(item.source)].join(' ').toLowerCase();
+
+  return (
+    resourceId.startsWith('oci-acct-') ||
+    resourceName.startsWith('oci-acct-') ||
+    resourceId.startsWith('ocid1.tenancy.') ||
+    resourceName.startsWith('ocid1.tenancy.') ||
+    resourceType.includes('aggregate') ||
+    resourceType.includes('segment') ||
+    source.includes('cost_trend_analysis') ||
+    source.includes('service_cost_snapshot')
+  );
+}
+
+function isRealOciVmRightsizingCandidate(item: RightsizingRecommendationLite): boolean {
+  const provider = sanitizeText(item.provider).toLowerCase();
+  const resourceId = sanitizeText(item.resource_id).toLowerCase();
+  const evidenceSource = sanitizeText(item.evidence_source).toLowerCase();
+
+  return provider === 'oci' &&
+    evidenceSource === 'oci_compute_inventory' &&
+    resourceId.startsWith('ocid1.instance.') &&
+    !isAggregateLikeResource(item);
+}
+
+function isRealOciVmInventoryItem(item: ResourceInventoryItemLite): boolean {
+  const provider = sanitizeText(item.provider).toLowerCase();
+  const resourceId = sanitizeText(item.resource_id).toLowerCase();
+  return provider === 'oci' && resourceId.startsWith('ocid1.instance.') && !isAggregateLikeResource(item);
+}
+
+function isRightsizingQuestion(message: string): boolean {
+  const q = message.toLowerCase();
+  return (
+    q.includes('rightsize') ||
+    q.includes('rightsizing') ||
+    q.includes('right sizing') ||
+    q.includes('overprovisioned') ||
+    q.includes('over-provisioned') ||
+    q.includes('over provisioned') ||
+    q.includes('over sized') ||
+    q.includes('oversized') ||
+    q.includes('underutilized') ||
+    q.includes('under-utilized') ||
+    q.includes('under utilized') ||
+    q.includes('downsize')
+  );
 }
 
 function extractQueryTokens(message: string): string[] {
@@ -719,6 +770,18 @@ function isDeterministicFinopsQuestion(message: string): boolean {
     q.includes('roi') ||
     q.includes('efficiency') ||
     q.includes('optimization') ||
+    q.includes('rightsize') ||
+    q.includes('rightsizing') ||
+    q.includes('right sizing') ||
+    q.includes('overprovisioned') ||
+    q.includes('over-provisioned') ||
+    q.includes('over provisioned') ||
+    q.includes('oversized') ||
+    q.includes('over sized') ||
+    q.includes('underutilized') ||
+    q.includes('under-utilized') ||
+    q.includes('under utilized') ||
+    q.includes('downsize') ||
     q.includes('finops') ||
     q.includes('chargeback') ||
     q.includes('showback') ||
@@ -927,16 +990,21 @@ async function buildVMUtilizationReply(message: string, allowRefresh = true): Pr
   const requestedLimit = detectRequestedTopLimit(message, focus === 'all' ? 3 : 1, 10);
   try {
     const res = await fetch(
-      `${apiBase}/api/v1/analytics/vm-utilization-hotspots?provider=all&limit=${requestedLimit}`,
+      `${apiBase}/api/v1/analytics/vm-utilization-hotspots?provider=oci&limit=${requestedLimit}`,
       { method: 'GET' },
     );
     if (!res.ok) return null;
     const payload = (await res.json()) as VMUtilizationHotspotResponseLite;
 
-    const topCpu = Array.isArray(payload?.top_cpu) ? payload.top_cpu : [];
-    const topMemory = Array.isArray(payload?.top_memory) ? payload.top_memory : [];
-    const topDisk = Array.isArray(payload?.top_disk_io) ? payload.top_disk_io : [];
-    const topNet = Array.isArray(payload?.top_network_bandwidth) ? payload.top_network_bandwidth : [];
+    const realOciVmMetric = (item: VMUtilizationHotspotItemLite): boolean => {
+      const provider = sanitizeText(item.provider).toLowerCase();
+      const resourceId = sanitizeText(item.resource_id).toLowerCase();
+      return provider === 'oci' && resourceId.startsWith('ocid1.instance.') && !isAggregateLikeResource(item);
+    };
+    const topCpu = (Array.isArray(payload?.top_cpu) ? payload.top_cpu : []).filter(realOciVmMetric);
+    const topMemory = (Array.isArray(payload?.top_memory) ? payload.top_memory : []).filter(realOciVmMetric);
+    const topDisk = (Array.isArray(payload?.top_disk_io) ? payload.top_disk_io : []).filter(realOciVmMetric);
+    const topNet = (Array.isArray(payload?.top_network_bandwidth) ? payload.top_network_bandwidth : []).filter(realOciVmMetric);
     if (topCpu.length + topMemory.length + topDisk.length + topNet.length === 0) {
       if (allowRefresh) {
         const refreshed = await triggerLiveProviderMetricsRefresh('vm_utilization_query');
@@ -959,22 +1027,22 @@ async function buildVMUtilizationReply(message: string, allowRefresh = true): Pr
       const metricLabel = source.includes('proxy') ? 'CPU pressure proxy index' : 'CPU';
       const metricUnit = source.includes('proxy') ? '' : '%';
       if (requestedLimit > 1) {
-        return `Top ${requestedLimit} VM CPU consumers across connected providers (provider=all, source=${source}):\n${topCpu
+        return `Top ${requestedLimit} OCI VM CPU consumers (source=${source}):\n${topCpu
           .slice(0, requestedLimit)
           .map((item, idx) => `${idx + 1}. ${summarizeLine(item, metricLabel, metricUnit)}`)
           .join('\n')}`;
       }
-      return `Highest VM CPU utilization across connected providers is ${summarizeLine(topCpu[0], metricLabel, metricUnit)} (source=${source}).`;
+      return `Highest OCI VM CPU utilization is ${summarizeLine(topCpu[0], metricLabel, metricUnit)} (source=${source}).`;
     }
     if (focus === 'memory' && topMemory.length > 0) {
       const source = sanitizeText(payload.metric_sources?.memory) || 'unknown';
       if (requestedLimit > 1) {
-        return `Top ${requestedLimit} VM memory consumers across connected providers (provider=all, source=${source}):\n${topMemory
+        return `Top ${requestedLimit} OCI VM memory consumers (source=${source}):\n${topMemory
           .slice(0, requestedLimit)
           .map((item, idx) => `${idx + 1}. ${summarizeLine(item, 'memory', '%')}`)
           .join('\n')}`;
       }
-      return `Highest VM memory utilization across connected providers is ${summarizeLine(topMemory[0], 'memory', '%')} (source=${source}).`;
+      return `Highest OCI VM memory utilization is ${summarizeLine(topMemory[0], 'memory', '%')} (source=${source}).`;
     }
     if (focus === 'disk_io' && topDisk.length > 0) {
       const source = sanitizeText(payload.metric_sources?.disk_io);
@@ -986,10 +1054,10 @@ async function buildVMUtilizationReply(message: string, allowRefresh = true): Pr
     }
 
     const lines: string[] = [];
-    if (topCpu.length > 0) lines.push(`Top CPU VM: ${summarizeLine(topCpu[0], 'CPU', '%')}.`);
-    if (topMemory.length > 0) lines.push(`Top memory VM: ${summarizeLine(topMemory[0], 'memory', '%')}.`);
-    if (topDisk.length > 0) lines.push(`Top disk I/O VM: ${summarizeLine(topDisk[0], 'disk I/O index', '')}.`);
-    if (topNet.length > 0) lines.push(`Top network VM: ${summarizeLine(topNet[0], 'network bandwidth index', '')}.`);
+    if (topCpu.length > 0) lines.push(`Top OCI CPU VM: ${summarizeLine(topCpu[0], 'CPU', '%')}.`);
+    if (topMemory.length > 0) lines.push(`Top OCI memory VM: ${summarizeLine(topMemory[0], 'memory', '%')}.`);
+    if (topDisk.length > 0) lines.push(`Top OCI disk I/O VM: ${summarizeLine(topDisk[0], 'disk I/O index', '')}.`);
+    if (topNet.length > 0) lines.push(`Top OCI network VM: ${summarizeLine(topNet[0], 'network bandwidth index', '')}.`);
 
     const diskSource = sanitizeText(payload.metric_sources?.disk_io);
     const netSource = sanitizeText(payload.metric_sources?.network_bandwidth);
@@ -1009,6 +1077,62 @@ async function buildVMUtilizationReply(message: string, allowRefresh = true): Pr
   }
 }
 
+async function buildOciVmRightsizingReply(allowRefresh = true): Promise<string | null> {
+  const apiBase = resolveBackendApiBase();
+
+  try {
+    const rightsizingRes = await fetch(
+      `${apiBase}/api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=120`,
+      { method: 'GET' },
+    );
+    if (!rightsizingRes.ok) return null;
+
+    const payload = (await rightsizingRes.json()) as RightsizingResponseLite;
+    const candidates = (Array.isArray(payload?.recommendations) ? payload.recommendations : [])
+      .filter(isRealOciVmRightsizingCandidate)
+      .sort((a, b) => {
+        const savingsDiff = toSafeNumber(b.monthly_savings_usd) - toSafeNumber(a.monthly_savings_usd);
+        if (savingsDiff !== 0) return savingsDiff;
+        return toSafeNumber(b.current_monthly_cost_usd) - toSafeNumber(a.current_monthly_cost_usd);
+      });
+
+    if (candidates.length > 0) {
+      const lines: string[] = [];
+      lines.push('Yes. This is wired to the live rightsizing feed, and I am filtering it to real OCI VM instances only.');
+      lines.push('Over-provisioning is evaluated at the OCI VM instance level, not as generic tenancy, account, or service aggregates.');
+      lines.push(
+        `Top OCI VM rightsizing candidates:\n${candidates
+          .slice(0, 5)
+          .map((item, idx) => {
+            const action = sanitizeText(item.action) || 'optimize';
+            const currentSize = sanitizeText(item.current_size);
+            const recommendedSize = sanitizeText(item.recommended_size);
+            const shapeChange = currentSize || recommendedSize
+              ? `, ${currentSize || 'current shape'} -> ${recommendedSize || 'recommended shape'}`
+              : '';
+            return `${idx + 1}. ${summarizeResourceLabel(item)}: ${action}${shapeChange}, save ${formatMoney(toSafeNumber(item.monthly_savings_usd))}/month. Resource ID: ${sanitizeText(item.resource_id)}`;
+          })
+          .join('\n')}`
+      );
+      lines.push('Evidence source: oci_compute_inventory. Aggregates such as tenancy, account, segment, and service snapshots are excluded from this answer.');
+      return lines.join('\n\n');
+    }
+  } catch (error) {
+    console.warn('OCI VM rightsizing lookup failed:', error);
+  }
+
+  if (allowRefresh) {
+    const refreshed = await triggerLiveProviderMetricsRefresh('oci_vm_rightsizing_query');
+    if (refreshed) {
+      return buildOciVmRightsizingReply(false);
+    }
+  }
+
+  return `I checked the live OCI rightsizing feed, but it did not return any real OCI VM instance candidates right now.
+
+I excluded tenancy, account, segment, and service-level aggregate rows from this answer. Refresh OCI compute inventory and rightsizing data, then retry.`;
+}
+
 async function buildResourceHotspotReply(message: string, allowRefresh = true): Promise<string | null> {
   const apiBase = resolveBackendApiBase();
   const focus = detectResourceFocus(message);
@@ -1019,12 +1143,13 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
   // First choice: rightsizing feed gives actionable resource-level recommendations.
   try {
     const rightsizingRes = await fetch(
-      `${apiBase}/api/v1/recommendations/rightsizing?provider=all&min_savings=0&limit=120`,
+      `${apiBase}/api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=120`,
       { method: 'GET' },
     );
     if (rightsizingRes.ok) {
       const payload = (await rightsizingRes.json()) as RightsizingResponseLite;
-      const recs = Array.isArray(payload?.recommendations) ? payload.recommendations : [];
+      const recs = (Array.isArray(payload?.recommendations) ? payload.recommendations : [])
+        .filter(isRealOciVmRightsizingCandidate);
       const sorted = recs
         .slice()
         .sort((a, b) => toSafeNumber(b.current_monthly_cost_usd) - toSafeNumber(a.current_monthly_cost_usd));
@@ -1039,7 +1164,7 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
         if (focus) {
           lines.push(`Your highest-cost actionable ${focus.label} resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.current_monthly_cost_usd))}/month.`);
         } else {
-          lines.push(`Your highest-cost actionable resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.current_monthly_cost_usd))}/month.`);
+          lines.push(`Your highest-cost actionable OCI VM resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.current_monthly_cost_usd))}/month.`);
         }
         lines.push(
           `Recommended action: ${sanitizeText(top.action) || 'optimize'} ${sanitizeText(top.current_size) ? `from ${sanitizeText(top.current_size)}` : ''}${sanitizeText(top.recommended_size) ? ` to ${sanitizeText(top.recommended_size)}` : ''}. Estimated savings: ${formatMoney(toSafeNumber(top.monthly_savings_usd))}/month.`
@@ -1059,8 +1184,9 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
           const nextLines = next.map((item, idx) => {
             return `${idx + 2}. ${summarizeResourceLabel(item)} — cost ${formatMoney(toSafeNumber(item.current_monthly_cost_usd))}/month, savings ${formatMoney(toSafeNumber(item.monthly_savings_usd))}/month`;
           });
-          lines.push(`Next highest-cost actionable ${focus ? `${focus.label} ` : ''}resources:\n${nextLines.join('\n')}`);
+          lines.push(`Next highest-cost actionable ${focus ? `${focus.label} ` : 'OCI VM '}resources:\n${nextLines.join('\n')}`);
         }
+        lines.push('Evidence source: oci_compute_inventory. Tenancy, account, segment, and service aggregate rows are excluded.');
         return lines.join('\n\n');
       }
     }
@@ -1076,7 +1202,8 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
     );
     if (inventoryRes.ok) {
       const payload = (await inventoryRes.json()) as ResourceInventoryResponseLite;
-      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const items = (Array.isArray(payload?.items) ? payload.items : [])
+        .filter((item) => !isAggregateLikeResource(item));
       const sorted = items
         .slice()
         .sort((a, b) => toSafeNumber(b.cost_usd) - toSafeNumber(a.cost_usd));
@@ -1213,7 +1340,8 @@ async function buildResourceCountReply(message: string, allowRefresh = true): Pr
         total_resources?: number;
         total_cost_usd?: number;
       };
-      const allItems = Array.isArray(payload?.items) ? payload.items : [];
+      const allItems = (Array.isArray(payload?.items) ? payload.items : [])
+        .filter((item) => !isAggregateLikeResource(item));
       const tokenMatched = queryTokens.length > 0
         ? allItems.filter((item) => matchesQueryTokens(item, queryTokens))
         : [];
@@ -1333,12 +1461,13 @@ async function buildVMCostHotspotReply(allowRefresh = true): Promise<string | nu
 
   try {
     const rightsizingRes = await fetch(
-      `${apiBase}/api/v1/recommendations/rightsizing?provider=all&min_savings=0&limit=120`,
+      `${apiBase}/api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=120`,
       { method: 'GET' },
     );
     if (rightsizingRes.ok) {
       const payload = (await rightsizingRes.json()) as RightsizingResponseLite;
-      const recs = Array.isArray(payload?.recommendations) ? payload.recommendations : [];
+      const recs = (Array.isArray(payload?.recommendations) ? payload.recommendations : [])
+        .filter(isRealOciVmRightsizingCandidate);
       const sorted = recs
         .slice()
         .sort((a, b) => toSafeNumber(b.current_monthly_cost_usd) - toSafeNumber(a.current_monthly_cost_usd));
@@ -1371,13 +1500,14 @@ async function buildVMCostHotspotReply(allowRefresh = true): Promise<string | nu
 
   try {
     const inventoryRes = await fetch(
-      `${apiBase}/api/v1/inventory/resources?provider=all&limit=500&offset=0`,
+      `${apiBase}/api/v1/inventory/resources?provider=oci&limit=500&offset=0`,
       { method: 'GET' },
     );
     if (inventoryRes.ok) {
       const payload = (await inventoryRes.json()) as ResourceInventoryResponseLite;
       const items = Array.isArray(payload?.items) ? payload.items : [];
       const vmItems = items.filter((item) => {
+        if (!isRealOciVmInventoryItem(item)) return false;
         const text = [
           sanitizeText(item.resource_type),
           sanitizeText(item.resource_name),
@@ -1465,7 +1595,7 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
       `${apiBase}/api/v1/inventory/resources?provider=all&limit=200&offset=0`,
     ),
     fetchJsonSafe<RightsizingResponseLite>(
-      `${apiBase}/api/v1/recommendations/rightsizing?provider=all&min_savings=0&limit=10`,
+      `${apiBase}/api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=20`,
     ),
     fetchPostJsonSafe<RagGuidanceResponseLite>(
       `${apiBase}/api/v1/genai/rag-guidance`,
@@ -1504,10 +1634,11 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
     );
   }
 
-  const inventoryItems = Array.isArray(inventory?.items) ? inventory.items : [];
+  const inventoryItems = (Array.isArray(inventory?.items) ? inventory.items : [])
+    .filter((item) => !isAggregateLikeResource(item));
   if (inventoryItems.length > 0) {
-    const totalResources = toSafeNumber(inventory?.total_resources ?? inventoryItems.length);
-    const totalCost = toSafeNumber(inventory?.total_cost_usd);
+    const totalResources = inventoryItems.length;
+    const totalCost = inventoryItems.reduce((sum, item) => sum + toSafeNumber(item.cost_usd), 0);
     lines.push(`Resource inventory snapshot: ${totalResources.toFixed(0)} resources, total ${formatMoney(totalCost)}/month.`);
     const topInventory = inventoryItems
       .slice()
@@ -1520,7 +1651,8 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
     );
   }
 
-  const rightsizingItems = Array.isArray(rightsizing?.recommendations) ? rightsizing.recommendations : [];
+  const rightsizingItems = (Array.isArray(rightsizing?.recommendations) ? rightsizing.recommendations : [])
+    .filter(isRealOciVmRightsizingCandidate);
   if (rightsizingItems.length > 0) {
     const topRightsizing = rightsizingItems
       .slice()
@@ -1583,7 +1715,8 @@ Instructions:
 3) If context is insufficient, say exactly what is missing and ask one clarifying follow-up.
 4) Keep numbers, currency amounts, IDs, and links exact.
 5) End with 2-3 practical next steps.
-6) Keep answer concise and executive-friendly.`;
+6) Keep answer concise and executive-friendly.
+7) Always answer in English for now, even if the question or prior conversation uses another language.`;
   return callOCIGenAI(prompt, conversationHistory, {
     mode: 'assistant',
     targetLanguage,
@@ -1908,6 +2041,13 @@ Please retry with provider + region, or connect monitoring telemetry for VM perf
         return await localizeResponseText(fallback, preferredLanguage);
       }
       // Continue to broader advisory flow if inventory/service feeds are unavailable.
+    }
+    if (isRightsizingQuestion(message)) {
+      const rightsizingReply = await buildOciVmRightsizingReply();
+      if (rightsizingReply) {
+        const fallback = localHumanizedFallbackReply(rightsizingReply);
+        return await localizeResponseText(fallback, preferredLanguage);
+      }
     }
     if (isVMCostHotspotQuestion(message)) {
       const vmCostReply = await buildVMCostHotspotReply();

@@ -393,7 +393,7 @@ export default function CostAdvisorPage() {
       id: '1',
       role: 'assistant',
       content:
-        "I'm ready to analyze your cloud cost telemetry. Ask about expensive resources, savings opportunities, commitment coverage, Kubernetes allocation, or migration tradeoffs.",
+        "I'm ready to analyze your cloud cost telemetry in English. Ask about OCI VM rightsizing, expensive resources, savings opportunities, commitment coverage, Kubernetes allocation, or migration tradeoffs.",
       timestamp: new Date(),
     },
   ])
@@ -412,7 +412,7 @@ export default function CostAdvisorPage() {
   const suggestions: Suggestion[] = useMemo(() => [
     { icon: <Target className="h-4 w-4" />, text: 'What is the most expensive actionable resource?' },
     { icon: <Zap className="h-4 w-4" />, text: 'Show the fastest savings actions for this month' },
-    { icon: <Gauge className="h-4 w-4" />, text: 'Which services are over-provisioned?' },
+    { icon: <Gauge className="h-4 w-4" />, text: 'Which OCI VMs are over-provisioned?' },
     { icon: <Brain className="h-4 w-4" />, text: 'Create a 30/60/90 day FinOps plan' },
     { icon: <ShieldCheck className="h-4 w-4" />, text: 'Where do we need better tags or ownership?' },
   ], [])
@@ -1089,7 +1089,7 @@ export default function CostAdvisorPage() {
                       void handleSendMessage()
                     }
                   }}
-                  placeholder="Ask about the highest-cost VM, over-provisioned services, commitment gaps, or rollout plan..."
+                  placeholder="Ask about the highest-cost OCI VM, over-provisioned OCI VMs, commitment gaps, or rollout plan..."
                   className="min-h-[72px] w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
                   disabled={loading}
                 />
