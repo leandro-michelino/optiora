@@ -267,7 +267,7 @@ class Config:
         """Validate required configuration."""
         if self.deployment_target != "oci":
             raise ValueError(
-                "DEPLOYMENT_TARGET must be 'oci'. On-premises runtime is disabled until explicitly re-enabled."
+                "DEPLOYMENT_TARGET must be 'oci'. Production runtime is OCI VM-only."
             )
         if self.oci_runtime_required and not self.is_running_on_oci():
             raise ValueError(

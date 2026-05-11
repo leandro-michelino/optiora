@@ -14,7 +14,7 @@ Preferred end-to-end path:
 The single deploy script generates the temporary inventory from Terraform outputs, applies Terraform when requested, uploads the source archive, and then runs this playbook automatically.
 
 Provisioning is Oracle Linux-only by policy. The playbook asserts `ansible_distribution == OracleLinux` before installing packages.
-Production service runtime is OCI-only by policy. The role renders `DEPLOYMENT_TARGET=oci` and `OCI_RUNTIME_REQUIRED=true`, and the API/dashboard systemd units include an OCI instance metadata `ExecStartPre` guard so they do not run on on-premises hosts.
+Production service runtime is OCI VM-only by policy. The role renders `DEPLOYMENT_TARGET=oci` and `OCI_RUNTIME_REQUIRED=true`, and the API/dashboard systemd units include an OCI instance metadata `ExecStartPre` guard so they only start on OCI compute hosts.
 
 ## First Run
 

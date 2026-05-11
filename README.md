@@ -162,7 +162,7 @@ If no real source exists, the application surfaces an explicit empty or unavaila
 
 ## Local Development
 
-Local development is for build, test, and CSV/import workflows. Production runtime is OCI-only until that policy changes.
+Local development is only for build, test, and CSV/import checks. Supported production runtime is OCI VM-only.
 
 Requirements:
 
@@ -177,14 +177,14 @@ Bootstrap:
 ./setup.sh
 ```
 
-Run the backend:
+Developer-only backend check:
 
 ```bash
 source .venv/bin/activate
 optiora
 ```
 
-Run the dashboard:
+Developer-only dashboard check:
 
 ```bash
 cd dashboard
@@ -192,7 +192,7 @@ npm install
 npm run dev
 ```
 
-Default local URLs:
+Developer-only URLs:
 
 | Service | URL |
 |---|---|
@@ -204,7 +204,7 @@ For the easiest local quick start, copy `.env.example` to `.env` and leave cloud
 
 ## OCI Deployment
 
-Production/runtime policy: **OCI only**.
+Production/runtime policy: **OCI VM-only**.
 
 The Ansible-rendered environment sets:
 

@@ -7,7 +7,7 @@ This repository deploys two services onto one OCI compute instance:
 - `optiora-api.service` -> FastAPI backend on `:8000`
 - `optiora-dashboard.service` -> Next.js dashboard on `:3000`
 
-Production/runtime policy: **OCI only**. On-premises execution is disabled until explicitly re-enabled in a future change. The deployed environment sets `DEPLOYMENT_TARGET=oci` and `OCI_RUNTIME_REQUIRED=true`; the API validates OCI instance metadata at startup, and both systemd units run an OCI metadata `ExecStartPre` check before starting.
+Production/runtime policy: **OCI VM only**. The deployed environment sets `DEPLOYMENT_TARGET=oci` and `OCI_RUNTIME_REQUIRED=true`; the API validates OCI instance metadata at startup, and both systemd units run an OCI metadata `ExecStartPre` check before starting.
 
 Deployment can be done two ways:
 
@@ -141,7 +141,7 @@ npm run lint
 ```
 
 `npm run build` is pinned to webpack mode (`next build --webpack`) for stable
-builds across local and OCI runtime hosts.
+dashboard builds before the artifact is served by the OCI VM runtime.
 Run build before standalone type-check after workspace cleanup so `.next/types`
 exists before TypeScript reads generated Next.js route types.
 
