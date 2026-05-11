@@ -14,7 +14,7 @@ These notes capture the complete operator-style pass through OptiOra using the r
 |---|---|---|---|
 | Git and deployment recovery | Confirmed previous remote push and checked the in-flight OCI deployment. | Pass | Prior push landed on `origin/main`. The VM deployment continued and completed successfully. |
 | Local Python setup | Followed README/TESTING bootstrap expectations. | Fixed then pass | Existing `.venv` was tied to Python `3.14`, which the project explicitly does not support. Recreated `.venv` with `python3.13` and installed the app/dev tools through `setup.sh`. |
-| Backend static checks | Ran Python compile checks across `finops_*`. | Pass | No syntax errors. |
+| Backend static checks | Ran Python compile checks across `optiora_backend`. | Pass | No syntax errors. |
 | Backend regression suite | Ran the complete pytest suite. | Pass | `287 passed`. |
 | Terraform validation | Ran the documented Terraform validation path. | Fixed then pass | Initial `terraform validate` failed because the OCI provider package was not cached locally. Ran `terraform -chdir=terraform init -input=false`, then validation passed. |
 | Ansible syntax | Ran playbook syntax check against the example inventory. | Pass | `ansible/playbooks/site.yml` syntax check passed. |
@@ -63,7 +63,7 @@ It verifies that `/dashboard/kubernetes` is the only Kubernetes, containers, Doc
 ```text
 Dashboard: http://140.238.90.95/dashboard
 API:       http://140.238.90.95
-Health:   HTTP 200, version 0.9.2 after the release metadata bump is deployed
+Health:   HTTP 200, version 0.9.3 after the release metadata bump is deployed
 Services: optiora-api active/enabled, optiora-dashboard active/enabled, nginx active/enabled
 Deploy:   Terraform + Ansible redeploy completed from the local workspace
 Verify:   48 passed, 0 failed, 3 skipped
@@ -137,7 +137,7 @@ curl -fsS http://140.238.90.95/api/v1/analytics/kubernetes/summary
 
 ```bash
 ./setup.sh --skip-dashboard
-.venv/bin/python -m py_compile $(find ./finops_* -name '*.py')
+.venv/bin/python -m py_compile $(find ./optiora_backend -name '*.py')
 .venv/bin/python -m pytest -q
 terraform -chdir=terraform init -input=false
 terraform -chdir=terraform validate

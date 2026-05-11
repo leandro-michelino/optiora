@@ -1004,7 +1004,7 @@ dashboard/app/dashboard/page.tsx
 pyproject.toml + optiora_backend/__init__.py + dashboard/package.json
         |
         v
-version 0.9.2
+version 0.9.3
         |
         +--> FastAPI /health and OpenAPI schema
         +--> dashboard package metadata

@@ -165,7 +165,7 @@ fi
 
 if [ "$RUN_VERIFY" = "true" ]; then
   log_step "Running verification"
-  .venv/bin/python -m py_compile $(find ./finops_* -name '*.py')
+  .venv/bin/python -m py_compile $(find ./optiora_backend -name '*.py')
   .venv/bin/python -m pytest -q tests/test_config.py
   ./scripts/check-animated-svg-routes.sh
   if [ "$INSTALL_DASHBOARD" = "true" ]; then

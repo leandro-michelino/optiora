@@ -1,10 +1,10 @@
 # Next Phase Checklist
 
-This file defines the path from the current `0.9.2` dashboard-wiring and scorecard maintenance release to the `1.0` go-live gate, then the immediate post-`1.0` focus.
+This file defines the path from the current `0.9.3` advisor-grounding and backend-namespace cleanup release to the `1.0` go-live gate, then the immediate post-`1.0` focus.
 
 ## Current Go-Live Position (May 2026)
 
-Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `0.9.2` keeps that baseline and adds dashboard wiring, friendly error-state, cleanup, advisor UIX, Advisor Conversation English/cross-cloud grounding, live Rightsizing scan timeout correction, realized savings scorecards, real OCI GenAI + RAG wiring, Terraform + Ansible deployment wiring, and documentation hygiene. Release `1.0` is now gated less on basic live evidence and more on repeatability, evidence packaging, and customer-like workflow proof.
+Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `0.9.3` keeps that baseline and adds dashboard wiring, friendly error-state, cleanup, advisor UIX, Advisor Conversation English/cross-cloud grounding, exact provider console deep links, live Rightsizing scan timeout correction, realized savings scorecards, real OCI GenAI + RAG wiring, backend namespace cleanup, Terraform + Ansible deployment wiring, and documentation hygiene. Release `1.0` is now gated less on basic live evidence and more on repeatability, evidence packaging, and customer-like workflow proof.
 
 Local validation snapshot recorded on **May 11, 2026**:
 

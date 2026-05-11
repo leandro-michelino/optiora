@@ -1,15 +1,23 @@
 # Release Notes
 
-## Unreleased - Advisor Conversation Cross-Cloud Grounding (May 11, 2026)
+## 0.9.3 - Advisor Grounding, Console Deep Links, and Backend Namespace Cleanup (May 11, 2026)
+
+Repository release metadata:
+
+- Current package version: `0.9.3`
+- Current documentation baseline: May 11, 2026
+- GitHub release notes source of truth: this file
 
 ### Changed
 
 - Documented the Action Ledger provider resource naming boundary so the OCI VM table only shows real OCI Compute instance display names, while account, tenancy, and service aggregates remain in broader recommendation context.
 - Documented the Cost Advisor conversation boundary: chat is wired through the real `/api/ai/chat` route, answers in English for now, and resolves rightsizing/over-provisioning prompts against real AWS, Azure, GCP, and OCI resource candidates instead of generic service/account summaries.
 - Cost Advisor prompt copy now asks for over-provisioned cloud resources rather than over-provisioned resources from a single provider.
+- Provider console actions now deep-link to the matching cloud resource when a provider-native resource URL or identifier is available, and OCI resource identifiers are shown in full instead of being visually compressed.
 - Renamed the internal Python backend package to `optiora_backend` so documentation, tests, scripts, and deployment templates consistently describe the current OptiOra API runtime.
 - Standardized Terraform validation guidance on tracked `.tf` files plus `terraform -chdir=terraform validate`, avoiding local `terraform.tfvars` formatting noise.
 - Cleanup scanning now skips Terraform provider cache directories before deleting generated infrastructure cache.
+- OCI VM deployments now remove the stale pre-rename backend package directory before unpacking fresh source.
 
 ### Fixed
 
@@ -34,7 +42,7 @@
 - `./deploy/deploy-oci.sh compute` against OCI VM `140.238.90.95`
 - `./deploy/deploy-oci.sh verify` (`48` passed, `0` failed, `3` skipped)
 - Live Advisor Conversation smoke on `http://140.238.90.95/api/ai/chat` with German conversation history plus `Which services are over-provisioned?`; response stayed in English and excluded tenancy/account/service aggregates.
-- Live Advisor Conversation smoke should also cover VM-scoped prompts such as `what is the most expensive vm?` and `who created the vm?`; responses must either identify a real provider-backed VM or ask for provider + VM ID/name instead of returning storage or account-level rows.
+- Live Advisor Conversation VM-scoped smoke target: prompts such as `what is the most expensive vm?` and `who created the vm?` must either identify a real provider-backed VM or ask for provider plus VM ID/name instead of returning storage or account-level rows.
 
 ## 0.9.2 - Advisor, Scorecards, Control Tower, and UIX Polish (May 10, 2026)
 
@@ -261,7 +269,7 @@ This release frames OptiOra as an OCI-hosted multi-cloud FinOps platform with a 
 
 ### Validation
 
-- Backend syntax gate: `python3 -m py_compile $(find ./finops_* -name '*.py')`.
+- Backend syntax gate: `python3 -m py_compile $(find ./optiora_backend -name '*.py')`.
 - Backend regression suite: `278` tests passing via `unittest discover` (`2` skipped).
 - Dashboard gates: `npm run type-check`, `npm run lint`, and `npm run build`.
 - Infrastructure and hygiene gates: `terraform -chdir=terraform validate`, `./scripts/check-animated-svg-routes.sh`, and `./scripts/cleanup-workspace.sh`.

@@ -130,8 +130,8 @@ For a clean local bootstrap before preflight checks:
 ```
 
 ```bash
-python3 -m py_compile $(find ./finops_* -name '*.py')
-python3 -m compileall $(find ./finops_* -type d)
+python3 -m py_compile $(find ./optiora_backend -name '*.py')
+python3 -m compileall ./optiora_backend
 .venv/bin/python -m pytest -q
 
 cd dashboard

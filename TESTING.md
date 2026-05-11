@@ -13,7 +13,7 @@ Bootstrap first (recommended):
 Static verification:
 
 ```bash
-python3 -m py_compile $(find ./finops_* -name '*.py')
+python3 -m py_compile $(find ./optiora_backend -name '*.py')
 ```
 
 Once backend dependencies are installed:
