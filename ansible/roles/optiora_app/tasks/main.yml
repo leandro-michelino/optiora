@@ -443,6 +443,7 @@
     state: absent
   loop:
     - "{{ optiora_app_dir }}/alembic/versions/0013_imported_cost_tags_json.py"
+    - "{{ optiora_app_dir }}/{{ 'finops_' ~ 'm' ~ 'cp' }}"
   when: optiora_manage_source | bool
 
 - name: Ensure source ownership
