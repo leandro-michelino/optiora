@@ -600,6 +600,7 @@ export default function CostAdvisorPage() {
   const improvementFocus = hybrid?.deterministic.efficiency.improvement_focus.slice(0, 5) || []
   const efficiencyDimensions = Object.entries(hybrid?.deterministic.efficiency.dimensions || {}).slice(0, 5)
   const commitmentGaps = hybrid?.deterministic.commitment_gap.provider_gaps.slice(0, 4) || []
+  const advisorEvidenceSummary = `${topRecommendations.length} actions, ${quickWins.length} quick wins, ${providerSignals.length + providerFindings.length} provider signals`
   const monthlySpend = hybrid?.deterministic.analytics.current_monthly_spend_usd || 0
   const wasteEstimate = hybrid?.deterministic.waste.total_estimated_waste_usd || 0
   const wasteRate = hybrid?.deterministic.waste.total_waste_rate_percent || 0
@@ -717,12 +718,17 @@ export default function CostAdvisorPage() {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(520px,1.35fr)]">
         <div className="space-y-5">
           <Expander
-            title="Hybrid Advisor Brief"
-            description="Authoritative cost metrics with the selected advisory narrative."
+            title="Advisory Narrative"
+            description="Optional context generated from deterministic metrics. Expand only when you want a narrative readout."
             icon={<Brain className="h-5 w-5 text-blue-600" />}
-            defaultOpen
           >
             <div className="space-y-4">
+              <Notice tone="blue" icon={<Database className="h-4 w-4" />}>
+                The action cards, savings, waste estimate, and efficiency score are the source of
+                truth. This narrative is explanatory only; treat it as a draft unless it names
+                concrete provider findings, resources, or ledger actions.
+              </Notice>
+
               <div className="flex flex-wrap gap-2" role="group" aria-label="Advisor narrative type">
                 {narrativeOrder.map((type) => (
                   <Button
@@ -746,10 +752,20 @@ export default function CostAdvisorPage() {
                 <>
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/20">
                     <div className="mb-3 flex items-center justify-between gap-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
-                        {narrativeLabels[hybrid.advisory.narrative_type]}
-                      </p>
-                      <Badge variant="outline" className="rounded-md">{hybrid.source_of_truth}</Badge>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                          {narrativeLabels[hybrid.advisory.narrative_type]}
+                        </p>
+                        <p className="mt-1 text-xs text-blue-700/80 dark:text-blue-200/80">
+                          Evidence summary: {advisorEvidenceSummary}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                        <Badge variant="outline" className="rounded-md">metrics: {hybrid.source_of_truth}</Badge>
+                        <Badge variant="outline" className="rounded-md">
+                          {hybrid.advisory.fallback_mode ? 'template narrative' : 'OCI GenAI narrative'}
+                        </Badge>
+                      </div>
                     </div>
                     <AdvisorText content={hybrid.advisory.narrative || hybrid.advisory.prompt} compact />
                   </div>
