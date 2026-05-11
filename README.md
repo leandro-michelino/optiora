@@ -107,7 +107,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 Recent UIX and wiring updates:
 
 - Cost Advisor chat now uses the server-side dashboard `/api/ai/chat` route to call OCI GenAI with signed requests and enriches answers with backend RAG guidance from `/api/v1/genai/rag-guidance`.
-- Advisor Conversation answers are intentionally English-only for now and rightsizing/over-provisioning prompts are grounded to real AWS, Azure, GCP, and OCI resource candidates from provider-backed rightsizing and utilization feeds. Tenancy, account, segment, service snapshot, and imported aggregate rows are excluded from actionable resource answers.
+- Advisor Conversation answers are intentionally English-only for now and rightsizing, lifecycle, VM-cost, and RAG resource prompts are grounded to real AWS, Azure, GCP, and OCI resource candidates from provider-backed rightsizing, utilization, inventory, and resource-intelligence feeds. Tenancy, account, segment, service snapshot, imported aggregate, and non-VM storage rows are excluded from actionable VM answers.
 - Backend GenAI narratives now inject retrieved RAG briefs into the OCI GenAI prompt path while preserving deterministic cost, savings, risk, and forecast numbers as the source of truth.
 - OCI deployment is wired end to end through Terraform-managed infrastructure and Ansible-managed runtime provisioning, with the deploy script reading Terraform outputs for inventory, upload, provisioning, and smoke checks.
 - Rightsizing is now surfaced as Optimization Advisor, with provider-native Cloud Advisor-style rows for recommendation type, count, service, category, estimated savings, importance, status, scope, and provider-console action.

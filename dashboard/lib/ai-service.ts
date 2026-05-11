@@ -133,6 +133,17 @@ interface ResourceIntelligenceResponseLite {
   notes?: string[];
 }
 
+type ResourceIdentityLite = {
+  provider?: string;
+  resource_id?: string;
+  resource_name?: string;
+  resource_type?: string;
+  evidence_source?: string;
+  source?: string;
+  current_size?: string;
+  recommended_size?: string;
+};
+
 interface VMUtilizationHotspotItemLite {
   resource_id?: string;
   resource_name?: string;
@@ -503,13 +514,7 @@ function includesAny(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
 }
 
-function isAggregateLikeResource(item: {
-  resource_id?: string;
-  resource_name?: string;
-  resource_type?: string;
-  evidence_source?: string;
-  source?: string;
-}): boolean {
+function isAggregateLikeResource(item: ResourceIdentityLite): boolean {
   const resourceId = sanitizeText(item.resource_id).toLowerCase();
   const resourceName = sanitizeText(item.resource_name).toLowerCase();
   const resourceType = sanitizeText(item.resource_type).toLowerCase();
@@ -565,13 +570,28 @@ function matchesRequestedProvider(item: { provider?: string }, provider: string 
 function isRealProviderResourceId(provider: string, resourceId: string): boolean {
   if (!resourceId) return false;
   if (provider === 'aws') {
-    return resourceId.startsWith('i-') || resourceId.startsWith('arn:aws:');
+    return (
+      resourceId.startsWith('arn:aws:') ||
+      resourceId.startsWith('i-') ||
+      resourceId.startsWith('vol-') ||
+      resourceId.startsWith('snap-') ||
+      resourceId.startsWith('sg-') ||
+      resourceId.startsWith('subnet-') ||
+      resourceId.startsWith('vpc-') ||
+      resourceId.startsWith('ami-') ||
+      resourceId.startsWith('db-') ||
+      resourceId.startsWith('cluster-')
+    );
   }
   if (provider === 'azure') {
     return resourceId.startsWith('/subscriptions/') && resourceId.includes('/providers/');
   }
   if (provider === 'gcp') {
-    return resourceId.startsWith('projects/') && resourceId.includes('/instances/');
+    return (
+      resourceId.startsWith('projects/') ||
+      resourceId.startsWith('//') ||
+      resourceId.includes('googleapis.com/projects/')
+    );
   }
   if (provider === 'oci') {
     return resourceId.startsWith('ocid1.') && !resourceId.startsWith('ocid1.tenancy.');
@@ -600,26 +620,44 @@ function isProviderBackedRightsizingCandidate(item: RightsizingRecommendationLit
     !isAggregateLikeResource(item);
 }
 
-function isVmLikeResource(item: {
-  resource_type?: string;
-  resource_name?: string;
-  resource_id?: string;
-  current_size?: string;
-  recommended_size?: string;
-}): boolean {
+function isVmLikeResource(item: ResourceIdentityLite): boolean {
+  const provider = sanitizeText(item.provider).toLowerCase();
+  const resourceId = sanitizeText(item.resource_id).toLowerCase();
+  const resourceType = sanitizeText(item.resource_type).toLowerCase();
   const text = [
-    sanitizeText(item.resource_type),
-    sanitizeText(item.resource_name),
-    sanitizeText(item.resource_id),
+    resourceType,
+    resourceId,
     sanitizeText(item.current_size),
     sanitizeText(item.recommended_size),
   ].join(' ').toLowerCase();
+
+  if (provider === 'oci') {
+    return resourceId.startsWith('ocid1.instance.') || resourceType.includes('compute instance');
+  }
+  if (provider === 'aws') {
+    return (
+      resourceId.startsWith('i-') ||
+      (resourceId.includes(':ec2:') && resourceId.includes(':instance/')) ||
+      resourceType.includes('ec2 instance')
+    );
+  }
+  if (provider === 'azure') {
+    return resourceId.includes('/microsoft.compute/virtualmachines/') || resourceType.includes('virtual machine');
+  }
+  if (provider === 'gcp') {
+    return (
+      resourceId.includes('/instances/') ||
+      (resourceId.includes('compute.googleapis.com') && resourceId.includes('/instances/')) ||
+      resourceType.includes('gce instance') ||
+      resourceType.includes('compute instance')
+    );
+  }
+
   return (
-    text.includes('vm') ||
     text.includes('virtual machine') ||
-    text.includes('instance') ||
-    text.includes('compute') ||
-    text.includes('ec2')
+    text.includes('ec2 instance') ||
+    text.includes('gce instance') ||
+    text.includes('compute instance')
   );
 }
 
@@ -627,14 +665,24 @@ function isProviderBackedVmRightsizingCandidate(item: RightsizingRecommendationL
   return isProviderBackedRightsizingCandidate(item) && isVmLikeResource(item);
 }
 
-function isProviderBackedInventoryItem(item: ResourceInventoryItemLite): boolean {
+function isProviderBackedInventoryItem(item: ResourceIdentityLite): boolean {
   const provider = sanitizeText(item.provider).toLowerCase();
   const resourceId = sanitizeText(item.resource_id).toLowerCase();
   return isRealProviderResourceId(provider, resourceId) && !isAggregateLikeResource(item);
 }
 
-function isProviderBackedVmInventoryItem(item: ResourceInventoryItemLite): boolean {
+function isProviderBackedVmInventoryItem(item: ResourceIdentityLite): boolean {
   return isProviderBackedInventoryItem(item) && isVmLikeResource(item);
+}
+
+function isProviderBackedResourceIntelligenceItem(item: ResourceIntelligenceItemLite): boolean {
+  const provider = sanitizeText(item.provider).toLowerCase();
+  const resourceId = sanitizeText(item.resource_id).toLowerCase();
+  return isRealProviderResourceId(provider, resourceId) && !isAggregateLikeResource(item);
+}
+
+function isProviderBackedVmResourceIntelligenceItem(item: ResourceIntelligenceItemLite): boolean {
+  return isProviderBackedResourceIntelligenceItem(item) && isVmLikeResource(item);
 }
 
 function isRightsizingQuestion(message: string): boolean {
@@ -1014,6 +1062,7 @@ function summarizeVMLabel(item: VMUtilizationHotspotItemLite): string {
 
 async function buildResourceLifecycleReply(message: string, allowRefresh = true): Promise<string | null> {
   const apiBase = resolveBackendApiBase();
+  const wantsVmScope = isVmScopedQuestion(message);
   try {
     const res = await fetch(
       `${apiBase}/api/v1/analytics/resource-intelligence?cloud_provider=all&query=${encodeURIComponent(message)}`,
@@ -1021,13 +1070,39 @@ async function buildResourceLifecycleReply(message: string, allowRefresh = true)
     );
     if (!res.ok) return null;
     const payload = (await res.json()) as ResourceIntelligenceResponseLite;
-    const top = payload?.matched_resource;
+    const rawCandidates = [
+      ...(payload?.matched_resource ? [payload.matched_resource] : []),
+      ...(Array.isArray(payload?.alternatives) ? payload.alternatives : []),
+    ];
+    const seen = new Set<string>();
+    const candidates = rawCandidates
+      .filter(wantsVmScope ? isProviderBackedVmResourceIntelligenceItem : isProviderBackedResourceIntelligenceItem)
+      .filter((item) => {
+        const key = [
+          sanitizeText(item.provider).toLowerCase(),
+          sanitizeText(item.resource_id).toLowerCase(),
+          sanitizeText(item.resource_name).toLowerCase(),
+        ].join('|');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const top = candidates[0];
     if (!top) {
       if (allowRefresh) {
         const refreshed = await triggerLiveProviderMetricsRefresh('resource_lifecycle_query');
         if (refreshed) {
           return buildResourceLifecycleReply(message, false);
         }
+      }
+      if (rawCandidates.length > 0) {
+        const scopeLabel = wantsVmScope ? 'VM' : 'cloud resource';
+        const rejectionLabel = wantsVmScope
+          ? 'account, tenancy, service, imported, storage, or non-VM records'
+          : 'account, tenancy, service, imported, or aggregate records';
+        return `I found lifecycle matches, but they were ${rejectionLabel} rather than a real ${scopeLabel}.
+
+I will not report those as actionable cloud resources. Please retry with provider + region + resource ID/name, for example: "OCI instance ocid1... in af-johannesburg-1" or "AWS EC2 i-... in us-east-1".`;
       }
       return null;
     }
@@ -1054,7 +1129,7 @@ async function buildResourceLifecycleReply(message: string, allowRefresh = true)
       lines.push(`Resource ID: ${sanitizeText(top.resource_id)}`);
     }
 
-    const alternatives = Array.isArray(payload?.alternatives) ? payload.alternatives.slice(0, 2) : [];
+    const alternatives = candidates.slice(1, 3);
     if (alternatives.length > 0) {
       lines.push(
         `Close matches:\n${alternatives
@@ -1249,6 +1324,7 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
   const queryTokens = extractQueryTokens(message);
   const q = message.toLowerCase();
   const wantsServiceView = q.includes('service');
+  const wantsVmScope = isVmScopedQuestion(message) || isVMCostHotspotQuestion(message) || isVMUtilizationQuestion(message);
   const requestedProvider = detectRequestedProvider(message);
   const providerParam = requestedProvider || 'all';
 
@@ -1262,7 +1338,7 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
       const payload = (await rightsizingRes.json()) as RightsizingResponseLite;
       const recs = (Array.isArray(payload?.recommendations) ? payload.recommendations : [])
         .filter((item) => matchesRequestedProvider(item, requestedProvider))
-        .filter(isProviderBackedRightsizingCandidate);
+        .filter(wantsVmScope ? isProviderBackedVmRightsizingCandidate : isProviderBackedRightsizingCandidate);
       const sorted = recs
         .slice()
         .sort((a, b) => toSafeNumber(b.current_monthly_cost_usd) - toSafeNumber(a.current_monthly_cost_usd));
@@ -1276,6 +1352,8 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
         const lines: string[] = [];
         if (focus) {
           lines.push(`Your highest-cost actionable ${focus.label} resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.current_monthly_cost_usd))}/month.`);
+        } else if (wantsVmScope) {
+          lines.push(`Your highest-cost actionable VM resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.current_monthly_cost_usd))}/month.`);
         } else {
           lines.push(`Your highest-cost actionable resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.current_monthly_cost_usd))}/month.`);
         }
@@ -1317,7 +1395,7 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
       const payload = (await inventoryRes.json()) as ResourceInventoryResponseLite;
       const items = (Array.isArray(payload?.items) ? payload.items : [])
         .filter((item) => matchesRequestedProvider(item, requestedProvider))
-        .filter(isProviderBackedInventoryItem);
+        .filter(wantsVmScope ? isProviderBackedVmInventoryItem : isProviderBackedInventoryItem);
       const sorted = items
         .slice()
         .sort((a, b) => toSafeNumber(b.cost_usd) - toSafeNumber(a.cost_usd));
@@ -1332,6 +1410,8 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
         const lines: string[] = [];
         if (focus) {
           lines.push(`Your highest visible ${focus.label} cost resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.cost_usd))}/month.`);
+        } else if (wantsVmScope) {
+          lines.push(`Your highest visible VM cost resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.cost_usd))}/month.`);
         } else {
           lines.push(`Your highest visible cost resource is ${summarizeResourceLabel(top)} at ${formatMoney(toSafeNumber(top.cost_usd))}/month.`);
         }
@@ -1349,6 +1429,19 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
     }
   } catch (error) {
     console.warn('Inventory hotspot lookup failed:', error);
+  }
+
+  if (wantsVmScope) {
+    if (allowRefresh) {
+      const refreshed = await triggerLiveProviderMetricsRefresh('vm_resource_hotspot_query');
+      if (refreshed) {
+        const retry = await buildResourceHotspotReply(message, false);
+        if (retry) return retry;
+      }
+    }
+    return `I checked provider-backed rightsizing and inventory feeds, but I could not find a real VM resource for this question.
+
+I excluded boot/block volumes, account or tenancy records, service snapshots, and imported aggregates so the answer does not confuse storage or rollups with virtual machines. Please retry with provider + VM resource ID/name, for example: "OCI instance ocid1... in af-johannesburg-1", "AWS EC2 i-... in us-east-1", "Azure VM /subscriptions/.../virtualMachines/...", or "GCP instance projects/.../instances/...".`;
   }
 
   // Third choice: service-level hotspots for non-compute resources.
@@ -1681,6 +1774,7 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
   const focus = detectResourceFocus(message);
   const focusParam = focus ? `&focus=${encodeURIComponent(focus.key)}` : '';
   const analysisType = pickAnalysisType(message);
+  const wantsVmScope = isVmScopedQuestion(message) || isVMCostHotspotQuestion(message) || isVMUtilizationQuestion(message);
 
   const [hybrid, serviceHotspots, inventory, rightsizing, ragGuidance] = await Promise.all([
     fetchJsonSafe<HybridAdvisorResult>(
@@ -1721,7 +1815,7 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
   }
 
   const hotspotItems = Array.isArray(serviceHotspots?.items) ? serviceHotspots.items : [];
-  if (hotspotItems.length > 0) {
+  if (!wantsVmScope && hotspotItems.length > 0) {
     lines.push('Top services by monthly spend:');
     lines.push(
       ...buildTopLines(hotspotItems, (item, idx) => {
@@ -1733,15 +1827,15 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
   }
 
   const inventoryItems = (Array.isArray(inventory?.items) ? inventory.items : [])
-    .filter(isProviderBackedInventoryItem);
+    .filter(wantsVmScope ? isProviderBackedVmInventoryItem : isProviderBackedInventoryItem);
   if (inventoryItems.length > 0) {
     const totalResources = inventoryItems.length;
     const totalCost = inventoryItems.reduce((sum, item) => sum + toSafeNumber(item.cost_usd), 0);
-    lines.push(`Resource inventory snapshot: ${totalResources.toFixed(0)} resources, total ${formatMoney(totalCost)}/month.`);
+    lines.push(`${wantsVmScope ? 'VM resource' : 'Resource'} inventory snapshot: ${totalResources.toFixed(0)} resources, total ${formatMoney(totalCost)}/month.`);
     const topInventory = inventoryItems
       .slice()
       .sort((a, b) => toSafeNumber(b.cost_usd) - toSafeNumber(a.cost_usd));
-    lines.push('Most expensive inventory items:');
+    lines.push(`Most expensive ${wantsVmScope ? 'VM inventory items' : 'inventory items'}:`);
     lines.push(
       ...buildTopLines(topInventory, (item, idx) => {
         return `${idx + 1}. ${summarizeResourceLabel(item)} ${formatMoney(toSafeNumber(item.cost_usd))}/month`;
@@ -1750,12 +1844,12 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
   }
 
   const rightsizingItems = (Array.isArray(rightsizing?.recommendations) ? rightsizing.recommendations : [])
-    .filter(isProviderBackedRightsizingCandidate);
+    .filter(wantsVmScope ? isProviderBackedVmRightsizingCandidate : isProviderBackedRightsizingCandidate);
   if (rightsizingItems.length > 0) {
     const topRightsizing = rightsizingItems
       .slice()
       .sort((a, b) => toSafeNumber(b.monthly_savings_usd) - toSafeNumber(a.monthly_savings_usd));
-    lines.push('Top rightsizing opportunities:');
+    lines.push(`Top ${wantsVmScope ? 'VM ' : ''}rightsizing opportunities:`);
     lines.push(
       ...buildTopLines(topRightsizing, (item, idx) => {
         const name = sanitizeText(item.resource_name) || sanitizeText(item.resource_id) || 'unknown-resource';

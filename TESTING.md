@@ -130,7 +130,7 @@ Current backend coverage includes:
 - curated RAG catalog retrieval by analysis type, provider, and context tokens
 - backend GenAI prompt composition includes retrieved `rag_brief` context before OCI GenAI calls
 - Cost Advisor scope validation and prompt sanitization reject unsupported/off-domain questions
-- Advisor Conversation is currently English-only and over-provisioning/right-sizing questions are expected to resolve to real AWS, Azure, GCP, or OCI resource candidates, not account, tenancy, segment, imported, or service aggregates
+- Advisor Conversation is currently English-only and over-provisioning/right-sizing, lifecycle, VM-cost, and RAG context questions are expected to resolve to real AWS, Azure, GCP, or OCI resource candidates, not account, tenancy, segment, imported, service aggregates, or non-VM storage rows for VM-scoped prompts
 - OCI GenAI compartment override resolution prefers `OCI_GENAI_COMPARTMENT_ID` and falls back to runtime compartment when needed
 
 **Rightsizing and recommendation ledger** (`tests/test_rightsizing.py`, `tests/test_rightsizing_oci_storage.py`):

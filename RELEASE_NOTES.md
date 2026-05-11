@@ -16,6 +16,7 @@
 - Fixed order-sensitive backend regression tests by force-refreshing cached reads after direct DB seeding and resolving the active organization id from the auth API instead of assuming `1`.
 - Fixed Advisor Conversation language drift where prior multilingual history could cause non-English replies. The route now forces English until multilingual UX is explicitly re-enabled.
 - Fixed Advisor Conversation resource grounding for rightsizing questions by filtering out tenancy, account, segment, service snapshot, and imported aggregate rows across providers. Actionable replies require provider-backed resource evidence such as AWS Cost Explorer/CloudWatch, Azure Advisor/Monitor, GCP Cloud Monitoring, OCI compute/storage inventory, or live provider recommendation resource IDs.
+- Tightened GenAI RAG resource grounding for lifecycle, VM cost, and generic RAG context answers. VM-scoped prompts now require real VM evidence and no longer promote OCI boot/block volumes, tenancy/account rollups, service snapshots, or imported aggregates as virtual machines.
 
 ### Validation
 
@@ -32,6 +33,7 @@
 - `./deploy/deploy-oci.sh compute` against OCI VM `140.238.90.95`
 - `./deploy/deploy-oci.sh verify` (`48` passed, `0` failed, `3` skipped)
 - Live Advisor Conversation smoke on `http://140.238.90.95/api/ai/chat` with German conversation history plus `Which services are over-provisioned?`; response stayed in English and excluded tenancy/account/service aggregates.
+- Live Advisor Conversation smoke should also cover VM-scoped prompts such as `what is the most expensive vm?` and `who created the vm?`; responses must either identify a real provider-backed VM or ask for provider + VM ID/name instead of returning storage or account-level rows.
 
 ## 0.9.2 - Advisor, Scorecards, Control Tower, and UIX Polish (May 10, 2026)
 

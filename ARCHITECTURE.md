@@ -690,14 +690,24 @@ instances.
                             - *-acct-* and account/imported rollups
                             - resource_type containing aggregate or segment
                             - cost_trend_analysis / service_cost_snapshot rows
+                            - boot/block/storage rows for VM-scoped prompts
+
+                      +--> lifecycle and generic RAG prompts
+                            require:
+                            - real provider resource IDs
+                            - provider-aware VM identity for VM questions
+                            - filtered inventory/rightsizing context before GenAI
 ```
 
 The conversation is real and wired through the server-side chat API, but it is
 not allowed to promote account, tenancy, segment, or service-level summaries as
 actionable cloud resources. When the user asks about over-provisioning today,
 the supported answer scope is provider-backed cloud resource rightsizing across
-AWS, Azure, GCP, and OCI. Broader service-level spend hotspots can still appear
-as context, but they are not described as executable resource actions.
+AWS, Azure, GCP, and OCI. Lifecycle and VM-cost questions use the same boundary:
+if the retrieved candidates are only rollups, service summaries, or non-VM
+storage records, the chat asks for provider + resource ID/name instead of
+guessing. Broader service-level spend hotspots can still appear as context, but
+they are not described as executable resource actions.
 
 ## Optimization Advisor Dashboard UX Wiring
 
