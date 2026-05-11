@@ -194,27 +194,23 @@ function connectedProviderCount(diagnostics: ProviderDiagnostic[]) {
 function isOciVmCandidate(rec: RightsizingRecommendation): boolean {
   if (rec.provider !== 'oci') return false
 
-  const text = [
-    rec.resource_id,
-    rec.resource_type,
-    rec.resource_name,
-    rec.current_size,
-    rec.recommended_size,
-    rec.reason,
-    rec.evidence_source,
-    rec.provider_recommendation_type,
-    rec.provider_recommendation_name,
-  ]
-    .join(' ')
-    .toLowerCase()
+  const resourceId = String(rec.resource_id || '').trim()
+  const resourceType = String(rec.resource_type || '').toLowerCase()
+  const evidenceSource = String(rec.evidence_source || '').toLowerCase()
+  const resourceName = String(rec.resource_name || '').trim()
 
-  const isCompute = /oci_compute_inventory|compute|instance|\bvm\b|shape|ocid1\.instance/.test(text)
-  const isStorageOrNonVm =
-    /storage|volume|bootvolume|blockvolume|boot volume|block volume|bucket|object storage|database|load balancer|loadbalancer/.test(
-      text
-    )
+  if (resourceName.startsWith('ocid1.tenancy.') || resourceName.startsWith('oci-acct-')) {
+    return false
+  }
+  if (
+    resourceId.startsWith('oci-acct-') ||
+    resourceType.includes('aggregate') ||
+    resourceType.includes('segment')
+  ) {
+    return false
+  }
 
-  return isCompute && !isStorageOrNonVm
+  return evidenceSource === 'oci_compute_inventory' && resourceId.startsWith('ocid1.instance.')
 }
 
 function topOciVmCandidates(recommendations: RightsizingRecommendation[]) {
@@ -277,11 +273,12 @@ export default function RecommendationsPage() {
     }))
     setLoading(false)
 
+    const rightsizingProvider = provider === 'all' ? 'oci' : provider
     const rightsizingRequest = fetchRightsizingRecommendations({
-      provider,
+      provider: rightsizingProvider,
       limit: 120,
       min_savings: 0,
-      refresh_live: false,
+      refresh_live: includeLive && (provider === 'all' || provider === 'oci'),
     })
     const decisionRequest = fetchDecisionGradeRecommendations({
       provider,
@@ -588,7 +585,9 @@ export default function RecommendationsPage() {
                   </div>
                 ) : (
                   <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500 dark:border-slate-700">
-                    No OCI VM candidates were returned by the current recommendation response.
+                    No live OCI VM instance candidates were returned by the current provider
+                    response. Account, tenancy, and service-level aggregates are kept out of this
+                    table so only cloud-provider resource names appear here.
                   </div>
                 )}
               </Expander>
