@@ -210,17 +210,6 @@ export default function RecommendationsPage() {
     const importedRequest = fetchImportedCostSummary()
     const healthRequest = fetchApiHealth()
     const diagnosticsRequest = fetchProviderDiagnostics()
-    const rightsizingRequest = fetchRightsizingRecommendations({
-      provider,
-      limit: includeLive ? 1000 : 120,
-      min_savings: 0,
-      refresh_live: includeLive,
-    })
-    const decisionRequest = fetchDecisionGradeRecommendations({
-      provider,
-      top_n: 8,
-      min_monthly_savings: 0,
-    })
 
     const [response, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
       recommendationsRequest,
@@ -244,6 +233,17 @@ export default function RecommendationsPage() {
     }))
     setLoading(false)
 
+    const rightsizingRequest = fetchRightsizingRecommendations({
+      provider,
+      limit: 120,
+      min_savings: 0,
+      refresh_live: false,
+    })
+    const decisionRequest = fetchDecisionGradeRecommendations({
+      provider,
+      top_n: 8,
+      min_monthly_savings: 0,
+    })
     const [rightsizingResult, decisionResult] = await Promise.allSettled([
       rightsizingRequest,
       decisionRequest,
