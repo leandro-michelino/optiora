@@ -146,6 +146,39 @@ function connectedProviderCount(diagnostics: ProviderDiagnostic[]) {
   return diagnostics.filter((item) => item.configured).length
 }
 
+function storageCleanupFromRightsizing(recommendations: RightsizingRecommendation[]) {
+  return [...recommendations]
+    .filter((rec) => {
+      const text = [
+        rec.provider,
+        rec.action,
+        rec.resource_type,
+        rec.resource_name,
+        rec.resource_id,
+        rec.reason,
+        rec.provider_recommendation_type,
+        rec.provider_recommendation_name,
+      ].join(' ').toLowerCase()
+      return (
+        rec.provider === 'oci'
+        && rec.action === 'terminate'
+        && (
+          text.includes('unattached')
+          || text.includes('detached')
+          || text.includes('orphan')
+          || text.includes('blockvolume')
+          || text.includes('bootvolume')
+          || text.includes('block volume')
+          || text.includes('boot volume')
+          || text.includes('ocid1.volume.')
+          || text.includes('ocid1.bootvolume.')
+        )
+      )
+    })
+    .sort((a, b) => b.monthly_savings_usd - a.monthly_savings_usd)
+    .slice(0, 24)
+}
+
 export default function RecommendationsPage() {
   const [provider, setProvider] = useState('all')
   const [includeLive, setIncludeLive] = useState(true)
@@ -167,69 +200,41 @@ export default function RecommendationsPage() {
 
   const loadRecommendations = useCallback(async () => {
     setLoading(true)
-    const [response, importedResult, healthResult, diagnosticsResult, rightsizingResult, decisionResult] = await Promise.allSettled([
-      fetchRecommendationsStrict({
-        limit: 1000,
-        offset: 0,
-        cloud_provider: provider,
-        include_provider_recommendations: includeLive,
-      }),
-      fetchImportedCostSummary(),
-      fetchApiHealth(),
-      fetchProviderDiagnostics(),
-      fetchRightsizingRecommendations({
-        provider,
-        limit: includeLive ? 1000 : 120,
-        min_savings: 0,
-        refresh_live: includeLive,
-      }),
-      fetchDecisionGradeRecommendations({
-        provider,
-        top_n: 8,
-        min_monthly_savings: 0,
-      }),
-    ])
+    setState((current) => ({ ...current, error: null }))
+    const recommendationsRequest = fetchRecommendationsStrict({
+      limit: 1000,
+      offset: 0,
+      cloud_provider: provider,
+      include_provider_recommendations: includeLive,
+    })
+    const importedRequest = fetchImportedCostSummary()
+    const healthRequest = fetchApiHealth()
+    const diagnosticsRequest = fetchProviderDiagnostics()
+    const rightsizingRequest = fetchRightsizingRecommendations({
+      provider,
+      limit: includeLive ? 1000 : 120,
+      min_savings: 0,
+      refresh_live: includeLive,
+    })
+    const decisionRequest = fetchDecisionGradeRecommendations({
+      provider,
+      top_n: 8,
+      min_monthly_savings: 0,
+    })
 
+    const [response, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+      recommendationsRequest,
+      importedRequest,
+      healthRequest,
+      diagnosticsRequest,
+    ])
     setState((current) => ({
       ...current,
       items: response.status === 'fulfilled' ? response.value.items : [],
       health: healthResult.status === 'fulfilled' ? healthResult.value : null,
       importedSummary: importedResult.status === 'fulfilled' ? importedResult.value : null,
       diagnostics: diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [],
-      rightsizingTop:
-        rightsizingResult.status === 'fulfilled'
-          ? [...(rightsizingResult.value.recommendations || [])].sort((a, b) => b.monthly_savings_usd - a.monthly_savings_usd).slice(0, 12)
-          : [],
-      storageCleanup:
-        rightsizingResult.status === 'fulfilled'
-          ? [...(rightsizingResult.value.recommendations || [])]
-              .filter((rec) => {
-                const text = `${rec.provider} ${rec.action} ${rec.resource_type} ${rec.resource_name} ${rec.resource_id} ${rec.reason}`.toLowerCase()
-                return (
-                  rec.provider === 'oci'
-                  && rec.action === 'terminate'
-                  && (
-                    text.includes('unattached')
-                    || text.includes('blockvolume')
-                    || text.includes('bootvolume')
-                    || text.includes('block volume')
-                    || text.includes('boot volume')
-                    || text.includes('ocid1.volume.')
-                    || text.includes('ocid1.bootvolume.')
-                  )
-                )
-              })
-              .sort((a, b) => b.monthly_savings_usd - a.monthly_savings_usd)
-              .slice(0, 24)
-          : [],
-      rightsizingCount: rightsizingResult.status === 'fulfilled' ? rightsizingResult.value.rightsizable_count : 0,
-      rightsizingMonthlySavings: rightsizingResult.status === 'fulfilled' ? rightsizingResult.value.total_monthly_savings_usd : 0,
-      rightsizingSource: rightsizingResult.status === 'fulfilled' ? rightsizingResult.value.data_source : 'no_data_available',
-      decisionTop:
-        decisionResult.status === 'fulfilled'
-          ? decisionResult.value.top_recommendations || []
-          : [],
-      loaded: response.status === 'fulfilled' || rightsizingResult.status === 'fulfilled',
+      loaded: response.status === 'fulfilled',
       error:
         response.status === 'rejected'
           ? response.reason instanceof Error
@@ -238,6 +243,29 @@ export default function RecommendationsPage() {
           : null,
     }))
     setLoading(false)
+
+    const [rightsizingResult, decisionResult] = await Promise.allSettled([
+      rightsizingRequest,
+      decisionRequest,
+    ])
+    setState((current) => ({
+      ...current,
+      rightsizingTop:
+        rightsizingResult.status === 'fulfilled'
+          ? [...(rightsizingResult.value.recommendations || [])].sort((a, b) => b.monthly_savings_usd - a.monthly_savings_usd).slice(0, 12)
+          : [],
+      storageCleanup:
+        rightsizingResult.status === 'fulfilled'
+          ? storageCleanupFromRightsizing(rightsizingResult.value.recommendations || [])
+          : [],
+      rightsizingCount: rightsizingResult.status === 'fulfilled' ? rightsizingResult.value.rightsizable_count : 0,
+      rightsizingMonthlySavings: rightsizingResult.status === 'fulfilled' ? rightsizingResult.value.total_monthly_savings_usd : 0,
+      rightsizingSource: rightsizingResult.status === 'fulfilled' ? rightsizingResult.value.data_source : 'no_data_available',
+      decisionTop:
+        decisionResult.status === 'fulfilled'
+          ? decisionResult.value.top_recommendations || []
+          : [],
+    }))
   }, [includeLive, provider])
 
   useEffect(() => {
@@ -250,6 +278,7 @@ export default function RecommendationsPage() {
     diagnostics: state.diagnostics,
     primaryLoaded: state.loaded,
     pageName: 'Recommendations',
+    isLoading: loading,
   })
 
   const monthlyProviderSavings = useMemo(
