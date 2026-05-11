@@ -27,7 +27,7 @@ These notes capture the complete operator-style pass through OptiOra using the r
 | OCI VM deployment | Allowed the Terraform + Ansible deploy flow to finish. | Pass | VM came up at `140.238.90.95`; API, dashboard, nginx, and OCI GenAI runtime config were active/enabled. |
 | OCI verification | Ran `./deploy/deploy-oci.sh verify`. | Pass | `48 passed, 0 failed, 3 skipped`. Skips were intentional live-environment safeguards for temporary CSV upload and optional live credential scan. |
 | New capability contracts | Called the live rightsizing, recommendation ledger, ledger CSV, FinOps intelligence, and RAG guidance endpoints. | Pass | Rightsizing returned live OCI-backed recommendations, ledger exports included planned/realized/variance fields, FinOps intelligence returned deterministic risk/execution data, and RAG guidance returned retrieved guidance. |
-| Advisor Conversation grounding | Called `/api/ai/chat` on the OCI VM with German prior chat history and the prompt `Which services are over-provisioned?`. | Pass | Response stayed in English and returned the correct OCI VM rightsizing empty-state instead of promoting tenancy, account, segment, or service aggregate rows as actionable resources. |
+| Advisor Conversation grounding | Called `/api/ai/chat` on the OCI VM with German prior chat history and the prompt `Which services are over-provisioned?`. | Pass | Response stayed in English and returned the correct provider-backed rightsizing empty-state instead of promoting tenancy, account, segment, imported, or service aggregate rows as actionable resources. |
 
 ## Screens Walked
 
@@ -68,7 +68,7 @@ Services: optiora-api active/enabled, optiora-dashboard active/enabled, nginx ac
 Deploy:   Terraform + Ansible redeploy completed from the local workspace
 Verify:   48 passed, 0 failed, 3 skipped
 GenAI:    OCI GenAI configured in uk-london-1 with RAG-backed advisor wiring
-Chat:     Advisor Conversation English-only for now; over-provisioning scoped to real OCI VM rightsizing candidates
+Chat:     Advisor Conversation English-only for now; over-provisioning scoped to real AWS/Azure/GCP/OCI resource rightsizing candidates
 ```
 
 The live rightsizing and ledger checks confirmed finance-ready fields:

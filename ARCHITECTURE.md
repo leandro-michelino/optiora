@@ -676,16 +676,18 @@ instances.
                       |
                       +--> over-provisioning / rightsizing prompts
                       |     |
-                      |     +--> /api/v1/recommendations/rightsizing?provider=oci
-                      |           required actionable candidate fields:
-                      |           - provider = oci
-                      |           - evidence_source = oci_compute_inventory
-                      |           - resource_id = ocid1.instance.*
+                      |     +--> /api/v1/recommendations/rightsizing?provider=all
+                      |           provider-backed evidence sources:
+                      |           - aws_cost_explorer / aws_cloudwatch
+                      |           - azure_advisor / azure_monitor
+                      |           - gcp_cloud_monitoring
+                      |           - oci_compute_inventory / oci_storage_inventory
+                      |           - live_provider_recommendations with real resource IDs
                       |
                       +--> aggregate guard
                             rejects:
                             - ocid1.tenancy.*
-                            - oci-acct-*
+                            - *-acct-* and account/imported rollups
                             - resource_type containing aggregate or segment
                             - cost_trend_analysis / service_cost_snapshot rows
 ```
@@ -693,9 +695,9 @@ instances.
 The conversation is real and wired through the server-side chat API, but it is
 not allowed to promote account, tenancy, segment, or service-level summaries as
 actionable cloud resources. When the user asks about over-provisioning today,
-the supported answer scope is OCI VM rightsizing. Broader service-level spend
-hotspots can still appear as context, but they are not described as executable
-resource actions.
+the supported answer scope is provider-backed cloud resource rightsizing across
+AWS, Azure, GCP, and OCI. Broader service-level spend hotspots can still appear
+as context, but they are not described as executable resource actions.
 
 ## Optimization Advisor Dashboard UX Wiring
 

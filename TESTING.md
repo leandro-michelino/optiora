@@ -130,7 +130,7 @@ Current backend coverage includes:
 - curated RAG catalog retrieval by analysis type, provider, and context tokens
 - backend GenAI prompt composition includes retrieved `rag_brief` context before OCI GenAI calls
 - Cost Advisor scope validation and prompt sanitization reject unsupported/off-domain questions
-- Advisor Conversation is currently English-only and over-provisioning/right-sizing questions are expected to resolve to OCI VM candidates, not account, tenancy, segment, or service aggregates
+- Advisor Conversation is currently English-only and over-provisioning/right-sizing questions are expected to resolve to real AWS, Azure, GCP, or OCI resource candidates, not account, tenancy, segment, imported, or service aggregates
 - OCI GenAI compartment override resolution prefers `OCI_GENAI_COMPARTMENT_ID` and falls back to runtime compartment when needed
 
 **Rightsizing and recommendation ledger** (`tests/test_rightsizing.py`, `tests/test_rightsizing_oci_storage.py`):
@@ -234,9 +234,10 @@ curl -fsS -X POST http://<instance-ip>/api/ai/chat \
 ```
 
 Expected result for this release: response is in English, uses the real chat API
-route, and does not name `ocid1.tenancy.*`, `oci-acct-*`, account aggregates, or
-service snapshots as actionable resources. If no real OCI VM candidate exists,
-the correct response is an explicit empty-state for OCI VM rightsizing.
+route, and does not name `ocid1.tenancy.*`, `*-acct-*`, account aggregates,
+imported rollups, or service snapshots as actionable resources. If no real
+provider-backed resource candidate exists, the correct response is an explicit
+empty-state for cross-cloud rightsizing.
 
 ## Terraform
 

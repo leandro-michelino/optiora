@@ -1,12 +1,12 @@
 # Release Notes
 
-## Unreleased - Advisor Conversation Grounding and OCI VM Naming (May 11, 2026)
+## Unreleased - Advisor Conversation Cross-Cloud Grounding (May 11, 2026)
 
 ### Changed
 
 - Documented the Action Ledger provider resource naming boundary so the OCI VM table only shows real OCI Compute instance display names, while account, tenancy, and service aggregates remain in broader recommendation context.
-- Documented the Cost Advisor conversation boundary: chat is wired through the real `/api/ai/chat` route, answers in English for now, and resolves rightsizing/over-provisioning prompts against OCI VM instance candidates instead of generic service/account summaries.
-- Cost Advisor prompt copy now asks for over-provisioned **OCI VMs** rather than over-provisioned services, matching the provider-backed evidence currently available.
+- Documented the Cost Advisor conversation boundary: chat is wired through the real `/api/ai/chat` route, answers in English for now, and resolves rightsizing/over-provisioning prompts against real AWS, Azure, GCP, and OCI resource candidates instead of generic service/account summaries.
+- Cost Advisor prompt copy now asks for over-provisioned cloud resources rather than over-provisioned resources from a single provider.
 - Standardized Terraform validation guidance on tracked `.tf` files plus `terraform -chdir=terraform validate`, avoiding local `terraform.tfvars` formatting noise.
 - Cleanup scanning now skips Terraform provider cache directories before deleting generated infrastructure cache.
 
@@ -15,7 +15,7 @@
 - Removed the last tracked non-OCI deployment target fixture from configuration tests; negative validation now uses a generic unsupported cloud target while preserving the OCI VM-only runtime policy.
 - Fixed order-sensitive backend regression tests by force-refreshing cached reads after direct DB seeding and resolving the active organization id from the auth API instead of assuming `1`.
 - Fixed Advisor Conversation language drift where prior multilingual history could cause non-English replies. The route now forces English until multilingual UX is explicitly re-enabled.
-- Fixed Advisor Conversation resource grounding for OCI rightsizing questions by filtering out tenancy, account, segment, and service aggregate rows. Actionable OCI VM replies require `provider=oci`, `evidence_source=oci_compute_inventory`, and `resource_id=ocid1.instance.*`.
+- Fixed Advisor Conversation resource grounding for rightsizing questions by filtering out tenancy, account, segment, service snapshot, and imported aggregate rows across providers. Actionable replies require provider-backed resource evidence such as AWS Cost Explorer/CloudWatch, Azure Advisor/Monitor, GCP Cloud Monitoring, OCI compute/storage inventory, or live provider recommendation resource IDs.
 
 ### Validation
 

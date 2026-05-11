@@ -42,7 +42,7 @@
 - unit economics, scorecards, virtual tags, decision-grade recommendations, and resource-level rightsizing endpoints
 - alert lifecycle states, routing-policy simulator, destination tests/toggles/status, data freshness observability, and channel delivery telemetry
 - RAG-grounded intelligence workflows (`/api/v1/genai/rag-guidance`, `/api/v1/analytics/finops-intelligence`) with retrieved FinOps benchmark context injected into GenAI prompts
-- Advisor Conversation grounded to real `/api/ai/chat` wiring, English-only for now, and OCI VM rightsizing evidence for over-provisioning answers
+- Advisor Conversation grounded to real `/api/ai/chat` wiring, English-only for now, and AWS/Azure/GCP/OCI resource evidence for over-provisioning answers
 - recommendation ledger realized-savings scorecards by provider, owner, business unit, and realized month
 - synonym-aware dashboard navigation, active-page helper text, and page-by-page UIX review documentation
 

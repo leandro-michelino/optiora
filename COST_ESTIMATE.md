@@ -6,7 +6,7 @@ This estimate reflects the current OptiOra architecture and behavior:
 - OCI-hosted application plane (API + Dashboard).
 - Multi-cloud provider connectivity (AWS, Azure, GCP, OCI).
 - Stored scan snapshots for most default dashboard/recommendation reads, with explicit live refresh when requested.
-- Real-time telemetry query paths for Cost Advisor and operator-triggered refreshes. Advisor Conversation over-provisioning/right-sizing questions are currently scoped to OCI VM rightsizing evidence rather than broad cross-provider service aggregates.
+- Real-time telemetry query paths for Cost Advisor and operator-triggered refreshes. Advisor Conversation over-provisioning/right-sizing questions are scoped to provider-backed AWS, Azure, GCP, and OCI resource evidence rather than broad service/account aggregates.
 - Optimization Advisor live refresh uses a provider-native request budget of up to `120s` in the dashboard because OCI live advisor scans have been observed at roughly `50s`; the page defaults to live provider advisor mode so Cloud Advisor rows are current.
 - Kubernetes/container visibility now includes live OCI resource inventory for OKE clusters, OCI Container Instances, and OCIR repositories. New resources can show before billing rows arrive; active Container Instances use a conservative run-rate estimate until metered cost data catches up.
 - Real OCI GenAI + RAG responses for advisory and narrative outputs when configured, with deterministic prompt/RAG fallback when unavailable.
