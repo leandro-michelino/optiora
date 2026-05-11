@@ -8,7 +8,7 @@
 - provider diagnostics endpoint for cloud readiness checks without leaking secrets
 - backend regression tests covering organization membership, customer scoping, credential flows, and CSV import flows
 - Next.js dashboard with credential setup, CSV upload, scanning setup, forecasting, recommendations, and operations readiness views
-- laptop-driven OCI deployment
+- operator-workstation initiated OCI VM deployment
 - Terraform OCI infrastructure baseline for network, archive bucket, compute, data volume, and scheduler resources
 - Ansible host provisioning for runtime packages, environment, systemd services, dashboard build, and health checks
 - dashboard credential form with inline per-provider setup guidance (what credentials to obtain and where)
@@ -75,7 +75,7 @@ The next phase should not try to out-feature every competitor immediately. Inste
 
 Status: **latest live OCI smoke gate passed**. Continue attaching dated evidence packs for customer-facing release handoffs.
 
-- deploy the current public-dashboard build onto OCI
+- keep the current public-dashboard build deployed on the OCI VM
 - validate CSV upload, imported dataset activation, and cost page correctness with real/customer-like data
 - validate credential add, scan approval, scan start, and live provider reads where live billing access is in scope
 - confirm scan history, diff, alerts, and CSV/XLSX/PDF/FOCUS exports in the deployed environment
@@ -84,7 +84,7 @@ Status: **latest live OCI smoke gate passed**. Continue attaching dated evidence
 
 ### 2. Expand automated regression coverage
 
-Status: **substantially complete locally; keep expanding through laptop-run regressions**.
+Status: **substantially complete in local/CI-style validation; keep expanding through automated regression coverage**.
 
 - public-mode API/data-path regression coverage exists
 - role-boundary and org-switch isolation tests exist for credentials, scans, imports, and analytics

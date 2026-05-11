@@ -11,7 +11,7 @@ Preferred operator flow is the interactive root setup wizard:
 ```
 
 That flow manages Terraform variables and optional apply, then hands the Terraform-managed instance to Ansible for provisioning.
-The guided flow rejects placeholder values, writes the resolved `compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`, compute, image, SSH public key, and data-volume settings into `terraform/terraform.tfvars`, and exports matching `TF_VAR_*` values for the run.
+The guided flow rejects placeholder values, writes the resolved `compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`, compute, image, SSH public key, and data-volume settings into `terraform/terraform.tfvars`, and exports matching `TF_VAR_*` values for the run. `laptop_cidr` is retained as the existing Terraform variable name for the operator source CIDR.
 
 Deployment order is intentionally Terraform first, then source upload, then Ansible runtime configuration, then smoke verification. Terraform should not be used to push application secrets; OCI config/key material is staged by `deploy/deploy-oci.sh` and installed by Ansible under `/opt/optiora/.oci`.
 
@@ -25,14 +25,14 @@ Terraform remains infrastructure-only. Application packages, `.env`, migrations,
   - `rt-public-<project>-<env>-<region>-<suffix>`
   - `sl-public-<project>-<env>-<region>-<suffix>`
   - `subnet-public-<project>-<env>-<region>-<suffix>`
-- ingress is restricted to `laptop_cidr` plus optional `allowed_public_ingress_cidrs`
+- ingress is restricted to `laptop_cidr` (operator source CIDR) plus optional `allowed_public_ingress_cidrs`
 - outbound traffic is controlled by `egress_cidr`
 - compute instance and data volume are Terraform-managed when `compute_enabled=true`
 - compute bootstrap, packages, `.env`, builds, nginx, and systemd are handled by `../ansible` on Oracle Linux hosts
 
 ## Defaults
 
-- `laptop_cidr`: required, used for SSH/UI/API ingress
+- `laptop_cidr`: required operator source CIDR, used for SSH/UI/API ingress
 - `allowed_public_ingress_cidrs`: optional additional ingress CIDRs
 - `allow_direct_app_ingress`: controls exposure of ports `3000`/`8000`
 - `allow_web_ingress`: controls exposure of ports `80`/`443`
@@ -126,7 +126,7 @@ terraform -chdir=terraform apply
 ```text
 VCN
 └── Public Subnet
-    ├── Ingress: 22 (+ optional 3000/8000 and 80/443) <- laptop_cidr + allowed_public_ingress_cidrs
+    ├── Ingress: 22 (+ optional 3000/8000 and 80/443) <- operator source CIDR + allowed_public_ingress_cidrs
     └── Egress: all -> egress_cidr
 ```
 

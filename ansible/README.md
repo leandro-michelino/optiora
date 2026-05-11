@@ -85,7 +85,7 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml \
   -e optiora_genai_model="ocid1.generativeaimodel.oc1..<model_ocid>"
 ```
 
-The root `deploy/deploy-oci.sh` flow stages the local OCI config/key in `/tmp` and lets this role install them under `/opt/optiora/.oci` with `0600` permissions. For Ansible-only runs, upload those files yourself before running the playbook, then point `optiora_oci_config_file` and `optiora_private_key_path` at the target-host paths.
+The root `deploy/deploy-oci.sh` flow stages the operator workstation OCI config/key in `/tmp` and lets this role install them under `/opt/optiora/.oci` with `0600` permissions. For Ansible-only runs, upload those files yourself before running the playbook, then point `optiora_oci_config_file` and `optiora_private_key_path` at the target-host paths.
 
 The Ansible path deploys the public dashboard mode by default:
 

@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 11, 2026): backend regression suite passing (`301` unittest cases), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, Advisor Conversation English/OCI-VM grounding smoke passing on the OCI VM, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
+Validation snapshot (May 11, 2026): backend regression suite passing (`301` unittest cases), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, Advisor Conversation English/OCI-VM grounding smoke passing on the OCI VM, `/health` reporting version `0.9.3`, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
 
 ## Backend
 
@@ -16,14 +16,14 @@ Static verification:
 python3 -m py_compile $(find ./optiora_backend -name '*.py')
 ```
 
-Once backend dependencies are installed:
+Optional developer-only process check, not a deployment path:
 
 ```bash
 source .venv/bin/activate
 optiora
 ```
 
-Developer override example:
+Optional developer override example:
 
 ```bash
 optiora --port 8001 --reload
@@ -154,7 +154,7 @@ Current backend coverage includes:
 - realized savings scorecards grouped by provider, owner, business unit, and realized month
 - recommendation ledger planned, realized, variance, score, grade, verified, and open-count rollups
 
-Smoke endpoints:
+Optional developer-only smoke endpoints:
 
 ```bash
 curl http://localhost:8000/health
@@ -179,6 +179,13 @@ Auth smoke flow:
 curl -X POST http://localhost:8000/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"StrongPass1!","full_name":"Test User"}'
+```
+
+OCI VM smoke and release verification should use the deployed endpoint instead of a workstation-hosted app:
+
+```bash
+curl http://140.238.90.95/health
+./deploy/deploy-oci.sh verify
 ```
 
 ## Frontend

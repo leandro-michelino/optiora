@@ -32,13 +32,13 @@ Current operator experience notes are tracked in [UIX_REVIEW.md](UIX_REVIEW.md) 
 
 For `./deploy/deploy-oci.sh full` (and menu option `1`), the execution order is:
 
-1. Validate local prerequisites and OCI credentials.
+1. Validate operator-workstation prerequisites and OCI credentials.
 2. Run Terraform `init`, `validate`, and `plan`.
 3. Optionally run Terraform `apply` (prompted).
 4. Terraform creates/updates VCN, subnet, security list, Object Storage archive bucket, compute instance, and optional data volume attachment.
 5. Read Terraform `instance_id`, `instance_public_ip`, availability-domain, and data-volume outputs.
 6. Wait for SSH on the Terraform-managed VM.
-7. Upload local source archive to the VM.
+7. Upload the operator workspace source archive to the VM.
 8. Run Ansible provisioning (packages, venv, dashboard build, `.env`, systemd units, nginx, migrations, health checks).
 9. Print the Terraform + Ansible completion summary and run end-to-end verification (`tests/smoke_test_0_9.sh`).
 
@@ -54,8 +54,8 @@ Use the deploy script menu to run Terraform + Ansible in one guided flow:
 
 What the deploy script does for a fresh environment:
 
-- checks core tooling and local prerequisites
-- resolves required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`) from `TF_VAR_*`, `terraform/terraform.tfvars`, OCI CLI auto-detection where possible, or prompts
+- checks core tooling and operator-workstation prerequisites
+- resolves required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`) from `TF_VAR_*`, `terraform/terraform.tfvars`, OCI CLI auto-detection where possible, or prompts. `laptop_cidr` is the existing Terraform variable name for the operator source CIDR.
 - writes/updates `terraform/terraform.tfvars` so Terraform owns the target infrastructure
 - runs Terraform init, tracked-file format checks, validate, and plan
 - optionally runs `terraform apply`
@@ -89,7 +89,7 @@ Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). Tha
 
 ## Network and Access Control
 
-- Primary ingress control: OCI security list rules from Terraform (`laptop_cidr` + optional `allowed_public_ingress_cidrs`).
+- Primary ingress control: OCI security list rules from Terraform (`laptop_cidr`, the operator source CIDR variable, plus optional `allowed_public_ingress_cidrs`).
 - Current default host profile: `firewalld` is managed by automation (`optiora_configure_firewall: true`).
 - Current default exposure mode: nginx front door on `:80`/`:443` with direct app ports closed.
 - Recommended Terraform posture: `allow_direct_app_ingress=false`, `allow_web_ingress=true`.
@@ -205,7 +205,7 @@ OCI_PROFILE='DEFAULT' \
 - If using the deploy script, export the vars (or add to inventory/group_vars for Ansible) so they render into the remote `.env`.
 - After deploy, test AI chat via the dashboard or with a JSON `POST` to `/api/ai/chat`.
 
-Re-run `./deploy/deploy-oci.sh full` after local code changes. Terraform should usually report no infrastructure changes, then Ansible redeploys the current local workspace snapshot.
+After code changes, deploy them to the OCI VM with `./deploy/deploy-oci.sh full`. Terraform should usually report no infrastructure changes, then Ansible redeploys the current operator workspace snapshot to the VM.
 
 `./deploy/deploy-oci.sh verify` resolves the deployed instance IP and runs `tests/smoke_test_0_9.sh` against the live dashboard/API pair.
 By default the smoke test does not upload CSV data, so a live environment remains backed only by provider APIs, saved scan snapshots, or customer-imported files. Set `SMOKE_ENABLE_CSV_IMPORT=true` only when you intentionally want to exercise the CSV import path with temporary smoke data.
@@ -268,7 +268,7 @@ sudo systemctl status optiora-dashboard
 
 ## What The Deploy Script Applies Automatically
 
-- uploads your local workspace snapshot (no VM-side git clone)
+- uploads your operator workspace snapshot to the OCI VM (no VM-side git clone)
 - excludes local-only artifacts from the deployment archive, including virtualenvs, dashboard builds, `node_modules`, test reports, Terraform state/tfvars, local databases, logs, and scratch/evidence folders
 - reads Terraform outputs for the VM, public IP, and attached data device before the Ansible handoff
 - runs Ansible provisioning on Oracle Linux
@@ -284,7 +284,7 @@ sudo systemctl status optiora-dashboard
 - installs dashboard dependencies and builds `.next` as the `optiora` runtime user, using a writable app-local npm cache, so deployed Next.js static chunks and manifests are readable by the service account
 - resolves GenAI credential/config inputs from exported env vars or local `.env` and injects runtime-safe values for backend narration
 
-The Ansible-rendered `.env` values matter because the dashboard is browser-executed. A localhost API URL in deployed mode would break browser API calls.
+The Ansible-rendered `.env` values matter because the dashboard is browser-executed. A localhost API URL in deployed mode would break browser API calls; deployed URLs must point at the OCI VM front door.
 
 ### Dashboard/API response cache
 
@@ -407,7 +407,7 @@ OCI_ARCHIVE_NAMESPACE=
 
 Database deployment policy:
 
-- Small deployment: keep `DATABASE_URL` blank and run on the local SQLite file for the lowest-cost footprint.
+- Small deployment: keep `DATABASE_URL` blank and run on the SQLite file located on the OCI VM for the lowest-cost footprint.
 - Medium and enterprise deployments: set `DATABASE_URL` to PostgreSQL on OCI.
 - When using OCI managed database services that support license-model selection, use `BYOL` by default for now.
 - `OCI_DB_*` compatibility fields remain supported if you prefer deriving `DATABASE_URL` instead of setting it explicitly.

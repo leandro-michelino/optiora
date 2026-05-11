@@ -1,5 +1,16 @@
 # Release Notes
 
+## Unreleased - Documentation Maintenance (May 11, 2026)
+
+### Changed
+
+- Clarified the documentation-wide deployment boundary: operator workstations may run validation, Terraform, Ansible, and packaging commands, but OptiOra application services are deployed and run on the OCI VM.
+- Standardized documentation wording around the existing `laptop_cidr` Terraform variable so it is described as the operator source CIDR rather than a local runtime target.
+
+### Validation
+
+- Documentation scan for stale release, backend namespace, legacy integration, workstation, and deployment-boundary wording.
+
 ## 0.9.3 - Advisor Grounding, Console Deep Links, and Backend Namespace Cleanup (May 11, 2026)
 
 Repository release metadata:
@@ -140,7 +151,7 @@ Repository release metadata:
 - Public browser check on `/dashboard/kubernetes`: rendered `optiora-e2e-oke`, `optiora-e2e-container-instance`, and `Live resource inventory` with no console errors and no horizontal overflow.
 - OCI cleanup after Kubernetes validation: deleted `optiora-e2e-container-instance` and `optiora-e2e-oke`; final states were `DELETED`.
 - Public live Kubernetes API: `GET /api/v1/analytics/kubernetes/summary` returned `container_service_count=2`, `clusters_configured=1`, `data_source=live_resource_inventory`, and `$19.71` estimated container run rate in about `12s`.
-- `./deploy/deploy-oci.sh full` (Terraform + Ansible redeploy from the local workspace)
+- `./deploy/deploy-oci.sh full` (Terraform + Ansible redeploy from the operator workspace to the OCI VM)
 - `./deploy/deploy-oci.sh verify` (`48` passing, `0` failed, `3` skipped)
 
 ## 0.9.1 - UIX and Navigation Polish (May 10, 2026)

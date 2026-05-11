@@ -65,7 +65,7 @@ Dashboard: http://140.238.90.95/dashboard
 API:       http://140.238.90.95
 Health:   HTTP 200, version 0.9.3 after the release metadata bump is deployed
 Services: optiora-api active/enabled, optiora-dashboard active/enabled, nginx active/enabled
-Deploy:   Terraform + Ansible redeploy completed from the local workspace
+Deploy:   Terraform + Ansible redeploy completed from the operator workspace to the OCI VM
 Verify:   48 passed, 0 failed, 3 skipped
 GenAI:    OCI GenAI configured in uk-london-1 with RAG-backed advisor wiring
 Chat:     Advisor Conversation English-only for now; over-provisioning scoped to real AWS/Azure/GCP/OCI resource rightsizing candidates
@@ -158,6 +158,6 @@ cd ..
 ## Follow-Up Watch Items
 
 - Keep `.venv` on Python `3.10` through `3.13`; Python `3.14` should continue to be rejected until the test/runtime stack supports it.
-- Run `terraform init` before `terraform validate` on a fresh laptop or after provider cache cleanup.
+- Run `terraform init` before `terraform validate` on a fresh operator workstation or after provider cache cleanup.
 - The optional live credential scan remains intentionally skipped unless `SMOKE_CREDENTIAL_JSON` is provided.
 - The live CSV upload smoke remains intentionally skipped unless `SMOKE_ENABLE_CSV_IMPORT=true` is set.

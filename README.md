@@ -161,9 +161,9 @@ If no real source exists, the application surfaces an explicit empty or unavaila
 |-- RELEASE_NOTES.md         Release history and validation notes
 ```
 
-## Local Development
+## Local Validation And Optional Development
 
-Local development is only for build, test, and CSV/import checks. Supported production runtime is OCI VM-only.
+Local commands are only for build, test, and optional CSV/import checks. Supported application runtime and deployment are OCI VM-only.
 
 Requirements:
 
@@ -178,14 +178,14 @@ Bootstrap:
 ./setup.sh
 ```
 
-Developer-only backend check:
+Optional developer-only backend check, not a deployment path:
 
 ```bash
 source .venv/bin/activate
 optiora
 ```
 
-Developer-only dashboard check:
+Optional developer-only dashboard check, not a deployment path:
 
 ```bash
 cd dashboard
@@ -193,7 +193,7 @@ npm install
 npm run dev
 ```
 
-Developer-only URLs:
+Optional developer-only URLs:
 
 | Service | URL |
 |---|---|
@@ -215,6 +215,7 @@ OCI_RUNTIME_REQUIRED=true
 ```
 
 Both API and dashboard systemd units perform an OCI instance metadata preflight before starting.
+The operator workstation may run Terraform, Ansible, tests, and packaging commands, but the application services are deployed and run on the OCI VM.
 
 Recommended guided deployment:
 
@@ -302,6 +303,10 @@ Latest deployed OCI verification snapshot:
 ```text
 deploy/deploy-oci.sh verify
   48 passed, 0 failed, 3 skipped
+
+Health
+  http://140.238.90.95/health
+  {"status":"healthy","version":"0.9.3"}
 
 Operator dashboard walkthrough
   all 20 main screens passed route, heading, active-nav, and canonical Kubernetes checks

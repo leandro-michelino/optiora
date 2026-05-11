@@ -86,8 +86,9 @@ Current as of May 11, 2026.
 +-----------------------------+
 ```
 
-Ingress control is enforced primarily at OCI security list level (`laptop_cidr`
-and optional `allowed_public_ingress_cidrs`). The default Ansible profile also
+Ingress control is enforced primarily at OCI security list level (`laptop_cidr`,
+the existing Terraform variable for the operator source CIDR, and optional
+`allowed_public_ingress_cidrs`). The default Ansible profile also
 manages host firewalld and keeps direct app ports closed when nginx front-door
 mode is enabled.
 
@@ -868,20 +869,20 @@ Primary OCI region
 
 ```text
 small profile
-  laptop -> deploy-oci.sh full
+  operator workstation -> deploy-oci.sh full
         -> single OCI VM
         -> Terraform VCN/subnet/security list + optional data volume
         -> FastAPI + Next.js + SQLite
         -> direct ingress (3000/8000) or optional nginx (80/443)
 
 medium profile
-  laptop -> deploy-oci.sh full
+  operator workstation -> deploy-oci.sh full
         -> Terraform OCI baseline + single VM + managed PostgreSQL
         -> FastAPI + Next.js + PostgreSQL
         -> direct ingress or nginx/TLS front door
 
 enterprise profile
-  laptop -> deploy-oci.sh full + policy hardening
+  operator workstation -> deploy-oci.sh full + policy hardening
         -> Terraform OCI baseline + single VM + managed PostgreSQL + scheduler
         -> strict ingress CIDRs, optional web-only exposure, auth/RBAC enabled
         -> FastAPI + Next.js + PostgreSQL + GenAI narrative overlays
@@ -930,7 +931,7 @@ Operator input
   |
   +--> terraform/terraform.tfvars
            |
-           +--> laptop_cidr
+           +--> laptop_cidr (operator source CIDR)
            +--> oci_object_storage_namespace
            +--> compute_enabled, shape, OCPU, memory
            +--> image OS/version and optional image compartment
@@ -1038,7 +1039,7 @@ generate_evidence_pack.sh -> artifacts/evidence/<timestamp>/SUMMARY.md
 ## Current Live Verification Path
 
 ```text
-local workspace
+operator workspace
    |
    +--> npm lint/type-check/build
    +--> targeted backend pytest slices
@@ -1057,7 +1058,7 @@ OCI VM 140.238.90.95
            -> 48 passed, 0 failed, 3 skipped
 
 Latest May 11, 2026 verification also covered:
-   - Terraform + Ansible redeploy from the local workspace
+   - Terraform + Ansible redeploy from the operator workspace to the OCI VM
    - server-side OCI GenAI chat route wiring
    - backend RAG retrieval and GenAI prompt context injection
    - runtime OCI GenAI config in uk-london-1
@@ -1066,8 +1067,8 @@ Latest May 11, 2026 verification also covered:
 ## Configuration and Security Notes
 
 ```text
-- SQLite is for local development and laptop-run tests
-- PostgreSQL is the production target
+- SQLite is for local tests and small OCI VM deployments
+- PostgreSQL is the production hardening target
 - CORS is explicit, not wildcard
 - CSV uploads are limited to 10 MB and UTF-8
 - Authentication is optional but should be enabled for production
