@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Cloud,
   Grid,
+  Info,
   Lightbulb,
   LogOut,
   Menu,
@@ -115,6 +116,195 @@ const activeDotClasses: Record<NavTone, string> = {
 const flatNavItems = navSections.flatMap((section) =>
   section.items.map((item) => ({ ...item, tone: section.tone, section: section.label })),
 )
+
+interface PageExplanation {
+  purpose: string
+  read: string[]
+  verify: string
+}
+
+const pageExplanations: Record<string, PageExplanation> = {
+  '/dashboard': {
+    purpose: 'This is the operating summary for the workspace. It blends readiness, spend, waste, commitments, allocation, anomalies, and next actions so an operator can decide where to drill in first.',
+    read: [
+      'Start with data freshness and readiness before trusting savings or risk numbers.',
+      'Treat provider totals as directional when a provider is disconnected, imported only, or still warming live data.',
+      'Use the action and anomaly areas as triage, then open the specialist page for execution detail.',
+    ],
+    verify: 'If a number looks surprising, check Operations for scan freshness and Billing & Allocation for the underlying provider or imported source.',
+  },
+  '/dashboard/costs': {
+    purpose: 'Billing & Allocation explains where cloud spend is coming from and how much is mapped to accounts, services, teams, and chargeback dimensions.',
+    read: [
+      'Provider and service totals answer where money is going.',
+      'Chargeback and business mapping rows explain who owns that spend.',
+      'Exports are finance outputs; use them after validating mapping coverage.',
+    ],
+    verify: 'Compare the data-source banner with the provider labels so AWS, Azure, GCP, and OCI costs are interpreted from the right source.',
+  },
+  '/dashboard/accounts': {
+    purpose: 'Account Hierarchy normalizes AWS accounts, Azure subscriptions, GCP projects, and OCI compartments/tenancies into one operating view.',
+    read: [
+      'Use hierarchy rows to understand scope before comparing teams or regions.',
+      'Regional rollups show where spend is landing inside each provider.',
+      'Missing names usually mean the provider returned an identifier but not a friendly display name.',
+    ],
+    verify: 'Confirm the provider label before acting because each cloud uses different hierarchy names and permissions.',
+  },
+  '/dashboard/my-dashboards': {
+    purpose: 'Saved Views collects personalized operating views so repeated analysis does not require rebuilding filters every time.',
+    read: [
+      'Pinned or saved views are shortcuts into the same backend data used by the main dashboard pages.',
+      'Use this page for recurring checks rather than one-off investigation.',
+      'Empty states usually mean no saved filters or personalized rollups exist yet.',
+    ],
+    verify: 'When a saved view looks stale, refresh the source page or check Operations for scan freshness.',
+  },
+  '/dashboard/portfolio': {
+    purpose: 'Customer Portfolio is for MSP or partner views across multiple customer workspaces, with customer health, spend, savings, and alert posture.',
+    read: [
+      'Customer-level totals are meant for comparison and triage.',
+      'Drill into the customer workspace before making resource-level decisions.',
+      'Alert posture shows where support attention is needed first.',
+    ],
+    verify: 'For a single internal organization, this page may be less useful than Overview, Billing & Allocation, and Operations.',
+  },
+  '/dashboard/cost-advisor': {
+    purpose: 'Cost Advisor turns deterministic FinOps evidence into focused advisory answers and planning narratives.',
+    read: [
+      'Use evidence-backed sections for numbers; use narrative text as advisory context.',
+      'Prompt shortcuts are starting points for investigation, not automatic approvals.',
+      'Compare answer claims with the cited provider, forecast, rightsizing, or ledger data nearby.',
+    ],
+    verify: 'If the backend or GenAI service is unavailable, rely on deterministic dashboard pages until advisory text is healthy again.',
+  },
+  '/dashboard/forecasting': {
+    purpose: 'Forecasting projects future spend using current cost, history coverage, trend, seasonality, volatility, budget guardrails, scenarios, and model diagnostics.',
+    read: [
+      'Current monthly spend is the baseline; growth rate shows the modeled monthly direction.',
+      'Volatility and fan bands describe uncertainty, not guaranteed spend.',
+      'Scenario rows compare possible futures, while backtesting shows how well the model performed against prior known periods.',
+    ],
+    verify: 'Check history source, coverage months, MAPE/WMAPE, and budget guardrails before using the forecast for commitments or executive targets.',
+  },
+  '/dashboard/ai-insights': {
+    purpose: 'AI Insights combines deterministic analytics with OCI GenAI explanation so operators can understand patterns and prioritize next actions.',
+    read: [
+      'Metrics and rankings come from backend analytics.',
+      'Generated explanations help summarize and prioritize, but they do not replace the source data.',
+      'Use evidence sections to trace the reason behind each recommendation.',
+    ],
+    verify: 'When the narrative feels too broad, cross-check the referenced numbers in Forecasting, Optimization Advisor, Billing & Allocation, or Action Ledger.',
+  },
+  '/dashboard/advanced-finops': {
+    purpose: 'FinOps Control Tower is the consolidated posture view for forecast risk, waste, commitments, governance, decision intelligence, RAG evidence, and GenAI prompts.',
+    read: [
+      'The posture score is an executive signal, not a single root cause.',
+      'Lane status shows which operating area needs attention first.',
+      'Action queues should be drilled into before assigning owners.',
+    ],
+    verify: 'Use the specialist pages to validate the specific forecast, waste, commitment, governance, or recommendation evidence behind each lane.',
+  },
+  '/dashboard/rightsizing': {
+    purpose: 'Optimization Advisor shows provider-native findings, rightsizing signals, storage cleanup candidates, and execution detail.',
+    read: [
+      'Scan status tells you whether results are stored, imported, or live provider data.',
+      'Savings should be read with confidence, evidence source, and rollback plan.',
+      'OCI storage cleanup and VM rightsizing are separate action types and should not be mixed.',
+    ],
+    verify: 'For OCI VM work, confirm the row is an OCI Compute instance and use the console link or OCID before changing anything.',
+  },
+  '/dashboard/inventory': {
+    purpose: 'Inventory Explorer is the resource investigation surface for provider assets, cost attribution, action rows, tags, regions, and account context.',
+    read: [
+      'Provider share shows where the visible inventory is concentrated.',
+      'Resource rows are better for investigation than finance approval.',
+      'Expand a row to see identifiers, source, tags, and action context before assigning work.',
+    ],
+    verify: 'Make sure AWS, Azure, GCP, and OCI resource names are read in their own provider context because account and region semantics differ.',
+  },
+  '/dashboard/unit-economics': {
+    purpose: 'Unit Economics translates cloud spend into business metrics such as cost per customer, transaction, request, team, or service unit.',
+    read: [
+      'Cost per unit is only meaningful when the unit count is current and business-relevant.',
+      'Waste rate highlights efficiency drag inside the selected business dimension.',
+      'FOCUS exports support standardized finance analysis outside the dashboard.',
+    ],
+    verify: 'Validate the numerator from Billing & Allocation and the denominator from the business metric owner before using this for KPIs.',
+  },
+  '/dashboard/scorecards': {
+    purpose: 'Scorecards measure FinOps maturity and realized savings follow-through by provider, owner, business unit, and month.',
+    read: [
+      'Maturity scores show operating discipline; realized savings shows finance outcome.',
+      'Planned savings is the expected impact, realized savings is the verified result.',
+      'Variance explains whether execution met, missed, or exceeded the plan.',
+    ],
+    verify: 'Use Action Ledger to inspect the recommendation rows behind realized savings before presenting results to finance.',
+  },
+  '/dashboard/kubernetes': {
+    purpose: 'Kubernetes explains cluster, namespace, workload, container, OpenCost, and live OCI container inventory cost signals.',
+    read: [
+      'Cluster and namespace allocation estimate where shared compute cost belongs.',
+      'Live resource inventory can appear before billing data catches up.',
+      'OpenCost details are more precise when the cluster integration is healthy.',
+    ],
+    verify: 'Check whether each row is live resource inventory, billing data, or imported cost before comparing Kubernetes and non-Kubernetes spend.',
+  },
+  '/dashboard/virtual-tags': {
+    purpose: 'Virtual Tags lets teams assign governance and allocation metadata in OptiOra without changing cloud resources directly.',
+    read: [
+      'Rules match resources and preview the resulting virtual tag assignment.',
+      'Virtual tags improve reporting and ownership even when cloud tags are missing.',
+      'Previews should be reviewed before using the tags in chargeback or scorecards.',
+    ],
+    verify: 'Confirm the rule scope and match conditions so a broad rule does not accidentally classify unrelated resources.',
+  },
+  '/dashboard/operations': {
+    purpose: 'Operations is the runtime control room for scans, alerts, exports, scheduler policy, data freshness, evidence, and system activity.',
+    read: [
+      'Scan status and freshness explain whether dashboard data is current.',
+      'Alerts and exports show what needs operator attention or delivery follow-through.',
+      'Scheduler settings explain recurring automation rather than one-time analysis.',
+    ],
+    verify: 'When any analytical page looks wrong, start here to check failed scans, stale data, or export/runtime errors.',
+  },
+  '/dashboard/anomalies': {
+    purpose: 'Anomalies highlights unusual spend patterns and severity so teams can triage spikes before they become budget surprises.',
+    read: [
+      'Severity ranks urgency; it does not prove root cause by itself.',
+      'Provider, service, and time context explain where to investigate.',
+      'Acknowledged or dismissed states are workflow markers, not data deletion.',
+    ],
+    verify: 'Compare anomalies with Billing & Allocation and Operations freshness before escalating a provider incident.',
+  },
+  '/dashboard/settings': {
+    purpose: 'Settings controls credentials, CSV imports, scan approvals, notifications, routing, and export jobs.',
+    read: [
+      'Credential state determines whether live provider data can be collected.',
+      'CSV imports support analysis when live credentials are not connected.',
+      'Approval and notification settings affect operational workflow, not historical cost math.',
+    ],
+    verify: 'Review credential validity and scan approval before expecting live AWS, Azure, GCP, or OCI results elsewhere.',
+  },
+  '/dashboard/recommendations': {
+    purpose: 'Action Ledger is the owner follow-through queue for provider-native, rightsizing, cost-context, and decision-grade recommendations.',
+    read: [
+      'Decision score helps prioritize, but owners still need to validate resource scope.',
+      'OCI VM candidates only show real OCI Compute instances, not tenancy, account, or service aggregates.',
+      'Planned and realized savings fields connect execution to finance verification.',
+    ],
+    verify: 'Check provider, resource id, evidence source, owner, and status before assigning or closing any action.',
+  },
+  '/dashboard/admin': {
+    purpose: 'Admin Diagnostics is for support and runtime investigation: health, scheduler state, data freshness, cache, and notification telemetry.',
+    read: [
+      'Health checks explain whether services are reachable.',
+      'Freshness and scheduler fields show whether automation is running as expected.',
+      'Diagnostics help support handoff more than daily FinOps prioritization.',
+    ],
+    verify: 'Use this page when Operations or a specialist page reports stale, missing, or unexpected data.',
+  },
+}
 
 function isActivePath(pathname: string, href: string): boolean {
   if (href === '/dashboard') {
@@ -302,6 +492,7 @@ function DashboardLayoutContent({
   const { user, logout, organizations, activeOrganization, switchOrganization } = useAuth()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [navQuery, setNavQuery] = useState('')
+  const [explanationOpen, setExplanationOpen] = useState(false)
 
   const activeItem = useMemo(() => {
     return [...flatNavItems]
@@ -312,6 +503,7 @@ function DashboardLayoutContent({
   const pageTitle = activeItem?.label || 'Dashboard'
   const pageDescription = activeItem?.description || 'Review FinOps signals, actions, and operating status.'
   const pageSection = activeItem?.section || 'Workspace'
+  const pageExplanation = activeItem ? pageExplanations[activeItem.href] : undefined
   const userLabel = user?.full_name || user?.email || 'OptiOra user'
   const userInitial = userLabel.trim().charAt(0).toUpperCase() || 'O'
 
@@ -458,8 +650,64 @@ function DashboardLayoutContent({
                 {activeOrganization?.name || 'Public workspace'}
               </span>
             </div>
+            {pageExplanation ? (
+              <button
+                type="button"
+                onClick={() => setExplanationOpen((open) => !open)}
+                aria-expanded={explanationOpen}
+                aria-controls="page-explanation-panel"
+                title={`Explain ${pageTitle}`}
+                className={cn(
+                  'inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                  explanationOpen
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white',
+                )}
+              >
+                <Info className="h-4 w-4" />
+                <span className="hidden sm:inline">Explain page</span>
+              </button>
+            ) : null}
             <ThemeToggle className="hidden md:inline-flex lg:hidden" />
           </div>
+          {pageExplanation && explanationOpen ? (
+            <div
+              id="page-explanation-panel"
+              className="border-t border-slate-200/80 bg-slate-50/95 px-4 py-4 dark:border-slate-800/90 dark:bg-slate-900/95 sm:px-6 lg:px-8"
+            >
+              <div className="mx-auto grid w-full max-w-[1800px] gap-4 text-sm lg:grid-cols-[1.1fr_1.4fr_1fr]">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">
+                    What this page means
+                  </p>
+                  <p className="mt-2 leading-6 text-slate-700 dark:text-slate-300">
+                    {pageExplanation.purpose}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-400">
+                    How to read it
+                  </p>
+                  <ul className="mt-2 grid gap-2 text-slate-700 dark:text-slate-300">
+                    {pageExplanation.read.map((item) => (
+                      <li key={item} className="flex gap-2 leading-6">
+                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-400">
+                    What to verify
+                  </p>
+                  <p className="mt-2 leading-6 text-slate-700 dark:text-slate-300">
+                    {pageExplanation.verify}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </header>
 
         <main id="dashboard-main" className="min-h-[calc(100vh-4rem)]" tabIndex={-1}>
