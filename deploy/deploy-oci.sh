@@ -5,7 +5,7 @@
 #
 # Local-to-OCI deployment:
 # - Runs from your laptop
-# - Provisions/starts OCI compute instance with the latest Oracle Linux 9 image
+# - Uses Terraform for OCI infrastructure and Ansible for host/app provisioning
 # - Uploads local project files to VM from your current local workspace
 # - Installs dependencies and starts systemd services on VM
 # - Does not clone from Git or depend on CI/CD triggers
@@ -18,11 +18,11 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TFVARS_PATH="${ROOT_DIR}/terraform/terraform.tfvars"
 
 # Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m'
 
 # Configuration
 DEPLOYMENT_TYPE=${1:-"compute"}
@@ -501,6 +501,7 @@ configure_terraform_inputs() {
     local compartment
     local namespace
     local laptop_cidr
+    local assign_public_ip
 
     ensure_tfvars_file
 
@@ -543,6 +544,47 @@ configure_terraform_inputs() {
     export TF_VAR_laptop_cidr="$laptop_cidr"
     upsert_tfvar laptop_cidr "$laptop_cidr" "$TFVARS_PATH"
     log_success "Terraform laptop_cidr resolved"
+
+    export TF_VAR_region="$REGION"
+    upsert_tfvar region "$REGION" "$TFVARS_PATH"
+
+    resolve_ssh_credentials
+    export TF_VAR_compute_enabled="true"
+    export TF_VAR_instance_name="$INSTANCE_NAME"
+    export TF_VAR_compute_shape="$SHAPE"
+    export TF_VAR_compute_ocpus="$OCPU_COUNT"
+    export TF_VAR_compute_memory_gb="$MEMORY_GB"
+    export TF_VAR_ssh_public_key="$RESOLVED_SSH_PUBLIC_KEY"
+    upsert_tfvar_raw compute_enabled true "$TFVARS_PATH"
+    upsert_tfvar instance_name "$INSTANCE_NAME" "$TFVARS_PATH"
+    upsert_tfvar compute_shape "$SHAPE" "$TFVARS_PATH"
+    upsert_tfvar_raw compute_ocpus "$OCPU_COUNT" "$TFVARS_PATH"
+    upsert_tfvar_raw compute_memory_gb "$MEMORY_GB" "$TFVARS_PATH"
+    assign_public_ip="$(is_true "$ASSIGN_PUBLIC_IP" && echo "true" || echo "false")"
+    export TF_VAR_assign_public_ip="$assign_public_ip"
+    upsert_tfvar_raw assign_public_ip "$assign_public_ip" "$TFVARS_PATH"
+    upsert_tfvar ssh_public_key "$RESOLVED_SSH_PUBLIC_KEY" "$TFVARS_PATH"
+    log_success "Terraform compute inputs resolved"
+
+    resolve_image_compartment_id
+    export TF_VAR_image_compartment_id="$RESOLVED_IMAGE_COMPARTMENT_ID"
+    export TF_VAR_image_operating_system="$IMAGE_OS"
+    export TF_VAR_image_operating_system_version="$IMAGE_OS_VERSION"
+    upsert_tfvar image_compartment_id "$RESOLVED_IMAGE_COMPARTMENT_ID" "$TFVARS_PATH"
+    upsert_tfvar image_operating_system "$IMAGE_OS" "$TFVARS_PATH"
+    upsert_tfvar image_operating_system_version "$IMAGE_OS_VERSION" "$TFVARS_PATH"
+    log_success "Terraform image lookup inputs resolved"
+
+    resolve_extra_volume_config
+    export TF_VAR_extra_block_volume_enabled="$(is_true "$RESOLVED_EXTRA_VOLUME_ENABLED" && echo "true" || echo "false")"
+    export TF_VAR_extra_block_volume_size_gbs="$RESOLVED_EXTRA_VOLUME_SIZE_GBS"
+    export TF_VAR_extra_block_volume_vpus_per_gb="$RESOLVED_EXTRA_VOLUME_VPUS_PER_GB"
+    export TF_VAR_extra_block_volume_device="$RESOLVED_EXTRA_VOLUME_DEVICE"
+    upsert_tfvar_raw extra_block_volume_enabled "$TF_VAR_extra_block_volume_enabled" "$TFVARS_PATH"
+    upsert_tfvar_raw extra_block_volume_size_gbs "$RESOLVED_EXTRA_VOLUME_SIZE_GBS" "$TFVARS_PATH"
+    upsert_tfvar_raw extra_block_volume_vpus_per_gb "$RESOLVED_EXTRA_VOLUME_VPUS_PER_GB" "$TFVARS_PATH"
+    upsert_tfvar extra_block_volume_device "$RESOLVED_EXTRA_VOLUME_DEVICE" "$TFVARS_PATH"
+    log_success "Terraform data-volume inputs resolved"
 }
 
 get_terraform_output_raw() {
@@ -688,9 +730,9 @@ ${YELLOW}USAGE:${NC}
 
 ${YELLOW}COMMANDS:${NC}
     menu                 Interactive deployment menu (scratch setup, review/fix, CIDR management, ideas)
-    full                 Fancy end-to-end flow (Terraform + compute + Ansible + verify)
-    provision            Create/start compute and attach volume only (no code upload, no Ansible)
-    compute              Create/start instance and deploy local code (default)
+    full                 End-to-end flow (Terraform infra + Ansible app + verify)
+    provision            Legacy OCI-CLI create/start compute and attach volume only (no code upload, no Ansible)
+    compute              Legacy OCI-CLI create/start instance and deploy local code (default)
     status               Check current deployment status
     verify               Run end-to-end verification against the deployed dashboard and API
     logs                 Show SSH commands to inspect logs
@@ -714,8 +756,8 @@ ${YELLOW}COMMON ENV:${NC}
     OCI_IMAGE_COMPARTMENT_ID   Optional image compartment override (defaults to profile tenancy)
     OCI_IMAGE_OS               OS image family (default: Oracle Linux)
     OCI_IMAGE_OS_VERSION       OS major version (default: 9)
-    OCI_SUBNET_ID              Subnet OCID (recommended)
-    OCI_VCN_ID                 Optional if auto-selecting subnet
+    OCI_SUBNET_ID              Legacy compute/provision subnet override
+    OCI_VCN_ID                 Legacy compute/provision VCN auto-selection override
     OCI_ASSIGN_PUBLIC_IP       true/false (default: true)
     OCI_SSH_PRIVATE_KEY_PATH   Private key path for SSH/SCP
     OCI_SSH_PUBLIC_KEY_PATH    Public key path for instance metadata
@@ -733,10 +775,10 @@ ${YELLOW}COMMON ENV:${NC}
 
 ${YELLOW}EXAMPLE:${NC}
     export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..<compartment_ocid>
-    export OCI_SUBNET_ID=ocid1.subnet.oc1...
     export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
+    export OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
     export OCI_PROFILE=DEFAULT
-    ./deploy/deploy-oci.sh compute
+    ./deploy/deploy-oci.sh full
 EOF
 }
 
@@ -1275,6 +1317,76 @@ deploy_compute() {
     log_success "End-to-end compute deploy time: $(format_duration "$deploy_elapsed")"
 }
 
+resolve_terraform_managed_instance() {
+    CURRENT_INSTANCE_ID="$(get_terraform_output_raw instance_id)"
+    CURRENT_PUBLIC_IP="$(get_terraform_output_raw instance_public_ip)"
+    CURRENT_AVAILABILITY_DOMAIN="$(get_terraform_output_raw instance_availability_domain)"
+
+    if [[ -z "$CURRENT_INSTANCE_ID" || "$CURRENT_INSTANCE_ID" == "null" ]]; then
+        log_error "Terraform output instance_id is empty."
+        log_info "Run ./deploy/deploy-oci.sh full and apply the Terraform plan, or inspect: terraform -chdir=terraform output"
+        exit 1
+    fi
+
+    if [[ -z "$CURRENT_PUBLIC_IP" || "$CURRENT_PUBLIC_IP" == "null" ]]; then
+        log_error "Terraform output instance_public_ip is empty."
+        log_info "Ensure assign_public_ip=true and the public subnet allows public VNICs."
+        exit 1
+    fi
+
+    log_success "Terraform-managed instance: $CURRENT_INSTANCE_ID"
+    log_success "Terraform-managed public IP: $CURRENT_PUBLIC_IP"
+}
+
+show_end_to_end_summary() {
+    local title="$1"
+    local elapsed="$2"
+    local nginx_enabled="$3"
+
+    log_step "$title"
+    log_success "Infrastructure: Terraform applied VCN, subnet, security list, compute, and optional data volume."
+    log_success "Configuration: Ansible installed packages, deployed source, rendered runtime env, built UI, ran migrations, and started services."
+    log_success "Verification: local service health checks completed during Ansible; use ./deploy/deploy-oci.sh verify for the laptop smoke gate."
+
+    if is_true "$nginx_enabled"; then
+        log_success "Dashboard: http://$CURRENT_PUBLIC_IP/dashboard"
+        log_success "AI insights: http://$CURRENT_PUBLIC_IP/dashboard/ai-insights"
+        log_success "Cost advisor: http://$CURRENT_PUBLIC_IP/dashboard/cost-advisor"
+        log_success "API health: http://$CURRENT_PUBLIC_IP/health"
+        log_info "Front door: nginx on 80/443; direct 3000/8000 ports stay closed by default."
+    else
+        log_success "Dashboard: http://$CURRENT_PUBLIC_IP:3000/dashboard"
+        log_success "AI insights: http://$CURRENT_PUBLIC_IP:3000/dashboard/ai-insights"
+        log_success "Cost advisor: http://$CURRENT_PUBLIC_IP:3000/dashboard/cost-advisor"
+        log_success "API health: http://$CURRENT_PUBLIC_IP:8000/health"
+        log_info "Front door: direct dashboard/API ports."
+    fi
+
+    log_info "SSH: ${REMOTE_USER}@${CURRENT_PUBLIC_IP}"
+    log_info "API logs: sudo journalctl -u optiora-api -n 100 --no-pager"
+    log_info "UI logs:  sudo journalctl -u optiora-dashboard -n 100 --no-pager"
+    log_success "End-to-end deploy time: $(format_duration "$elapsed")"
+}
+
+deploy_terraform_managed_compute() {
+    local deploy_started_at
+    local deploy_elapsed
+    local nginx_enabled
+
+    deploy_started_at=$(date +%s)
+    nginx_enabled="${OCI_ENABLE_NGINX:-true}"
+
+    resolve_ssh_credentials
+    resolve_extra_volume_config
+    resolve_terraform_managed_instance
+    wait_for_ssh "$CURRENT_PUBLIC_IP"
+    sync_local_project "$CURRENT_PUBLIC_IP" false
+    run_ansible_playbook_for_instance "$CURRENT_PUBLIC_IP"
+
+    deploy_elapsed=$(( $(date +%s) - deploy_started_at ))
+    show_end_to_end_summary "Terraform + Ansible Deployment Complete" "$deploy_elapsed" "$nginx_enabled"
+}
+
 provision_compute_only() {
     local provision_started_at
     local provision_elapsed
@@ -1567,7 +1679,7 @@ run_fancy_end_to_end_deploy() {
     local full_elapsed
 
     full_started_at=$(date +%s)
-    log_step "Fancy End-to-End Deploy (Terraform + Compute + Ansible)"
+    log_step "End-to-End Deploy (Terraform + Ansible)"
 
     configure_terraform_inputs
 
@@ -1575,18 +1687,18 @@ run_fancy_end_to_end_deploy() {
     run_terraform validate
     run_terraform plan -out=tfplan
 
-    if prompt_yes_no "Apply Terraform network baseline now?" true; then
+    if prompt_yes_no "Apply Terraform infrastructure baseline now?" true; then
         run_terraform apply tfplan
     else
         log_warning "Terraform apply skipped by user"
     fi
 
-    deploy_compute
+    deploy_terraform_managed_compute
     verify_deployment || true
 
     full_elapsed=$(( $(date +%s) - full_started_at ))
-    log_success "End-to-end full deploy time: $(format_duration "$full_elapsed")"
-    log_success "End-to-end deployment flow finished"
+    log_success "Terraform + Ansible full flow time: $(format_duration "$full_elapsed")"
+    log_success "End-to-end Terraform + Ansible deployment flow finished"
 }
 
 review_and_fix_deployment() {

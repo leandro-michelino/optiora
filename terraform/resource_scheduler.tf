@@ -5,6 +5,10 @@ locals {
     purpose     = "weekday-start-stop"
     timezone    = "Europe/Madrid"
   }
+  resource_scheduler_target_resource_ids = distinct(compact(concat(
+    var.resource_scheduler_resource_ids,
+    var.compute_enabled ? [oci_core_instance.optiora[0].id] : []
+  )))
 }
 
 resource "oci_resource_scheduler_schedule" "weekday_start" {
@@ -22,7 +26,7 @@ resource "oci_resource_scheduler_schedule" "weekday_start" {
   freeform_tags      = local.resource_scheduler_tags
 
   dynamic "resources" {
-    for_each = toset(var.resource_scheduler_resource_ids)
+    for_each = toset(local.resource_scheduler_target_resource_ids)
     content {
       id = resources.value
     }
@@ -30,8 +34,8 @@ resource "oci_resource_scheduler_schedule" "weekday_start" {
 
   lifecycle {
     precondition {
-      condition     = length(var.resource_scheduler_resource_ids) > 0
-      error_message = "Set resource_scheduler_resource_ids to one or more target resource OCIDs before enabling Resource Scheduler."
+      condition     = length(local.resource_scheduler_target_resource_ids) > 0
+      error_message = "Set resource_scheduler_resource_ids to one or more target resource OCIDs, or enable Terraform-managed compute, before enabling Resource Scheduler."
     }
   }
 }
@@ -51,7 +55,7 @@ resource "oci_resource_scheduler_schedule" "weekday_stop" {
   freeform_tags      = local.resource_scheduler_tags
 
   dynamic "resources" {
-    for_each = toset(var.resource_scheduler_resource_ids)
+    for_each = toset(local.resource_scheduler_target_resource_ids)
     content {
       id = resources.value
     }
@@ -59,8 +63,8 @@ resource "oci_resource_scheduler_schedule" "weekday_stop" {
 
   lifecycle {
     precondition {
-      condition     = length(var.resource_scheduler_resource_ids) > 0
-      error_message = "Set resource_scheduler_resource_ids to one or more target resource OCIDs before enabling Resource Scheduler."
+      condition     = length(local.resource_scheduler_target_resource_ids) > 0
+      error_message = "Set resource_scheduler_resource_ids to one or more target resource OCIDs, or enable Terraform-managed compute, before enabling Resource Scheduler."
     }
   }
 }

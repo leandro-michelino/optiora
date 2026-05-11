@@ -2,6 +2,20 @@ compartment_id = "ocid1.compartment.oc1..<compartment_ocid>"
 region         = "uk-london-1"
 oci_object_storage_namespace = "your_object_storage_namespace"
 
+# Terraform-managed OptiOra application host. The deploy script fills
+# ssh_public_key and image_compartment_id automatically from your local
+# SSH/OCI profile when you run ./deploy/deploy-oci.sh full.
+compute_enabled = true
+instance_name = "optiora-api"
+compute_shape = "VM.Standard.E4.Flex"
+compute_ocpus = 2
+compute_memory_gb = 8
+assign_public_ip = true
+ssh_public_key = "ssh-ed25519 AAAA... optiora-deploy"
+image_compartment_id = "ocid1.tenancy.oc1..<tenancy_ocid>"
+image_operating_system = "Oracle Linux"
+image_operating_system_version = "9"
+
 # Extra app/data disk. 200 GiB balanced is the recommended default so the
 # database, imports, exports, and dashboard build artifacts do not sit on the
 # small boot volume.

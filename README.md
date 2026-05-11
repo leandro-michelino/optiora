@@ -74,10 +74,10 @@ Deployment flow:
 Local workspace
         |
         +--> Terraform
-        |     +--> OCI network baseline and optional scheduler resources
+        |     +--> OCI network, compute, data volume, archive bucket, scheduler
         |
         +--> deploy/deploy-oci.sh
-              +--> compute create/start
+              +--> read Terraform instance outputs
               +--> source archive upload
               +--> Ansible provisioning
               +--> dashboard build + backend venv
@@ -142,7 +142,7 @@ If no real source exists, the application surfaces an explicit empty or unavaila
 |-- finops_mcp/              FastAPI backend, analytics, auth, provider integrations
 |-- dashboard/               Next.js dashboard and e2e tests
 |-- deploy/deploy-oci.sh     OCI deployment and operations entrypoint
-|-- terraform/               OCI network baseline and optional scheduler resources
+|-- terraform/               OCI network, compute, data volume, archive bucket, scheduler resources
 |-- ansible/                 Oracle Linux host provisioning and service templates
 |-- tests/                   Backend, smoke, live-data, and deployment checks
 |-- scripts/                 Local bootstrap, cleanup, evidence, and wiring helpers
@@ -213,10 +213,15 @@ Recommended guided deployment:
 ./deploy/deploy-oci.sh menu
 ```
 
+Recommended direct end-to-end deployment:
+
+```bash
+./deploy/deploy-oci.sh full
+```
+
 Common direct operations:
 
 ```bash
-./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
 ./deploy/deploy-oci.sh logs
@@ -229,10 +234,10 @@ Recommended release order:
 terraform init/validate/plan
         |
         v
-optional terraform apply
+terraform apply
         |
         v
-deploy-oci.sh compute or full
+Ansible provisioning from deploy-oci.sh full
         |
         v
 deploy-oci.sh verify

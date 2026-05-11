@@ -1,6 +1,6 @@
 # OptiOra Deployment Guide (OCI)
 
-Current as of May 10, 2026.
+Current as of May 11, 2026.
 
 This repository deploys two services onto one OCI compute instance:
 
@@ -11,15 +11,15 @@ Production/runtime policy: **OCI only**. On-premises execution is disabled until
 
 Deployment can be done two ways:
 
-- `deploy/deploy-oci.sh` for a single laptop-driven command that creates/starts compute, uploads code, installs dependencies, and restarts services on the latest Oracle Linux 9 platform image for the selected shape.
-- Terraform plus Ansible, where Terraform stays limited to OCI network infrastructure and Ansible provisions the host/runtime on Oracle Linux hosts only.
+- `./deploy/deploy-oci.sh full` for the recommended end-to-end Terraform + Ansible path: Terraform creates/updates OCI infrastructure, then Ansible provisions the host/runtime.
+- `./deploy/deploy-oci.sh compute` for legacy redeploys against an existing OCI-CLI-managed VM.
 
 The quick deploy path now runs the application under the dedicated `optiora` system user instead of `root`.
 
 Choose the path that matches your deployment style:
 
-- `./deploy/deploy-oci.sh compute`: fast redeploy workflow for a single VM from your laptop.
-- `./deploy/deploy-oci.sh full`: full end-to-end flow (Terraform + compute provisioning + extra block volume + Ansible + verify).
+- `./deploy/deploy-oci.sh full`: full end-to-end flow (Terraform infrastructure + Ansible runtime + verify).
+- `./deploy/deploy-oci.sh compute`: legacy OCI-CLI VM redeploy workflow.
 - `./deploy/deploy-oci.sh menu`: interactive operations menu with setup/review/CIDR management ideas.
 
 By default, deployed dashboards are directly accessible with no login wall. Authentication and RBAC are optional hardening features for a later deployment phase and should only be enabled intentionally.
@@ -35,14 +35,14 @@ For `./deploy/deploy-oci.sh full` (and menu option `1`), the execution order is:
 1. Validate local prerequisites and OCI credentials.
 2. Run Terraform `init`, `validate`, and `plan`.
 3. Optionally run Terraform `apply` (prompted).
-4. Read Terraform `public_subnet_id`/`vcn_id` outputs when available so compute is launched into the just-applied network baseline.
-5. Create or reuse compute instance and ensure it is `RUNNING`.
-6. Attach extra block volume when enabled.
+4. Terraform creates/updates VCN, subnet, security list, Object Storage archive bucket, compute instance, and optional data volume attachment.
+5. Read Terraform `instance_id`, `instance_public_ip`, availability-domain, and data-volume outputs.
+6. Wait for SSH on the Terraform-managed VM.
 7. Upload local source archive to the VM.
-8. Run Ansible provisioning (packages, venv, dashboard build, `.env`, systemd units, migrations).
-9. Run end-to-end verification (`tests/smoke_test_0_9.sh`).
+8. Run Ansible provisioning (packages, venv, dashboard build, `.env`, systemd units, nginx, migrations, health checks).
+9. Print the Terraform + Ansible completion summary and run end-to-end verification (`tests/smoke_test_0_9.sh`).
 
-For `./deploy/deploy-oci.sh compute`, Terraform execution is skipped, but existing Terraform outputs are still used for subnet/VCN resolution before falling back to OCI auto-discovery.
+For `./deploy/deploy-oci.sh compute`, Terraform execution is skipped. Keep this only for older OCI-CLI-managed hosts or emergency redeploys.
 
 ## Recommended End-to-End Setup (Interactive)
 
@@ -56,14 +56,13 @@ What the deploy script does for a fresh environment:
 
 - checks core tooling and local prerequisites
 - resolves required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`) from `TF_VAR_*`, `terraform/terraform.tfvars`, OCI CLI auto-detection where possible, or prompts
-- writes/updates `terraform/terraform.tfvars` so Terraform and OCI CLI use the same target
+- writes/updates `terraform/terraform.tfvars` so Terraform owns the target infrastructure
 - runs `terraform init`, `terraform validate`, `terraform plan`
 - optionally runs `terraform apply`
-- wires the compute launch to Terraform `public_subnet_id`/`vcn_id` outputs when present
-- creates or reuses the OCI compute instance
-- creates and attaches an extra OCI block volume when enabled in `terraform.tfvars`
+- creates or updates the OCI compute instance through Terraform
+- creates and attaches an extra OCI block volume through Terraform when enabled in `terraform.tfvars`
 - uploads the source archive and runs Ansible provisioning automatically
-- prints a deployment summary with dashboard/API URLs
+- prints a deployment summary with Terraform-owned infrastructure, Ansible runtime actions, dashboard/API URLs, verification command, and log commands
 - auto-selects direct-port (`:3000/:8000`) or front-door (`:80/:443`) targets when running `verify`
 
 Recommended extra block volume size: `200 GiB` with `10 VPUs/GB` (balanced). That is the default in the example tfvars and the recommended production baseline.
@@ -151,7 +150,9 @@ ansible-playbook -i ansible/inventory.yml ansible/playbooks/site.yml
 ```bash
 export OCI_REGION=uk-london-1
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..<compartment_ocid>
-./deploy/deploy-oci.sh compute
+export OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
+export OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
+./deploy/deploy-oci.sh full
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
 ```
@@ -168,7 +169,6 @@ OCI_PRIVATE_KEY_PATH="$HOME/.oci/oci_api_key.pem" \
 OCI_REGION='uk-london-1' \
 OCI_COMPARTMENT_ID='ocid1.compartment.oc1..<compartment_ocid>' \
 OCI_IMAGE_COMPARTMENT_ID='ocid1.tenancy.oc1..<tenancy_ocid>' \
-OCI_SUBNET_ID='ocid1.subnet.oc1..<subnet_ocid>' \
 OCI_SSH_PUBLIC_KEY_PATH="$HOME/.ssh/optiora-deploy.pub" \
 OCI_SSH_PRIVATE_KEY_PATH="$HOME/.ssh/optiora-deploy" \
 OCI_PROFILE='DEFAULT' \
@@ -185,7 +185,7 @@ OCI_PROFILE='DEFAULT' \
 - If using the deploy script, export the vars (or add to inventory/group_vars for Ansible) so they render into the remote `.env`.
 - After deploy, test AI chat via the dashboard or with a JSON `POST` to `/api/ai/chat`.
 
-Re-run `./deploy/deploy-oci.sh compute` after local code changes. The script always redeploys the current local workspace snapshot.
+Re-run `./deploy/deploy-oci.sh full` after local code changes. Terraform should usually report no infrastructure changes, then Ansible redeploys the current local workspace snapshot.
 
 `./deploy/deploy-oci.sh verify` resolves the deployed instance IP and runs `tests/smoke_test_0_9.sh` against the live dashboard/API pair.
 By default the smoke test does not upload CSV data, so a live environment remains backed only by provider APIs, saved scan snapshots, or customer-imported files. Set `SMOKE_ENABLE_CSV_IMPORT=true` only when you intentionally want to exercise the CSV import path with temporary smoke data.
@@ -211,14 +211,14 @@ Rightsizing live refresh note:
 - When `Live provider scan` is enabled, the dashboard allows up to `120s` for provider-native rightsizing collection.
 - The current OCI deployment has returned broad OCI live rightsizing scans in roughly `50s`, with hundreds of recommendations. If an operator sees a fallback banner, first check provider/API latency and then use the stored results while investigating logs.
 
-The same script also manages the extra block volume. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
+The same script also manages the extra block volume through Terraform. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
 
 ### End-to-end deployment timing
 
 The deploy script now prints total runtime at the end of each deployment run:
 
 - `End-to-end compute deploy time: ...`
-- `End-to-end full deploy time: ...`
+- `Terraform + Ansible full flow time: ...`
 
 Observed run on **May 1, 2026** (warm compute redeploy to an existing `RUNNING` VM, shape `VM.Standard.E4.Flex` with `1 OCPU / 4 GB`, no extra data volume):
 
@@ -251,6 +251,7 @@ sudo systemctl status optiora-dashboard
 
 - uploads your local workspace snapshot (no VM-side git clone)
 - excludes local-only artifacts from the deployment archive, including virtualenvs, dashboard builds, `node_modules`, test reports, Terraform state/tfvars, local databases, logs, and scratch/evidence folders
+- reads Terraform outputs for the VM, public IP, and attached data device before the Ansible handoff
 - runs Ansible provisioning on Oracle Linux
 - removes stale generated dashboard/cache/Terraform artifacts from previous deployments before unpacking the new source archive
 - renders `/opt/optiora/.env` from Ansible template values (including `FRONTEND_URL`, `NEXT_PUBLIC_API_URL`, GenAI/runtime settings)
@@ -291,9 +292,9 @@ finance edits are visible on the next page refresh.
 ## Command Reference
 
 ```bash
-./deploy/deploy-oci.sh compute
 ./deploy/deploy-oci.sh full
 ./deploy/deploy-oci.sh menu
+./deploy/deploy-oci.sh compute    # legacy OCI-CLI-managed VM redeploy
 ./deploy/deploy-oci.sh status
 ./deploy/deploy-oci.sh verify
 ./deploy/deploy-oci.sh logs
@@ -308,7 +309,7 @@ finance edits are visible on the next page refresh.
 Generate one dated artifact bundle that records the exact commands and outputs used for release-gate proof:
 
 ```bash
-EVIDENCE_DEPLOY_CMD="./deploy/deploy-oci.sh compute" \
+EVIDENCE_DEPLOY_CMD="./deploy/deploy-oci.sh full" \
 EVIDENCE_MIGRATION_CMD="cd /opt/optiora && ./venv/bin/alembic upgrade head" \
 EVIDENCE_SMOKE_CMD="./deploy/deploy-oci.sh verify" \
 EVIDENCE_LIVE_CREDENTIAL_CMD="SMOKE_CREDENTIAL_JSON='{\"provider\":\"aws\",\"access_key_id\":\"...\",\"secret_access_key\":\"...\",\"region\":\"us-east-1\"}' ./deploy/deploy-oci.sh verify" \
@@ -333,7 +334,6 @@ OCI_SHAPE=VM.Standard.E4.Flex
 OCI_OCPU_COUNT=2
 OCI_MEMORY_GB=8
 OCI_PROFILE=DEFAULT
-OCI_SUBNET_ID=ocid1.subnet.oc1...               # run: terraform -chdir=terraform output public_subnet_id
 OCI_SSH_PRIVATE_KEY_PATH=~/.ssh/optiora-deploy
 OCI_SSH_PUBLIC_KEY_PATH=~/.ssh/optiora-deploy.pub
 ```
@@ -423,10 +423,10 @@ SECRET_KEY=<strong-random-value>
 ## Post-Deployment Validation
 
 ```bash
-curl http://<instance-ip>:8000/health
-curl http://<instance-ip>:8000/api/v1/info
-curl http://<instance-ip>:3000
-curl -X POST http://<instance-ip>:3000/api/ai/chat \
+curl http://<instance-ip>/health
+curl http://<instance-ip>/api/v1/info
+curl http://<instance-ip>/dashboard
+curl -X POST http://<instance-ip>/api/ai/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Summarize the main cost drivers in this workspace.","conversationHistory":[]}'
 ./deploy/deploy-oci.sh verify
@@ -435,16 +435,16 @@ curl -X POST http://<instance-ip>:3000/api/ai/chat \
 Forecasting and analytics validation (budget-aware FinOps model):
 
 ```bash
-curl "http://<instance-ip>:8000/api/v1/forecast" | jq '.model, .forecast_summary, .budget_guardrails'
-curl "http://<instance-ip>:8000/api/v1/analytics" | jq '.risk_score, .maturity_score, .spend_at_risk_usd, .optimization_capacity_usd, .unit_metrics'
+curl "http://<instance-ip>/api/v1/forecast" | jq '.model, .forecast_summary, .budget_guardrails'
+curl "http://<instance-ip>/api/v1/analytics" | jq '.risk_score, .maturity_score, .spend_at_risk_usd, .optimization_capacity_usd, .unit_metrics'
 ```
 
 GenAI validation (works for small/default/enterprise profiles and for direct/nginx exposure):
 
 ```bash
-curl "http://<instance-ip>:8000/api/v1/advisor/hybrid?narrative_type=optimization_roadmap" \
+curl "http://<instance-ip>/api/v1/advisor/hybrid?narrative_type=optimization_roadmap" \
   | jq '.advisory.genai_configured, .advisory.fallback_mode, .advisory.prompt'
-curl -X POST "http://<instance-ip>:8000/api/v1/genai/analyze" \
+curl -X POST "http://<instance-ip>/api/v1/genai/analyze" \
   -H "Content-Type: application/json" \
   -d '{"analysis_type":"spend","context":{"current_monthly_spend_usd":1000,"estimated_monthly_waste_usd":120,"identified_monthly_savings_usd":80,"risk_score":32}}' \
   | jq '.genai_configured, .fallback_mode, .prompt'
@@ -453,12 +453,12 @@ curl -X POST "http://<instance-ip>:8000/api/v1/genai/analyze" \
 Optional scheduler smoke test (authenticated mode with owner/admin role):
 
 ```bash
-curl -X POST http://<instance-ip>:8000/api/v1/scanning/scheduler/run-now
+curl -X POST http://<instance-ip>/api/v1/scanning/scheduler/run-now
 ```
 
 Manual product checks:
 
-1. Open `http://<instance-ip>:3000/dashboard` and confirm the dashboard opens directly with no login wall.
+1. Open `http://<instance-ip>/dashboard` and confirm the dashboard opens directly with no login wall.
 2. Upload a UTF-8 billing CSV from the settings page and confirm the imported dataset summary updates.
 3. Confirm the costs overview reflects the imported CSV totals.
 4. If live provider validation is in scope, add one cloud provider credential and confirm the automatic scan starts.
@@ -574,9 +574,9 @@ ssh-keygen -t ed25519 -f ~/.ssh/optiora-deploy -N '' -C 'optiora-deploy'
 ```text
 Developer Laptop
    |
-   | Terraform network baseline
+   | Terraform infrastructure baseline
    | Ansible host provisioning
-   | or deploy/deploy-oci.sh compute
+   | via deploy/deploy-oci.sh full
    v
 OCI VM
 ├── /opt/optiora

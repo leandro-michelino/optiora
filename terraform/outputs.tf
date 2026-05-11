@@ -43,6 +43,56 @@ output "cost_archive_bucket_namespace" {
   description = "OCI Object Storage namespace for the archive bucket."
 }
 
+output "compute_enabled" {
+  value       = var.compute_enabled
+  description = "Whether Terraform manages the OptiOra compute instance."
+}
+
+output "instance_id" {
+  value       = try(oci_core_instance.optiora[0].id, null)
+  description = "OCID of the Terraform-managed OptiOra compute instance."
+}
+
+output "instance_name" {
+  value       = var.instance_name
+  description = "Display name of the OptiOra compute instance."
+}
+
+output "instance_availability_domain" {
+  value       = try(oci_core_instance.optiora[0].availability_domain, null)
+  description = "Availability domain of the OptiOra compute instance."
+}
+
+output "instance_public_ip" {
+  value       = try(oci_core_instance.optiora[0].public_ip, null)
+  description = "Public IP of the OptiOra compute instance."
+}
+
+output "instance_private_ip" {
+  value       = try(oci_core_instance.optiora[0].private_ip, null)
+  description = "Private IP of the OptiOra compute instance."
+}
+
+output "compute_image_id" {
+  value       = var.compute_enabled ? local.compute_image_id : null
+  description = "Oracle Linux image OCID selected for the OptiOra compute instance."
+}
+
+output "ansible_inventory" {
+  value       = <<-EOT
+    all:
+      children:
+        optiora:
+          hosts:
+            optiora-prod:
+              ansible_host: ${try(oci_core_instance.optiora[0].public_ip, "")}
+              ansible_user: opc
+              ansible_ssh_private_key_file: ~/.ssh/optiora-deploy
+              optiora_data_device: ${var.extra_block_volume_enabled ? var.extra_block_volume_device : ""}
+  EOT
+  description = "Ready-to-copy Ansible inventory skeleton for the Terraform-managed OptiOra host."
+}
+
 output "extra_block_volume_enabled" {
   value       = var.extra_block_volume_enabled
   description = "Whether the deployment flow will create and attach an extra OCI block volume."
@@ -58,13 +108,23 @@ output "extra_block_volume_device" {
   description = "Expected device path for the extra OCI block volume on the VM."
 }
 
+output "extra_block_volume_id" {
+  value       = try(oci_core_volume.optiora_data[0].id, null)
+  description = "OCID of the Terraform-managed OptiOra data volume."
+}
+
+output "extra_block_volume_attachment_id" {
+  value       = try(oci_core_volume_attachment.optiora_data[0].id, null)
+  description = "OCID of the Terraform-managed OptiOra data volume attachment."
+}
+
 output "resource_scheduler_enabled" {
   value       = var.resource_scheduler_enabled
   description = "Whether OCI Resource Scheduler start/stop schedules are enabled."
 }
 
 output "resource_scheduler_target_resource_ids" {
-  value       = var.resource_scheduler_resource_ids
+  value       = local.resource_scheduler_target_resource_ids
   description = "Resource OCIDs targeted by OCI Resource Scheduler."
 }
 
@@ -87,30 +147,33 @@ output "next_step_banner" {
   value       = <<-EOT
 
     ============================================================
-    OptiOra OCI network baseline is ready
+    OptiOra OCI Terraform baseline is ready
     ============================================================
 
     VCN:               ${oci_core_vcn.main.id}
     Public subnet:     ${oci_core_subnet.public.id}
     Primary region:    ${var.region}
+    Compute managed:   ${var.compute_enabled}
+    Instance:          ${try(oci_core_instance.optiora[0].id, "not created by Terraform")}
+    Public IP:         ${try(oci_core_instance.optiora[0].public_ip, "not assigned yet")}
     Allowed ingress:   ${join(", ", distinct(concat([var.laptop_cidr], var.allowed_public_ingress_cidrs)))}
     Direct app ports:  ${var.allow_direct_app_ingress}
     Web ports 80/443:  ${var.allow_web_ingress}
     Extra data volume: ${var.extra_block_volume_enabled} (${var.extra_block_volume_size_gbs} GiB @ ${var.extra_block_volume_device})
-    Resource schedule: ${var.resource_scheduler_enabled ? "enabled for ${length(var.resource_scheduler_resource_ids)} resource(s)" : "disabled"}
+    Resource schedule: ${var.resource_scheduler_enabled ? "enabled for ${length(local.resource_scheduler_target_resource_ids)} resource(s)" : "disabled"}
     Egress:            ${var.egress_cidr}
 
     Next:
-      1. Run ./deploy/deploy-oci.sh full
-      2. Or run ./deploy/deploy-oci.sh compute against an existing network baseline
-      3. Use ./deploy/deploy-oci.sh verify after provisioning completes
+      1. Run ./deploy/deploy-oci.sh full to apply Terraform and run Ansible end to end
+      2. Use ./deploy/deploy-oci.sh verify after provisioning completes
+      3. Use ./deploy/deploy-oci.sh compute only for legacy OCI-CLI VM redeploys
 
     After Ansible finishes:
-      Dashboard:       ${var.allow_web_ingress ? "http://<instance-ip>/dashboard" : "http://<instance-ip>:3000/dashboard"}
-      AI hub:          ${var.allow_web_ingress ? "http://<instance-ip>/dashboard/ai-insights" : "http://<instance-ip>:3000/dashboard/ai-insights"}
-      Cost advisor:    ${var.allow_web_ingress ? "http://<instance-ip>/dashboard/cost-advisor" : "http://<instance-ip>:3000/dashboard/cost-advisor"}
-      API health:      ${var.allow_web_ingress ? "http://<instance-ip>/health" : "http://<instance-ip>:8000/health"}
-      API info:        ${var.allow_web_ingress ? "http://<instance-ip>/api/v1/info" : "http://<instance-ip>:8000/api/v1/info"}
+      Dashboard:       ${var.allow_web_ingress ? "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}/dashboard" : "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}:3000/dashboard"}
+      AI hub:          ${var.allow_web_ingress ? "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}/dashboard/ai-insights" : "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}:3000/dashboard/ai-insights"}
+      Cost advisor:    ${var.allow_web_ingress ? "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}/dashboard/cost-advisor" : "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}:3000/dashboard/cost-advisor"}
+      API health:      ${var.allow_web_ingress ? "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}/health" : "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}:8000/health"}
+      API info:        ${var.allow_web_ingress ? "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}/api/v1/info" : "http://${try(oci_core_instance.optiora[0].public_ip, "<instance-ip>")}:8000/api/v1/info"}
       OCI GenAI:       https://inference.generativeai.${var.region}.oci.oraclecloud.com
 
   EOT

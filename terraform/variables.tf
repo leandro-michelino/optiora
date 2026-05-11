@@ -79,6 +79,73 @@ variable "oci_object_storage_namespace" {
   type        = string
 }
 
+variable "compute_enabled" {
+  description = "Create the OptiOra OCI compute instance as part of the Terraform baseline."
+  type        = bool
+  default     = false
+}
+
+variable "instance_name" {
+  description = "Display name for the OptiOra compute instance."
+  type        = string
+  default     = "optiora-api"
+}
+
+variable "compute_shape" {
+  description = "OCI compute shape for the OptiOra application host."
+  type        = string
+  default     = "VM.Standard.E4.Flex"
+}
+
+variable "compute_ocpus" {
+  description = "OCPU count for flexible compute shapes."
+  type        = number
+  default     = 2
+}
+
+variable "compute_memory_gb" {
+  description = "Memory in GiB for flexible compute shapes."
+  type        = number
+  default     = 8
+}
+
+variable "compute_availability_domain" {
+  description = "Optional availability domain name for the compute instance. Defaults to the first AD in the tenancy."
+  type        = string
+  default     = ""
+}
+
+variable "assign_public_ip" {
+  description = "Assign a public IP to the OptiOra compute instance VNIC."
+  type        = bool
+  default     = true
+}
+
+variable "ssh_public_key" {
+  description = "SSH public key authorized on the OptiOra compute instance."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "image_compartment_id" {
+  description = "Compartment OCID used for platform image lookup. For Oracle platform images this is normally the tenancy OCID."
+  type        = string
+  default     = ""
+}
+
+variable "image_operating_system" {
+  description = "Operating system family for the compute image."
+  type        = string
+  default     = "Oracle Linux"
+}
+
+variable "image_operating_system_version" {
+  description = "Operating system version for the compute image."
+  type        = string
+  default     = "9"
+}
+
 variable "extra_block_volume_enabled" {
   description = "Whether the single deploy script should create and attach an extra OCI block volume for app and database data."
   type        = bool

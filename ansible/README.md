@@ -1,6 +1,6 @@
 # OptiOra Ansible Provisioning
 
-Terraform stays limited to OCI infrastructure primitives: VCN, subnet, route table, internet gateway, and security list. Ansible owns host provisioning and application runtime configuration.
+Terraform owns OCI infrastructure primitives: VCN, subnet, route table, internet gateway, security list, Object Storage archive bucket, compute instance, optional data volume attachment, and optional Resource Scheduler resources. Ansible owns host provisioning and application runtime configuration.
 
 Primary OCI region defaults to `uk-london-1` so the deployed stack can lean on OCI GenAI by default.
 Ansible-driven runtime compartment values are intentionally blank in versioned defaults. The deploy script passes the resolved `OCI_COMPARTMENT_ID` into the temporary Ansible vars file, and manual runs should provide real OCIDs through inventory, vault, or extra vars.
@@ -11,14 +11,14 @@ Preferred end-to-end path:
 ./deploy/deploy-oci.sh menu
 ```
 
-The single deploy script generates the temporary inventory, applies Terraform when requested, creates/attaches the extra OCI data volume when enabled, uploads the source archive, and then runs this playbook automatically.
+The single deploy script generates the temporary inventory from Terraform outputs, applies Terraform when requested, uploads the source archive, and then runs this playbook automatically.
 
 Provisioning is Oracle Linux-only by policy. The playbook asserts `ansible_distribution == OracleLinux` before installing packages.
 Production service runtime is OCI-only by policy. The role renders `DEPLOYMENT_TARGET=oci` and `OCI_RUNTIME_REQUIRED=true`, and the API/dashboard systemd units include an OCI instance metadata `ExecStartPre` guard so they do not run on on-premises hosts.
 
 ## First Run
 
-1. Apply or otherwise create the OCI compute host.
+1. Apply Terraform or otherwise create the OCI compute host.
 2. Copy the inventory example and set the host IP if you are running Ansible manually:
 
 ```bash
