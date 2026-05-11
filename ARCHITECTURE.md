@@ -22,6 +22,8 @@ Current as of May 11, 2026.
 |                                                               |
 | Frontend GenAI path                                           |
 | - /api/ai/chat -> dashboard/lib/ai-service.ts -> OCI GenAI    |
+| - English-only Advisor Conversation until multilingual UX is  |
+|   intentionally re-enabled                                    |
 +-------+-------------------------------------------------------+
         |
         | REST /api/v1/*
@@ -402,8 +404,10 @@ champion / challenger backtest
 Path A: Frontend chat
   /api/ai/chat/route.ts
       -> dashboard/lib/ai-service.ts
+      -> deterministic FinOps/rightsizing handlers when possible
       -> OCI signed HTTP request
       -> OCI GenAI response
+      -> English response for current release
 
 Path B: Backend narrative generation
   finops_mcp/tools/genai_advisor.py
@@ -654,6 +658,44 @@ Aggregate rows remain valid for the broader provider recommendation feed and
 finance context. Resource candidate tables must use cloud-provider resource
 names only, so the Action Ledger OCI VM rail only displays real OCI Compute
 instances.
+
+## Advisor Conversation Resource Boundary
+
+```text
+/dashboard/cost-advisor
+    |
+    +--> Advisor Conversation
+          |
+          +--> POST /api/ai/chat
+                |
+                +--> dashboard/lib/ai-service.ts
+                      |
+                      +--> language policy
+                      |     - force English for now
+                      |     - ignore prior multilingual chat history for locale
+                      |
+                      +--> over-provisioning / rightsizing prompts
+                      |     |
+                      |     +--> /api/v1/recommendations/rightsizing?provider=oci
+                      |           required actionable candidate fields:
+                      |           - provider = oci
+                      |           - evidence_source = oci_compute_inventory
+                      |           - resource_id = ocid1.instance.*
+                      |
+                      +--> aggregate guard
+                            rejects:
+                            - ocid1.tenancy.*
+                            - oci-acct-*
+                            - resource_type containing aggregate or segment
+                            - cost_trend_analysis / service_cost_snapshot rows
+```
+
+The conversation is real and wired through the server-side chat API, but it is
+not allowed to promote account, tenancy, segment, or service-level summaries as
+actionable cloud resources. When the user asks about over-provisioning today,
+the supported answer scope is OCI VM rightsizing. Broader service-level spend
+hotspots can still appear as context, but they are not described as executable
+resource actions.
 
 ## Optimization Advisor Dashboard UX Wiring
 

@@ -1,10 +1,12 @@
 # Release Notes
 
-## Unreleased - Repository Hygiene and OCI VM Naming (May 11, 2026)
+## Unreleased - Advisor Conversation Grounding and OCI VM Naming (May 11, 2026)
 
 ### Changed
 
 - Documented the Action Ledger provider resource naming boundary so the OCI VM table only shows real OCI Compute instance display names, while account, tenancy, and service aggregates remain in broader recommendation context.
+- Documented the Cost Advisor conversation boundary: chat is wired through the real `/api/ai/chat` route, answers in English for now, and resolves rightsizing/over-provisioning prompts against OCI VM instance candidates instead of generic service/account summaries.
+- Cost Advisor prompt copy now asks for over-provisioned **OCI VMs** rather than over-provisioned services, matching the provider-backed evidence currently available.
 - Standardized Terraform validation guidance on tracked `.tf` files plus `terraform -chdir=terraform validate`, avoiding local `terraform.tfvars` formatting noise.
 - Cleanup scanning now skips Terraform provider cache directories before deleting generated infrastructure cache.
 
@@ -12,6 +14,8 @@
 
 - Removed the last tracked non-OCI deployment target fixture from configuration tests; negative validation now uses a generic unsupported cloud target while preserving the OCI VM-only runtime policy.
 - Fixed order-sensitive backend regression tests by force-refreshing cached reads after direct DB seeding and resolving the active organization id from the auth API instead of assuming `1`.
+- Fixed Advisor Conversation language drift where prior multilingual history could cause non-English replies. The route now forces English until multilingual UX is explicitly re-enabled.
+- Fixed Advisor Conversation resource grounding for OCI rightsizing questions by filtering out tenancy, account, segment, and service aggregate rows. Actionable OCI VM replies require `provider=oci`, `evidence_source=oci_compute_inventory`, and `resource_id=ocid1.instance.*`.
 
 ### Validation
 
@@ -25,6 +29,9 @@
 - `terraform -chdir=terraform validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
 - `./scripts/check-animated-svg-routes.sh`
+- `./deploy/deploy-oci.sh compute` against OCI VM `140.238.90.95`
+- `./deploy/deploy-oci.sh verify` (`48` passed, `0` failed, `3` skipped)
+- Live Advisor Conversation smoke on `http://140.238.90.95/api/ai/chat` with German conversation history plus `Which services are over-provisioned?`; response stayed in English and excluded tenancy/account/service aggregates.
 
 ## 0.9.2 - Advisor, Scorecards, Control Tower, and UIX Polish (May 10, 2026)
 

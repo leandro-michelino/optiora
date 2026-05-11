@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
+Current release: `0.9.2` dashboard wiring, advisor polish, Advisor Conversation OCI VM grounding, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
 Current documentation baseline: May 11, 2026.
 
 > **A quick, honest note:** OptiOra is still an active work in progress. The core platform, deployment path, and dashboard experiences are evolving quickly, but it is not being presented as a fully finished product yet. Some live-provider workflows depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not all available in my current test environments across every provider. If you are interested in running a real pilot, validating it with your cloud data, or shaping the next set of features, please get in touch.
@@ -107,6 +107,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 Recent UIX and wiring updates:
 
 - Cost Advisor chat now uses the server-side dashboard `/api/ai/chat` route to call OCI GenAI with signed requests and enriches answers with backend RAG guidance from `/api/v1/genai/rag-guidance`.
+- Advisor Conversation answers are intentionally English-only for now and rightsizing/over-provisioning prompts are grounded to real OCI VM candidates from the live rightsizing feed (`provider=oci`, `evidence_source=oci_compute_inventory`, `resource_id=ocid1.instance.*`). Tenancy, account, segment, and service aggregate rows are excluded from actionable resource answers.
 - Backend GenAI narratives now inject retrieved RAG briefs into the OCI GenAI prompt path while preserving deterministic cost, savings, risk, and forecast numbers as the source of truth.
 - OCI deployment is wired end to end through Terraform-managed infrastructure and Ansible-managed runtime provisioning, with the deploy script reading Terraform outputs for inventory, upload, provisioning, and smoke checks.
 - Rightsizing is now surfaced as Optimization Advisor, with provider-native Cloud Advisor-style rows for recommendation type, count, service, category, estimated savings, importance, status, scope, and provider-console action.
@@ -308,6 +309,11 @@ Operator dashboard walkthrough
 Rightsizing live refresh
   provider=oci, refresh_live=true
   returned about 730 OCI recommendations in roughly 50 seconds
+
+Advisor Conversation live smoke
+  POST /api/ai/chat on the OCI VM
+  German prior history + over-provisioning prompt still returned English
+  tenancy/account/service aggregates were excluded from actionable OCI VM answers
 ```
 
 ## Cost Planning

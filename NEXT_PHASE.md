@@ -4,7 +4,7 @@ This file defines the path from the current `0.9.2` dashboard-wiring and scoreca
 
 ## Current Go-Live Position (May 2026)
 
-Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `0.9.2` keeps that baseline and adds dashboard wiring, friendly error-state, cleanup, advisor UIX, live Rightsizing scan timeout correction, realized savings scorecards, real OCI GenAI + RAG wiring, Terraform + Ansible deployment wiring, and documentation hygiene. Release `1.0` is now gated less on basic live evidence and more on repeatability, evidence packaging, and customer-like workflow proof.
+Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `0.9.2` keeps that baseline and adds dashboard wiring, friendly error-state, cleanup, advisor UIX, Advisor Conversation English/OCI VM grounding, live Rightsizing scan timeout correction, realized savings scorecards, real OCI GenAI + RAG wiring, Terraform + Ansible deployment wiring, and documentation hygiene. Release `1.0` is now gated less on basic live evidence and more on repeatability, evidence packaging, and customer-like workflow proof.
 
 Local validation snapshot recorded on **May 11, 2026**:
 
@@ -17,6 +17,7 @@ Local validation snapshot recorded on **May 11, 2026**:
 - Workspace cleanup gate passing with dependency/runtime state preserved.
 - Live OCI deployment evidence passing: `deploy-oci.sh verify` (`48` passed, `0` failed, `3` skipped).
 - Terraform outputs feed the deploy inventory and Ansible applies runtime provisioning, service units, nginx, and OCI GenAI configuration.
+- Advisor Conversation live smoke passing on the OCI VM: German prior chat history still returns English, and over-provisioning answers are scoped to real OCI VM rightsizing candidates rather than tenancy/account/service aggregates.
 - Live Rightsizing provider scan evidence passing: broad OCI refresh returned about `730` recommendations in roughly `50s`.
 - Realized savings scorecards implemented in `GET /api/v1/analytics/scorecards` and surfaced in the Scorecards dashboard.
 - Page-by-page UIX review documented in `UIX_REVIEW.md`, with shell-level navigation and context improvements implemented.

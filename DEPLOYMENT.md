@@ -451,8 +451,17 @@ curl http://<instance-ip>/dashboard
 curl -X POST http://<instance-ip>/api/ai/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Summarize the main cost drivers in this workspace.","conversationHistory":[]}'
+curl -X POST http://<instance-ip>/api/ai/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Which services are over-provisioned?","conversationHistory":[{"role":"user","content":"Welche Services sind teuer?"},{"role":"assistant","content":"Die teuersten Services sind Compute und Storage."}]}'
 ./deploy/deploy-oci.sh verify
 ```
+
+For the current release, the second chat smoke should still answer in English
+and should not present tenancy, account, segment, or service aggregates as
+actionable resources. Over-provisioning answers are intentionally scoped to OCI
+VM rightsizing candidates until broader provider-specific resource evidence is
+added.
 
 Forecasting and analytics validation (budget-aware FinOps model):
 

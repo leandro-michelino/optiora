@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 11, 2026): backend regression suite passing (`301` unittest cases), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
+Validation snapshot (May 11, 2026): backend regression suite passing (`301` unittest cases), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, Advisor Conversation English/OCI-VM grounding smoke passing on the OCI VM, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
 
 ## Backend
 
@@ -130,6 +130,7 @@ Current backend coverage includes:
 - curated RAG catalog retrieval by analysis type, provider, and context tokens
 - backend GenAI prompt composition includes retrieved `rag_brief` context before OCI GenAI calls
 - Cost Advisor scope validation and prompt sanitization reject unsupported/off-domain questions
+- Advisor Conversation is currently English-only and over-provisioning/right-sizing questions are expected to resolve to OCI VM candidates, not account, tenancy, segment, or service aggregates
 - OCI GenAI compartment override resolution prefers `OCI_GENAI_COMPARTMENT_ID` and falls back to runtime compartment when needed
 
 **Rightsizing and recommendation ledger** (`tests/test_rightsizing.py`, `tests/test_rightsizing_oci_storage.py`):
@@ -223,6 +224,19 @@ curl --max-time 130 \
 ```
 
 The deployed May 11, 2026 run returned in roughly `50s` with about `730` OCI recommendations. The dashboard client allows `120s` for this live path and keeps the default stored-signal path fast for normal browsing.
+
+Advisor Conversation live smoke:
+
+```bash
+curl -fsS -X POST http://<instance-ip>/api/ai/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Which services are over-provisioned?","conversationHistory":[{"role":"user","content":"Welche Services sind teuer?"},{"role":"assistant","content":"Die teuersten Services sind Compute und Storage."}]}'
+```
+
+Expected result for this release: response is in English, uses the real chat API
+route, and does not name `ocid1.tenancy.*`, `oci-acct-*`, account aggregates, or
+service snapshots as actionable resources. If no real OCI VM candidate exists,
+the correct response is an explicit empty-state for OCI VM rightsizing.
 
 ## Terraform
 

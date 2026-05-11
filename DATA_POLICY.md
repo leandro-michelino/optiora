@@ -51,6 +51,13 @@ budget risk, waste, commitment strategy, tagging/governance, sustainability,
 decision intelligence, operating reviews, and the FinOps Control Tower. They
 must not alter cost, savings, utilization, forecast, or scorecard numbers.
 
+Advisor Conversation follows the same rule. In the current release, chat
+answers are English-only and actionable over-provisioning/right-sizing answers
+must be grounded in real OCI VM evidence (`provider=oci`,
+`evidence_source=oci_compute_inventory`, `resource_id=ocid1.instance.*`).
+Tenancy, account, segment, and service aggregate rows may inform context, but
+they must not be presented as executable cloud resources.
+
 The FinOps Control Tower aggregates deterministic analytics from real provider,
 snapshot, ledger, and CSV evidence. Missing source data remains visible as an
 empty or lower-confidence signal; it is not replaced with synthetic provider
