@@ -1,6 +1,6 @@
 # Cost Estimate (Monthly, Full Capability)
 
-Current as of **May 10, 2026**.
+Current as of **May 11, 2026**.
 
 This estimate reflects the current OptiOra architecture and behavior:
 - OCI-hosted application plane (API + Dashboard).
@@ -9,7 +9,7 @@ This estimate reflects the current OptiOra architecture and behavior:
 - Real-time telemetry query paths for Cost Advisor and operator-triggered refreshes (including cross-provider top-N operational queries).
 - Rightsizing live refresh uses a provider-native request budget of up to `120s` in the dashboard because OCI live scans have been observed at roughly `50s`; normal dashboard browsing still uses stored results.
 - Kubernetes/container visibility now includes live OCI resource inventory for OKE clusters, OCI Container Instances, and OCIR repositories. New resources can show before billing rows arrive; active Container Instances use a conservative run-rate estimate until metered cost data catches up.
-- GenAI + RAG style responses for advisory and narrative outputs.
+- Real OCI GenAI + RAG responses for advisory and narrative outputs when configured, with deterministic prompt/RAG fallback when unavailable.
 - Realized savings scorecards and UIX navigation improvements run on existing API/dashboard capacity and do not add a separate infrastructure service.
 
 ## Assumptions

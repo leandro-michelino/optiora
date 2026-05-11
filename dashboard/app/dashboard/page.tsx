@@ -779,8 +779,8 @@ export default function DashboardPage() {
             <CardContent className="space-y-4 pt-6">
               {[
                 {
-                  label: 'Terraform network baseline',
-                  detail: 'VCN, subnet, routes, gateway, security list',
+                  label: 'Terraform OCI baseline',
+                  detail: 'VCN, subnet, routes, gateway, security list, compute',
                   ok: true,
                   icon: Network,
                 },

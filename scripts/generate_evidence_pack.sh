@@ -11,7 +11,7 @@
 # Usage examples:
 #   ./scripts/generate_evidence_pack.sh
 #
-#   EVIDENCE_DEPLOY_CMD="./deploy/deploy-oci.sh compute" \
+#   EVIDENCE_DEPLOY_CMD="./deploy/deploy-oci.sh full" \
 #   EVIDENCE_MIGRATION_CMD="cd /opt/optiora && ./venv/bin/alembic upgrade head" \
 #   EVIDENCE_SMOKE_CMD="./deploy/deploy-oci.sh verify" \
 #   EVIDENCE_LIVE_CREDENTIAL_CMD="SMOKE_CREDENTIAL_JSON='{\"provider\":\"aws\"}' ./deploy/deploy-oci.sh verify" \

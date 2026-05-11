@@ -2,7 +2,7 @@
 
 Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot
 
-Current walkthrough date: May 10, 2026.
+Current walkthrough date: May 11, 2026.
 
 ## Human Operator Path
 
@@ -24,7 +24,7 @@ These notes capture the complete operator-style pass through OptiOra using the r
 | Existing Playwright journey | Ran documented public dashboard E2E tests. | Pass | CSV import fallback, export controls, navigation search, and Kubernetes route merge checks passed. |
 | Operator screen walkthrough | Added and ran `dashboard/e2e/operator-walkthrough.spec.ts`. | Fixed then pass | First run exposed test expectation mismatches with actual UI headings and duplicate breadcrumb/content heading scope. Updated the test to assert the real main-content headings across all screens. |
 | Lint/test artifact handling | Ran lint while Playwright was creating/removing report artifacts. | Fixed then pass | ESLint hit an `ENOENT` race on `dashboard/test-results`. Added `test-results/**` and `playwright-report/**` to the ESLint flat-config ignores, then lint passed. |
-| OCI VM deployment | Allowed `deploy/deploy-oci.sh compute` to finish. | Pass | VM came up at `140.238.90.95`; API, dashboard, and nginx were active/enabled. |
+| OCI VM deployment | Allowed the Terraform + Ansible deploy flow to finish. | Pass | VM came up at `140.238.90.95`; API, dashboard, nginx, and OCI GenAI runtime config were active/enabled. |
 | OCI verification | Ran `./deploy/deploy-oci.sh verify`. | Pass | `48 passed, 0 failed, 3 skipped`. Skips were intentional live-environment safeguards for temporary CSV upload and optional live credential scan. |
 | New capability contracts | Called the live rightsizing, recommendation ledger, ledger CSV, FinOps intelligence, and RAG guidance endpoints. | Pass | Rightsizing returned live OCI-backed recommendations, ledger exports included planned/realized/variance fields, FinOps intelligence returned deterministic risk/execution data, and RAG guidance returned retrieved guidance. |
 
@@ -64,8 +64,9 @@ Dashboard: http://140.238.90.95/dashboard
 API:       http://140.238.90.95
 Health:   HTTP 200, version 0.9.2 after the release metadata bump is deployed
 Services: optiora-api active/enabled, optiora-dashboard active/enabled, nginx active/enabled
-Deploy:   End-to-end compute deploy time 7m 18s
+Deploy:   Terraform + Ansible redeploy completed from the local workspace
 Verify:   48 passed, 0 failed, 3 skipped
+GenAI:    OCI GenAI configured in uk-london-1 with RAG-backed advisor wiring
 ```
 
 The live rightsizing and ledger checks confirmed finance-ready fields:

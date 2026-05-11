@@ -1,6 +1,6 @@
 # OptiOra Architecture
 
-Current as of May 10, 2026.
+Current as of May 11, 2026.
 
 ## Runtime Topology
 
@@ -57,7 +57,7 @@ Current as of May 10, 2026.
 | - Alerts, audit, exports        /api/v1/alerts*|reports/*     |
 +-------+----------------------------------+--------------------+
         |                                  |
-        | SQLAlchemy ORM                   | Provider and GenAI APIs
+        | SQLAlchemy ORM                   | Provider and GenAI/RAG APIs
         v                                  v
 +-----------------------------+    +--------------------------------+
 | SQLite dev / PostgreSQL prod|    | AWS, Azure, GCP, OCI           |
@@ -660,39 +660,58 @@ finops_mcp/tools/finops_rag.py
         +--> score entries by analysis/provider/token overlap
         +--> return top guidance snippets + sources + rag_brief
         |
+        +--> backend /api/v1/genai/rag-guidance
+        |       |
+        |       +--> dashboard /api/ai/chat
+        |       |       |
+        |       |       +--> dashboard/lib/ai-service.ts
+        |       |       +--> signed OCI GenAI chat request
+        |       |
+        |       +--> Cost Advisor RAG answer fallback when direct GenAI is unavailable
+        |
         v
 genai_advisor prompt composer
         |
         +--> deterministic numbers (source of truth)
         +--> retrieved guidance context (RAG)
+        +--> backend /api/v1/genai/analyze and analytics overlays
         |
         v
-OCI GenAI narrative (or prompt fallback when GenAI is disabled)
+OCI GenAI narrative when configured
+        |
+        +--> prompt/RAG fallback when GenAI is disabled or unavailable
 ```
 
 ## Deployment Model
 
 ```text
 Terraform
-  - OCI network baseline
-  - canonical volume settings
+  - VCN, public subnet, route table, security list
+  - Object Storage archive bucket + lifecycle policy
+  - optional Resource Scheduler policy/schedules
+  - optional compute instance
+  - optional app/data block volume attachment
+  - deploy outputs: instance_id, instance_public_ip, subnet_id, bucket
 
 Ansible
   - host packages
   - Python environment
+  - Node.js/dashboard build
+  - runtime .env and OCI GenAI config/key material
   - service deployment
-  - systemd units
+  - systemd units for API and dashboard
+  - nginx/front-door configuration
+  - host firewall/hardening
   - health checks
-  - optional nginx/TLS front door
 
 Deploy script
   ./deploy/deploy-oci.sh menu|full|compute|status|verify
 
 Execution order (full/menu flow)
-  1) terraform init/validate/plan
-  2) optional terraform apply
-  3) create/start compute
-  4) attach extra block volume (when enabled)
+  1) resolve operator inputs and write terraform.tfvars
+  2) terraform init/validate/plan/apply
+  3) read Terraform compute and network outputs
+  4) wait for SSH and data-volume readiness
   5) upload local source archive
   6) run ansible playbook
   7) smoke + live-data verification gates
@@ -706,20 +725,21 @@ Primary OCI region
 
 ```text
 small profile
-  laptop -> deploy-oci.sh compute/full
+  laptop -> deploy-oci.sh full
         -> single OCI VM
+        -> Terraform VCN/subnet/security list + optional data volume
         -> FastAPI + Next.js + SQLite
         -> direct ingress (3000/8000) or optional nginx (80/443)
 
 medium profile
   laptop -> deploy-oci.sh full
-        -> OCI network baseline + single VM + managed PostgreSQL
+        -> Terraform OCI baseline + single VM + managed PostgreSQL
         -> FastAPI + Next.js + PostgreSQL
         -> direct ingress or nginx/TLS front door
 
 enterprise profile
   laptop -> deploy-oci.sh full + policy hardening
-        -> OCI network baseline + single VM + managed PostgreSQL + scheduler
+        -> Terraform OCI baseline + single VM + managed PostgreSQL + scheduler
         -> strict ingress CIDRs, optional web-only exposure, auth/RBAC enabled
         -> FastAPI + Next.js + PostgreSQL + GenAI narrative overlays
 ```
@@ -730,8 +750,10 @@ enterprise profile
 .env / environment variables
         |
         +--> Frontend runtime
-        |     NEXT_PUBLIC_* + OCI GenAI credentials
+        |     NEXT_PUBLIC_* + server-side OCI GenAI credentials
+        |     dashboard/app/api/ai/chat/route.ts stays server-side
         |     dashboard/lib/ai-service.ts resolves "~/" key paths
+        |     fetches backend /api/v1/genai/rag-guidance for RAG context
         |
         +--> Backend runtime
               finops_mcp/config.py + tools/genai_advisor.py
@@ -764,11 +786,16 @@ Operator input
            |
            +--> laptop_cidr
            +--> oci_object_storage_namespace
+           +--> compute_enabled, shape, OCPU, memory
+           +--> image OS/version and optional image compartment
+           +--> SSH public key
            +--> optional extra block volume settings
 
 End-to-end flow
-  Terraform network baseline
-      -> OCI compute lookup/create
+  Terraform OCI baseline
+      -> VCN/subnet/security list/object bucket
+      -> compute instance + optional block volume
+      -> instance_id / instance_public_ip outputs
       -> source archive upload
       -> Ansible temporary inventory + vars
       -> systemd services + smoke verification
@@ -868,7 +895,7 @@ local workspace
    |
    +--> npm lint/type-check/build
    +--> targeted backend pytest slices
-   +--> deploy/deploy-oci.sh compute
+   +--> deploy/deploy-oci.sh full
    |
    v
 OCI VM 140.238.90.95
@@ -881,6 +908,12 @@ OCI VM 140.238.90.95
    |
    +--> deploy/deploy-oci.sh verify
            -> 48 passed, 0 failed, 3 skipped
+
+Latest May 11, 2026 verification also covered:
+   - Terraform + Ansible redeploy from the local workspace
+   - server-side OCI GenAI chat route wiring
+   - backend RAG retrieval and GenAI prompt context injection
+   - runtime OCI GenAI config in uk-london-1
 ```
 
 ## Configuration and Security Notes

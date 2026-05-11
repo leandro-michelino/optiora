@@ -224,9 +224,8 @@ Observed run on **May 1, 2026** (warm compute redeploy to an existing `RUNNING` 
 
 - `End-to-end compute deploy time: 6m 20s`
 
-Observed run on **May 10, 2026** (warm compute redeploy to existing `RUNNING` VM, shape `VM.Standard.E4.Flex` with `2 OCPUs / 8 GB`, nginx front-door mode):
+Observed run on **May 11, 2026** (warm Terraform + Ansible redeploy to existing `RUNNING` VM, shape `VM.Standard.E4.Flex` with `2 OCPUs / 8 GB`, nginx front-door mode and OCI GenAI configured in `uk-london-1`):
 
-- `End-to-end compute deploy time: 6m 25s`
 - `deploy-oci.sh verify`: `48` passed, `0` failed, `3` skipped
 
 First-time cold deployments that create a new instance are typically longer.

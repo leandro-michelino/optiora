@@ -8,8 +8,8 @@
 - provider diagnostics endpoint for cloud readiness checks without leaking secrets
 - backend regression tests covering organization membership, customer scoping, credential flows, and CSV import flows
 - Next.js dashboard with credential setup, CSV upload, scanning setup, forecasting, recommendations, and operations readiness views
-- laptop-driven OCI compute deployment
-- Terraform OCI network baseline
+- laptop-driven OCI deployment
+- Terraform OCI infrastructure baseline for network, archive bucket, compute, data volume, and scheduler resources
 - Ansible host provisioning for runtime packages, environment, systemd services, dashboard build, and health checks
 - dashboard credential form with inline per-provider setup guidance (what credentials to obtain and where)
 - animated SVG dashboard preview in README

@@ -6,7 +6,7 @@ Repository release metadata:
 
 - Current package version: `0.9.2`
 - Current git tag: `v0.9.2`
-- Current documentation baseline: May 10, 2026
+- Current documentation baseline: May 11, 2026
 - GitHub release notes source of truth: this file
 
 ### Added
@@ -30,6 +30,8 @@ Repository release metadata:
 - Bounded API response cache for dashboard JSON `GET /api/v1/*` calls, with default `5` minute TTL, active-entry background warming every `5` minutes, and cache status headers.
 - Unified FinOps Control Tower endpoint, `GET /api/v1/analytics/control-tower`, combining forecast risk, waste, commitment, governance, decision frontier, RAG evidence, and GenAI advisory prompts.
 - Advanced FinOps Control Tower panel that surfaces the consolidated posture score, lane status, and RAG-backed action queue before specialist drill-down sections.
+- Real OCI GenAI + RAG wiring for Cost Advisor chat and backend GenAI narratives: server-side OCI GenAI calls, backend RAG retrieval, and retrieved guidance injection into prompts.
+- Terraform-managed compute/data-volume deployment flow with Ansible runtime provisioning driven from Terraform outputs.
 
 ### Changed
 
@@ -50,7 +52,7 @@ Repository release metadata:
 - UIX review now documents the page-consolidation decision: keep specialized workflow pages, but unify dense executive intelligence inside Advanced FinOps.
 - Cleanup documentation now treats `/dashboard/kubernetes` as the only Kubernetes/container/Docker route, with no stale legacy redirect expectation.
 - Workspace cleanup now removes broader duplicate-copy, editor leftover, and OS metadata artifacts while preserving runtime state and local dependency caches.
-- README, cost estimate, testing notes, deployment notes, architecture diagrams, and next-phase planning were refreshed to match the current deployed state.
+- README, cost estimate, testing notes, deployment notes, architecture diagrams, walkthrough notes, UIX review, and next-phase planning were refreshed to match the current deployed state.
 
 ### Fixed
 
@@ -75,6 +77,7 @@ Repository release metadata:
 - `.venv/bin/python -m pytest -q` (`287` passing)
 - `.venv/bin/python -m pytest tests/test_scorecards.py -q` (`7` passing)
 - `.venv/bin/python -m pytest tests/test_response_cache.py tests/test_config.py -q` (`17` passing)
+- `.venv/bin/python -m pytest tests/test_genai_rag_wiring.py tests/test_genai_scope.py tests/test_config.py -q` (`36` passing)
 - `.venv/bin/python -m pytest tests/test_kubernetes.py -q` (`17` passing)
 - `.venv/bin/python -m pytest tests/test_rightsizing.py tests/test_rightsizing_oci_storage.py tests/test_deep_finops_analytics.py` (`35` passing)
 - `terraform fmt -check` for tracked Terraform files and `terraform -chdir=terraform validate`
@@ -86,7 +89,7 @@ Repository release metadata:
 - Public browser check on `/dashboard/kubernetes`: rendered `optiora-e2e-oke`, `optiora-e2e-container-instance`, and `Live resource inventory` with no console errors and no horizontal overflow.
 - OCI cleanup after Kubernetes validation: deleted `optiora-e2e-container-instance` and `optiora-e2e-oke`; final states were `DELETED`.
 - Public live Kubernetes API: `GET /api/v1/analytics/kubernetes/summary` returned `container_service_count=2`, `clusters_configured=1`, `data_source=live_resource_inventory`, and `$19.71` estimated container run rate in about `12s`.
-- `./deploy/deploy-oci.sh compute` (`7m 18s` in the latest VM start + redeploy walkthrough)
+- `./deploy/deploy-oci.sh full` (Terraform + Ansible redeploy from the local workspace)
 - `./deploy/deploy-oci.sh verify` (`48` passing, `0` failed, `3` skipped)
 
 ## 0.9.1 - UIX and Navigation Polish (May 10, 2026)

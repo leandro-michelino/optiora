@@ -2,8 +2,8 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, canonical resource-cost explorer, 5-minute API response cache, UIX review, and repository hygiene.
-Current documentation baseline: May 10, 2026.
+Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, canonical resource-cost explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
+Current documentation baseline: May 11, 2026.
 
 > **A quick, honest note:** OptiOra is still an active work in progress. The core platform, deployment path, and dashboard experiences are evolving quickly, but it is not being presented as a fully finished product yet. Some live-provider workflows depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not all available in my current test environments across every provider. If you are interested in running a real pilot, validating it with your cloud data, or shaping the next set of features, please get in touch.
 
@@ -16,6 +16,7 @@ OptiOra helps FinOps, platform, and cloud operations teams turn cloud billing an
 - **Real data only**: provider APIs, persisted live scan snapshots, or customer-imported CSV billing data.
 - **Deterministic first**: forecasts, savings, rightsizing, anomaly, and efficiency math stay authoritative.
 - **GenAI as an overlay**: OCI Generative AI explains, prioritizes, and summarizes; it does not invent cost numbers.
+- **RAG-backed advisor context**: Cost Advisor and backend GenAI endpoints retrieve curated FinOps guidance before composing prompts and narratives.
 - **Operator-ready workflows**: scans, approvals, exports, alerts, routing policies, scorecards, and weekly operating review packs.
 - **OCI production path**: repeatable deployment with Terraform infrastructure, Ansible runtime provisioning, systemd services, and smoke verification.
 
@@ -58,7 +59,7 @@ Users / Operators
 | - 5-minute JSON response cache + active-entry warmer         |
 +-------------+----------------------+------------------------+
               |                      |
-              | SQLAlchemy           | provider / GenAI APIs
+              | SQLAlchemy           | provider / GenAI/RAG APIs
               v                      v
 +-------------------------+    +--------------------------------+
 | SQLite or PostgreSQL    |    | AWS, Azure, GCP, OCI            |
@@ -104,6 +105,9 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 
 Recent UIX and wiring updates:
 
+- Cost Advisor chat now uses the server-side dashboard `/api/ai/chat` route to call OCI GenAI with signed requests and enriches answers with backend RAG guidance from `/api/v1/genai/rag-guidance`.
+- Backend GenAI narratives now inject retrieved RAG briefs into the OCI GenAI prompt path while preserving deterministic cost, savings, risk, and forecast numbers as the source of truth.
+- OCI deployment is wired end to end through Terraform-managed infrastructure and Ansible-managed runtime provisioning, with the deploy script reading Terraform outputs for inventory, upload, provisioning, and smoke checks.
 - Rightsizing live provider scans now use a longer dashboard timeout for provider-native calls observed at about `50s` in OCI, while still falling back to stored results if the live path fails.
 - Rightsizing now has expandable scan status, executive summary, filters/search, action mix, and per-resource execution details.
 - Rightsizing recommendations now populate a finance-ready recommendation ledger with planned savings, realized savings, and variance, exposed through JSON, CSV, and the finance workbook.

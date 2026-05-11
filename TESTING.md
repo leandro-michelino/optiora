@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 10, 2026): backend regression suite passing (`281` unittest cases, `2` skipped), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
+Validation snapshot (May 11, 2026): backend regression suite passing (`281` unittest cases, `2` skipped), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
 
 ## Backend
 
@@ -125,6 +125,13 @@ Current backend coverage includes:
 - decision-intelligence narrative contract (`POST /api/v1/genai/analyze` with `analysis_type=decision_intelligence`)
 - GenAI copilot pack prompts for non-forecast use cases such as tagging, sustainability, vendor negotiation, and operating reviews
 
+**GenAI and RAG wiring** (`tests/test_genai_rag_wiring.py`, `tests/test_genai_scope.py`, `tests/test_config.py`):
+
+- curated RAG catalog retrieval by analysis type, provider, and context tokens
+- backend GenAI prompt composition includes retrieved `rag_brief` context before OCI GenAI calls
+- Cost Advisor scope validation and prompt sanitization reject unsupported/off-domain questions
+- OCI GenAI compartment override resolution prefers `OCI_GENAI_COMPARTMENT_ID` and falls back to runtime compartment when needed
+
 **Rightsizing and recommendation ledger** (`tests/test_rightsizing.py`, `tests/test_rightsizing_oci_storage.py`):
 
 - stored/imported rightsizing response contract and provider filters
@@ -215,7 +222,7 @@ curl --max-time 130 \
   "http://<instance-ip>/api/v1/recommendations/rightsizing?provider=oci&min_savings=0&limit=1000&refresh_live=true"
 ```
 
-The deployed May 10, 2026 run returned in roughly `50s` with about `730` OCI recommendations. The dashboard client allows `120s` for this live path and keeps the default stored-signal path fast for normal browsing.
+The deployed May 11, 2026 run returned in roughly `50s` with about `730` OCI recommendations. The dashboard client allows `120s` for this live path and keeps the default stored-signal path fast for normal browsing.
 
 ## Terraform
 
@@ -239,6 +246,7 @@ terraform -chdir=terraform validate
 - `tests/live_data_gate.sh` is the strict release-critical route/API data-source gate (fails on fallback/placeholder sources).
 - `./scripts/generate_evidence_pack.sh` creates dated deploy/migration/smoke/live-credential-flow/rollback artifacts for release evidence.
 - For Terraform + Ansible deployments, prefer `./deploy/deploy-oci.sh full` or menu option `1` so the extra block volume attach, inventory generation, and source upload stay consistent before smoke checks.
+- The May 11 live deployment used Terraform outputs for the OCI VM and Ansible for runtime provisioning, with OCI GenAI configured in `uk-london-1` using `meta.llama-3.3-70b-instruct`.
 - Epic 1 (platform hardening) and Epic 2 (multi-account hierarchy) are fully covered by `test_platform_hardening.py` and `test_epic2_multi_account.py` respectively.
 - Frontend production build is a required deployment gate.
 
