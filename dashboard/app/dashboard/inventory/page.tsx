@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   Cloud,
+  ExternalLink,
   Filter,
   Loader,
   MapPin,
@@ -238,9 +239,9 @@ function ResourceCostCockpit({
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Resource Cost Cockpit</p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">All visible resource cost, grouped for investigation</h2>
+            <h2 className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">Visible resource signals, grouped for investigation</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
-              Start with provider share, then drill into resource type, region, account, and individual cost rows without leaving Cloud Resources.
+              Start with provider share, then drill into resource type, region, account, and individual provider rows without leaving the inventory workflow.
             </p>
           </div>
           <Badge className="w-fit rounded-md border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
@@ -250,21 +251,21 @@ function ResourceCostCockpit({
 
         <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Visible Monthly Cost</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Visible Monthly Signal</p>
             <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{fmtCompact(visibleCost)}</p>
             <p className="mt-1 text-xs text-slate-500">{visibleShare.toFixed(1)}% of current inventory scope</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Inventory Coverage</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rows In Scope</p>
             <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{totalResources.toLocaleString()}</p>
             <p className="mt-1 text-xs text-slate-500">resources in the selected backend scope</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Highest Resource</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Highest Signal</p>
             <p className="mt-2 truncate text-lg font-semibold text-slate-950 dark:text-white" title={topResource ? resourceDisplayName(topResource) : undefined}>
               {topResource ? resourceDisplayName(topResource) : 'No resource yet'}
             </p>
-            <p className="mt-1 text-xs text-slate-500">{topResource ? `${fmt(topResource.cost_usd)} / month` : 'Cost data pending'}</p>
+            <p className="mt-1 text-xs text-slate-500">{topResource ? `${fmt(topResource.cost_usd)} / month` : 'Provider data pending'}</p>
           </div>
         </div>
       </div>
@@ -339,7 +340,7 @@ function TopResourcesPanel({ items, totalCost }: { items: ResourceInventoryItem[
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-950 dark:text-white">Top Cost Resources</p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Highest monthly resource rows in the current view.</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Highest monthly cost or savings-signal rows in the current view.</p>
         </div>
         <CircleDollarSign className="h-4 w-4 text-emerald-600" />
       </div>
@@ -447,7 +448,7 @@ function ResourceDetailsDrawer({
                 <p className="mt-1 font-medium text-slate-950 dark:text-white">{item.region || 'global'}</p>
               </div>
               <div>
-                <p className="text-slate-500">Monthly Cost</p>
+                <p className="text-slate-500">Monthly Signal</p>
                 <p className="mt-1 font-medium text-slate-950 dark:text-white">{fmt(item.cost_usd)}</p>
               </div>
               <div>
@@ -544,12 +545,19 @@ function ResourceRow({
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resource Snapshot</p>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    {item.provider.toUpperCase()} {item.resource_type} in {item.region || 'global'} with {fmt(item.cost_usd)} monthly attribution.
+                    {item.provider.toUpperCase()} {item.resource_type} in {item.region || 'global'} with {fmt(item.cost_usd)} monthly cost or savings signal.
                   </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={onOpenDetails} className="self-start">
-                  Open Details Drawer
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={onOpenDetails}>
+                    Open Details Drawer
+                  </Button>
+                  {item.console_url && (
+                    <a href={item.console_url} target="_blank" rel="noreferrer noopener" className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[0.8rem] font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+                      Open console <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
               </div>
 
               <AccountContext item={item} accountMeta={accountMeta} />
@@ -689,7 +697,7 @@ export default function InventoryPage() {
           provider: provider === 'all' ? undefined : provider,
           region: regionFilter || undefined,
           waste_only: wasteOnly,
-          limit: 1000,
+          limit: 250,
         }),
         fetchProviderAccountInventory(provider === 'all' ? undefined : provider),
       ])
@@ -718,9 +726,9 @@ export default function InventoryPage() {
               Updated {fmtDate(data?.generated_at)}
             </Badge>
           </div>
-          <h1 className="text-3xl font-semibold text-slate-950 dark:text-white md:text-4xl">Cloud Resources & Costs</h1>
+          <h1 className="text-3xl font-semibold text-slate-950 dark:text-white md:text-4xl">Inventory Explorer</h1>
           <p className="mt-2 max-w-3xl text-base leading-7 text-slate-600 dark:text-slate-400">
-            The canonical resource-cost explorer for provider, account, region, service type, tag, monthly cost, and waste investigation.
+            Provider inventory and resource-action explorer for account, region, service type, tag, monthly signal, and waste investigation.
           </p>
         </div>
         <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} disabled={loading}>
@@ -817,6 +825,17 @@ export default function InventoryPage() {
 
       {data && (
         <>
+          {data.coverage_note && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <p>{data.coverage_note}</p>
+                <Badge variant="outline" className="w-fit rounded-md border-blue-300 bg-white/60 text-blue-800 dark:bg-slate-950/30 dark:text-blue-100">
+                  {(data.data_source || 'unknown').replace(/_/g, ' ')}
+                </Badge>
+              </div>
+            </div>
+          )}
+
           <ResourceCostCockpit
             items={filteredItems}
             totalCost={data.total_cost_usd}
@@ -835,9 +854,9 @@ export default function InventoryPage() {
             />
             <StatTile
               icon={<CircleDollarSign className="h-5 w-5" />}
-              label="Monthly Cost"
+              label="Monthly Signal"
               value={fmtCompact(visibleCost)}
-              helper={`${fmtCompact(data.total_cost_usd)} in the selected backend scope`}
+              helper={`${fmtCompact(data.total_cost_usd)} across the selected backend rows`}
               tone="emerald"
             />
             <StatTile
@@ -858,7 +877,7 @@ export default function InventoryPage() {
 
           <Expander
             title="Resource cost breakdowns"
-            description="Open for provider, service type, region, account, and top resource cost distribution."
+            description="Open for provider, service type, region, account, and top resource signal distribution."
             icon={<BarChart3 className="h-5 w-5 text-blue-600" />}
             defaultOpen
           >
@@ -893,7 +912,7 @@ export default function InventoryPage() {
         </div>
       ) : data && filteredItems.length > 0 ? (
         <Expander
-          title={`All resource costs (${filteredItems.length} shown${data.items.length < data.total_resources ? ` from ${data.items.length} loaded of ${data.total_resources}` : ''})`}
+          title={`Inventory rows (${filteredItems.length} shown${data.items.length < data.total_resources ? ` from ${data.items.length} loaded of ${data.total_resources}` : ''})`}
           description="Search and sort stay local. Expand a row for account context and tags, or open the drawer for raw metadata."
           icon={<Server className="h-5 w-5" />}
           defaultOpen
@@ -905,7 +924,7 @@ export default function InventoryPage() {
                 Showing {filteredItems.length.toLocaleString()} matching resource rows, sorted by {SORT_OPTIONS.find((option) => option.value === sortBy)?.label.toLowerCase()}.
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Total visible monthly cost: {fmt(visibleCost)}.
+                Total visible monthly signal: {fmt(visibleCost)}.
               </div>
             </div>
           </div>
@@ -923,7 +942,7 @@ export default function InventoryPage() {
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Resource</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Scope</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Monthly Cost</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Monthly Signal</th>
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Signal</th>
                 </tr>
               </thead>

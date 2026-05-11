@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, canonical resource-cost explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
+Current release: `0.9.2` dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
 Current documentation baseline: May 11, 2026.
 
 > **A quick, honest note:** OptiOra is still an active work in progress. The core platform, deployment path, and dashboard experiences are evolving quickly, but it is not being presented as a fully finished product yet. Some live-provider workflows depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not all available in my current test environments across every provider. If you are interested in running a real pilot, validating it with your cloud data, or shaping the next set of features, please get in touch.
@@ -93,7 +93,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 
 | Area | What OptiOra Provides |
 |---|---|
-| Cost visibility | Billing & Allocation spend views, account hierarchy, service hotspots, Cloud Resources & Costs explorer, imported billing files |
+| Cost visibility | Billing & Allocation spend views, account hierarchy, service hotspots, Inventory Explorer, imported billing files |
 | Forecasting | Baseline forecasts, percentile bands, budget risk, what-if scenarios, stress tests, model diagnostics |
 | Optimization | Optimization Advisor with provider-native Cloud Advisor-style findings, stored/live scan modes, storage cleanup, rightsizing, recommendation ledger, commitment gaps, waste decomposition, savings sequencing |
 | Unit economics | Cost allocation, business mapping, normalized dimensions, realized savings scorecards, showback/chargeback views |
@@ -101,7 +101,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 | Operations | Scan history, scan diffs, alert lifecycle, routing policy simulation, evidence exports, freshness telemetry |
 | Intelligence | Cost Advisor, AI Insights, RAG-guided narratives, operating review packs, decision intelligence frontier |
 | Governance | Virtual tags, tag quality, audit logs, data-source banners, export jobs, retention controls |
-| Control tower | Unified Advanced FinOps view for forecast risk, waste, commitment, governance, decision frontier, RAG evidence, and GenAI advisory prompts |
+| Control tower | Unified FinOps Control Tower view for forecast risk, waste, commitment, governance, decision frontier, RAG evidence, and GenAI advisory prompts |
 | Performance | Process-local API response cache for dashboard JSON GETs, refreshed every 5 minutes and bypassed by user Refresh actions |
 
 Recent UIX and wiring updates:
@@ -115,12 +115,14 @@ Recent UIX and wiring updates:
 - Rightsizing recommendations now populate a finance-ready recommendation ledger with planned savings, realized savings, and variance, exposed through JSON, CSV, and the finance workbook.
 - Scorecards now include realized savings scorecards by provider, owner, business unit, and realized month, backed by the recommendation ledger.
 - Kubernetes now merges billing data with live OCI OKE, Container Instance, and OCIR inventory so newly launched container services appear before cost-management data catches up.
-- Cloud Resources is now the canonical resource-cost explorer, with provider/type/region/account/top-resource breakdowns, local search/sort, and expandable details.
+- The former Cloud Resources page has been repositioned as Inventory Explorer: it prefers real OCI tenancy-level provider resource/action rows, labels coverage explicitly, and falls back to account or imported cost scopes only when resource-level inventory is unavailable.
 - Dashboard JSON GETs now use a bounded backend response cache so normal navigation is fast; active entries are warmed every `5` minutes and Refresh buttons request a fresh backend read.
-- Advanced FinOps now consolidates forecast risk, waste, commitment, governance, and decision-frontier signals into one control tower instead of forcing operators to stitch disconnected analytics together manually.
+- FinOps Control Tower now consolidates forecast risk, waste, commitment, governance, and decision-frontier signals into one control tower instead of forcing operators to stitch disconnected analytics together manually.
+- Dashboard navigation is job-based: primary routes stay focused on Workspace, Intelligence, Optimize, and Operate, while specialist routes such as Saved Views, AI Insights, Action Ledger, Kubernetes, Virtual Tags, Scorecards, and Admin Diagnostics remain searchable and grouped under "More workflows".
 - Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, removing confusing overlap with resource investigation.
 - The legacy Kubernetes namespace route wiring was removed; `/dashboard/kubernetes` is the only Kubernetes/container/Docker page.
 - Cost Advisor now separates deterministic decision snapshots, quick wins, provider evidence, and conversation starters into focused sections.
+- Provider diagnostics now expose a per-cloud API capability envelope for AWS, Azure, GCP, and OCI: scope model, primary APIs, optimization APIs, telemetry APIs, safe page size, bounded parallelism, timeout, retryable statuses, and throttling signals. Backend provider recommendation collection uses those envelopes to avoid unbounded cross-cloud API fan-out.
 
 ## Data Policy
 

@@ -213,8 +213,10 @@ current cost context + historical snapshots + budget policy
 
 This control tower is the consolidation layer for dense intelligence screens. It
 reduces page-to-page context switching by putting forecast, waste, commitment,
-governance, and decision signals into the Advanced FinOps page while preserving
-specialized pages where the user journey is genuinely different.
+governance, and decision signals into the FinOps Control Tower page while
+preserving specialized pages where the user journey is genuinely different.
+The navigation keeps duplicate-feeling recommendation views out of the primary
+path.
 
 ## Weekly Operating Review Pack
 
@@ -284,22 +286,30 @@ business-unit attribution remains explicit as `(unassigned)`.
 ```text
 Dashboard shell
         |
-        +--> Workspace
-        |    Overview, My Dashboards, Billing & Allocation, Account Hierarchy, Portfolio
+        +--> Primary navigation
+        |    |
+        |    +--> Workspace
+        |    |    Overview, Billing & Allocation, Account Hierarchy
+        |    |
+        |    +--> Intelligence
+        |    |    Cost Advisor, Forecasting
+        |    |
+        |    +--> Optimize
+        |    |    Optimization Advisor, Inventory Explorer, Unit Economics
+        |    |
+        |    +--> Operate
+        |         Operations, Anomalies, Settings
         |
-        +--> Intelligence
-        |    AI Insights, Cost Advisor, Forecasting
-        |
-        +--> FinOps
-        |    Unit Economics, Scorecards, Advanced FinOps, Cloud Resources,
-        |    Kubernetes, Virtual Tags, Rightsizing
-        |
-        +--> Operations
-             Operations, Admin Diagnostics, Anomalies, Recommendations, Settings
+        +--> More workflows / search
+             Saved Views, Customer Portfolio, AI Insights, FinOps Control Tower,
+             Scorecards, Kubernetes, Virtual Tags, Action Ledger,
+             Admin Diagnostics
 
 Shared UIX behavior
         |
-        +--> synonym-aware navigation search
+        +--> primary-job navigation with specialist workflows demoted by default
+        +--> synonym-aware navigation search across every route
+        +--> active specialist routes auto-expand their parent section
         +--> active-page helper text in sticky header
         +--> expandable evidence/details sections on dense pages
         +--> explicit empty/unavailable states when real data is missing
@@ -544,6 +554,40 @@ Provider recommendation metadata preserved in response rows
 
 No synthetic recommendation tier
 If no eligible real signals exist: empty recommendation list with no_data_available source
+```
+
+## Provider API Capability Envelope
+
+```text
+/api/v1/provider-diagnostics
+        |
+        +--> finops_mcp.provider_support.provider_api_capabilities()
+              |
+              +-- AWS
+              |   scope: payer/linked account plus regional inventory
+              |   APIs: Cost Explorer, EC2, CloudWatch
+              |   envelope: page <= 200, parallel <= 4, timeout 30s
+              |
+              +-- Azure
+              |   scope: management group, subscription, resource group
+              |   APIs: Cost Management, Advisor, Resource Graph, Monitor
+              |   envelope: page <= 200, parallel <= 3, timeout 30s
+              |
+              +-- GCP
+              |   scope: organization/folder/billing account/project
+              |   APIs: Billing, Asset Inventory, Recommender, Monitoring
+              |   envelope: page <= 200, parallel <= 3, timeout 30s
+              |
+              +-- OCI
+                  scope: tenancy root, compartment subtree, subscribed regions
+                  APIs: Usage, Optimizer, Identity, Compute, Block Volume
+                  envelope: page <= 200, parallel <= 3, timeout 30s
+                  rule: Optimizer/Cloud Advisor starts in home region
+
+Provider-native recommendation collection clamps each provider branch to its
+capability envelope before calling optimizer/recommender/telemetry APIs. This
+keeps all-provider dashboard reads responsive and prevents a single cloud API
+from exhausting the shared request budget.
 ```
 
 ## Recommendation Ledger

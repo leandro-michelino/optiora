@@ -92,6 +92,17 @@ export interface ProviderDiagnostic {
   required_settings: string[]
   missing_settings: string[]
   recommendation: string
+  scope_model?: string
+  primary_apis?: string[]
+  optimization_apis?: string[]
+  telemetry_apis?: string[]
+  default_page_size?: number
+  max_page_size?: number
+  max_parallel_requests?: number
+  request_timeout_seconds?: number
+  retryable_statuses?: number[]
+  throttling_signals?: string[]
+  scan_notes?: string[]
 }
 
 export type DataSourceState = 'checking' | 'live' | 'imported' | 'partial' | 'fallback'
@@ -1062,6 +1073,8 @@ export interface ResourceInventoryItem {
   waste_flag: boolean
   waste_reason: string | null
   tags: Record<string, string>
+  data_source?: string
+  console_url?: string | null
 }
 
 export interface ResourceInventoryResponse {
@@ -1070,6 +1083,8 @@ export interface ResourceInventoryResponse {
   total_cost_usd: number
   flagged_waste_count: number
   items: ResourceInventoryItem[]
+  data_source?: string
+  coverage_note?: string
 }
 
 // ---------------------------------------------------------------------------

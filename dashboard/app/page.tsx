@@ -89,7 +89,7 @@ const PREVIEW_SCENES: Array<{
   },
   {
     id: 'inventory',
-    label: 'Cloud Resources',
+    label: 'Inventory Explorer',
     metric: '1 flag',
     detail: 'Resource costs grouped by provider, type, region, account, and waste signal',
     icon: Server,

@@ -69,6 +69,8 @@ from .provider_support import (
     SUPPORTED_CLOUD_PROVIDERS,
     SUPPORTED_COST_IMPORT_PROVIDERS,
     parse_credential_payload,
+    provider_api_capabilities,
+    provider_bounded_limit,
     provider_diagnostic_requirements,
     run_credential_validation,
 )
@@ -271,6 +273,17 @@ class ProviderDiagnostic(BaseModel):
     required_settings: List[str]
     missing_settings: List[str]
     recommendation: str
+    scope_model: str = ""
+    primary_apis: List[str] = Field(default_factory=list)
+    optimization_apis: List[str] = Field(default_factory=list)
+    telemetry_apis: List[str] = Field(default_factory=list)
+    default_page_size: int = 100
+    max_page_size: int = 200
+    max_parallel_requests: int = 3
+    request_timeout_seconds: int = 30
+    retryable_statuses: List[int] = Field(default_factory=list)
+    throttling_signals: List[str] = Field(default_factory=list)
+    scan_notes: List[str] = Field(default_factory=list)
 
 
 class ScanHistoryItem(BaseModel):
@@ -1757,6 +1770,7 @@ def _provider_diagnostics(
 ) -> List[ProviderDiagnostic]:
     config = Config()
     requirements = provider_diagnostic_requirements(config)
+    capabilities = provider_api_capabilities()
     runtime_ready = _valid_runtime_provider_names(customer_id, db) if customer_id and db else set()
 
     diagnostics: List[ProviderDiagnostic] = []
@@ -1786,6 +1800,7 @@ def _provider_diagnostics(
         if provider in runtime_ready:
             configured = True
             missing = []
+        capability = capabilities[provider]
         diagnostics.append(
             ProviderDiagnostic(
                 provider=provider,
@@ -1799,6 +1814,17 @@ def _provider_diagnostics(
                     if configured
                     else f"Configure {', '.join(missing)} before enabling live {provider.upper()} cost collection."
                 ),
+                scope_model=capability.scope_model,
+                primary_apis=capability.primary_apis,
+                optimization_apis=capability.optimization_apis,
+                telemetry_apis=capability.telemetry_apis,
+                default_page_size=capability.default_page_size,
+                max_page_size=capability.max_page_size,
+                max_parallel_requests=capability.max_parallel_requests,
+                request_timeout_seconds=capability.request_timeout_seconds,
+                retryable_statuses=capability.retryable_statuses,
+                throttling_signals=capability.throttling_signals,
+                scan_notes=capability.scan_notes,
             )
         )
     return diagnostics
@@ -10198,6 +10224,8 @@ class ResourceInventoryItem(BaseModel):
     waste_flag: bool
     waste_reason: Optional[str]
     tags: Dict[str, str]
+    data_source: str = "account_cost_snapshot"
+    console_url: Optional[str] = None
 
 
 class ResourceInventoryResponse(BaseModel):
@@ -10206,6 +10234,101 @@ class ResourceInventoryResponse(BaseModel):
     total_cost_usd: float
     flagged_waste_count: int
     items: List[ResourceInventoryItem]
+    data_source: str = "account_cost_snapshot"
+    coverage_note: str = ""
+
+
+def _inventory_string(value: Any, fallback: str = "") -> str:
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def _inventory_item_from_provider_row(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Convert provider-native recommendation/action rows into inventory rows."""
+    source = _inventory_string(row.get("source"))
+    if source not in {
+        "oci_optimizer_resource_action",
+        "oci_compute_inventory",
+        "oci_storage_inventory",
+    }:
+        return None
+
+    resource_id = _inventory_string(row.get("resource_id"))
+    if not resource_id:
+        return None
+
+    resource_type = _inventory_string(row.get("resource_type"), _inventory_string(row.get("service"), "OCI Resource"))
+    resource_name = _inventory_string(
+        row.get("resource_name"),
+        _inventory_string(row.get("description"), resource_id),
+    )
+    monthly = _safe_recommendation_float(row.get("current_annual_spend")) / 12.0
+    if monthly <= 0:
+        monthly = _safe_recommendation_float(row.get("monthly_savings_usd"))
+    recommendation = _inventory_string(
+        row.get("recommendation_type"),
+        _inventory_string(row.get("description"), "Provider optimization finding"),
+    )
+    tags = {
+        "source": source,
+        "recommendation": recommendation,
+    }
+    for key in ("category", "importance", "status", "recommendation_status"):
+        value = _inventory_string(row.get(key))
+        if value:
+            tags[key] = value
+
+    return {
+        "resource_id": resource_id,
+        "resource_name": resource_name,
+        "resource_type": resource_type,
+        "provider": _inventory_string(row.get("provider"), "oci"),
+        "region": _inventory_string(row.get("region"), "global"),
+        "account_id": _inventory_string(row.get("account_id")),
+        "cost_usd": round(monthly, 2),
+        "waste_flag": True,
+        "waste_reason": recommendation,
+        "tags": tags,
+        "data_source": source,
+        "console_url": _inventory_string(row.get("resource_console_url")) or None,
+    }
+
+
+def _provider_resource_inventory_items(
+    *,
+    db: Session,
+    customer_id: str,
+    provider: str,
+    region: Optional[str],
+    limit: int,
+    offset: int,
+) -> List[Dict[str, Any]]:
+    """Return real provider resource rows from optimizer/live inventory feeds."""
+    if provider not in {"all", "oci"}:
+        return []
+
+    rows = _collect_provider_recommendation_rows(
+        db=db,
+        customer_id=customer_id,
+        provider="oci",
+        min_monthly_savings=0.0,
+        limit=provider_bounded_limit("oci", offset + limit, floor=0),
+        include_existing_rightsizing_sources=True,
+    )
+    items: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        item = _inventory_item_from_provider_row(row)
+        if not item:
+            continue
+        if region and item["region"] != region:
+            continue
+        key = f"{item['provider']}:{item['resource_id']}"
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(item)
+    return items
 
 
 @router.get("/inventory/resources", response_model=ResourceInventoryResponse)
@@ -10213,7 +10336,7 @@ async def get_resource_inventory(
     provider: str = "all",
     region: Optional[str] = None,
     waste_only: bool = False,
-    limit: int = 100,
+    limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
@@ -10221,7 +10344,17 @@ async def get_resource_inventory(
 ) -> Dict[str, Any]:
     """Cloud resource inventory with per-resource cost attribution and waste flags."""
     customer_id = _customer_id_for_org(membership)
-    context = await _cost_context(membership, db, "month", provider if provider != "all" else "all")
+    requested_limit = max(1, min(int(limit or 100), 1000))
+    requested_offset = max(0, int(offset or 0))
+
+    live_items = _provider_resource_inventory_items(
+        db=db,
+        customer_id=customer_id,
+        provider=provider,
+        region=region,
+        limit=requested_limit,
+        offset=requested_offset,
+    )
 
     # Pull account snapshots for resource-level data
     snapshots_q = (
@@ -10235,7 +10368,7 @@ async def get_resource_inventory(
     org_id = membership.organization_id
     snapshots = snapshots_q.order_by(ProviderAccountSnapshot.captured_at.desc()).limit(500).all()
 
-    items: List[Dict[str, Any]] = []
+    account_scope_items: List[Dict[str, Any]] = []
     seen: set = set()
 
     for snap in snapshots:
@@ -10266,10 +10399,26 @@ async def get_resource_inventory(
             "waste_flag": waste_flag,
             "waste_reason": "Active anomalies detected" if waste_flag else None,
             "tags": {},
+            "data_source": "account_cost_snapshot",
+            "console_url": None,
         }
-        items.append(item)
+        account_scope_items.append(item)
 
-    # Supplement from imported cost records when no scan snapshots exist
+    items: List[Dict[str, Any]]
+    data_source = "live_provider_resource_actions" if live_items else "account_cost_snapshot"
+    coverage_note = (
+        "Showing real OCI tenancy-level Optimizer resource actions and live inventory candidates. "
+        "Use Optimization Advisor for execution detail."
+        if live_items
+        else "Only account or tenancy-level cost snapshots are available for this scope; connect live provider inventory to show individual resources."
+    )
+
+    if live_items:
+        items = live_items
+    else:
+        items = account_scope_items
+
+    # Supplement from imported cost records when no live resource or scan snapshots exist
     if not items:
         imported_rows = _get_imported_cost_rows(db, org_id, customer_id)
         for row in imported_rows:
@@ -10290,14 +10439,20 @@ async def get_resource_inventory(
                 "waste_flag": False,
                 "waste_reason": None,
                 "tags": {},
+                "data_source": "csv_import",
+                "console_url": None,
             })
+        if items:
+            data_source = "csv_import"
+            coverage_note = "Showing imported billing rows because no live resource inventory is available for this scope."
 
     if waste_only:
         items = [i for i in items if i["waste_flag"]]
 
+    items.sort(key=lambda i: float(i.get("cost_usd") or 0.0), reverse=True)
     total_cost = round(sum(i["cost_usd"] for i in items), 2)
     flagged = sum(1 for i in items if i["waste_flag"])
-    paginated = items[offset: offset + limit]
+    paginated = items[requested_offset: requested_offset + requested_limit]
 
     return {
         "generated_at": _utcnow().isoformat() + "Z",
@@ -10305,6 +10460,8 @@ async def get_resource_inventory(
         "total_cost_usd": total_cost,
         "flagged_waste_count": flagged,
         "items": paginated,
+        "data_source": data_source,
+        "coverage_note": coverage_note,
     }
 
 
@@ -14786,6 +14943,7 @@ def _collect_provider_recommendation_rows(
     include_existing_rightsizing_sources: bool = True,
 ) -> List[Dict[str, Any]]:
     provider_filter = [provider] if provider != "all" else ["aws", "azure", "gcp", "oci"]
+    effective_limit = max(1, int(limit or 1))
     rows: List[Dict[str, Any]] = []
     for prov in provider_filter:
         if prov not in {"aws", "azure", "gcp", "oci"}:
@@ -14810,9 +14968,9 @@ def _collect_provider_recommendation_rows(
             if runtime_oci is not None:
                 credential_payloads.append(runtime_oci)
         for cred_json in credential_payloads:
-            if len(rows) >= limit:
+            if len(rows) >= effective_limit:
                 break
-            remaining = max(limit - len(rows), 0)
+            remaining = provider_bounded_limit(prov, max(effective_limit - len(rows), 0), floor=0)
             if remaining <= 0:
                 break
             if prov == "aws":
@@ -14821,7 +14979,7 @@ def _collect_provider_recommendation_rows(
                     min_monthly_savings,
                     remaining,
                 ))
-                remaining = max(limit - len(rows), 0)
+                remaining = provider_bounded_limit(prov, max(effective_limit - len(rows), 0), floor=0)
                 if include_existing_rightsizing_sources and remaining > 0:
                     rows.extend(_recommendation_rows_from_rightsizing(
                         _rightsizing_from_aws_ce(cred_json, min_monthly_savings)[:remaining]
@@ -14838,7 +14996,7 @@ def _collect_provider_recommendation_rows(
                     min_monthly_savings,
                     remaining,
                 ))
-                remaining = max(limit - len(rows), 0)
+                remaining = provider_bounded_limit(prov, max(effective_limit - len(rows), 0), floor=0)
                 if include_existing_rightsizing_sources and remaining > 0:
                     rows.extend(_recommendation_rows_from_rightsizing(
                         _rightsizing_from_gcp_cloud_monitoring(cred_json, min_monthly_savings, limit=remaining)
@@ -14849,17 +15007,17 @@ def _collect_provider_recommendation_rows(
                     min_monthly_savings,
                     remaining,
                 ))
-                remaining = max(limit - len(rows), 0)
+                remaining = provider_bounded_limit(prov, max(effective_limit - len(rows), 0), floor=0)
                 if include_existing_rightsizing_sources and remaining > 0:
                     rows.extend(_recommendation_rows_from_rightsizing(
                         _rightsizing_from_oci_compute_inventory(cred_json, min_monthly_savings, limit=remaining)
                     ))
-                remaining = max(limit - len(rows), 0)
+                remaining = provider_bounded_limit(prov, max(effective_limit - len(rows), 0), floor=0)
                 if include_existing_rightsizing_sources and remaining > 0:
                     rows.extend(_recommendation_rows_from_rightsizing(
                         _rightsizing_from_oci_storage_inventory(cred_json, min_monthly_savings, limit=remaining)
                     ))
-        if len(rows) >= limit:
+        if len(rows) >= effective_limit:
             break
 
     deduped: List[Dict[str, Any]] = []
@@ -14877,7 +15035,7 @@ def _collect_provider_recommendation_rows(
         seen.add(key)
         deduped.append(row)
     deduped.sort(key=_recommendation_monthly_savings, reverse=True)
-    return deduped[:limit]
+    return deduped[:effective_limit]
 
 
 def _provider_recommendation_action(row: Dict[str, Any]) -> str:
@@ -14985,7 +15143,7 @@ def _rightsizing_from_provider_recommendation_rows(
                 ),
                 last_observed_at=observed_at,
                 risk_note=(
-                    "Service-level provider recommendation. Use Cloud Resources and the provider console "
+                    "Service-level provider recommendation. Use Inventory Explorer and the provider console "
                     "to select exact resources before making changes."
                 ),
                 provider_recommendation_type=str(row.get("recommendation_type") or "").strip() or None,

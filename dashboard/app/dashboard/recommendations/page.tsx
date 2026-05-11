@@ -202,7 +202,7 @@ export default function RecommendationsPage() {
     setLoading(true)
     setState((current) => ({ ...current, error: null }))
     const recommendationsRequest = fetchRecommendationsStrict({
-      limit: 1000,
+      limit: 120,
       offset: 0,
       cloud_provider: provider,
       include_provider_recommendations: includeLive,
@@ -277,7 +277,7 @@ export default function RecommendationsPage() {
     importedSummary: state.importedSummary,
     diagnostics: state.diagnostics,
     primaryLoaded: state.loaded,
-    pageName: 'Recommendations',
+    pageName: 'Action Ledger',
     isLoading: loading,
   })
 
@@ -323,14 +323,14 @@ export default function RecommendationsPage() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <div className="mb-2 flex flex-wrap gap-2">
-            <Badge variant="outline" className="rounded-md">Cloud Provider Recommendations</Badge>
-            <Badge variant="outline" className="rounded-md border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-950/30">Provider APIs · Rightsizing · Decision Score</Badge>
+            <Badge variant="outline" className="rounded-md">Action Ledger</Badge>
+            <Badge variant="outline" className="rounded-md border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-950/30">Provider APIs · Execution queue · Decision score</Badge>
           </div>
           <h1 className="mb-2 text-4xl font-bold text-slate-900 dark:text-white">
-            Optimization Recommendations
+            Action Ledger
           </h1>
           <p className="max-w-3xl text-slate-600 dark:text-slate-400">
-            Unified recommendations from provider-native optimizers, rightsizing inventory, cost context, and decision-grade scoring.
+            Ranked optimization actions from provider-native optimizers, rightsizing inventory, cost context, and decision-grade scoring. Use this as the owner follow-through queue after investigating details in Optimization Advisor.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -402,7 +402,7 @@ export default function RecommendationsPage() {
         <div className="space-y-8">
           <Expander
             title="Recommendation Workbench"
-            description="Provider-native opportunities, exact resource candidates, rankings, and source feeds."
+            description="Owner-ready provider opportunities, exact resource candidates, rankings, and source feeds."
             icon={<Sparkles className="h-5 w-5" />}
             defaultOpen
           >
@@ -414,7 +414,7 @@ export default function RecommendationsPage() {
                 <p className="text-sm text-slate-500">OCI block and boot volumes Cloud Advisor marks as detached or safe cleanup candidates.</p>
               </div>
               <a href="/dashboard/rightsizing" className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400">
-                Open rightsizing
+                Open Optimization Advisor
               </a>
             </div>
 

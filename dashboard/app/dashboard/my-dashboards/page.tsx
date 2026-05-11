@@ -158,7 +158,7 @@ export default function MyDashboardsPage() {
     importedSummary: state.importedSummary,
     diagnostics: state.diagnostics,
     primaryLoaded: Boolean(state.costs),
-    pageName: 'My Dashboards',
+    pageName: 'Saved Views',
   })
 
   const workspaceViews = useMemo<WorkspaceView[]>(() => {
@@ -227,7 +227,7 @@ export default function MyDashboardsPage() {
       },
       {
         id: 'advanced-finops',
-        name: 'Advanced FinOps',
+        name: 'FinOps Control Tower',
         description: 'Tag quality scoring, decision-grade recommendations, federation, and remediation guardrails.',
         href: '/dashboard/advanced-finops',
         metric: state.coverage ? `${state.coverage.coverage_percent.toFixed(0)}%` : '—',
@@ -251,7 +251,7 @@ export default function MyDashboardsPage() {
       <div>
         <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-3">
           <Grid className="w-10 h-10 text-indigo-600" />
-          My Dashboards
+          Saved Views
         </h1>
         <p className="text-slate-600 dark:text-slate-400">
           Real workspace views generated from backend data instead of static mock dashboards.

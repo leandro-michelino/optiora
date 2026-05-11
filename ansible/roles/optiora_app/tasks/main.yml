@@ -542,6 +542,10 @@
   ansible.builtin.command:
     cmd: npm ci --legacy-peer-deps
     chdir: "{{ optiora_app_dir }}/dashboard"
+  become_user: "{{ optiora_app_user }}"
+  environment:
+    HOME: "{{ optiora_app_dir }}"
+    NPM_CONFIG_CACHE: "{{ optiora_app_dir }}/.npm-cache"
   changed_when: true
   notify: Restart optiora dashboard
 
@@ -549,7 +553,11 @@
   ansible.builtin.command:
     cmd: npm run build
     chdir: "{{ optiora_app_dir }}/dashboard"
+  become_user: "{{ optiora_app_user }}"
   environment:
+    HOME: "{{ optiora_app_dir }}"
+    NPM_CONFIG_CACHE: "{{ optiora_app_dir }}/.npm-cache"
+    NEXT_TELEMETRY_DISABLED: "1"
     NEXT_PUBLIC_API_URL: "{{ optiora_api_url }}"
   changed_when: true
   notify: Restart optiora dashboard

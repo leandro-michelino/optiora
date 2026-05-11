@@ -173,17 +173,22 @@ async function postJsonSafe(url: string, body: Record<string, unknown> = {}): Pr
   }
 }
 
-async function fetchPostJsonSafe<T>(url: string, body: Record<string, unknown> = {}): Promise<T | null> {
+async function fetchPostJsonSafe<T>(url: string, body: Record<string, unknown> = {}, timeoutMs = 8000): Promise<T | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -1421,13 +1426,17 @@ async function callBackendGenAIAnalyze(message: string): Promise<GenAIAnalyzeRes
   return payload;
 }
 
-async function fetchJsonSafe<T>(url: string): Promise<T | null> {
+async function fetchJsonSafe<T>(url: string, timeoutMs = 8000): Promise<T | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { method: 'GET' });
+    const res = await fetch(url, { method: 'GET', signal: controller.signal });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -1849,7 +1858,8 @@ Do not add explanations.`;
   const res = await fetch(`${endpoint}${path}`, {
     method: 'POST',
     headers,
-    body
+    body,
+    signal: AbortSignal.timeout(35_000),
   });
 
   if (!res.ok) {

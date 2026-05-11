@@ -34,6 +34,7 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { cn } from '@/lib/utils'
 
 type NavTone = 'blue' | 'purple' | 'emerald' | 'slate'
+type NavProminence = 'primary' | 'secondary'
 
 interface NavItem {
   href: string
@@ -41,6 +42,7 @@ interface NavItem {
   icon: typeof BarChart3
   description: string
   keywords: string[]
+  prominence?: NavProminence
 }
 
 interface NavSection {
@@ -55,43 +57,43 @@ const navSections: NavSection[] = [
     tone: 'blue',
     items: [
       { href: '/dashboard', label: 'Overview', icon: BarChart3, description: 'Executive readiness, live data, waste, commitments, and allocation at a glance.', keywords: ['home', 'summary', 'command center', 'health'] },
-      { href: '/dashboard/my-dashboards', label: 'My Dashboards', icon: Grid, description: 'Personalized operating views built from backend data.', keywords: ['personal', 'custom', 'workspace'] },
       { href: '/dashboard/costs', label: 'Billing & Allocation', icon: Cloud, description: 'Provider spend, services, chargeback, business mapping, and exports.', keywords: ['billing', 'spend', 'chargeback', 'mapping', 'cloud costs'] },
       { href: '/dashboard/accounts', label: 'Account Hierarchy', icon: Building2, description: 'Provider accounts, subscriptions, projects, compartments, and regional rollups.', keywords: ['accounts', 'subscriptions', 'projects', 'compartments'] },
-      { href: '/dashboard/portfolio', label: 'Customer Portfolio', icon: Grid, description: 'MSP and partner customer health, spend, savings, and alert posture.', keywords: ['customers', 'msp', 'partner', 'white label'] },
+      { href: '/dashboard/my-dashboards', label: 'Saved Views', icon: Grid, description: 'Personalized operating views built from backend data.', keywords: ['personal', 'custom', 'workspace', 'my dashboards'], prominence: 'secondary' },
+      { href: '/dashboard/portfolio', label: 'Customer Portfolio', icon: Grid, description: 'MSP and partner customer health, spend, savings, and alert posture.', keywords: ['customers', 'msp', 'partner', 'white label'], prominence: 'secondary' },
     ],
   },
   {
     label: 'Intelligence',
     tone: 'purple',
     items: [
-      { href: '/dashboard/ai-insights', label: 'AI Insights', icon: Brain, description: 'Deterministic analytics with GenAI explanation and prioritization.', keywords: ['genai', 'analysis', 'insights', 'rag'] },
       { href: '/dashboard/cost-advisor', label: 'Cost Advisor', icon: MessageCircle, description: 'Ask focused FinOps questions and compare narrative guidance with evidence.', keywords: ['chat', 'copilot', 'advisor', 'assistant'] },
       { href: '/dashboard/forecasting', label: 'Forecasting', icon: TrendingUp, description: 'Budget risk, forecast bands, scenarios, and model diagnostics.', keywords: ['forecast', 'budget', 'risk', 'scenario'] },
+      { href: '/dashboard/ai-insights', label: 'AI Insights', icon: Brain, description: 'Deterministic analytics with GenAI explanation and prioritization.', keywords: ['genai', 'analysis', 'insights', 'rag'], prominence: 'secondary' },
+      { href: '/dashboard/advanced-finops', label: 'FinOps Control Tower', icon: ShieldCheck, description: 'Consolidated posture across forecast risk, waste, commitments, governance, decision intelligence, and RAG evidence.', keywords: ['advanced', 'decision', 'federation', 'tagging', 'control tower', 'rag'], prominence: 'secondary' },
     ],
   },
   {
-    label: 'FinOps',
+    label: 'Optimize',
     tone: 'emerald',
     items: [
-      { href: '/dashboard/unit-economics', label: 'Unit Economics', icon: TrendingUp, description: 'Business-unit cost, waste rate, provider efficiency, and FOCUS exports.', keywords: ['unit', 'economics', 'kpi', 'focus'] },
-      { href: '/dashboard/scorecards', label: 'Scorecards', icon: Award, description: 'Team maturity and realized savings scorecards for finance follow-through.', keywords: ['maturity', 'realized savings', 'finance', 'owner'] },
-      { href: '/dashboard/advanced-finops', label: 'Advanced FinOps', icon: ShieldCheck, description: 'Control tower for forecast risk, waste, commitments, governance, decision intelligence, and RAG evidence.', keywords: ['advanced', 'decision', 'federation', 'tagging', 'control tower', 'rag'] },
-      { href: '/dashboard/inventory', label: 'Cloud Resources', icon: Server, description: 'Canonical resource-cost explorer by provider, account, region, type, tag, and waste signal.', keywords: ['resources', 'inventory', 'assets', 'tags', 'costs'] },
-      { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box, description: 'Cluster cost allocation, namespaces, OpenCost sync, and workload optimization.', keywords: ['k8s', 'opencost', 'namespace', 'cluster'] },
-      { href: '/dashboard/virtual-tags', label: 'Virtual Tags', icon: Tag, description: 'Virtual tag rules and previews without changing cloud resources.', keywords: ['tags', 'rules', 'allocation', 'governance'] },
       { href: '/dashboard/rightsizing', label: 'Optimization Advisor', icon: BarChart2, description: 'Provider-native Cloud Advisor findings, storage cleanup, rightsizing, and execution detail.', keywords: ['resize', 'rightsizing', 'cloud advisor', 'savings', 'recommendations', 'ledger', 'unattached volumes'] },
+      { href: '/dashboard/inventory', label: 'Inventory Explorer', icon: Server, description: 'Provider inventory and real resource action explorer by account, region, type, tag, and waste signal.', keywords: ['resources', 'inventory', 'assets', 'tags', 'costs', 'cloud resources'] },
+      { href: '/dashboard/unit-economics', label: 'Unit Economics', icon: TrendingUp, description: 'Business-unit cost, waste rate, provider efficiency, and FOCUS exports.', keywords: ['unit', 'economics', 'kpi', 'focus'] },
+      { href: '/dashboard/scorecards', label: 'Scorecards', icon: Award, description: 'Team maturity and realized savings scorecards for finance follow-through.', keywords: ['maturity', 'realized savings', 'finance', 'owner'], prominence: 'secondary' },
+      { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box, description: 'Cluster cost allocation, namespaces, OpenCost sync, and workload optimization.', keywords: ['k8s', 'opencost', 'namespace', 'cluster'], prominence: 'secondary' },
+      { href: '/dashboard/virtual-tags', label: 'Virtual Tags', icon: Tag, description: 'Virtual tag rules and previews without changing cloud resources.', keywords: ['tags', 'rules', 'allocation', 'governance'], prominence: 'secondary' },
     ],
   },
   {
-    label: 'Operations',
+    label: 'Operate',
     tone: 'slate',
     items: [
       { href: '/dashboard/operations', label: 'Operations', icon: Activity, description: 'Scans, alerts, exports, scheduler policy, freshness, and evidence timeline.', keywords: ['ops', 'scan', 'exports', 'scheduler'] },
-      { href: '/dashboard/admin', label: 'Admin Diagnostics', icon: ShieldCheck, description: 'Runtime health, scheduler status, data freshness, and notification telemetry.', keywords: ['admin', 'diagnostics', 'health', 'runtime'] },
       { href: '/dashboard/anomalies', label: 'Anomalies', icon: AlertTriangle, description: 'Cost anomaly feed, severity, and investigation context.', keywords: ['alerts', 'spikes', 'anomaly', 'triage'] },
-      { href: '/dashboard/recommendations', label: 'Recommendations', icon: Lightbulb, description: 'Unified provider, rightsizing, cost-context, and decision-grade recommendations.', keywords: ['optimization', 'actions', 'savings', 'provider'] },
       { href: '/dashboard/settings', label: 'Settings', icon: Settings, description: 'Credentials, CSV imports, approvals, notifications, routing, and export jobs.', keywords: ['config', 'credentials', 'imports', 'notifications'] },
+      { href: '/dashboard/recommendations', label: 'Action Ledger', icon: Lightbulb, description: 'Ranked provider, rightsizing, cost-context, and decision-grade recommendations ready for owner follow-through.', keywords: ['optimization', 'actions', 'savings', 'provider', 'recommendations'], prominence: 'secondary' },
+      { href: '/dashboard/admin', label: 'Admin Diagnostics', icon: ShieldCheck, description: 'Runtime health, scheduler status, data freshness, and notification telemetry.', keywords: ['admin', 'diagnostics', 'health', 'runtime'], prominence: 'secondary' },
     ],
   },
 ]
@@ -132,6 +134,7 @@ function DashboardNav({
   navQuery: string
   onNavQueryChange: (value: string) => void
 }) {
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const normalizedQuery = navQuery.trim().toLowerCase()
   const itemMatchesQuery = (item: NavItem) => {
     if (!normalizedQuery) return true
@@ -150,7 +153,7 @@ function DashboardNav({
     .filter((section) => section.items.length > 0)
 
   return (
-    <nav className="space-y-6" aria-label="Dashboard navigation">
+    <nav className="space-y-5" aria-label="Dashboard navigation">
       <label className="block px-1">
         <span className="sr-only">Find dashboard screen</span>
         <span className="relative block">
@@ -171,13 +174,19 @@ function DashboardNav({
         </div>
       ) : null}
 
-      {visibleSections.map((section) => (
+      {visibleSections.map((section) => {
+        const primaryItems = section.items.filter((item) => (item.prominence ?? 'primary') === 'primary')
+        const secondaryItems = section.items.filter((item) => item.prominence === 'secondary')
+        const hasActiveSecondary = secondaryItems.some((item) => isActivePath(pathname, item.href))
+        const secondaryExpanded = Boolean(normalizedQuery || hasActiveSecondary || expandedSections[section.label])
+
+        return (
         <section key={section.label} className="space-y-2">
           <div className="px-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
             {section.label}
           </div>
           <div className="space-y-1">
-            {section.items.map((item) => {
+            {primaryItems.map((item) => {
               const Icon = item.icon
               const active = isActivePath(pathname, item.href)
 
@@ -216,9 +225,70 @@ function DashboardNav({
                 </Link>
               )
             })}
+            {secondaryItems.length > 0 ? (
+              <div className="pt-1">
+                {!normalizedQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSections((current) => ({
+                      ...current,
+                      [section.label]: !secondaryExpanded,
+                    }))}
+                    className="flex h-8 w-full items-center justify-between rounded-lg px-3 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+                    aria-expanded={secondaryExpanded}
+                  >
+                    <span>More workflows</span>
+                    <ChevronDown className={cn('h-4 w-4 transition', secondaryExpanded && 'rotate-180')} />
+                  </button>
+                ) : null}
+                {secondaryExpanded ? (
+                  <div className="mt-1 space-y-1 border-l border-slate-200 pl-2 dark:border-slate-800">
+                    {secondaryItems.map((item) => {
+                      const Icon = item.icon
+                      const active = isActivePath(pathname, item.href)
+
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={onNavigate}
+                          aria-label={item.label}
+                          aria-current={active ? 'page' : undefined}
+                          title={`${item.label}: ${item.description}`}
+                          className={cn(
+                            'group flex min-h-9 items-start gap-3 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white',
+                            active && `shadow-sm ring-1 ${activeToneClasses[section.tone]}`,
+                          )}
+                        >
+                          <Icon
+                            className={cn(
+                              'mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-current',
+                              active && 'text-current',
+                            )}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{item.label}</span>
+                            {active || normalizedQuery ? (
+                              <span className="mt-0.5 block line-clamp-2 text-xs font-normal leading-4 text-slate-500 dark:text-slate-400">
+                                {item.description}
+                              </span>
+                            ) : null}
+                          </span>
+                          {active && (
+                            <span
+                              className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', activeDotClasses[section.tone])}
+                            />
+                          )}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </section>
-      ))}
+      )})}
     </nav>
   )
 }

@@ -26,13 +26,14 @@ Repository release metadata:
 - Page-by-page `UIX_REVIEW.md` covering every dashboard screen, applied improvements, cross-page standards, and a prioritized UX backlog.
 - Live OCI Kubernetes/container inventory in `GET /api/v1/analytics/kubernetes/summary`, covering OKE clusters, OCI Container Instances, and OCIR repositories before billing rows are available.
 - Focused Kubernetes E2E fixture resources in OCI: one OKE Basic cluster and one small Docker-backed OCI Container Instance for live page validation. These temporary resources were deleted after validation.
-- Cloud Resources & Costs cockpit for the canonical resource-cost explorer, including provider share, type/region/account rollups, top resources, local search/sort, expandable rows, and a resource details drawer.
+- Inventory Explorer cockpit for provider resource inventory and action rows, including provider share, type/region/account rollups, top resources, local search/sort, expandable rows, and a resource details drawer.
 - Bounded API response cache for dashboard JSON `GET /api/v1/*` calls, with default `5` minute TTL, active-entry background warming every `5` minutes, and cache status headers.
 - Unified FinOps Control Tower endpoint, `GET /api/v1/analytics/control-tower`, combining forecast risk, waste, commitment, governance, decision frontier, RAG evidence, and GenAI advisory prompts.
-- Advanced FinOps Control Tower panel that surfaces the consolidated posture score, lane status, and RAG-backed action queue before specialist drill-down sections.
+- FinOps Control Tower panel that surfaces the consolidated posture score, lane status, and RAG-backed action queue before specialist drill-down sections.
 - Real OCI GenAI + RAG wiring for Cost Advisor chat and backend GenAI narratives: server-side OCI GenAI calls, backend RAG retrieval, and retrieved guidance injection into prompts.
 - Terraform-managed compute/data-volume deployment flow with Ansible runtime provisioning driven from Terraform outputs.
 - Optimization Advisor table for provider-native findings, showing Cloud Advisor-style recommendation type, count, service, category, estimated savings, importance, status, scope, and provider-console action.
+- Provider API capability envelopes for AWS, Azure, GCP, and OCI, exposed through diagnostics and used to bound provider-native recommendation collection by scope, page size, parallelism, timeout, retryable errors, and throttling signals.
 
 ### Changed
 
@@ -43,17 +44,19 @@ Repository release metadata:
 - Rightsizing live refresh now allows up to `120s` in the dashboard client. The deployed OCI live scan has been observed returning in about `50s`, which exceeded the previous `45s` client timeout.
 - Optimization Advisor overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status, provider-native findings, and action summaries discoverable.
 - API and dashboard systemd units now bound stop behavior so redeploys cannot hang indefinitely on multi-process worker shutdown.
+- Dashboard dependency install and build now run as the runtime application user under Ansible, preventing partial or root-owned Next.js artifacts from producing deployed `_next/static` 500 errors.
 - FinOps Scorecards now show finance-first realized savings summaries and expandable provider, owner, business-unit, and monthly scorecard tables.
 - Kubernetes page language now distinguishes live resource inventory from metered spend and labels run-rate estimates clearly.
-- Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, while Cloud Resources owns resource-level cost investigation.
-- Dashboard navigation now includes richer screen descriptions, synonym-aware search, active-page helper text, and clearer section context across every screen.
+- Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, while Inventory Explorer owns resource-level investigation and explicitly labels whether the current rows come from live provider resource actions, account snapshots, or imported cost data.
+- The former Cloud Resources page is renamed to Inventory Explorer and now prefers real OCI tenancy-level Optimizer resource/action rows instead of showing only a single tenancy aggregate when live resource data is available.
+- Dashboard navigation now uses a job-based primary IA: Workspace, Intelligence, Optimize, and Operate carry the core workflows, while specialist screens are searchable and grouped under "More workflows" to reduce duplicate-feeling menu choices.
 - Removed legacy Kubernetes namespace route wiring so `/dashboard/kubernetes` is the only Kubernetes, container, Docker, namespace, and OpenCost page.
 - Cost Advisor chat auto-scroll now scrolls only the conversation panel, preventing page-level scroll jumps and sticky-header overlap.
 - Cost Advisor offline/backend-unreachable states now show operator-friendly guidance instead of raw `Failed to fetch` text.
 - Dashboard Refresh buttons now send `force_refresh=true`, `Cache-Control: no-cache`, and `X-OptiOra-Force-Refresh: true` so customer-initiated refreshes always bypass and repopulate the response cache.
 - CORS now allows the force-refresh request header and exposes `X-OptiOra-Cache`, `X-OptiOra-Cache-Age`, and `X-OptiOra-Cache-TTL` for browser diagnostics.
 - Successful mutating API calls now invalidate cached reads so imports, approvals, alert lifecycle actions, credentials, virtual tags, and finance updates are visible immediately.
-- UIX review now documents the page-consolidation decision: keep specialized workflow pages, but unify dense executive intelligence inside Advanced FinOps.
+- UIX review now documents the page-consolidation decision: keep specialized workflow pages, but unify dense executive intelligence inside FinOps Control Tower and rename the generic Recommendations surface to Action Ledger.
 - Cleanup documentation now treats `/dashboard/kubernetes` as the only Kubernetes/container/Docker route, with no stale legacy redirect expectation.
 - Workspace cleanup now removes broader duplicate-copy, editor leftover, and OS metadata artifacts while preserving runtime state and local dependency caches.
 - README, cost estimate, testing notes, deployment notes, architecture diagrams, walkthrough notes, UIX review, and next-phase planning were refreshed to match the current deployed state.

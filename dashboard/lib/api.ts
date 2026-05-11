@@ -933,6 +933,8 @@ export async function fetchResourceInventory(params: {
       limit: params.limit,
       offset: params.offset,
     })}`,
+    {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
 }
 

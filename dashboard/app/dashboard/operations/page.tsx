@@ -590,6 +590,8 @@ export default function OperationsPage() {
                   <TableHead>Provider</TableHead>
                   <TableHead>Runtime</TableHead>
                   <TableHead>Validated</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead>API envelope</TableHead>
                   <TableHead>Last Tested</TableHead>
                 </TableRow>
               </TableHeader>
@@ -614,6 +616,12 @@ export default function OperationsPage() {
                         <Badge className={`rounded-md border ${statusTone(valid)}`}>
                           {valid ? 'Validated' : 'Needs validation'}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[260px] text-xs text-slate-600 dark:text-slate-400">
+                        {diagnostic?.scope_model || 'Provider account scope'}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-600 dark:text-slate-400">
+                        {diagnostic?.max_page_size || 100} page · {diagnostic?.max_parallel_requests || 3} parallel · {diagnostic?.request_timeout_seconds || 30}s
                       </TableCell>
                       <TableCell className="text-slate-600 dark:text-slate-400">
                         {credential?.tested_at || credential?.last_tested || 'Never'}

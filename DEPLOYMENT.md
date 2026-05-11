@@ -279,6 +279,7 @@ sudo systemctl status optiora-dashboard
 - runs `alembic upgrade head`
 - restarts services and performs health checks
 - renders bounded systemd stop behavior for API/dashboard services (`KillMode=mixed`, `TimeoutStopSec=30`) so multi-process workers cannot leave redeploys stuck in `stop-sigterm`
+- installs dashboard dependencies and builds `.next` as the `optiora` runtime user, using a writable app-local npm cache, so deployed Next.js static chunks and manifests are readable by the service account
 - resolves GenAI credential/config inputs from exported env vars or local `.env` and injects runtime-safe values for backend narration
 
 The Ansible-rendered `.env` values matter because the dashboard is browser-executed. A localhost API URL in deployed mode would break browser API calls.

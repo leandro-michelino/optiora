@@ -7,7 +7,7 @@ const fixtureCsv = path.join(__dirname, 'fixtures', 'import-costs.csv')
 
 const dashboardScreens = [
   { route: '/dashboard', heading: 'OptiOra Command Center' },
-  { route: '/dashboard/my-dashboards', heading: 'My Dashboards' },
+  { route: '/dashboard/my-dashboards', heading: 'Saved Views' },
   { route: '/dashboard/costs', heading: 'Billing & Allocation' },
   { route: '/dashboard/accounts', heading: 'Account Hierarchy' },
   { route: '/dashboard/portfolio', heading: 'Customer Portfolio' },
@@ -16,15 +16,15 @@ const dashboardScreens = [
   { route: '/dashboard/forecasting', heading: 'Predictive Cost Analytics' },
   { route: '/dashboard/unit-economics', heading: 'Unit Economics Cockpit' },
   { route: '/dashboard/scorecards', heading: 'FinOps Scorecards' },
-  { route: '/dashboard/advanced-finops', heading: 'Advanced FinOps Console' },
-  { route: '/dashboard/inventory', heading: 'Cloud Resources & Costs' },
+  { route: '/dashboard/advanced-finops', heading: 'FinOps Control Tower' },
+  { route: '/dashboard/inventory', heading: 'Inventory Explorer' },
   { route: '/dashboard/kubernetes', heading: 'Kubernetes Cost Allocation' },
   { route: '/dashboard/virtual-tags', heading: 'Virtual Tags' },
-  { route: '/dashboard/rightsizing', heading: 'Rightsizing' },
+  { route: '/dashboard/rightsizing', heading: 'Optimization Advisor' },
   { route: '/dashboard/operations', heading: 'Operations' },
   { route: '/dashboard/admin', heading: 'Admin Diagnostics' },
   { route: '/dashboard/anomalies', heading: 'Cost Anomalies' },
-  { route: '/dashboard/recommendations', heading: 'Optimization Recommendations' },
+  { route: '/dashboard/recommendations', heading: 'Action Ledger' },
   { route: '/dashboard/settings', heading: 'Cloud Settings' },
 ]
 

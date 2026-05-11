@@ -164,12 +164,12 @@ export default function AdvancedFinOpsPage() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <div className="mb-2 flex flex-wrap gap-2">
-            <Badge variant="outline" className="rounded-md">Advanced FinOps</Badge>
+            <Badge variant="outline" className="rounded-md">FinOps Control Tower</Badge>
             <Badge variant="outline" className="rounded-md border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30">
               Competitive Features
             </Badge>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2">Advanced FinOps Console</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-2">FinOps Control Tower</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
             Unified view of tag completeness scoring, decision-grade optimization ranking, and multi-account federation insights.
           </p>
@@ -290,7 +290,7 @@ export default function AdvancedFinOpsPage() {
           </Expander>
 
           <Expander
-            title="Core Advanced FinOps Panels"
+            title="Core Control Tower Panels"
             description="Tag quality dimensions and decision-grade optimization ranking."
             icon={<Bot className="h-5 w-5" />}
             defaultOpen
