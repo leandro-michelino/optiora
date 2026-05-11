@@ -4857,6 +4857,7 @@ async def dashboard_recommendations(
                 "importance": row.get("importance"),
                 "status": row.get("status"),
                 "recommendation_status": row.get("recommendation_status"),
+                "resource_console_url": row.get("resource_console_url"),
             }
         )
     return _dedupe_dashboard_recommendations(mapped)[:limit]
@@ -13986,6 +13987,8 @@ def _rightsizing_console_url(
             or "bootvolume" in rtype
             or "boot volume" in rtype
         ):
+            if rid.startswith("ocid1.bootvolume."):
+                return f"https://cloud.oracle.com/block-storage/boot-volumes/{quote(rid, safe='')}{oci_region_suffix}"
             return f"https://cloud.oracle.com/block-storage/boot-volumes{oci_region_suffix}"
         if (
             rid.startswith("ocid1.volume.")
@@ -13993,6 +13996,8 @@ def _rightsizing_console_url(
             or "block volume" in rtype
             or rtype == "volume"
         ):
+            if rid.startswith("ocid1.volume."):
+                return f"https://cloud.oracle.com/block-storage/volumes/{quote(rid, safe='')}{oci_region_suffix}"
             return f"https://cloud.oracle.com/block-storage/volumes{oci_region_suffix}"
         if (
             rid.startswith("ocid1.bucket.")
@@ -14002,11 +14007,15 @@ def _rightsizing_console_url(
         ):
             return f"https://cloud.oracle.com/object-storage/buckets{oci_region_suffix}"
         if rid.startswith("ocid1.loadbalancer.") or "load balancer" in rtype or "loadbalancer" in rtype:
+            if rid.startswith("ocid1.loadbalancer."):
+                return f"https://cloud.oracle.com/networking/load-balancers/{quote(rid, safe='')}{oci_region_suffix}"
             return f"https://cloud.oracle.com/networking/load-balancers{oci_region_suffix}"
         if rid.startswith("ocid1.autonomousdatabase.") or "autonomous" in rtype:
+            if rid.startswith("ocid1.autonomousdatabase."):
+                return f"https://cloud.oracle.com/db/adbs/{quote(rid, safe='')}{oci_region_suffix}"
             return f"https://cloud.oracle.com/db/adbs{oci_region_suffix}"
         if rid.startswith("ocid1.instance."):
-            return f"https://cloud.oracle.com/compute/instances{oci_region_suffix}"
+            return f"https://cloud.oracle.com/compute/instances/{quote(rid, safe='')}{oci_region_suffix}"
         if rid.startswith("ocid1."):
             return f"https://cloud.oracle.com/resources{oci_region_suffix}"
         # Account-level signal: link to compute inventory in selected region.

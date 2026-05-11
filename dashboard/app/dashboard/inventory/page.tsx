@@ -80,6 +80,53 @@ function resourceDisplayName(item: ResourceInventoryItem) {
   return item.resource_name || item.resource_id || 'Unnamed resource'
 }
 
+function ociResourceConsoleUrl(item: ResourceInventoryItem): string | null {
+  const resourceId = String(item.resource_id || '').trim()
+  const resourceType = String(item.resource_type || '').toLowerCase()
+  const region = String(item.region || '').trim()
+  const suffix =
+    region && !['global', 'unknown', 'n/a'].includes(region.toLowerCase())
+      ? `?region=${encodeURIComponent(region)}`
+      : ''
+  const encoded = encodeURIComponent(resourceId)
+
+  if (resourceId.startsWith('ocid1.bootvolume.') || resourceType.includes('bootvolume') || resourceType.includes('boot volume')) {
+    return resourceId.startsWith('ocid1.bootvolume.')
+      ? `https://cloud.oracle.com/block-storage/boot-volumes/${encoded}${suffix}`
+      : `https://cloud.oracle.com/block-storage/boot-volumes${suffix}`
+  }
+  if (
+    resourceId.startsWith('ocid1.volume.') ||
+    resourceType.includes('blockvolume') ||
+    resourceType.includes('block volume') ||
+    resourceType === 'volume'
+  ) {
+    return resourceId.startsWith('ocid1.volume.')
+      ? `https://cloud.oracle.com/block-storage/volumes/${encoded}${suffix}`
+      : `https://cloud.oracle.com/block-storage/volumes${suffix}`
+  }
+  if (resourceId.startsWith('ocid1.instance.')) {
+    return `https://cloud.oracle.com/compute/instances/${encoded}${suffix}`
+  }
+  if (resourceId.startsWith('ocid1.loadbalancer.')) {
+    return `https://cloud.oracle.com/networking/load-balancers/${encoded}${suffix}`
+  }
+  if (resourceId.startsWith('ocid1.autonomousdatabase.')) {
+    return `https://cloud.oracle.com/db/adbs/${encoded}${suffix}`
+  }
+  if (resourceType.includes('objectstorage') || resourceType.includes('object storage') || resourceType.includes('bucket')) {
+    return `https://cloud.oracle.com/object-storage/buckets${suffix}`
+  }
+  return resourceId.startsWith('ocid1.') ? `https://cloud.oracle.com/resources${suffix}` : null
+}
+
+function resourceConsoleUrl(item: ResourceInventoryItem): string | null {
+  if (item.provider.toLowerCase() === 'oci') {
+    return ociResourceConsoleUrl(item) || item.console_url || null
+  }
+  return item.console_url || null
+}
+
 function resourceShare(item: ResourceInventoryItem, totalCost: number) {
   if (totalCost <= 0) return 0
   return (item.cost_usd / totalCost) * 100
@@ -497,6 +544,8 @@ function ResourceRow({
   onOpenDetails: () => void
   accountMeta?: Record<string, unknown>
 }) {
+  const consoleUrl = resourceConsoleUrl(item)
+
   return (
     <>
       <tr className="border-b border-slate-100 transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/50">
@@ -516,7 +565,7 @@ function ResourceRow({
               <p className="truncate text-sm font-semibold text-slate-950 dark:text-white" title={item.resource_name || item.resource_id}>
                 {item.resource_name || item.resource_id}
               </p>
-              <p className="mt-1 max-w-[34rem] truncate font-mono text-xs text-slate-500 dark:text-slate-400" title={item.resource_id}>
+              <p className="mt-1 max-w-[52rem] break-all font-mono text-xs leading-5 text-slate-500 dark:text-slate-400" title={item.resource_id}>
                 {item.resource_id}
               </p>
             </div>
@@ -552,8 +601,8 @@ function ResourceRow({
                   <Button variant="outline" size="sm" onClick={onOpenDetails}>
                     Open Details Drawer
                   </Button>
-                  {item.console_url && (
-                    <a href={item.console_url} target="_blank" rel="noreferrer noopener" className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[0.8rem] font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+                  {consoleUrl && (
+                    <a href={consoleUrl} target="_blank" rel="noreferrer noopener" className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[0.8rem] font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
                       Open console <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   )}

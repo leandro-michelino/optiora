@@ -361,7 +361,50 @@ function productTone(product: string) {
   }[product] ?? 'border-slate-200 bg-slate-50 text-slate-700'
 }
 
+function ociResourceConsoleUrl(rec: RightsizingRecommendation): string | null {
+  const resourceId = String(rec.resource_id || '').trim()
+  const resourceType = String(rec.resource_type || '').toLowerCase()
+  const region = String(rec.region || '').trim()
+  const suffix =
+    region && !['global', 'unknown', 'n/a'].includes(region.toLowerCase())
+      ? `?region=${encodeURIComponent(region)}`
+      : ''
+  const encoded = encodeURIComponent(resourceId)
+
+  if (resourceId.startsWith('ocid1.bootvolume.') || resourceType.includes('bootvolume') || resourceType.includes('boot volume')) {
+    return resourceId.startsWith('ocid1.bootvolume.')
+      ? `https://cloud.oracle.com/block-storage/boot-volumes/${encoded}${suffix}`
+      : `https://cloud.oracle.com/block-storage/boot-volumes${suffix}`
+  }
+  if (
+    resourceId.startsWith('ocid1.volume.') ||
+    resourceType.includes('blockvolume') ||
+    resourceType.includes('block volume') ||
+    resourceType === 'volume'
+  ) {
+    return resourceId.startsWith('ocid1.volume.')
+      ? `https://cloud.oracle.com/block-storage/volumes/${encoded}${suffix}`
+      : `https://cloud.oracle.com/block-storage/volumes${suffix}`
+  }
+  if (resourceId.startsWith('ocid1.instance.')) {
+    return `https://cloud.oracle.com/compute/instances/${encoded}${suffix}`
+  }
+  if (resourceId.startsWith('ocid1.loadbalancer.')) {
+    return `https://cloud.oracle.com/networking/load-balancers/${encoded}${suffix}`
+  }
+  if (resourceId.startsWith('ocid1.autonomousdatabase.')) {
+    return `https://cloud.oracle.com/db/adbs/${encoded}${suffix}`
+  }
+  if (resourceType.includes('objectstorage') || resourceType.includes('object storage') || resourceType.includes('bucket')) {
+    return `https://cloud.oracle.com/object-storage/buckets${suffix}`
+  }
+  return resourceId.startsWith('ocid1.') ? `https://cloud.oracle.com/resources${suffix}` : null
+}
+
 function resourceConsoleUrl(rec: RightsizingRecommendation): string | null {
+  if (rec.provider === 'oci') {
+    return ociResourceConsoleUrl(rec) || rec.resource_console_url
+  }
   if (rec.resource_console_url) return rec.resource_console_url
 
   const region = (rec.region || '').trim()
@@ -376,22 +419,12 @@ function resourceConsoleUrl(rec: RightsizingRecommendation): string | null {
   if (rec.provider === 'gcp') {
     return 'https://console.cloud.google.com/compute/instances'
   }
-  if (rec.provider === 'oci') {
-    const suffix = normalizedRegion ? `?region=${encodeURIComponent(normalizedRegion)}` : ''
-    const text = `${rec.resource_id} ${rec.resource_type}`.toLowerCase()
-    if (text.includes('bootvolume') || text.includes('boot volume')) return `https://cloud.oracle.com/block-storage/boot-volumes${suffix}`
-    if (text.includes('blockvolume') || text.includes('block volume') || text.includes('ocid1.volume.')) return `https://cloud.oracle.com/block-storage/volumes${suffix}`
-    if (text.includes('objectstorage') || text.includes('object storage') || text.includes('bucket')) return `https://cloud.oracle.com/object-storage/buckets${suffix}`
-    if (text.includes('loadbalancer') || text.includes('load balancer')) return `https://cloud.oracle.com/networking/load-balancers${suffix}`
-    if (text.includes('autonomous')) return `https://cloud.oracle.com/db/adbs${suffix}`
-    return `https://cloud.oracle.com/compute/instances${suffix}`
-  }
   return null
 }
 
 function providerAdvisorConsoleUrl(rec: RightsizingRecommendation): string | null {
   if (rec.provider === 'oci' && (hasProviderAdvisorMetadata(rec) || rec.evidence_source.toLowerCase().includes('optimizer'))) {
-    return OCI_CLOUD_ADVISOR_CONSOLE_URL
+    return ociResourceConsoleUrl(rec) || OCI_CLOUD_ADVISOR_CONSOLE_URL
   }
   return resourceConsoleUrl(rec)
 }

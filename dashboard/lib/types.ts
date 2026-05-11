@@ -56,6 +56,7 @@ export interface RecommendationResponse {
   importance?: string | null
   status?: string | null
   recommendation_status?: string | null
+  resource_console_url?: string | null
 }
 
 export interface PaginatedResponse<T> {

@@ -135,6 +135,45 @@ function productCategory(text: string): string {
   return 'Optimization'
 }
 
+function ociResourceConsoleUrl(resourceId: string, resourceType: string, region: string): string | null {
+  const rid = resourceId.trim()
+  const type = resourceType.toLowerCase()
+  const suffix =
+    region && !['global', 'unknown', 'n/a'].includes(region.toLowerCase())
+      ? `?region=${encodeURIComponent(region)}`
+      : ''
+  const encoded = encodeURIComponent(rid)
+
+  if (rid.startsWith('ocid1.bootvolume.') || type.includes('bootvolume') || type.includes('boot volume')) {
+    return rid.startsWith('ocid1.bootvolume.')
+      ? `https://cloud.oracle.com/block-storage/boot-volumes/${encoded}${suffix}`
+      : `https://cloud.oracle.com/block-storage/boot-volumes${suffix}`
+  }
+  if (
+    rid.startsWith('ocid1.volume.') ||
+    type.includes('blockvolume') ||
+    type.includes('block volume') ||
+    type === 'volume'
+  ) {
+    return rid.startsWith('ocid1.volume.')
+      ? `https://cloud.oracle.com/block-storage/volumes/${encoded}${suffix}`
+      : `https://cloud.oracle.com/block-storage/volumes${suffix}`
+  }
+  if (rid.startsWith('ocid1.instance.')) {
+    return `https://cloud.oracle.com/compute/instances/${encoded}${suffix}`
+  }
+  if (rid.startsWith('ocid1.loadbalancer.')) {
+    return `https://cloud.oracle.com/networking/load-balancers/${encoded}${suffix}`
+  }
+  if (rid.startsWith('ocid1.autonomousdatabase.')) {
+    return `https://cloud.oracle.com/db/adbs/${encoded}${suffix}`
+  }
+  if (type.includes('objectstorage') || type.includes('object storage') || type.includes('bucket')) {
+    return `https://cloud.oracle.com/object-storage/buckets${suffix}`
+  }
+  return rid.startsWith('ocid1.') ? `https://cloud.oracle.com/resources${suffix}` : null
+}
+
 function resourceConsoleUrl(
   row: RecommendationResponse | RightsizingRecommendation
 ): string | null {
@@ -142,6 +181,10 @@ function resourceConsoleUrl(
   const resourceId = String('resource_id' in row ? row.resource_id || '' : '').trim()
   const service = String('service' in row ? row.service : row.resource_type).toLowerCase()
   const region = String('region' in row ? row.region : '').trim()
+  const resourceType = String('resource_type' in row ? row.resource_type || '' : service).trim()
+  const existingConsoleUrl = String(
+    'resource_console_url' in row ? row.resource_console_url || '' : ''
+  ).trim()
   const suffix =
     region && !['global', 'unknown', 'n/a'].includes(region.toLowerCase())
       ? `?region=${encodeURIComponent(region)}`
@@ -164,24 +207,9 @@ function resourceConsoleUrl(
     return 'https://console.cloud.google.com/recommender'
   }
   if (provider === 'oci') {
-    const text = `${resourceId} ${service}`.toLowerCase()
-    if (text.includes('bootvolume') || text.includes('boot volume'))
-      return `https://cloud.oracle.com/block-storage/boot-volumes${suffix}`
-    if (
-      text.includes('blockvolume') ||
-      text.includes('block volume') ||
-      text.includes('ocid1.volume.')
-    )
-      return `https://cloud.oracle.com/block-storage/volumes${suffix}`
-    if (
-      text.includes('objectstorage') ||
-      text.includes('object storage') ||
-      text.includes('bucket')
-    )
-      return `https://cloud.oracle.com/object-storage/buckets${suffix}`
-    if (text.includes('loadbalancer') || text.includes('load balancer'))
-      return `https://cloud.oracle.com/networking/load-balancers${suffix}`
-    if (text.includes('autonomous')) return `https://cloud.oracle.com/db/adbs${suffix}`
+    const directUrl = ociResourceConsoleUrl(resourceId, `${resourceType} ${service}`, region)
+    if (directUrl) return directUrl
+    if (existingConsoleUrl) return existingConsoleUrl
     return `https://cloud.oracle.com/optimizer/recommendations${suffix}`
   }
   return null
@@ -546,7 +574,7 @@ export default function RecommendationsPage() {
                                   <div className="font-medium text-slate-900 dark:text-white">
                                     {row.resource_name}
                                   </div>
-                                  <div className="max-w-[440px] truncate font-mono text-xs text-slate-500 dark:text-slate-400">
+                                  <div className="max-w-[44rem] break-all font-mono text-xs leading-5 text-slate-500 dark:text-slate-400">
                                     {row.resource_id}
                                   </div>
                                   {consoleUrl && (
@@ -1089,7 +1117,7 @@ export default function RecommendationsPage() {
                                   <TrendingDown className="h-4 w-4" /> ROI {rec.roi.toFixed(0)}%
                                 </span>
                                 {rec.resource_id && (
-                                  <span className="max-w-[360px] truncate font-mono text-xs text-slate-500">
+                                  <span className="min-w-0 max-w-full break-all font-mono text-xs leading-5 text-slate-500">
                                     {rec.resource_id}
                                   </span>
                                 )}
