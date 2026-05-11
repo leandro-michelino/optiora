@@ -58,8 +58,8 @@ const narrativeLabels: Record<AdvisorNarrativeType, string> = {
 }
 
 const narrativeOrder: AdvisorNarrativeType[] = [
-  'optimization_roadmap',
   'waste_insights',
+  'optimization_roadmap',
   'tagging_strategy',
   'finops_operating_review',
   'executive_narrative',
@@ -402,7 +402,7 @@ export default function CostAdvisorPage() {
   const [hybrid, setHybrid] = useState<HybridAdvisorResponse | null>(null)
   const [hybridLoading, setHybridLoading] = useState(false)
   const [hybridError, setHybridError] = useState<string | null>(null)
-  const [narrativeType, setNarrativeType] = useState<AdvisorNarrativeType>('optimization_roadmap')
+  const [narrativeType, setNarrativeType] = useState<AdvisorNarrativeType>('waste_insights')
   const [chatError, setChatError] = useState<string | null>(null)
   const [lastUserPrompt, setLastUserPrompt] = useState<string>('')
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -444,7 +444,7 @@ export default function CostAdvisorPage() {
   }, [])
 
   useEffect(() => {
-    void loadHybrid('optimization_roadmap')
+    void loadHybrid('waste_insights')
   }, [loadHybrid])
 
   async function handleSendMessage(event?: FormEvent, overridePrompt?: string) {
