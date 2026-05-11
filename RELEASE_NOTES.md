@@ -42,6 +42,7 @@ Repository release metadata:
 - OCI Cloud Advisor metadata is preserved through the rightsizing API response, including unattached volume recommendation counts, category, importance, and active status.
 - Rightsizing live refresh now allows up to `120s` in the dashboard client. The deployed OCI live scan has been observed returning in about `50s`, which exceeded the previous `45s` client timeout.
 - Optimization Advisor overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status, provider-native findings, and action summaries discoverable.
+- API and dashboard systemd units now bound stop behavior so redeploys cannot hang indefinitely on multi-process worker shutdown.
 - FinOps Scorecards now show finance-first realized savings summaries and expandable provider, owner, business-unit, and monthly scorecard tables.
 - Kubernetes page language now distinguishes live resource inventory from metered spend and labels run-rate estimates clearly.
 - Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, while Cloud Resources owns resource-level cost investigation.
