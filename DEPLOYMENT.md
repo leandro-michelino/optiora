@@ -103,6 +103,24 @@ Endpoint routing with nginx front-door mode:
 - `POST /auth/*` -> FastAPI backend (`127.0.0.1:8000`)
 - `/health`, `/docs`, `/redoc`, `/openapi.json` -> FastAPI backend (`127.0.0.1:8000`)
 
+## OCI Tenancy-Wide Scan Scope
+
+`OCI_COMPARTMENT_ID` / `OCI_COMPARTMENT_OCID` identify the deployment and runtime
+compartment, but they do **not** limit live OCI inventory scans. At runtime,
+OptiOra resolves the tenancy home region from the OCI profile, lists
+compartments with `compartment_id_in_subtree=true` at tenancy scope, tries
+`access_level=ANY` first, falls back to `ACCESSIBLE` when required, and then
+scans regional resources across all subscribed OCI regions.
+
+For large tenancies, tune `OCI_MAX_SCAN_COMPARTMENTS` to raise or lower the
+default safety cap (`500`). `OCI_COMPARTMENT_IDS` can seed extra compartments for
+visibility, but the normal behavior remains tenancy-level discovery.
+
+Required OCI IAM scope: the configured principal must be allowed to inspect/read
+the tenancy compartments and target resource families. OptiOra can avoid
+application-compartment-only filtering, but it cannot enumerate resources hidden
+by IAM policy.
+
 ## Local Preflight
 
 For a clean local bootstrap before preflight checks:
@@ -327,6 +345,7 @@ Evidence packs are written under `artifacts/evidence/<UTC-timestamp>/` with:
 ```env
 OCI_REGION=uk-london-1
 OCI_COMPARTMENT_ID=ocid1.compartment.oc1..<compartment_ocid>
+OCI_MAX_SCAN_COMPARTMENTS=500
 OCI_IMAGE_COMPARTMENT_ID=ocid1.tenancy.oc1...   # set to your tenancy OCID
 OCI_INSTANCE_NAME=optiora-api
 OCI_SHAPE=VM.Standard.E4.Flex

@@ -118,6 +118,14 @@ class ConfigTest(unittest.TestCase):
         ):
             self.assertEqual(Config().oci_db_license_model, "LICENSE_INCLUDED")
 
+    def test_oci_max_scan_compartments_defaults_for_tenancy_inventory(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(Config().oci_max_scan_compartments, 500)
+
+    def test_oci_max_scan_compartments_can_be_tuned_for_large_tenancies(self) -> None:
+        with patch.dict(os.environ, {"OCI_MAX_SCAN_COMPARTMENTS": "1200"}, clear=False):
+            self.assertEqual(Config().oci_max_scan_compartments, 1200)
+
     def test_provider_diagnostic_requirements_cover_all_supported_providers(self) -> None:
         requirements = provider_diagnostic_requirements(Config())
         self.assertEqual(tuple(requirements.keys()), SUPPORTED_CLOUD_PROVIDERS)

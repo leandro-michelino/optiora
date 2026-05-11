@@ -31,6 +31,7 @@ optiora_archive_namespace: ""
 optiora_oci_db_license_model: "BYOL"
 optiora_enable_scan_scheduler: true
 optiora_scan_scheduler_interval_minutes: 60
+optiora_oci_max_scan_compartments: 500
 optiora_deployment_target: "oci"
 optiora_oci_runtime_required: true
 optiora_enforce_oci_runtime: true

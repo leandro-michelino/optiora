@@ -765,6 +765,9 @@ Validation rules
   - DEPLOYMENT_TARGET must be oci
   - OCI_RUNTIME_REQUIRED=true requires OCI instance metadata
   - REQUIRE_LIVE_PROVIDER_DATA=true requires at least one real provider config
+  - OCI live inventory scans discover the tenancy home region first
+  - OCI scans enumerate tenancy subtree compartments with ANY, then ACCESSIBLE fallback
+  - OCI regional resources are scanned across subscribed regions
   - documented placeholders like your_aws_access_key are treated as unset
 ```
 

@@ -10652,56 +10652,46 @@ def _oci_live_kubernetes_inventory_rows(
         return []
 
     cfg = Config()
-    target_region = str(
-        cred_json.get("region")
-        or cfg.oci_region
-        or oci_config.get("region")
-        or "uk-london-1"
-    ).strip()
-    if target_region:
-        oci_config = dict(oci_config)
-        oci_config["region"] = target_region
-    region = str(oci_config.get("region") or "global").strip() or "global"
     tenancy_id = str(oci_config.get("tenancy") or "").strip()
     if not tenancy_id:
         return []
 
     client_timeout = (5, 20)
+    configured_region = str(
+        cred_json.get("region")
+        or cfg.oci_region
+        or oci_config.get("region")
+        or "uk-london-1"
+    ).strip()
+    if configured_region:
+        oci_config = _oci_config_for_region(oci_config, configured_region)
+    home_region = _oci_home_region(oci, oci_config, tenancy_id, timeout=client_timeout) or configured_region
+    home_config = _oci_config_for_region(oci_config, home_region)
     try:
-        identity = oci.identity.IdentityClient(oci_config, timeout=client_timeout)
-        container_engine = oci.container_engine.ContainerEngineClient(oci_config, timeout=client_timeout)
-        container_instances = oci.container_instances.ContainerInstanceClient(oci_config, timeout=client_timeout)
-        artifacts = oci.artifacts.ArtifactsClient(oci_config, timeout=client_timeout)
-        virtual_network = oci.core.VirtualNetworkClient(oci_config, timeout=client_timeout)
+        identity = oci.identity.IdentityClient(home_config, timeout=client_timeout)
     except Exception as exc:
-        logger.info("Unable to initialize OCI Kubernetes inventory clients: %s", exc)
+        logger.info("Unable to initialize OCI identity client for Kubernetes inventory: %s", exc)
         return []
 
-    configured_compartments = [
-        str(cred_json.get("compartment_id") or "").strip(),
-        str(cred_json.get("compartment_ocid") or "").strip(),
-        str(os.getenv("OCI_COMPARTMENT_ID", "") or "").strip(),
-        str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip(),
-        str(cfg.oci_genai_compartment_id or "").strip(),
-    ]
-    configured_compartments.extend(
-        item.strip()
-        for item in str(cfg.oci_compartment_ids or "").split(",")
-        if item.strip()
+    compartment_ids = _oci_accessible_compartment_ids(
+        oci,
+        identity,
+        tenancy_id,
+        seed_compartment_ids=_oci_scan_compartment_seeds(cred_json, cfg),
     )
-    compartment_ids: List[str] = []
-    seen_compartment_ids: set[str] = set()
-    for compartment_id in configured_compartments:
-        if compartment_id and compartment_id not in seen_compartment_ids:
-            compartment_ids.append(compartment_id)
-            seen_compartment_ids.add(compartment_id)
-    if not compartment_ids:
-        compartment_ids = _oci_accessible_compartment_ids(oci, identity, tenancy_id)
+    scan_regions = _oci_subscribed_regions(
+        oci,
+        home_config,
+        tenancy_id,
+        home_region=home_region,
+        timeout=client_timeout,
+    )
     rows: List[Dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
     def append_row(
         *,
+        region: str,
         resource_id: str,
         service: str,
         category: str,
@@ -10762,162 +10752,178 @@ def _oci_live_kubernetes_inventory_rows(
             }
         )
 
-    for compartment_id in compartment_ids:
+    for region in scan_regions:
         if len(rows) >= limit:
             break
         try:
-            clusters_response = oci.pagination.list_call_get_all_results(
-                container_engine.list_clusters,
-                compartment_id=compartment_id,
-                limit=50,
-            )
+            region_config = _oci_config_for_region(home_config, region)
+            container_engine = oci.container_engine.ContainerEngineClient(region_config, timeout=client_timeout)
+            container_instances = oci.container_instances.ContainerInstanceClient(region_config, timeout=client_timeout)
+            artifacts = oci.artifacts.ArtifactsClient(region_config, timeout=client_timeout)
+            virtual_network = oci.core.VirtualNetworkClient(region_config, timeout=client_timeout)
         except Exception as exc:
-            logger.info("Unable to list OCI OKE clusters in compartment %s: %s", compartment_id, exc)
-            clusters_response = []
-        for cluster in _oci_collection_items(clusters_response):
-            lifecycle = str(getattr(cluster, "lifecycle_state", "") or "").upper()
-            if lifecycle in {"DELETED", "DELETING", "FAILED"}:
-                continue
-            cluster_id = str(getattr(cluster, "id", "") or "").strip()
-            name = str(getattr(cluster, "name", "") or getattr(cluster, "display_name", "") or cluster_id).strip()
-            version = str(getattr(cluster, "kubernetes_version", "") or "").strip()
-            cluster_type = str(getattr(cluster, "type", "") or "BASIC_CLUSTER").strip()
-            public_endpoint = ""
-            private_endpoint = ""
-            created_at = ""
+            logger.info("Unable to initialize OCI Kubernetes inventory clients in region %s: %s", region, exc)
+            continue
+
+        for compartment_id in compartment_ids:
+            if len(rows) >= limit:
+                break
             try:
-                cluster_details = container_engine.get_cluster(cluster_id).data
-                endpoints = getattr(cluster_details, "endpoints", None)
-                public_endpoint = str(getattr(endpoints, "public_endpoint", "") or "").strip() if endpoints else ""
-                private_endpoint = str(getattr(endpoints, "private_endpoint", "") or "").strip() if endpoints else ""
-                metadata = getattr(cluster_details, "metadata", None)
-                created_value = getattr(metadata, "time_created", None) if metadata else None
+                clusters_response = oci.pagination.list_call_get_all_results(
+                    container_engine.list_clusters,
+                    compartment_id=compartment_id,
+                    limit=50,
+                )
+            except Exception as exc:
+                logger.info("Unable to list OCI OKE clusters in compartment %s region %s: %s", compartment_id, region, exc)
+                clusters_response = []
+            for cluster in _oci_collection_items(clusters_response):
+                lifecycle = str(getattr(cluster, "lifecycle_state", "") or "").upper()
+                if lifecycle in {"DELETED", "DELETING", "FAILED"}:
+                    continue
+                cluster_id = str(getattr(cluster, "id", "") or "").strip()
+                name = str(getattr(cluster, "name", "") or getattr(cluster, "display_name", "") or cluster_id).strip()
+                version = str(getattr(cluster, "kubernetes_version", "") or "").strip()
+                cluster_type = str(getattr(cluster, "type", "") or "BASIC_CLUSTER").strip()
+                public_endpoint = ""
+                private_endpoint = ""
+                created_at = ""
+                try:
+                    cluster_details = container_engine.get_cluster(cluster_id).data
+                    endpoints = getattr(cluster_details, "endpoints", None)
+                    public_endpoint = str(getattr(endpoints, "public_endpoint", "") or "").strip() if endpoints else ""
+                    private_endpoint = str(getattr(endpoints, "private_endpoint", "") or "").strip() if endpoints else ""
+                    metadata = getattr(cluster_details, "metadata", None)
+                    created_value = getattr(metadata, "time_created", None) if metadata else None
+                    created_at = created_value.isoformat() if hasattr(created_value, "isoformat") else str(created_value or "")
+                except Exception:
+                    pass
+                append_row(
+                    region=region,
+                    resource_id=cluster_id,
+                    service=f"OKE cluster: {name}",
+                    category="managed_kubernetes",
+                    monthly_cost_usd=0.0,
+                    evidence=(
+                        f"Live OCI OKE inventory: {lifecycle or 'ACTIVE'}"
+                        f"{f', Kubernetes {version}' if version else ''}"
+                        f", {cluster_type.replace('_', ' ').title()}."
+                    ),
+                    compartment_id=compartment_id,
+                    resource_name=name,
+                    lifecycle_state=lifecycle or None,
+                    resource_shape=cluster_type.replace("_", " ").title(),
+                    resource_version=version or None,
+                    created_at=created_at or None,
+                    public_endpoint=public_endpoint or None,
+                    private_endpoint=private_endpoint or None,
+                )
+
+            try:
+                instances_response = oci.pagination.list_call_get_all_results(
+                    container_instances.list_container_instances,
+                    compartment_id=compartment_id,
+                    limit=50,
+                )
+            except Exception as exc:
+                logger.info("Unable to list OCI Container Instances in compartment %s region %s: %s", compartment_id, region, exc)
+                instances_response = []
+            for instance in _oci_collection_items(instances_response):
+                lifecycle = str(getattr(instance, "lifecycle_state", "") or "").upper()
+                if lifecycle in {"DELETED", "DELETING", "FAILED"}:
+                    continue
+                instance_id = str(getattr(instance, "id", "") or "").strip()
+                display_name = str(getattr(instance, "display_name", "") or instance_id).strip()
+                shape = str(getattr(instance, "shape", "") or "OCI Container Instance").strip()
+                availability_domain = str(getattr(instance, "availability_domain", "") or "").strip()
+                created_value = getattr(instance, "time_created", None)
                 created_at = created_value.isoformat() if hasattr(created_value, "isoformat") else str(created_value or "")
-            except Exception:
-                pass
-            append_row(
-                resource_id=cluster_id,
-                service=f"OKE cluster: {name}",
-                category="managed_kubernetes",
-                monthly_cost_usd=0.0,
-                evidence=(
-                    f"Live OCI OKE inventory: {lifecycle or 'ACTIVE'}"
-                    f"{f', Kubernetes {version}' if version else ''}"
-                    f", {cluster_type.replace('_', ' ').title()}."
-                ),
-                compartment_id=compartment_id,
-                resource_name=name,
-                lifecycle_state=lifecycle or None,
-                resource_shape=cluster_type.replace("_", " ").title(),
-                resource_version=version or None,
-                created_at=created_at or None,
-                public_endpoint=public_endpoint or None,
-                private_endpoint=private_endpoint or None,
-            )
-
-        try:
-            instances_response = oci.pagination.list_call_get_all_results(
-                container_instances.list_container_instances,
-                compartment_id=compartment_id,
-                limit=50,
-            )
-        except Exception as exc:
-            logger.info("Unable to list OCI Container Instances in compartment %s: %s", compartment_id, exc)
-            instances_response = []
-        for instance in _oci_collection_items(instances_response):
-            lifecycle = str(getattr(instance, "lifecycle_state", "") or "").upper()
-            if lifecycle in {"DELETED", "DELETING", "FAILED"}:
-                continue
-            instance_id = str(getattr(instance, "id", "") or "").strip()
-            display_name = str(getattr(instance, "display_name", "") or instance_id).strip()
-            shape = str(getattr(instance, "shape", "") or "OCI Container Instance").strip()
-            availability_domain = str(getattr(instance, "availability_domain", "") or "").strip()
-            created_value = getattr(instance, "time_created", None)
-            created_at = created_value.isoformat() if hasattr(created_value, "isoformat") else str(created_value or "")
-            shape_config = getattr(instance, "shape_config", None)
-            ocpus = float(getattr(shape_config, "ocpus", 0.0) or 0.0) if shape_config else None
-            memory_gib = float(getattr(shape_config, "memory_in_gbs", 0.0) or 0.0) if shape_config else None
-            images: List[str] = []
-            container_count = int(getattr(instance, "container_count", 0) or 0)
-            public_ip = ""
-            try:
-                details = container_instances.get_container_instance(instance_id).data
-                for container in getattr(details, "containers", []) or []:
-                    image = str(getattr(container, "image_url", "") or "").strip()
-                    container_id = str(getattr(container, "container_id", "") or getattr(container, "id", "") or "").strip()
-                    if not image and container_id:
+                shape_config = getattr(instance, "shape_config", None)
+                ocpus = float(getattr(shape_config, "ocpus", 0.0) or 0.0) if shape_config else None
+                memory_gib = float(getattr(shape_config, "memory_in_gbs", 0.0) or 0.0) if shape_config else None
+                images: List[str] = []
+                container_count = int(getattr(instance, "container_count", 0) or 0)
+                public_ip = ""
+                try:
+                    details = container_instances.get_container_instance(instance_id).data
+                    for container in getattr(details, "containers", []) or []:
+                        image = str(getattr(container, "image_url", "") or "").strip()
+                        container_id = str(getattr(container, "container_id", "") or getattr(container, "id", "") or "").strip()
+                        if not image and container_id:
+                            try:
+                                container_details = container_instances.get_container(container_id).data
+                                image = str(getattr(container_details, "image_url", "") or "").strip()
+                            except Exception:
+                                image = ""
+                        if image and image not in images:
+                            images.append(image)
+                    for vnic in getattr(details, "vnics", []) or []:
+                        vnic_id = str(getattr(vnic, "vnic_id", "") or getattr(vnic, "id", "") or "").strip()
+                        if not vnic_id:
+                            continue
                         try:
-                            container_details = container_instances.get_container(container_id).data
-                            image = str(getattr(container_details, "image_url", "") or "").strip()
+                            vnic_details = virtual_network.get_vnic(vnic_id).data
+                            public_ip = str(getattr(vnic_details, "public_ip", "") or "").strip()
+                            if public_ip:
+                                break
                         except Exception:
-                            image = ""
-                    if image and image not in images:
-                        images.append(image)
-                for vnic in getattr(details, "vnics", []) or []:
-                    vnic_id = str(getattr(vnic, "vnic_id", "") or getattr(vnic, "id", "") or "").strip()
-                    if not vnic_id:
-                        continue
-                    try:
-                        vnic_details = virtual_network.get_vnic(vnic_id).data
-                        public_ip = str(getattr(vnic_details, "public_ip", "") or "").strip()
-                        if public_ip:
-                            break
-                    except Exception:
-                        continue
-            except Exception:
-                images = []
-            image_note = f" Images: {', '.join(images[:3])}." if images else ""
-            size_note = ""
-            if ocpus or memory_gib:
-                size_note = f" {ocpus or 0:g} OCPU / {memory_gib or 0:g} GiB."
-            append_row(
-                resource_id=instance_id,
-                service=f"OCI Container Instance: {display_name}",
-                category="container_runtime",
-                monthly_cost_usd=_estimate_oci_container_instance_monthly_cost(ocpus, memory_gib),
-                evidence=f"Live OCI Container Instance inventory: {lifecycle or 'ACTIVE'}, {shape}.{size_note}{image_note}",
-                compartment_id=compartment_id,
-                resource_name=display_name,
-                lifecycle_state=lifecycle or None,
-                resource_shape=shape,
-                created_at=created_at or None,
-                availability_domain=availability_domain or None,
-                public_ip=public_ip or None,
-                ocpus=ocpus,
-                memory_gib=memory_gib,
-                container_count=container_count or (len(images) if images else None),
-                container_images=images[:8],
-            )
+                            continue
+                except Exception:
+                    images = []
+                image_note = f" Images: {', '.join(images[:3])}." if images else ""
+                size_note = ""
+                if ocpus or memory_gib:
+                    size_note = f" {ocpus or 0:g} OCPU / {memory_gib or 0:g} GiB."
+                append_row(
+                    region=region,
+                    resource_id=instance_id,
+                    service=f"OCI Container Instance: {display_name}",
+                    category="container_runtime",
+                    monthly_cost_usd=_estimate_oci_container_instance_monthly_cost(ocpus, memory_gib),
+                    evidence=f"Live OCI Container Instance inventory: {lifecycle or 'ACTIVE'}, {shape}.{size_note}{image_note}",
+                    compartment_id=compartment_id,
+                    resource_name=display_name,
+                    lifecycle_state=lifecycle or None,
+                    resource_shape=shape,
+                    created_at=created_at or None,
+                    availability_domain=availability_domain or None,
+                    public_ip=public_ip or None,
+                    ocpus=ocpus,
+                    memory_gib=memory_gib,
+                    container_count=container_count or (len(images) if images else None),
+                    container_images=images[:8],
+                )
 
-        try:
-            repositories_response = oci.pagination.list_call_get_all_results(
-                artifacts.list_container_repositories,
-                compartment_id=compartment_id,
-                limit=50,
-            )
-        except Exception as exc:
-            logger.info("Unable to list OCI container repositories in compartment %s: %s", compartment_id, exc)
-            repositories_response = []
-        for repository in _oci_collection_items(repositories_response):
-            lifecycle = str(getattr(repository, "lifecycle_state", "") or "").upper()
-            if lifecycle in {"DELETED", "DELETING", "FAILED"}:
-                continue
-            repository_id = str(getattr(repository, "id", "") or "").strip()
-            name = str(
-                getattr(repository, "display_name", "")
-                or getattr(repository, "repository_name", "")
-                or repository_id
-            ).strip()
-            append_row(
-                resource_id=repository_id,
-                service=f"OCIR repository: {name}",
-                category="container_registry",
-                monthly_cost_usd=0.0,
-                evidence=f"Live OCI Container Registry inventory: {lifecycle or 'AVAILABLE'} repository.",
-                compartment_id=compartment_id,
-                resource_name=name,
-                lifecycle_state=lifecycle or None,
-            )
+            try:
+                repositories_response = oci.pagination.list_call_get_all_results(
+                    artifacts.list_container_repositories,
+                    compartment_id=compartment_id,
+                    limit=50,
+                )
+            except Exception as exc:
+                logger.info("Unable to list OCI container repositories in compartment %s region %s: %s", compartment_id, region, exc)
+                repositories_response = []
+            for repository in _oci_collection_items(repositories_response):
+                lifecycle = str(getattr(repository, "lifecycle_state", "") or "").upper()
+                if lifecycle in {"DELETED", "DELETING", "FAILED"}:
+                    continue
+                repository_id = str(getattr(repository, "id", "") or "").strip()
+                name = str(
+                    getattr(repository, "display_name", "")
+                    or getattr(repository, "repository_name", "")
+                    or repository_id
+                ).strip()
+                append_row(
+                    region=region,
+                    resource_id=repository_id,
+                    service=f"OCIR repository: {name}",
+                    category="container_registry",
+                    monthly_cost_usd=0.0,
+                    evidence=f"Live OCI Container Registry inventory: {lifecycle or 'AVAILABLE'} repository.",
+                    compartment_id=compartment_id,
+                    resource_name=name,
+                    lifecycle_state=lifecycle or None,
+                )
     return rows
 
 
@@ -14347,8 +14353,60 @@ def _oci_home_region(
                 if region_name:
                     return region_name
     except Exception as exc:
-        logger.info("Unable to discover OCI home region for optimizer recommendations: %s", exc)
+            logger.info("Unable to discover OCI home region for optimizer recommendations: %s", exc)
     return None
+
+
+def _oci_config_for_region(oci_config: Dict[str, Any], region: Optional[str]) -> Dict[str, Any]:
+    region_name = str(region or "").strip()
+    if not region_name:
+        return dict(oci_config)
+    region_config = dict(oci_config)
+    region_config["region"] = region_name
+    return region_config
+
+
+def _oci_subscribed_regions(
+    oci_module: Any,
+    oci_config: Dict[str, Any],
+    tenancy_id: str,
+    *,
+    home_region: Optional[str] = None,
+    timeout: tuple[int, int] = (5, 15),
+) -> List[str]:
+    """Return all subscribed OCI regions, ordered with the home region first."""
+    fallback_region = str(oci_config.get("region") or "").strip()
+    preferred_home = str(home_region or "").strip()
+    region_names: List[str] = []
+    seen: set[str] = set()
+
+    def add_region(region_name: str) -> None:
+        normalized = str(region_name or "").strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        region_names.append(normalized)
+
+    if preferred_home:
+        add_region(preferred_home)
+
+    try:
+        identity = oci_module.identity.IdentityClient(
+            _oci_config_for_region(oci_config, preferred_home or fallback_region),
+            timeout=timeout,
+        )
+        response = identity.list_region_subscriptions(tenancy_id)
+        subscriptions = list(getattr(response, "data", []) or [])
+        for subscription in subscriptions:
+            if bool(getattr(subscription, "is_home_region", False)):
+                add_region(str(getattr(subscription, "region_name", "") or ""))
+        for subscription in subscriptions:
+            add_region(str(getattr(subscription, "region_name", "") or ""))
+    except Exception as exc:
+        logger.info("Unable to discover OCI subscribed regions; using configured region only: %s", exc)
+
+    add_region(fallback_region)
+    return region_names
 
 
 def _oci_collection_items(response_or_data: Any) -> List[Any]:
@@ -14487,6 +14545,35 @@ def _runtime_oci_credential_json() -> Optional[Dict[str, Any]]:
         "config_file": config_file,
         "profile": _normalize_oci_profile(cfg.oci_profile),
     }
+
+
+def _oci_scan_compartment_seeds(
+    cred_json: Optional[Dict[str, Any]] = None,
+    cfg: Optional[Config] = None,
+) -> List[str]:
+    """Return explicit OCI scan seed compartments without limiting tenancy scans."""
+    cfg = cfg or Config()
+    cred_json = cred_json or {}
+    raw_values = [
+        str(cred_json.get("compartment_id") or "").strip(),
+        str(cred_json.get("compartment_ocid") or "").strip(),
+        str(os.getenv("OCI_COMPARTMENT_ID", "") or "").strip(),
+        str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip(),
+    ]
+    raw_values.extend(
+        item.strip()
+        for item in str(cfg.oci_compartment_ids or "").split(",")
+        if item.strip()
+    )
+
+    seeds: List[str] = []
+    seen: set[str] = set()
+    for compartment_id in raw_values:
+        if not compartment_id or compartment_id in seen:
+            continue
+        seen.add(compartment_id)
+        seeds.append(compartment_id)
+    return seeds
 
 
 def _oci_optimizer_recommendation_rows(
@@ -14899,138 +14986,129 @@ def _rightsizing_from_oci_compute_inventory(
         return []
 
     tenancy_id = str(oci_config.get("tenancy") or "").strip()
-    region = str(oci_config.get("region") or "global").strip() or "global"
     if not tenancy_id:
         return []
 
     client_timeout = (5, 20)
+    home_region = _oci_home_region(oci, oci_config, tenancy_id, timeout=client_timeout) or str(oci_config.get("region") or "").strip()
+    home_config = _oci_config_for_region(oci_config, home_region)
     try:
-        identity = oci.identity.IdentityClient(oci_config, timeout=client_timeout)
-        compute = oci.core.ComputeClient(oci_config, timeout=client_timeout)
+        identity = oci.identity.IdentityClient(home_config, timeout=client_timeout)
     except Exception as exc:
-        logger.warning("Unable to initialize OCI clients for rightsizing inventory: %s", exc)
+        logger.warning("Unable to initialize OCI identity client for rightsizing inventory: %s", exc)
         return []
 
-    root_compartment_override = str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip()
-    compartment_ids: List[str] = []
-    seen_compartments: set[str] = set()
-    if root_compartment_override:
-        compartment_ids.append(root_compartment_override)
-        seen_compartments.add(root_compartment_override)
-    if tenancy_id not in seen_compartments:
-        compartment_ids.append(tenancy_id)
-        seen_compartments.add(tenancy_id)
-    max_compartments = 20
-    try:
-        comp_response = oci.pagination.list_call_get_all_results(
-            identity.list_compartments,
-            compartment_id=tenancy_id,
-            compartment_id_in_subtree=True,
-            access_level="ACCESSIBLE",
-        )
-        for compartment in comp_response.data or []:
-            if len(compartment_ids) >= max_compartments:
-                break
-            lifecycle = str(getattr(compartment, "lifecycle_state", "") or "").upper()
-            comp_id = str(getattr(compartment, "id", "") or "").strip()
-            if not comp_id or lifecycle not in {"ACTIVE", ""}:
-                continue
-            if comp_id not in seen_compartments:
-                seen_compartments.add(comp_id)
-                compartment_ids.append(comp_id)
-    except Exception:
-        # Fall back to tenancy scope only.
-        pass
+    compartment_ids = _oci_accessible_compartment_ids(
+        oci,
+        identity,
+        tenancy_id,
+        seed_compartment_ids=_oci_scan_compartment_seeds(cred_json),
+    )
+    scan_regions = _oci_subscribed_regions(
+        oci,
+        home_config,
+        tenancy_id,
+        home_region=home_region,
+        timeout=client_timeout,
+    )
 
     out: List[RightsizingRecommendation] = []
     seen_instances: set[str] = set()
     observed_at = _utcnow().isoformat()
-    for compartment_id in compartment_ids:
+    for region in scan_regions:
         if len(out) >= limit:
             break
         try:
-            instances = oci.pagination.list_call_get_all_results(
-                compute.list_instances,
-                compartment_id=compartment_id,
-                limit=50,
-            ).data
-        except Exception:
+            compute = oci.core.ComputeClient(_oci_config_for_region(home_config, region), timeout=client_timeout)
+        except Exception as exc:
+            logger.warning("Unable to initialize OCI compute client for region %s: %s", region, exc)
             continue
-        for instance in instances or []:
+        for compartment_id in compartment_ids:
             if len(out) >= limit:
                 break
-            instance_id = str(getattr(instance, "id", "") or "").strip()
-            if not instance_id or instance_id in seen_instances:
+            try:
+                instances = oci.pagination.list_call_get_all_results(
+                    compute.list_instances,
+                    compartment_id=compartment_id,
+                    limit=50,
+                ).data
+            except Exception:
                 continue
-            seen_instances.add(instance_id)
+            for instance in instances or []:
+                if len(out) >= limit:
+                    break
+                instance_id = str(getattr(instance, "id", "") or "").strip()
+                if not instance_id or instance_id in seen_instances:
+                    continue
+                seen_instances.add(instance_id)
 
-            lifecycle = str(getattr(instance, "lifecycle_state", "") or "").upper()
-            if lifecycle not in {"RUNNING", "STOPPED"}:
-                continue
-            shape = str(getattr(instance, "shape", "") or "").strip()
-            shape_config = getattr(instance, "shape_config", None)
-            ocpus = float(getattr(shape_config, "ocpus", 0.0) or 0.0) if shape_config else None
-            memory_gib = float(getattr(shape_config, "memory_in_gbs", 0.0) or 0.0) if shape_config else None
-            current_size, recommended_size, savings_rate = _oci_rightsize_target(shape, ocpus, memory_gib)
-            if not current_size or not recommended_size or savings_rate <= 0:
-                continue
+                lifecycle = str(getattr(instance, "lifecycle_state", "") or "").upper()
+                if lifecycle not in {"RUNNING", "STOPPED"}:
+                    continue
+                shape = str(getattr(instance, "shape", "") or "").strip()
+                shape_config = getattr(instance, "shape_config", None)
+                ocpus = float(getattr(shape_config, "ocpus", 0.0) or 0.0) if shape_config else None
+                memory_gib = float(getattr(shape_config, "memory_in_gbs", 0.0) or 0.0) if shape_config else None
+                current_size, recommended_size, savings_rate = _oci_rightsize_target(shape, ocpus, memory_gib)
+                if not current_size or not recommended_size or savings_rate <= 0:
+                    continue
 
-            current_monthly = _estimate_oci_instance_monthly_cost(shape, ocpus, memory_gib)
-            monthly_savings = round(current_monthly * savings_rate, 2)
-            if monthly_savings < min_savings:
-                continue
-            projected_monthly = round(max(current_monthly - monthly_savings, 0.0), 2)
+                current_monthly = _estimate_oci_instance_monthly_cost(shape, ocpus, memory_gib)
+                monthly_savings = round(current_monthly * savings_rate, 2)
+                if monthly_savings < min_savings:
+                    continue
+                projected_monthly = round(max(current_monthly - monthly_savings, 0.0), 2)
 
-            display_name = str(getattr(instance, "display_name", "") or "").strip()
-            if not display_name:
-                display_name = instance_id
+                display_name = str(getattr(instance, "display_name", "") or "").strip()
+                if not display_name:
+                    display_name = instance_id
 
-            out.append(
-                RightsizingRecommendation(
-                    resource_id=instance_id,
-                    resource_name=display_name,
-                    resource_type="OCI Compute Instance",
-                    provider="oci",
-                    region=region,
-                    account_id=tenancy_id,
-                    current_size=current_size,
-                    recommended_size=recommended_size,
-                    current_monthly_cost_usd=current_monthly,
-                    projected_monthly_cost_usd=projected_monthly,
-                    monthly_savings_usd=monthly_savings,
-                    annual_savings_usd=round(monthly_savings * 12, 2),
-                    cpu_utilization_avg_percent=None,
-                    memory_utilization_avg_percent=None,
-                    reason=(
-                        "Live OCI instance inventory indicates this shape can be downsized. "
-                        "Validate CPU/memory utilization before applying in production."
-                    ),
-                    confidence="medium",
-                    effort="low",
-                    action="downsize",
-                    evidence_source="oci_compute_inventory",
-                    analysis_points=1,
-                    trend_slope_usd=0.0,
-                    trend_percent=0.0,
-                    latest_monthly_cost_usd=current_monthly,
-                    peak_monthly_cost_usd=current_monthly,
-                    top_regions=[region] if region else [],
-                    regional_breakdown=[{
-                        "region": region or "global",
-                        "monthly_cost_usd": current_monthly,
-                        "share_percent": 100.0,
-                    }],
-                    resource_console_url=_rightsizing_console_url(
-                        provider="oci",
+                out.append(
+                    RightsizingRecommendation(
                         resource_id=instance_id,
-                        region=region,
-                        account_id=tenancy_id,
+                        resource_name=display_name,
                         resource_type="OCI Compute Instance",
-                    ),
-                    last_observed_at=observed_at,
-                    risk_note="Inventory-based recommendation: confirm workload headroom and autoscaling before resize.",
+                        provider="oci",
+                        region=region,
+                        account_id=compartment_id or tenancy_id,
+                        current_size=current_size,
+                        recommended_size=recommended_size,
+                        current_monthly_cost_usd=current_monthly,
+                        projected_monthly_cost_usd=projected_monthly,
+                        monthly_savings_usd=monthly_savings,
+                        annual_savings_usd=round(monthly_savings * 12, 2),
+                        cpu_utilization_avg_percent=None,
+                        memory_utilization_avg_percent=None,
+                        reason=(
+                            "Live OCI instance inventory indicates this shape can be downsized. "
+                            "Validate CPU/memory utilization before applying in production."
+                        ),
+                        confidence="medium",
+                        effort="low",
+                        action="downsize",
+                        evidence_source="oci_compute_inventory",
+                        analysis_points=1,
+                        trend_slope_usd=0.0,
+                        trend_percent=0.0,
+                        latest_monthly_cost_usd=current_monthly,
+                        peak_monthly_cost_usd=current_monthly,
+                        top_regions=[region] if region else [],
+                        regional_breakdown=[{
+                            "region": region or "global",
+                            "monthly_cost_usd": current_monthly,
+                            "share_percent": 100.0,
+                        }],
+                        resource_console_url=_rightsizing_console_url(
+                            provider="oci",
+                            resource_id=instance_id,
+                            region=region,
+                            account_id=compartment_id or tenancy_id,
+                            resource_type="OCI Compute Instance",
+                        ),
+                        last_observed_at=observed_at,
+                        risk_note="Inventory-based recommendation: confirm workload headroom and autoscaling before resize.",
+                    )
                 )
-            )
     return out
 
 
@@ -15038,35 +15116,51 @@ def _oci_accessible_compartment_ids(
     oci_module: Any,
     identity_client: Any,
     tenancy_id: str,
+    *,
+    seed_compartment_ids: Optional[List[str]] = None,
+    max_compartments: Optional[int] = None,
 ) -> List[str]:
-    root_compartment_override = str(os.getenv("OCI_COMPARTMENT_OCID", "") or "").strip()
+    """Return tenancy plus all discoverable compartments in the tenancy subtree."""
+    if max_compartments is None:
+        max_compartments = max(1, int(Config().oci_max_scan_compartments or 500))
     compartment_ids: List[str] = []
     seen_compartments: set[str] = set()
-    if root_compartment_override:
-        compartment_ids.append(root_compartment_override)
-        seen_compartments.add(root_compartment_override)
+
     if tenancy_id and tenancy_id not in seen_compartments:
         compartment_ids.append(tenancy_id)
         seen_compartments.add(tenancy_id)
 
-    try:
-        comp_response = oci_module.pagination.list_call_get_all_results(
-            identity_client.list_compartments,
-            compartment_id=tenancy_id,
-            compartment_id_in_subtree=True,
-            access_level="ACCESSIBLE",
-        )
-        for compartment in comp_response.data or []:
-            lifecycle = str(getattr(compartment, "lifecycle_state", "") or "").upper()
-            comp_id = str(getattr(compartment, "id", "") or "").strip()
-            if not comp_id or lifecycle not in {"ACTIVE", ""}:
-                continue
-            if comp_id not in seen_compartments:
-                seen_compartments.add(comp_id)
-                compartment_ids.append(comp_id)
-    except Exception:
-        pass
-    return compartment_ids[:50]
+    for seed in seed_compartment_ids or []:
+        compartment_id = str(seed or "").strip()
+        if not compartment_id or compartment_id in seen_compartments:
+            continue
+        if len(compartment_ids) >= max_compartments:
+            return compartment_ids[:max_compartments]
+        compartment_ids.append(compartment_id)
+        seen_compartments.add(compartment_id)
+
+    for access_level in ("ANY", "ACCESSIBLE"):
+        try:
+            comp_response = oci_module.pagination.list_call_get_all_results(
+                identity_client.list_compartments,
+                compartment_id=tenancy_id,
+                compartment_id_in_subtree=True,
+                access_level=access_level,
+            )
+            for compartment in comp_response.data or []:
+                if len(compartment_ids) >= max_compartments:
+                    break
+                lifecycle = str(getattr(compartment, "lifecycle_state", "") or "").upper()
+                comp_id = str(getattr(compartment, "id", "") or "").strip()
+                if not comp_id or lifecycle not in {"ACTIVE", ""}:
+                    continue
+                if comp_id not in seen_compartments:
+                    seen_compartments.add(comp_id)
+                    compartment_ids.append(comp_id)
+            break
+        except Exception:
+            continue
+    return compartment_ids[:max_compartments]
 
 
 def _estimate_oci_storage_monthly_cost(size_gb: float, vpus_per_gb: Optional[float] = None) -> float:
@@ -15105,75 +15199,43 @@ def _rightsizing_from_oci_storage_inventory(
         return []
 
     tenancy_id = str(oci_config.get("tenancy") or "").strip()
-    region = str(oci_config.get("region") or "global").strip() or "global"
     if not tenancy_id:
         return []
 
     client_timeout = (5, 20)
+    home_region = _oci_home_region(oci, oci_config, tenancy_id, timeout=client_timeout) or str(oci_config.get("region") or "").strip()
+    home_config = _oci_config_for_region(oci_config, home_region)
     try:
-        identity = oci.identity.IdentityClient(oci_config, timeout=client_timeout)
-        compute = oci.core.ComputeClient(oci_config, timeout=client_timeout)
-        blockstorage = oci.core.BlockstorageClient(oci_config, timeout=client_timeout)
+        identity = oci.identity.IdentityClient(home_config, timeout=client_timeout)
     except Exception as exc:
-        logger.warning("Unable to initialize OCI storage clients for rightsizing inventory: %s", exc)
+        logger.warning("Unable to initialize OCI identity client for storage rightsizing inventory: %s", exc)
         return []
 
-    compartment_ids = _oci_accessible_compartment_ids(oci, identity, tenancy_id)
-    try:
-        availability_domains = [
-            str(getattr(ad, "name", "") or "").strip()
-            for ad in identity.list_availability_domains(compartment_id=tenancy_id).data or []
-            if str(getattr(ad, "name", "") or "").strip()
-        ]
-    except Exception:
-        availability_domains = []
+    compartment_ids = _oci_accessible_compartment_ids(
+        oci,
+        identity,
+        tenancy_id,
+        seed_compartment_ids=_oci_scan_compartment_seeds(cred_json),
+    )
+    scan_regions = _oci_subscribed_regions(
+        oci,
+        home_config,
+        tenancy_id,
+        home_region=home_region,
+        timeout=client_timeout,
+    )
 
     attached_block_volume_ids: set[str] = set()
     attached_boot_volume_ids: set[str] = set()
     total_seen = 0
-    for compartment_id in compartment_ids:
-        ad_values = availability_domains or [None]
-        for ad in ad_values:
-            try:
-                kwargs = {"compartment_id": compartment_id}
-                if ad:
-                    kwargs["availability_domain"] = ad
-                attachments = oci.pagination.list_call_get_all_results(
-                    compute.list_volume_attachments,
-                    **kwargs,
-                ).data
-                for attachment in attachments or []:
-                    lifecycle = str(getattr(attachment, "lifecycle_state", "") or "").upper()
-                    if lifecycle in {"DETACHED", "DETACHING", "TERMINATED"}:
-                        continue
-                    volume_id = str(getattr(attachment, "volume_id", "") or "").strip()
-                    if volume_id:
-                        attached_block_volume_ids.add(volume_id)
-            except Exception:
-                pass
-            try:
-                kwargs = {"compartment_id": compartment_id}
-                if ad:
-                    kwargs["availability_domain"] = ad
-                attachments = oci.pagination.list_call_get_all_results(
-                    compute.list_boot_volume_attachments,
-                    **kwargs,
-                ).data
-                for attachment in attachments or []:
-                    lifecycle = str(getattr(attachment, "lifecycle_state", "") or "").upper()
-                    if lifecycle in {"DETACHED", "DETACHING", "TERMINATED"}:
-                        continue
-                    volume_id = str(getattr(attachment, "boot_volume_id", "") or "").strip()
-                    if volume_id:
-                        attached_boot_volume_ids.add(volume_id)
-            except Exception:
-                pass
 
     out: List[RightsizingRecommendation] = []
+    seen_storage_resources: set[str] = set()
     observed_at = _utcnow().isoformat()
 
     def _append_storage_rec(
         *,
+        region: str,
         resource_id: str,
         display_name: str,
         resource_type: str,
@@ -15185,9 +15247,12 @@ def _rightsizing_from_oci_storage_inventory(
     ) -> None:
         if len(out) >= limit:
             return
+        if not resource_id or resource_id in seen_storage_resources:
+            return
         monthly_cost = _estimate_oci_storage_monthly_cost(size_gb, vpus_per_gb)
         if monthly_cost < min_savings:
             return
+        seen_storage_resources.add(resource_id)
         last_seen = observed_at
         if created_at is not None:
             try:
@@ -15244,64 +15309,124 @@ def _rightsizing_from_oci_storage_inventory(
             )
         )
 
-    for compartment_id in compartment_ids:
+    for region in scan_regions:
         if len(out) >= limit:
             break
         try:
-            volumes = oci.pagination.list_call_get_all_results(
-                blockstorage.list_volumes,
-                compartment_id=compartment_id,
-                lifecycle_state="AVAILABLE",
-            ).data
+            region_config = _oci_config_for_region(home_config, region)
+            region_identity = oci.identity.IdentityClient(region_config, timeout=client_timeout)
+            compute = oci.core.ComputeClient(region_config, timeout=client_timeout)
+            blockstorage = oci.core.BlockstorageClient(region_config, timeout=client_timeout)
+        except Exception as exc:
+            logger.warning("Unable to initialize OCI storage clients for region %s: %s", region, exc)
+            continue
+        try:
+            availability_domains = [
+                str(getattr(ad, "name", "") or "").strip()
+                for ad in region_identity.list_availability_domains(compartment_id=tenancy_id).data or []
+                if str(getattr(ad, "name", "") or "").strip()
+            ]
         except Exception:
-            volumes = []
-        for volume in volumes or []:
-            total_seen += 1
-            volume_id = str(getattr(volume, "id", "") or "").strip()
-            if not volume_id or volume_id in attached_block_volume_ids:
-                continue
-            size_gb = float(getattr(volume, "size_in_gbs", 0.0) or 0.0)
-            vpus = getattr(volume, "vpus_per_gb", None)
-            _append_storage_rec(
-                resource_id=volume_id,
-                display_name=str(getattr(volume, "display_name", "") or "").strip(),
-                resource_type="OCI Block Volume (unattached)",
-                size_gb=size_gb,
-                vpus_per_gb=float(vpus) if vpus is not None else None,
-                compartment_id=compartment_id,
-                lifecycle_state=str(getattr(volume, "lifecycle_state", "") or ""),
-                created_at=getattr(volume, "time_created", None),
-            )
-            if len(out) >= limit:
-                break
+            availability_domains = []
 
-        if len(out) >= limit:
-            break
-        try:
-            boot_volumes = oci.pagination.list_call_get_all_results(
-                blockstorage.list_boot_volumes,
-                compartment_id=compartment_id,
-                lifecycle_state="AVAILABLE",
-            ).data
-        except Exception:
-            boot_volumes = []
-        for volume in boot_volumes or []:
-            total_seen += 1
-            volume_id = str(getattr(volume, "id", "") or "").strip()
-            if not volume_id or volume_id in attached_boot_volume_ids:
-                continue
-            size_gb = float(getattr(volume, "size_in_gbs", 0.0) or 0.0)
-            _append_storage_rec(
-                resource_id=volume_id,
-                display_name=str(getattr(volume, "display_name", "") or "").strip(),
-                resource_type="OCI Boot Volume (unattached)",
-                size_gb=size_gb,
-                compartment_id=compartment_id,
-                lifecycle_state=str(getattr(volume, "lifecycle_state", "") or ""),
-                created_at=getattr(volume, "time_created", None),
-            )
+        for compartment_id in compartment_ids:
+            ad_values = availability_domains or [None]
+            for ad in ad_values:
+                try:
+                    kwargs = {"compartment_id": compartment_id}
+                    if ad:
+                        kwargs["availability_domain"] = ad
+                    attachments = oci.pagination.list_call_get_all_results(
+                        compute.list_volume_attachments,
+                        **kwargs,
+                    ).data
+                    for attachment in attachments or []:
+                        lifecycle = str(getattr(attachment, "lifecycle_state", "") or "").upper()
+                        if lifecycle in {"DETACHED", "DETACHING", "TERMINATED"}:
+                            continue
+                        volume_id = str(getattr(attachment, "volume_id", "") or "").strip()
+                        if volume_id:
+                            attached_block_volume_ids.add(volume_id)
+                except Exception:
+                    pass
+                try:
+                    kwargs = {"compartment_id": compartment_id}
+                    if ad:
+                        kwargs["availability_domain"] = ad
+                    attachments = oci.pagination.list_call_get_all_results(
+                        compute.list_boot_volume_attachments,
+                        **kwargs,
+                    ).data
+                    for attachment in attachments or []:
+                        lifecycle = str(getattr(attachment, "lifecycle_state", "") or "").upper()
+                        if lifecycle in {"DETACHED", "DETACHING", "TERMINATED"}:
+                            continue
+                        volume_id = str(getattr(attachment, "boot_volume_id", "") or "").strip()
+                        if volume_id:
+                            attached_boot_volume_ids.add(volume_id)
+                except Exception:
+                    pass
+
+        for compartment_id in compartment_ids:
             if len(out) >= limit:
                 break
+            try:
+                volumes = oci.pagination.list_call_get_all_results(
+                    blockstorage.list_volumes,
+                    compartment_id=compartment_id,
+                    lifecycle_state="AVAILABLE",
+                ).data
+            except Exception:
+                volumes = []
+            for volume in volumes or []:
+                total_seen += 1
+                volume_id = str(getattr(volume, "id", "") or "").strip()
+                if not volume_id or volume_id in attached_block_volume_ids:
+                    continue
+                size_gb = float(getattr(volume, "size_in_gbs", 0.0) or 0.0)
+                vpus = getattr(volume, "vpus_per_gb", None)
+                _append_storage_rec(
+                    region=region,
+                    resource_id=volume_id,
+                    display_name=str(getattr(volume, "display_name", "") or "").strip(),
+                    resource_type="OCI Block Volume (unattached)",
+                    size_gb=size_gb,
+                    vpus_per_gb=float(vpus) if vpus is not None else None,
+                    compartment_id=compartment_id,
+                    lifecycle_state=str(getattr(volume, "lifecycle_state", "") or ""),
+                    created_at=getattr(volume, "time_created", None),
+                )
+                if len(out) >= limit:
+                    break
+
+            if len(out) >= limit:
+                break
+            try:
+                boot_volumes = oci.pagination.list_call_get_all_results(
+                    blockstorage.list_boot_volumes,
+                    compartment_id=compartment_id,
+                    lifecycle_state="AVAILABLE",
+                ).data
+            except Exception:
+                boot_volumes = []
+            for volume in boot_volumes or []:
+                total_seen += 1
+                volume_id = str(getattr(volume, "id", "") or "").strip()
+                if not volume_id or volume_id in attached_boot_volume_ids:
+                    continue
+                size_gb = float(getattr(volume, "size_in_gbs", 0.0) or 0.0)
+                _append_storage_rec(
+                    region=region,
+                    resource_id=volume_id,
+                    display_name=str(getattr(volume, "display_name", "") or "").strip(),
+                    resource_type="OCI Boot Volume (unattached)",
+                    size_gb=size_gb,
+                    compartment_id=compartment_id,
+                    lifecycle_state=str(getattr(volume, "lifecycle_state", "") or ""),
+                    created_at=getattr(volume, "time_created", None),
+                )
+                if len(out) >= limit:
+                    break
 
     for rec in out:
         rec.analysis_points = max(rec.analysis_points, total_seen)

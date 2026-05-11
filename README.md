@@ -19,6 +19,7 @@ OptiOra helps FinOps, platform, and cloud operations teams turn cloud billing an
 - **RAG-backed advisor context**: Cost Advisor and backend GenAI endpoints retrieve curated FinOps guidance before composing prompts and narratives.
 - **Operator-ready workflows**: scans, approvals, exports, alerts, routing policies, scorecards, and weekly operating review packs.
 - **OCI production path**: repeatable deployment with Terraform infrastructure, Ansible runtime provisioning, systemd services, and smoke verification.
+- **Tenancy-level OCI inventory**: live OCI resource scans discover the tenancy home region, walk tenancy subtree compartments, and scan subscribed regions rather than stopping at the deployment compartment.
 
 ## Contents
 

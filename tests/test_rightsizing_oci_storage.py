@@ -23,6 +23,18 @@ class _FakeIdentityClient:
         ])
 
 
+class _FakeTreeIdentityClient(_FakeIdentityClient):
+    list_compartments_kwargs = None
+
+    def list_compartments(self, **kwargs):
+        type(self).list_compartments_kwargs = kwargs
+        return SimpleNamespace(data=[
+            SimpleNamespace(id="ocid1.compartment.test.compA", lifecycle_state="ACTIVE"),
+            SimpleNamespace(id="ocid1.compartment.test.deleted", lifecycle_state="DELETED"),
+            SimpleNamespace(id="ocid1.compartment.test.compB", lifecycle_state="ACTIVE"),
+        ])
+
+
 class _FakeComputeClient:
     def __init__(self, config, timeout=None):
         self.config = config
@@ -151,6 +163,41 @@ class _FakePagination:
 
 
 class RightsizingOciStorageTest(unittest.TestCase):
+    def test_oci_compartment_discovery_uses_tenancy_subtree_plus_explicit_seeds(self) -> None:
+        fake_oci = SimpleNamespace(pagination=_FakePagination)
+        identity = _FakeTreeIdentityClient({"region": "me-abudhabi-1"})
+
+        compartments = api_module._oci_accessible_compartment_ids(
+            fake_oci,
+            identity,
+            "ocid1.tenancy.test",
+            seed_compartment_ids=["ocid1.compartment.test.deploy"],
+            max_compartments=10,
+        )
+
+        self.assertEqual(compartments[0], "ocid1.tenancy.test")
+        self.assertIn("ocid1.compartment.test.deploy", compartments)
+        self.assertIn("ocid1.compartment.test.compA", compartments)
+        self.assertIn("ocid1.compartment.test.compB", compartments)
+        self.assertNotIn("ocid1.compartment.test.deleted", compartments)
+        self.assertEqual(_FakeTreeIdentityClient.list_compartments_kwargs["compartment_id"], "ocid1.tenancy.test")
+        self.assertTrue(_FakeTreeIdentityClient.list_compartments_kwargs["compartment_id_in_subtree"])
+        self.assertEqual(_FakeTreeIdentityClient.list_compartments_kwargs["access_level"], "ANY")
+
+    def test_oci_region_discovery_orders_home_region_first(self) -> None:
+        fake_oci = SimpleNamespace(identity=SimpleNamespace(IdentityClient=_FakeIdentityClient))
+
+        regions = api_module._oci_subscribed_regions(
+            fake_oci,
+            {"tenancy": "ocid1.tenancy.test", "region": "uk-london-1"},
+            "ocid1.tenancy.test",
+            home_region="me-abudhabi-1",
+        )
+
+        self.assertEqual(regions[0], "me-abudhabi-1")
+        self.assertIn("af-johannesburg-1", regions)
+        self.assertIn("uk-london-1", regions)
+
     def test_unattached_oci_storage_becomes_terminate_recommendation(self) -> None:
         fake_oci = SimpleNamespace(
             config=SimpleNamespace(from_file=lambda config_file, profile: {

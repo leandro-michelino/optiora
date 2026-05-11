@@ -142,8 +142,13 @@ class Config:
     oci_profile: str = field(default_factory=lambda: _env_str("OCI_PROFILE", "DEFAULT"))
     oci_region: str = field(default_factory=lambda: _env_str("OCI_REGION", "uk-london-1"))
     # Comma-separated list of OCI compartment OCIDs for multi-compartment scans.
+    # These are scan seeds, not a limiter; live OCI inventory still walks the
+    # tenancy tree for every compartment visible to the configured principal.
     oci_compartment_ids: str = field(
         default_factory=lambda: _env_str("OCI_COMPARTMENT_IDS")
+    )
+    oci_max_scan_compartments: int = field(
+        default_factory=lambda: _env_int("OCI_MAX_SCAN_COMPARTMENTS", 500)
     )
 
     # OCI Generative AI (backend-side inference for analytics narration)
