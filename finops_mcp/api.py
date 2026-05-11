@@ -1649,6 +1649,12 @@ def _valid_runtime_provider_names(customer_id: str, db: Session) -> set[str]:
     return providers
 
 
+def _ordered_valid_runtime_provider_names(customer_id: str, db: Session) -> list[str]:
+    """Return configured providers in product order for automatic scans."""
+    valid_providers = _valid_runtime_provider_names(customer_id, db)
+    return [provider for provider in SUPPORTED_CLOUD_PROVIDERS if provider in valid_providers]
+
+
 def _mark_provider_credentials_unreachable(
     db: Session,
     customer_id: str,
@@ -1975,12 +1981,9 @@ async def add_credentials(
             credential=credential,
         )
         permission = scanning_manager.get_permission_status(customer_id)
-        existing_providers = [
-            str(provider or "").strip().lower()
-            for provider in permission.get("providers", [])
-            if str(provider or "").strip()
-        ]
-        scan_providers = list(dict.fromkeys([*existing_providers, credential.provider]))
+        scan_providers = _ordered_valid_runtime_provider_names(customer_id, scanning_manager.db)
+        if credential.provider not in scan_providers:
+            scan_providers = list(dict.fromkeys([*scan_providers, credential.provider]))
         scanning_manager.approve_scanning(
             customer_id=customer_id,
             auto_remediate=bool(permission.get("auto_remediate", False)),
@@ -2016,7 +2019,10 @@ async def add_credentials(
         )
         return {
             "status": "success",
-            "message": f"{credential.provider.upper()} credentials stored and scan started",
+            "message": (
+                f"{credential.provider.upper()} credentials stored and live provider scan started "
+                f"for {', '.join(provider.upper() for provider in scan_providers)}"
+            ),
             "provider": credential.provider,
             "customer_id": customer_id,
             "record": stored,

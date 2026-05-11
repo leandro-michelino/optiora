@@ -109,6 +109,43 @@ class CredentialDeleteTest(unittest.TestCase):
             api_module._run_validation = orig_val
             api_module._run_cost_analysis = orig_cost
 
+    def test_credential_add_starts_scan_for_all_configured_providers(self) -> None:
+        self._register_and_login("auto-scan-all@example.com")
+        orig_val = api_module._run_validation
+        orig_cost = api_module._run_cost_analysis
+        try:
+            api_module._run_validation = lambda _: _MockCredentialStatus()
+            api_module._run_cost_analysis = _noop_cost_analysis
+
+            first = self.client.post(
+                "/api/v1/credentials/add",
+                json={
+                    "provider": "aws",
+                    "access_key_id": "AKIA_AUTO",
+                    "secret_access_key": "SECRET_AUTO",
+                    "region": "us-east-1",
+                },
+            )
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(first.json()["scan"]["providers"], ["aws"])
+
+            second = self.client.post(
+                "/api/v1/credentials/add",
+                json={
+                    "provider": "azure",
+                    "subscription_id": "sub-auto",
+                    "tenant_id": "tenant-auto",
+                    "client_id": "client-auto",
+                    "client_secret": "secret-auto",
+                },
+            )
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(second.json()["scan"]["providers"], ["aws", "azure"])
+            self.assertIn("AWS, AZURE", second.json()["message"])
+        finally:
+            api_module._run_validation = orig_val
+            api_module._run_cost_analysis = orig_cost
+
     def test_credential_delete_returns_404_when_not_found(self) -> None:
         self._register_and_login("del-404@example.com")
         result = self.client.delete("/api/v1/credentials/gcp")

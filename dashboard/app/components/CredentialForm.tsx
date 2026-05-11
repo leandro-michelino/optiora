@@ -7,7 +7,16 @@ import { authorizedFetch } from '@/lib/auth-fetch';
 import { backendUrl } from '@/lib/backend-url';
 
 interface CredentialFormProps {
-  onSubmit: (provider: string, credentials: Record<string, string>) => Promise<void>;
+  onSubmit: (provider: string, credentials: Record<string, string>, result: CredentialAddResponse) => Promise<void>;
+}
+
+interface CredentialAddResponse {
+  message?: string
+  scan?: {
+    scan_id?: string
+    state?: string
+    providers?: string[]
+  }
 }
 
 // Per-provider setup guidance shown inside each form section.
@@ -188,9 +197,15 @@ const CredentialForm: React.FC<CredentialFormProps> = ({ onSubmit }) => {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.detail || 'Failed to save credentials.');
       }
+      const data = await res.json() as CredentialAddResponse;
+      const scanProviders = data.scan?.providers?.map((provider) => provider.toUpperCase()).join(', ');
       setValidationStatus('saved');
-      setValidationMessage(`${selectedProvider.toUpperCase()} credentials saved successfully.`);
-      await onSubmit(selectedProvider, currentCredentials());
+      setValidationMessage(
+        data.scan?.scan_id
+          ? `${selectedProvider.toUpperCase()} credentials saved. Live scan ${data.scan.scan_id} started${scanProviders ? ` for ${scanProviders}` : ''}.`
+          : data.message || `${selectedProvider.toUpperCase()} credentials saved successfully.`,
+      );
+      await onSubmit(selectedProvider, currentCredentials(), data);
     } catch (err) {
       setValidationStatus('invalid');
       setValidationMessage(err instanceof Error ? err.message : 'An error occurred while saving.');

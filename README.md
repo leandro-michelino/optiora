@@ -339,6 +339,7 @@ Treat these as planning bands. Verify region-specific list prices in the OCI cos
 
 - Default deployed dashboard posture is public workspace mode unless auth/RBAC is intentionally enabled.
 - Provider credentials are validated before use and stored on the API host for runtime scans.
+- Saving valid credentials immediately starts a live provider fetch for every configured provider in that workspace.
 - Direct app ports can be closed behind the nginx front door.
 - Smoke verification auto-detects direct-port versus front-door exposure.
 - Workspace cleanup preserves dependency/runtime state while removing generated build, cache, report, and scratch artifacts.

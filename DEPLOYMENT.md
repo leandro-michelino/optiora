@@ -429,7 +429,7 @@ OCI credential file source policy:
 - OptiOra validates OCI credentials from files that exist on the API host filesystem; browser-local paths are not readable by the backend.
 - Preferred persistent path: provision `/opt/optiora/.oci/config` and `/opt/optiora/.oci/oci_api_key.pem` on the VM with owner `optiora` and mode `600`.
 - Dashboard import path: use `POST /api/v1/credentials/oci/upload-files` from the dashboard OCI form to upload config/key files into the server runtime credential directory; then add the credential using the returned server `config_file` path.
-- After a credential is inserted and validated, OptiOra stores the connection metadata, persists runtime credentials on the API host, approves the provider for scanning, and starts a scan immediately. The connection remains listed until the customer disconnects it manually; if provider APIs later reject or cannot reach the credential, OptiOra marks the connection invalid/inactive instead of showing fabricated data.
+- After a credential is inserted and validated, OptiOra stores the connection metadata, persists runtime credentials on the API host, approves scanning, and starts a live fetch immediately for every valid configured provider in that workspace. The connection remains listed until the customer disconnects it manually; if provider APIs later reject or cannot reach the credential, OptiOra marks the connection invalid/inactive instead of showing fabricated data.
 - Avoid committing OCI config/key files to git or embedding private keys in docs/scripts.
 
 Optional hardened deployment later:
@@ -491,7 +491,7 @@ SMOKE_CREDENTIAL_JSON='{"provider":"aws","access_key_id":"...","secret_access_ke
 ./deploy/deploy-oci.sh verify
 ```
 
-When `SMOKE_CREDENTIAL_JSON` is provided, the verify flow also exercises credential validation, credential add, scan approval, scan start, history lookup, and diff export for that provider.
+When `SMOKE_CREDENTIAL_JSON` is provided, the verify flow also exercises credential validation, credential add, automatic scan start, history lookup, and diff export for that provider.
 Set `SMOKE_ENABLE_CSV_IMPORT=true` separately if you want the smoke test to replace the active imported-cost dataset with its temporary CSV fixture.
 
 If you run nginx-only exposure (`allow_direct_app_ingress=false`, `allow_web_ingress=true`), verify using front-door overrides:

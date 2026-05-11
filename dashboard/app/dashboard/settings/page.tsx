@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Trash2, Loader, Upload, Download, Send, Eye, EyeOff } from 'lucide-react';
 import { useCloudVisibility } from '@/lib/cloud-visibility';
 import CredentialForm from '@/app/components/CredentialForm';
-import ScanningApproval from '@/app/components/ScanningApproval';
 import {
   createExportJob,
   downloadImportedCostTemplateCsv,
@@ -42,14 +41,13 @@ interface StoredCredential {
   last_tested?: string
 }
 
-interface ScanApprovalConfig {
-  scan_frequency: 'hourly' | 'daily' | 'weekly'
-  auto_remediate: boolean
-  notification_email: string
-  monthly_budget_usd: number
-  warning_threshold_percent: number
-  critical_threshold_percent: number
-  notifications_enabled: boolean
+interface CredentialAddResult {
+  message?: string
+  scan?: {
+    scan_id?: string
+    state?: string
+    providers?: string[]
+  }
 }
 
 function formatCurrency(value: number): string {
@@ -81,8 +79,7 @@ export default function SettingsPage() {
   const { authEnabled, user, organization } = useAuth()
   const [storedCredentials, setStoredCredentials] = useState<StoredCredential[]>([])
   const [loadingCredentials, setLoadingCredentials] = useState(true)
-  const [scanningApprovalStep, setScanningApprovalStep] = useState(false)
-  const [approvedProviders, setApprovedProviders] = useState<string[]>([])
+  const [autoScanNotice, setAutoScanNotice] = useState<string | null>(null)
   const [importedCostSummary, setImportedCostSummary] = useState<ImportedCostSummaryResponse | null>(null)
   const [loadingImportedCosts, setLoadingImportedCosts] = useState(true)
   const [selectedCsvFile, setSelectedCsvFile] = useState<File | null>(null)
@@ -236,16 +233,21 @@ export default function SettingsPage() {
     void loadExportJobs()
   }, [authEnabled, user, loadExportJobs])
 
-  const handleCredentialSubmitted = async (provider: string, _credentials: Record<string, string>) => {
+  const handleCredentialSubmitted = async (
+    provider: string,
+    _credentials: Record<string, string>,
+    result: CredentialAddResult,
+  ) => {
     if (!canManageCloudSettings) {
       return
     }
     void _credentials
-    // After validation & storage, show scanning approval step
-    setApprovedProviders([provider])
-    setScanningApprovalStep(true)
-    
-    // Reload credentials list
+    const scannedProviders = result.scan?.providers?.map((item) => item.toUpperCase()).join(', ')
+    setAutoScanNotice(
+      result.scan?.scan_id
+        ? `${provider.toUpperCase()} connected. OptiOra immediately started scan ${result.scan.scan_id}${scannedProviders ? ` for ${scannedProviders}` : ''}. Data will appear as each provider API finishes.`
+        : result.message || `${provider.toUpperCase()} connected. OptiOra will fetch provider data automatically.`,
+    )
     await loadCredentials()
   }
 
@@ -268,38 +270,6 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('Failed to delete credential:', error)
-    }
-  }
-
-  const handleScanningApproved = async (config: ScanApprovalConfig) => {
-    if (!canManageCloudSettings) {
-      return
-    }
-    try {
-      const res = await authorizedFetch(backendUrl('/api/v1/scanning/approve'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      })
-
-      if (res.ok) {
-        // Directly start the scan
-        const scanRes = await authorizedFetch(backendUrl('/api/v1/scanning/start'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            providers: approvedProviders
-          })
-        })
-
-        if (scanRes.ok) {
-          setScanningApprovalStep(false)
-          // Redirect to dashboard
-          window.location.href = '/dashboard'
-        }
-      }
-    } catch (error) {
-      console.error('Failed to approve scanning:', error)
     }
   }
 
@@ -473,13 +443,13 @@ export default function SettingsPage() {
 
       {!canManageCloudSettings && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-          Your current role is read-only for cloud setup. Ask an organization owner or admin to manage credentials and scan approvals.
+          Your current role is read-only for cloud setup. Ask an organization owner or admin to manage credentials and automatic scans.
         </div>
       )}
 
       <Expander
         title="Cloud Connections And Cost Imports"
-        description="Credentials, optional CSV billing import, scan approval, connected providers, and imported data status."
+        description="Credentials, automatic provider scans, optional CSV billing import, connected providers, and imported data status."
         icon={<Upload className="h-5 w-5" />}
         defaultOpen
       >
@@ -492,7 +462,18 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Preferred: Connect Cloud Provider</h2>
             {canManageCloudSettings ? (
-              <CredentialForm onSubmit={handleCredentialSubmitted} />
+              <>
+                <CredentialForm onSubmit={handleCredentialSubmitted} />
+                {autoScanNotice && (
+                  <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+                    <div className="font-semibold">Provider data fetch started</div>
+                    <p className="mt-1">{autoScanNotice}</p>
+                    <a href="/dashboard/operations" className="mt-2 inline-flex font-medium text-emerald-700 underline hover:no-underline dark:text-emerald-200">
+                      View scan progress in Operations
+                    </a>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="card text-sm text-slate-600 dark:text-slate-400">
                 Credential management is disabled for your current role.
@@ -635,17 +616,6 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
-
-          {/* Scanning Approval Section */}
-          {scanningApprovalStep && (
-            <div>
-              <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">Complete Setup</h2>
-              <ScanningApproval
-                providers={approvedProviders}
-                onApprove={handleScanningApproved}
-              />
-            </div>
-          )}
         </div>
 
         {/* Right Column: Stored Credentials */}
@@ -806,7 +776,7 @@ export default function SettingsPage() {
         <ol className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
           <li><strong>1. Preferred path:</strong> Connect live cloud credentials so OptiOra can use provider APIs directly</li>
           <li><strong>2. Validate:</strong> OptiOra tests provider API access when live credentials are used</li>
-          <li><strong>3. Approve scanning:</strong> Review and approve cost analysis settings for live scans</li>
+          <li><strong>3. Automatic scan:</strong> Saving valid credentials starts a live provider fetch immediately</li>
           <li><strong>4. Optional fallback:</strong> Upload a billing CSV only when you need a manual source for backfill or when live runtime access is not configured</li>
         </ol>
       </div>

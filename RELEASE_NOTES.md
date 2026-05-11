@@ -111,7 +111,7 @@ Repository release metadata:
 
 - Dashboard navigation active-state matching now treats `/dashboard` as the Overview page only, avoiding false active highlights on every nested dashboard route.
 - The duplicate Kubernetes namespace page was consolidated into the canonical Kubernetes page; later cleanup removed the legacy route wiring entirely.
-- Credential setup and scan approval forms now use consistent shared form styling, stronger dark-mode support, lucide icons, and typed scan-frequency handling.
+- Credential setup now starts the live provider fetch immediately after valid credentials are saved, scanning every configured provider in the workspace and showing the scan id in Settings.
 - Operations export tests now open the relevant expander before asserting controls, matching the lower-density UI.
 - Playwright backend startup now explicitly sets `REQUIRE_LIVE_PROVIDER_DATA=false` so local `.env` live-provider requirements cannot break the CSV/import-mode e2e harness.
 - OCI deployment configuration now rejects baked or placeholder compartment OCIDs, resolves the target from env/`TF_VAR_*`/`terraform.tfvars`, and keeps Terraform plus OCI CLI calls aligned during full deployments.
