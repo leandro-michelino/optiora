@@ -95,7 +95,7 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 |---|---|
 | Cost visibility | Billing & Allocation spend views, account hierarchy, service hotspots, Cloud Resources & Costs explorer, imported billing files |
 | Forecasting | Baseline forecasts, percentile bands, budget risk, what-if scenarios, stress tests, model diagnostics |
-| Optimization | Rightsizing with stored/live provider scan modes, provider-native recommendations, recommendation ledger, commitment gaps, waste decomposition, savings sequencing |
+| Optimization | Optimization Advisor with provider-native Cloud Advisor-style findings, stored/live scan modes, storage cleanup, rightsizing, recommendation ledger, commitment gaps, waste decomposition, savings sequencing |
 | Unit economics | Cost allocation, business mapping, normalized dimensions, realized savings scorecards, showback/chargeback views |
 | Kubernetes | Live OKE/Container Instance/OCIR inventory, OpenCost sync, cluster modeling, namespace/team/workload/node-pool allocation, optimization recommendations |
 | Operations | Scan history, scan diffs, alert lifecycle, routing policy simulation, evidence exports, freshness telemetry |
@@ -109,8 +109,9 @@ Recent UIX and wiring updates:
 - Cost Advisor chat now uses the server-side dashboard `/api/ai/chat` route to call OCI GenAI with signed requests and enriches answers with backend RAG guidance from `/api/v1/genai/rag-guidance`.
 - Backend GenAI narratives now inject retrieved RAG briefs into the OCI GenAI prompt path while preserving deterministic cost, savings, risk, and forecast numbers as the source of truth.
 - OCI deployment is wired end to end through Terraform-managed infrastructure and Ansible-managed runtime provisioning, with the deploy script reading Terraform outputs for inventory, upload, provisioning, and smoke checks.
+- Rightsizing is now surfaced as Optimization Advisor, with provider-native Cloud Advisor-style rows for recommendation type, count, service, category, estimated savings, importance, status, scope, and provider-console action.
 - Rightsizing live provider scans now use a longer dashboard timeout for provider-native calls observed at about `50s` in OCI, while still falling back to stored results if the live path fails.
-- Rightsizing now has expandable scan status, executive summary, filters/search, action mix, and per-resource execution details.
+- Optimization Advisor highlights storage cleanup opportunities such as unattached OCI block and boot volumes, while retaining per-resource execution details for implementation and rollback.
 - Rightsizing recommendations now populate a finance-ready recommendation ledger with planned savings, realized savings, and variance, exposed through JSON, CSV, and the finance workbook.
 - Scorecards now include realized savings scorecards by provider, owner, business unit, and realized month, backed by the recommendation ledger.
 - Kubernetes now merges billing data with live OCI OKE, Container Instance, and OCIR inventory so newly launched container services appear before cost-management data catches up.

@@ -80,7 +80,7 @@ const navSections: NavSection[] = [
       { href: '/dashboard/inventory', label: 'Cloud Resources', icon: Server, description: 'Canonical resource-cost explorer by provider, account, region, type, tag, and waste signal.', keywords: ['resources', 'inventory', 'assets', 'tags', 'costs'] },
       { href: '/dashboard/kubernetes', label: 'Kubernetes', icon: Box, description: 'Cluster cost allocation, namespaces, OpenCost sync, and workload optimization.', keywords: ['k8s', 'opencost', 'namespace', 'cluster'] },
       { href: '/dashboard/virtual-tags', label: 'Virtual Tags', icon: Tag, description: 'Virtual tag rules and previews without changing cloud resources.', keywords: ['tags', 'rules', 'allocation', 'governance'] },
-      { href: '/dashboard/rightsizing', label: 'Rightsizing', icon: BarChart2, description: 'Stored and live provider rightsizing, execution detail, and ledger creation.', keywords: ['resize', 'savings', 'recommendations', 'ledger'] },
+      { href: '/dashboard/rightsizing', label: 'Optimization Advisor', icon: BarChart2, description: 'Provider-native Cloud Advisor findings, storage cleanup, rightsizing, and execution detail.', keywords: ['resize', 'rightsizing', 'cloud advisor', 'savings', 'recommendations', 'ledger', 'unattached volumes'] },
     ],
   },
   {

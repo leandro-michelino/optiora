@@ -223,11 +223,11 @@ npx playwright test e2e/operator-walkthrough.spec.ts
 
 This route-level walkthrough checks every main dashboard screen, sidebar search, precise active navigation, and confirms Kubernetes/container/Docker workflows live only on the canonical `/dashboard/kubernetes` page.
 
-Rightsizing live refresh note:
+Optimization Advisor live refresh note:
 
-- The dashboard uses stored scan/import rightsizing results by default for responsive browsing.
-- When `Live provider scan` is enabled, the dashboard allows up to `120s` for provider-native rightsizing collection.
-- The current OCI deployment has returned broad OCI live rightsizing scans in roughly `50s`, with hundreds of recommendations. If an operator sees a fallback banner, first check provider/API latency and then use the stored results while investigating logs.
+- The Optimization Advisor page defaults to a live provider advisor scan so OCI Cloud Advisor/Optimizer findings, including unattached block and boot volume cleanup, are pulled directly from the provider path.
+- When `Live provider advisor scan` is enabled, the dashboard allows up to `120s` for provider-native rightsizing and advisor collection.
+- The current OCI deployment has returned broad OCI live advisor scans in roughly `50s`, with hundreds of recommendations. If an operator sees a fallback banner, first check provider/API latency and then use the stored results while investigating logs.
 
 The same script also manages the extra block volume through Terraform. It reads `extra_block_volume_enabled`, `extra_block_volume_size_gbs`, `extra_block_volume_vpus_per_gb`, and `extra_block_volume_device` from `terraform/terraform.tfvars` unless you override them with `OCI_EXTRA_VOLUME_*` environment variables.
 

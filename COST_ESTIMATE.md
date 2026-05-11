@@ -5,9 +5,9 @@ Current as of **May 11, 2026**.
 This estimate reflects the current OptiOra architecture and behavior:
 - OCI-hosted application plane (API + Dashboard).
 - Multi-cloud provider connectivity (AWS, Azure, GCP, OCI).
-- Stored scan snapshots for default dashboard/recommendation reads, with explicit live refresh when requested.
+- Stored scan snapshots for most default dashboard/recommendation reads, with explicit live refresh when requested.
 - Real-time telemetry query paths for Cost Advisor and operator-triggered refreshes (including cross-provider top-N operational queries).
-- Rightsizing live refresh uses a provider-native request budget of up to `120s` in the dashboard because OCI live scans have been observed at roughly `50s`; normal dashboard browsing still uses stored results.
+- Optimization Advisor live refresh uses a provider-native request budget of up to `120s` in the dashboard because OCI live advisor scans have been observed at roughly `50s`; the page defaults to live provider advisor mode so Cloud Advisor rows are current.
 - Kubernetes/container visibility now includes live OCI resource inventory for OKE clusters, OCI Container Instances, and OCIR repositories. New resources can show before billing rows arrive; active Container Instances use a conservative run-rate estimate until metered cost data catches up.
 - Real OCI GenAI + RAG responses for advisory and narrative outputs when configured, with deterministic prompt/RAG fallback when unavailable.
 - Realized savings scorecards and UIX navigation improvements run on existing API/dashboard capacity and do not add a separate infrastructure service.
@@ -74,7 +74,7 @@ and GenAI usage.
 
 ## Real-Time Telemetry Multiplier
 
-Cost changes materially with scan/refresh frequency and account count. The dashboard now defaults rightsizing reads to stored scan/import signals, so steady-state traffic should sit closer to the lower telemetry band when operators avoid repeated live refreshes.
+Cost changes materially with scan/refresh frequency and account count. Most dashboard pages still use stored scan/import signals by default, while Optimization Advisor defaults to live provider advisor mode to keep Cloud Advisor findings current.
 
 - Light cadence (scheduled scans, stored-snapshot dashboard reads): add ~`0.8x` to `1.0x` telemetry baseline.
 - Medium cadence (hourly-ish operational checks plus periodic manual live refresh): add ~`1.2x` to `1.6x` telemetry baseline.
@@ -83,7 +83,7 @@ Cost changes materially with scan/refresh frequency and account count. The dashb
 Practical effect:
 - Teams that use many live operational questions (for example, repeated top-N CPU/memory queries across providers) should budget closer to the **upper half** of each profile range.
 - Teams that rely on scheduled scans and stored snapshots for most dashboard usage should budget closer to the **lower half** of each profile range.
-- Live rightsizing scans can be comparatively long-running provider calls. Budget for the provider API request volume and VM CPU time when operators repeatedly run `refresh_live=true` across broad provider scopes.
+- Live Optimization Advisor scans can be comparatively long-running provider calls. Budget for the provider API request volume and VM CPU time when operators repeatedly run `refresh_live=true` across broad provider scopes.
 
 ## Optional Add-Ons
 

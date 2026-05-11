@@ -106,6 +106,8 @@ class _FakeOptimizerClient:
                 estimated_cost_saving=25.0,
                 category_id="cost",
                 importance="HIGH",
+                lifecycle_state="ACTIVE",
+                resource_counts=[SimpleNamespace(status="ACTIVE", count=60)],
             ),
         ])
 
@@ -292,8 +294,15 @@ class RightsizingOciStorageTest(unittest.TestCase):
         self.assertEqual(rows[0]["provider"], "oci")
         self.assertEqual(rows[0]["source"], "oci_optimizer")
         self.assertEqual(rows[0]["monthly_savings_usd"], 25.0)
+        self.assertEqual(rows[0]["recommendation_type"], "Delete unattached block volumes")
+        self.assertEqual(rows[0]["resource_count"], 60)
+        self.assertEqual(rows[0]["category"], "Cost management")
+        self.assertEqual(rows[0]["importance"], "High")
+        self.assertEqual(rows[0]["status"], "Active")
         self.assertEqual(rows[1]["source"], "oci_optimizer_resource_action")
         self.assertEqual(rows[1]["resource_id"], "ocid1.volume.optimizer-orphan")
+        self.assertEqual(rows[1]["recommendation_type"], "Delete unattached volume")
+        self.assertEqual(rows[1]["resource_count"], 1)
 
         recs = api_module._rightsizing_from_provider_recommendation_rows(
             rows,
@@ -304,8 +313,15 @@ class RightsizingOciStorageTest(unittest.TestCase):
         )
         self.assertEqual(len(recs), 2)
         self.assertEqual(recs[0].evidence_source, "oci_optimizer")
+        self.assertEqual(recs[0].provider_recommendation_type, "Delete unattached block volumes")
+        self.assertEqual(recs[0].provider_recommendation_resource_count, 60)
+        self.assertEqual(recs[0].provider_recommendation_category, "Cost management")
+        self.assertEqual(recs[0].provider_recommendation_importance, "High")
+        self.assertEqual(recs[0].provider_recommendation_status, "Active")
         self.assertEqual(recs[1].resource_id, "ocid1.volume.optimizer-orphan")
         self.assertEqual(recs[1].action, "terminate")
+        self.assertEqual(recs[1].provider_recommendation_type, "Delete unattached volume")
+        self.assertEqual(recs[1].provider_recommendation_resource_count, 1)
 
     def test_oci_optimizer_uses_home_region_for_cloud_advisor(self) -> None:
         fake_oci = SimpleNamespace(

@@ -13479,6 +13479,12 @@ class RightsizingRecommendation(BaseModel):
     resource_console_url: Optional[str] = None
     last_observed_at: Optional[str] = None
     risk_note: Optional[str] = None
+    provider_recommendation_type: Optional[str] = None
+    provider_recommendation_name: Optional[str] = None
+    provider_recommendation_category: Optional[str] = None
+    provider_recommendation_status: Optional[str] = None
+    provider_recommendation_importance: Optional[str] = None
+    provider_recommendation_resource_count: Optional[int] = None
 
 
 class RightsizingResponse(BaseModel):
@@ -13960,6 +13966,7 @@ def _provider_row(
     severity: str = "medium",
     roi_percent: float = 0.0,
     console_url: Optional[str] = None,
+    provider_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     safe_monthly = round(max(float(monthly_savings or 0.0), 0.0), 2)
     current_monthly = (
@@ -13967,7 +13974,7 @@ def _provider_row(
         if current_monthly_cost is not None
         else safe_monthly
     )
-    return {
+    row = {
         "id": rec_id,
         "provider": provider,
         "source": source,
@@ -13988,6 +13995,9 @@ def _provider_row(
         "resource_type": resource_type or service,
         "resource_console_url": console_url,
     }
+    if provider_metadata:
+        row.update(provider_metadata)
+    return row
 
 
 def _recommendation_rows_from_rightsizing(
@@ -14436,6 +14446,7 @@ def _oci_extended_metadata(item: Any) -> Dict[str, Any]:
 
 def _oci_recommendation_slug(value: str) -> str:
     slug = str(value or "").strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
     for suffix in ("-name", "-desc"):
         if slug.endswith(suffix):
             slug = slug[: -len(suffix)]
@@ -14447,6 +14458,8 @@ def _oci_recommendation_display_name(name: str) -> str:
     labels = {
         "cost-management-block-volume-attachment": "Delete unattached block volumes",
         "cost-management-boot-volume-attachment": "Delete unattached boot volumes",
+        "delete-unattached-block-volumes": "Delete unattached block volumes",
+        "delete-unattached-boot-volumes": "Delete unattached boot volumes",
         "cost-management-compute-host-burstable": "Change compute instances to burstable",
         "cost-management-compute-host-underutilized": "Downsize underutilized compute instances",
         "cost-management-autonomous-database-underutilized": "Downsize underutilized ADW and ATP databases",
@@ -14648,6 +14661,8 @@ def _oci_optimizer_recommendation_rows(
                 service=service_name,
                 description=f"{name} {description} {display_name}",
             )
+            lifecycle_state = str(getattr(rec, "lifecycle_state", "") or "").upper()
+            resource_count = _oci_recommendation_resource_count(rec)
             row = _provider_row(
                 provider="oci",
                 source="oci_optimizer",
@@ -14662,17 +14677,16 @@ def _oci_optimizer_recommendation_rows(
                 payback_months=1 if rec_type in {"idle-resources", "storage-optimization"} else 3,
                 confidence="high",
                 severity=str(getattr(rec, "importance", "") or "medium").lower() or "medium",
+                provider_metadata={
+                    "recommendation_type": display_name,
+                    "recommendation_name": name,
+                    "resource_count": resource_count if resource_count > 0 else None,
+                    "category": category_name,
+                    "importance": _oci_importance_label(getattr(rec, "importance", None)),
+                    "status": "Active" if lifecycle_state == "ACTIVE" else str(getattr(rec, "status", "") or "Active").title(),
+                    "recommendation_status": str(getattr(rec, "status", "") or "").title(),
+                },
             )
-            lifecycle_state = str(getattr(rec, "lifecycle_state", "") or "").upper()
-            row.update({
-                "recommendation_type": display_name,
-                "recommendation_name": name,
-                "resource_count": _oci_recommendation_resource_count(rec),
-                "category": category_name,
-                "importance": _oci_importance_label(getattr(rec, "importance", None)),
-                "status": "Active" if lifecycle_state == "ACTIVE" else str(getattr(rec, "status", "") or "Active").title(),
-                "recommendation_status": str(getattr(rec, "status", "") or "").title(),
-            })
             rows.append(row)
     except Exception as exc:
         logger.info("OCI Optimizer recommendations unavailable: %s", exc)
@@ -14736,6 +14750,14 @@ def _oci_optimizer_recommendation_rows(
                     account_id=tenancy_id,
                     resource_type=resource_type,
                 ),
+                provider_metadata={
+                    "recommendation_type": description,
+                    "recommendation_name": action_name,
+                    "resource_count": 1,
+                    "category": "Cost management",
+                    "importance": "High",
+                    "status": "Active",
+                },
             ))
     except Exception as exc:
         logger.info("OCI Optimizer resource actions unavailable: %s", exc)
@@ -14953,6 +14975,16 @@ def _rightsizing_from_provider_recommendation_rows(
                 risk_note=(
                     "Service-level provider recommendation. Use Cloud Resources and the provider console "
                     "to select exact resources before making changes."
+                ),
+                provider_recommendation_type=str(row.get("recommendation_type") or "").strip() or None,
+                provider_recommendation_name=str(row.get("recommendation_name") or "").strip() or None,
+                provider_recommendation_category=str(row.get("category") or "").strip() or None,
+                provider_recommendation_status=str(row.get("status") or row.get("recommendation_status") or "").strip() or None,
+                provider_recommendation_importance=str(row.get("importance") or row.get("severity") or "").strip() or None,
+                provider_recommendation_resource_count=(
+                    int(row.get("resource_count"))
+                    if str(row.get("resource_count") or "").strip().isdigit()
+                    else None
                 ),
             )
         )

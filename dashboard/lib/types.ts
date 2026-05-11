@@ -1509,6 +1509,12 @@ export interface RightsizingRecommendation {
   resource_console_url: string | null
   last_observed_at: string | null
   risk_note: string | null
+  provider_recommendation_type?: string | null
+  provider_recommendation_name?: string | null
+  provider_recommendation_category?: string | null
+  provider_recommendation_status?: string | null
+  provider_recommendation_importance?: string | null
+  provider_recommendation_resource_count?: number | null
 }
 
 export interface RightsizingResponse {

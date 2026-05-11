@@ -529,10 +529,18 @@ Backend default path (refresh_live=false)
   Tier 3  Imported CSV cost-signal analysis
 
 Backend live refresh path (refresh_live=true)
-  Tier 1  Provider-native usage and rightsizing signals when available
+  Tier 1  Provider-native recommendation APIs when available
+          - OCI Cloud Advisor/Optimizer from tenancy home region
+          - AWS Cost Explorer commitment and rightsizing signals
+          - Azure Advisor
+          - GCP Recommender
   Tier 2  Provider inventory and configuration heuristics
   Tier 3  Stored scan snapshots when live context returns no data
   Tier 4  Imported CSV cost-signal analysis
+
+Provider recommendation metadata preserved in response rows
+  recommendation_type, recommendation_name, category, status, importance,
+  resource_count, provider, service, scope, savings, console URL
 
 No synthetic recommendation tier
 If no eligible real signals exist: empty recommendation list with no_data_available source
@@ -574,26 +582,27 @@ Finance visibility
               variance
 ```
 
-## Rightsizing Dashboard UX Wiring
+## Optimization Advisor Dashboard UX Wiring
 
 ```text
 /dashboard/rightsizing
         |
         +--> Scan Status expander
-        |     - mode: stored or live provider scan
+        |     - mode: stored or live provider advisor scan
         |     - evidence source and load timestamp
-        |     - provider scope and visible card count
+        |     - provider scope and visible item/advisor count
         |     - friendly live-scan running/fallback messages
         |
         +--> Filters And Search expander
         |     - provider filter
         |     - action filter
         |     - product filter
-        |     - search by resource, OCID, account, region, evidence, reason
+        |     - search by recommendation type, resource, OCID, account, region,
+        |       evidence, reason
         |
         +--> Executive Summary expander
         |     - resources analyzed
-        |     - rightsizable count
+        |     - optimization item count
         |     - monthly savings
         |     - non-compute savings
         |
@@ -601,9 +610,16 @@ Finance visibility
         |     - product category breakdown
         |     - downsize / terminate / reserve / modernize mix
         |
-        +--> Resource Recommendations expander
-              - compact evidence card per recommendation
-              - inline Execution details disclosure
+        +--> Provider Advisor Findings expander
+        |     - Cloud Advisor-style recommendation table
+        |     - recommendation type, count, service, category
+        |     - estimated savings, importance, status, scope, provider action
+        |     - storage cleanup summary, including unattached volumes
+        |
+        +--> Resource Drill-Down expander
+              - compact evidence card per optimization item
+              - provider advisor badges and metadata
+              - inline execution details disclosure
               - console deep links where provider scope is known
 ```
 

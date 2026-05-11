@@ -32,13 +32,16 @@ Repository release metadata:
 - Advanced FinOps Control Tower panel that surfaces the consolidated posture score, lane status, and RAG-backed action queue before specialist drill-down sections.
 - Real OCI GenAI + RAG wiring for Cost Advisor chat and backend GenAI narratives: server-side OCI GenAI calls, backend RAG retrieval, and retrieved guidance injection into prompts.
 - Terraform-managed compute/data-volume deployment flow with Ansible runtime provisioning driven from Terraform outputs.
+- Optimization Advisor table for provider-native findings, showing Cloud Advisor-style recommendation type, count, service, category, estimated savings, importance, status, scope, and provider-console action.
 
 ### Changed
 
 - OCI deployment archives now align with repository hygiene rules by excluding local env files, virtualenvs, dashboard build output, `node_modules`, test reports, Terraform state/tfvars, local databases, logs, and scratch/evidence folders.
 - Ansible source deployments now remove stale generated dashboard/cache/Terraform artifacts from earlier deployments before unpacking fresh source, while preserving runtime `.env`, `.oci`, `venv`, and `optiora.db`.
+- Rightsizing navigation and page copy now use Optimization Advisor language, with live provider advisor scan enabled by default and storage cleanup called out first-class.
+- OCI Cloud Advisor metadata is preserved through the rightsizing API response, including unattached volume recommendation counts, category, importance, and active status.
 - Rightsizing live refresh now allows up to `120s` in the dashboard client. The deployed OCI live scan has been observed returning in about `50s`, which exceeded the previous `45s` client timeout.
-- Rightsizing overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status and action summaries discoverable.
+- Optimization Advisor overview sections were reorganized behind expanders to reduce first-screen density while keeping live scan status, provider-native findings, and action summaries discoverable.
 - FinOps Scorecards now show finance-first realized savings summaries and expandable provider, owner, business-unit, and monthly scorecard tables.
 - Kubernetes page language now distinguishes live resource inventory from metered spend and labels run-rate estimates clearly.
 - Billing & Allocation now owns finance spend, chargeback, mapping, and export workflows, while Cloud Resources owns resource-level cost investigation.

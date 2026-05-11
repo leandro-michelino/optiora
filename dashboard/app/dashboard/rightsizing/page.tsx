@@ -8,6 +8,7 @@ import {
   BarChart3,
   CheckCircle,
   ChevronDown,
+  Cloud,
   Clock3,
   Database,
   DollarSign,
@@ -18,6 +19,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   Zap,
 } from 'lucide-react'
 import { fetchRightsizingRecommendations, forceNextApiRefresh } from '@/lib/api'
@@ -39,6 +41,91 @@ const PRODUCT_LABELS: Record<string, string> = {
   kubernetes: 'Kubernetes',
   governance: 'Governance',
   other: 'Other',
+}
+const PROVIDER_ADVISOR_SOURCES = ['optimizer', 'advisor', 'recommender', 'cost_explorer', 'provider_recommendations']
+const OCI_CLOUD_ADVISOR_CONSOLE_URL = 'https://cloud.oracle.com/cloud-advisor/recommendations'
+
+function recommendationText(rec: RightsizingRecommendation): string {
+  return [
+    rec.provider_recommendation_type,
+    rec.provider_recommendation_name,
+    rec.provider_recommendation_category,
+    rec.provider_recommendation_status,
+    rec.provider_recommendation_importance,
+    rec.resource_type,
+    rec.resource_name,
+    rec.current_size,
+    rec.recommended_size,
+    rec.reason,
+    rec.evidence_source,
+    rec.action,
+  ].join(' ').toLowerCase()
+}
+
+function hasProviderAdvisorMetadata(rec: RightsizingRecommendation): boolean {
+  return Boolean(
+    rec.provider_recommendation_type
+      || rec.provider_recommendation_name
+      || rec.provider_recommendation_category
+      || rec.provider_recommendation_status
+      || rec.provider_recommendation_importance
+      || (rec.provider_recommendation_resource_count !== null && rec.provider_recommendation_resource_count !== undefined),
+  )
+}
+
+function isProviderAdvisorFinding(rec: RightsizingRecommendation): boolean {
+  if (hasProviderAdvisorMetadata(rec)) return true
+  const source = rec.evidence_source.toLowerCase()
+  if (PROVIDER_ADVISOR_SOURCES.some((token) => source.includes(token))) return true
+  if (rec.provider === 'oci' && source.includes('storage_inventory') && isUnattachedStorageFinding(rec)) return true
+  return false
+}
+
+function advisorTitle(rec: RightsizingRecommendation): string {
+  return rec.provider_recommendation_type
+    || rec.provider_recommendation_name
+    || (rec.action === 'terminate' && isUnattachedStorageFinding(rec) ? 'Delete unattached storage resources' : rec.resource_name)
+}
+
+function advisorCategory(rec: RightsizingRecommendation): string {
+  return rec.provider_recommendation_category || PRODUCT_LABELS[productCategory(rec)] || 'Optimization'
+}
+
+function advisorStatus(rec: RightsizingRecommendation): string {
+  return rec.provider_recommendation_status || (isProviderAdvisorFinding(rec) ? 'Active' : 'Candidate')
+}
+
+function advisorImportance(rec: RightsizingRecommendation): string {
+  return rec.provider_recommendation_importance || `${rec.confidence.charAt(0).toUpperCase()}${rec.confidence.slice(1)}`
+}
+
+function advisorResourceCount(rec: RightsizingRecommendation): number {
+  if (rec.provider_recommendation_resource_count !== null && rec.provider_recommendation_resource_count !== undefined) {
+    return Math.max(rec.provider_recommendation_resource_count, 0)
+  }
+  if (rec.resource_id.startsWith('provider-rec-')) return Math.max(rec.analysis_points || 1, 1)
+  return 1
+}
+
+function isUnattachedStorageFinding(rec: RightsizingRecommendation): boolean {
+  const text = recommendationText(rec)
+  return /unattached|detached|orphan/.test(text) && /volume|boot|block|storage|disk/.test(text)
+}
+
+function statusTone(status: string): 'emerald' | 'blue' | 'amber' | 'slate' | 'rose' | 'violet' {
+  const normalized = status.toLowerCase()
+  if (normalized.includes('active') || normalized.includes('open')) return 'emerald'
+  if (normalized.includes('pending') || normalized.includes('deferred')) return 'amber'
+  if (normalized.includes('dismiss') || normalized.includes('inactive') || normalized.includes('closed')) return 'slate'
+  return 'blue'
+}
+
+function importanceTone(importance: string): 'emerald' | 'blue' | 'amber' | 'slate' | 'rose' | 'violet' {
+  const normalized = importance.toLowerCase()
+  if (normalized.includes('critical') || normalized.includes('high')) return 'rose'
+  if (normalized.includes('medium') || normalized.includes('moderate')) return 'amber'
+  if (normalized.includes('low')) return 'slate'
+  return 'blue'
 }
 
 function fmt(n: number) {
@@ -73,6 +160,20 @@ function scanModeDescription(refreshLive: boolean, data: RightsizingResponse | n
   return data
     ? `Fast dashboard mode using ${compactSource(data.data_source)}.`
     : 'Fast dashboard mode uses the latest stored scan and imported-cost signals.'
+}
+
+function initialProviderFilter(): string {
+  if (typeof window === 'undefined') return 'all'
+  const value = new URLSearchParams(window.location.search).get('provider')?.toLowerCase() || 'all'
+  return PROVIDERS.includes(value) ? value : 'all'
+}
+
+function initialLiveRefresh(): boolean {
+  if (typeof window === 'undefined') return true
+  const params = new URLSearchParams(window.location.search)
+  const raw = params.get('refresh_live') || params.get('live')
+  if (raw === null) return true
+  return !['0', 'false', 'no'].includes(raw.toLowerCase())
 }
 
 function sourceQuality(source?: string): { label: string; tone: 'emerald' | 'blue' | 'amber' | 'slate' } {
@@ -235,15 +336,7 @@ function providerColor(p: string) {
 }
 
 function productCategory(rec: RightsizingRecommendation): string {
-  const text = [
-    rec.resource_type,
-    rec.resource_name,
-    rec.current_size,
-    rec.recommended_size,
-    rec.reason,
-    rec.evidence_source,
-    rec.action,
-  ].join(' ').toLowerCase()
+  const text = recommendationText(rec)
 
   if (rec.action === 'reserve' || /reservation|reserved|commitment|savings plan|committed use|coverage/.test(text)) return 'commitments'
   if (/storage|volume|disk|snapshot|backup|bucket|object|blob|archive/.test(text)) return 'storage'
@@ -294,6 +387,13 @@ function resourceConsoleUrl(rec: RightsizingRecommendation): string | null {
     return `https://cloud.oracle.com/compute/instances${suffix}`
   }
   return null
+}
+
+function providerAdvisorConsoleUrl(rec: RightsizingRecommendation): string | null {
+  if (rec.provider === 'oci' && (hasProviderAdvisorMetadata(rec) || rec.evidence_source.toLowerCase().includes('optimizer'))) {
+    return OCI_CLOUD_ADVISOR_CONSOLE_URL
+  }
+  return resourceConsoleUrl(rec)
 }
 
 function UtilBar({ label, value }: { label: string; value: number | null }) {
@@ -361,12 +461,189 @@ function rollbackPlan(rec: RightsizingRecommendation): string {
   return `Revert to ${rec.current_size} and restore previous autoscaling/limits if SLO degradation appears.`
 }
 
+function ProviderAdvisorFindings({
+  findings,
+  hasUnfilteredFindings,
+  refreshLive,
+  loading,
+  onSelectAction,
+  onSelectProduct,
+  onEnableLive,
+}: {
+  findings: RightsizingRecommendation[]
+  hasUnfilteredFindings: boolean
+  refreshLive: boolean
+  loading: boolean
+  onSelectAction: (action: string) => void
+  onSelectProduct: (product: string) => void
+  onEnableLive: () => void
+}) {
+  const totalSavings = findings.reduce((sum, rec) => sum + rec.monthly_savings_usd, 0)
+  const totalResources = findings.reduce((sum, rec) => sum + advisorResourceCount(rec), 0)
+  const storageFindings = findings.filter((rec) => productCategory(rec) === 'storage' || isUnattachedStorageFinding(rec))
+  const storageSavings = storageFindings.reduce((sum, rec) => sum + rec.monthly_savings_usd, 0)
+  const unattachedVolumeCount = findings
+    .filter(isUnattachedStorageFinding)
+    .reduce((sum, rec) => sum + advisorResourceCount(rec), 0)
+
+  return (
+    <Expander
+      title="Provider Advisor Findings"
+      description="Provider-native recommendations with Cloud Advisor-style counts, category, savings, importance, and status."
+      icon={<Cloud className="h-5 w-5" />}
+      defaultOpen
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatusTile
+            label="Advisor findings"
+            value={findings.length.toLocaleString()}
+            helper={`${totalResources.toLocaleString()} resource${totalResources === 1 ? '' : 's'} represented in the visible provider rows.`}
+            icon={<Cloud className="h-5 w-5" />}
+            tone="blue"
+          />
+          <StatusTile
+            label="Advisor savings"
+            value={`${fmtK(totalSavings)}/mo`}
+            helper="Estimated monthly savings from provider-native optimizer signals."
+            icon={<DollarSign className="h-5 w-5" />}
+            tone="emerald"
+          />
+          <StatusTile
+            label="Storage cleanup"
+            value={`${fmtK(storageSavings)}/mo`}
+            helper={`${storageFindings.length.toLocaleString()} storage cleanup finding${storageFindings.length === 1 ? '' : 's'} in the current view.`}
+            icon={<Trash2 className="h-5 w-5" />}
+            tone="rose"
+          />
+          <StatusTile
+            label="Unattached volumes"
+            value={unattachedVolumeCount.toLocaleString()}
+            helper="Block, boot, or disk resources marked unattached, detached, or orphaned."
+            icon={<Database className="h-5 w-5" />}
+            tone="amber"
+          />
+        </div>
+
+        {findings.length > 0 ? (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                    <th className="px-4 py-3">Recommendation type</th>
+                    <th className="px-4 py-3 text-right">Count</th>
+                    <th className="px-4 py-3">Service</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3 text-right">Estimated savings</th>
+                    <th className="px-4 py-3">Importance</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Scope</th>
+                    <th className="px-4 py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {findings.map((rec) => {
+                    const consoleUrl = providerAdvisorConsoleUrl(rec)
+                    const product = productCategory(rec)
+                    const status = advisorStatus(rec)
+                    const importance = advisorImportance(rec)
+                    return (
+                      <tr key={`advisor-${rec.provider}-${rec.resource_id}-${rec.region}-${rec.action}-${advisorTitle(rec)}`} className="border-b border-slate-100 align-top dark:border-slate-800">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900 dark:text-white">{advisorTitle(rec)}</div>
+                          <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{compactSource(rec.evidence_source)}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">{advisorResourceCount(rec).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{rec.resource_type || 'Cloud service'}</td>
+                        <td className="px-4 py-3">
+                          <Badge className={`rounded-md border text-xs ${productTone(product)}`}>
+                            {advisorCategory(rec)}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">{rec.monthly_savings_usd > 0 ? fmt(rec.monthly_savings_usd) : '-'}</td>
+                        <td className="px-4 py-3">
+                          <Badge className={`rounded-md border text-xs ${toneClasses(importanceTone(importance))}`}>
+                            {importance}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge className={`rounded-md border text-xs ${toneClasses(statusTone(status))}`}>
+                            {status}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                          <div>{rec.provider.toUpperCase()} · {rec.region || 'global'}</div>
+                          <div className="mt-0.5 max-w-[18rem] truncate font-mono">{rec.account_id || 'n/a'}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col items-start gap-2">
+                            {consoleUrl ? (
+                              <a
+                                href={consoleUrl}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                              >
+                                Open provider
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSelectProduct(product)
+                                onSelectAction(rec.action)
+                              }}
+                              className="text-xs font-medium text-slate-600 hover:text-blue-600 dark:text-slate-300 dark:hover:text-blue-400"
+                            >
+                              Show matching cards
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <FriendlyNotice
+            tone={refreshLive ? 'amber' : 'blue'}
+            icon={<Info className="h-4 w-4" />}
+            title={hasUnfilteredFindings ? 'Advisor findings are hidden by filters' : 'Provider advisor data is not loaded yet'}
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                {hasUnfilteredFindings
+                  ? 'Clear search or product/action filters to show the provider-native findings.'
+                  : refreshLive
+                    ? 'The current provider response did not include Cloud Advisor rows. Storage inventory cleanup findings still appear when OCI returns unattached volumes.'
+                    : 'Run a live provider scan to pull OCI Cloud Advisor and other provider recommendation APIs into this page.'}
+              </span>
+              {!refreshLive && !hasUnfilteredFindings ? (
+                <Button type="button" variant="outline" onClick={onEnableLive} disabled={loading} className="rounded-lg bg-white/70 dark:bg-slate-900/70">
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Run live scan
+                </Button>
+              ) : null}
+            </div>
+          </FriendlyNotice>
+        )}
+      </div>
+    </Expander>
+  )
+}
+
 function RecCard({ rec }: { rec: RightsizingRecommendation }) {
   const consoleUrl = resourceConsoleUrl(rec)
   const product = productCategory(rec)
+  const providerFinding = isProviderAdvisorFinding(rec)
   const aggregateScope = rec.resource_type.toLowerCase().includes('aggregate')
     || rec.evidence_source.includes('cost_trend')
     || rec.evidence_source.includes('imported')
+    || rec.resource_id.startsWith('provider-rec-')
   const monthlyDeltaPct = rec.current_monthly_cost_usd > 0
     ? ((rec.current_monthly_cost_usd - rec.projected_monthly_cost_usd) / rec.current_monthly_cost_usd) * 100
     : 0
@@ -381,10 +658,15 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
                 <Badge className={`rounded-md border text-xs ${providerColor(rec.provider)}`}>{rec.provider.toUpperCase()}</Badge>
                 <Badge className={`rounded-md border text-xs ${productTone(product)}`}>{PRODUCT_LABELS[product] ?? product}</Badge>
                 <Badge className={`rounded-md border text-xs ${actionColor(rec.action)}`}>{rec.action}</Badge>
+                {providerFinding && (
+                  <Badge className="rounded-md border border-red-200 bg-red-50 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                    Provider advisor
+                  </Badge>
+                )}
                 <span className={`text-xs font-medium ${confidenceColor(rec.confidence)}`}>{rec.confidence} confidence</span>
                 <span className={`text-xs font-medium ${effortColor(rec.effort)}`}>effort: {rec.effort}</span>
               </div>
-              <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{rec.resource_name}</p>
+              <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{providerFinding ? advisorTitle(rec) : rec.resource_name}</p>
               <p className="text-xs text-slate-400 font-mono break-all">{rec.resource_id} · {rec.resource_type} · {rec.region}</p>
               <p className="text-xs text-slate-500 mt-0.5">account: {rec.account_id || 'n/a'}</p>
               {consoleUrl && (
@@ -445,6 +727,27 @@ function RecCard({ rec }: { rec: RightsizingRecommendation }) {
             <p className="text-slate-500">Why this is recommended</p>
             <p className="font-medium text-slate-800 dark:text-slate-200 line-clamp-2">{rec.reason}</p>
           </div>
+
+          {providerFinding && (
+            <div className="grid grid-cols-2 gap-2 rounded-md border border-red-200 bg-red-50/60 p-2 text-xs dark:border-red-900 dark:bg-red-950/20 sm:grid-cols-4">
+              <div>
+                <p className="text-red-700/70 dark:text-red-200/70">Advisor count</p>
+                <p className="font-semibold text-red-900 dark:text-red-100">{advisorResourceCount(rec).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-red-700/70 dark:text-red-200/70">Category</p>
+                <p className="font-semibold text-red-900 dark:text-red-100">{advisorCategory(rec)}</p>
+              </div>
+              <div>
+                <p className="text-red-700/70 dark:text-red-200/70">Importance</p>
+                <p className="font-semibold text-red-900 dark:text-red-100">{advisorImportance(rec)}</p>
+              </div>
+              <div>
+                <p className="text-red-700/70 dark:text-red-200/70">Status</p>
+                <p className="font-semibold text-red-900 dark:text-red-100">{advisorStatus(rec)}</p>
+              </div>
+            </div>
+          )}
 
           {(rec.regional_breakdown?.length ?? 0) > 0 && (
             <div className="rounded-md border border-slate-200 dark:border-slate-700 p-2 text-xs">
@@ -548,11 +851,11 @@ export default function RightsizingPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<RightsizingResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [provider, setProvider] = useState('all')
+  const [provider, setProvider] = useState(initialProviderFilter)
   const [actionFilter, setActionFilter] = useState('all')
   const [productFilter, setProductFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [refreshLive, setRefreshLive] = useState(false)
+  const [refreshLive, setRefreshLive] = useState(initialLiveRefresh)
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null)
 
   const load = useCallback(async () => {
@@ -614,8 +917,15 @@ export default function RightsizingPage() {
       rec.action,
       rec.evidence_source,
       rec.reason,
+      rec.provider_recommendation_type,
+      rec.provider_recommendation_name,
+      rec.provider_recommendation_category,
+      rec.provider_recommendation_status,
+      rec.provider_recommendation_importance,
     ].some((value) => String(value || '').toLowerCase().includes(searchNormalized)))
     : actionScoped
+  const advisorFindings = filtered.filter(isProviderAdvisorFinding)
+  const hasUnfilteredAdvisorFindings = recommendations.some(isProviderAdvisorFinding)
   const selectProductFilter = (product: string) => {
     setProductFilter(product)
     setActionFilter('all')
@@ -627,13 +937,13 @@ export default function RightsizingPage() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <div className="mb-2 flex flex-wrap gap-2">
-            <Badge variant="outline" className="rounded-md">Resource-Level Rightsizing</Badge>
-            <Badge variant="outline" className="rounded-md border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-950/30">Compute · Storage · Commitments · Services</Badge>
+            <Badge variant="outline" className="rounded-md">Optimization Advisor</Badge>
+            <Badge variant="outline" className="rounded-md border-blue-300 bg-blue-50 text-blue-800 dark:bg-blue-950/30">Cloud Advisor · Storage cleanup · Rightsizing</Badge>
             <Badge className={`rounded-md border ${toneClasses(sourceInfo.tone)}`}>{sourceInfo.label}</Badge>
           </div>
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Rightsizing</h1>
+          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2">Optimization Advisor</h1>
           <p className="text-slate-600 dark:text-slate-400 max-w-3xl">
-            Product-level optimization recommendations from provider inventory, billing trends, and utilization signals. Compare compute, storage, commitment, database, network, Kubernetes, and governance savings from one view.
+            Provider-native optimization findings with Cloud Advisor-style counts, categories, estimated savings, importance, and status, plus resource-level drill-down for storage cleanup, compute rightsizing, commitments, and services.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -645,7 +955,7 @@ export default function RightsizingPage() {
               disabled={loading}
               className="h-4 w-4 rounded border-slate-300 text-blue-600"
             />
-            Live provider scan
+            Live provider advisor scan
           </label>
           <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} className="rounded-lg" disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh
@@ -664,14 +974,14 @@ export default function RightsizingPage() {
             <FriendlyNotice
               tone={refreshLive ? 'amber' : 'rose'}
               icon={<AlertTriangle className="h-4 w-4" />}
-              title={refreshLive ? 'Live scan fell back safely' : 'Rightsizing data is unavailable'}
+              title={refreshLive ? 'Live scan fell back safely' : 'Optimization advisor data is unavailable'}
             >
               {error}
             </FriendlyNotice>
           )}
           {loading && refreshLive && (
-            <FriendlyNotice tone="blue" icon={<Clock3 className="h-4 w-4" />} title="Live provider scan is running">
-              Provider-native rightsizing APIs can take around a minute for large OCI or multi-cloud inventories. The request timeout is now long enough for the current live scan path, and stored results remain available if the provider call fails.
+            <FriendlyNotice tone="blue" icon={<Clock3 className="h-4 w-4" />} title="Live provider advisor scan is running">
+              Provider recommendation APIs can take around a minute for large OCI or multi-cloud inventories. Stored results remain available if the provider call fails.
             </FriendlyNotice>
           )}
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
@@ -698,8 +1008,8 @@ export default function RightsizingPage() {
             />
             <StatusTile
               label="Visible now"
-              value={`${filtered.length.toLocaleString()} cards`}
-              helper={`${recommendations.length.toLocaleString()} total recommendations loaded before filters.`}
+              value={`${filtered.length.toLocaleString()} items`}
+              helper={`${advisorFindings.length.toLocaleString()} provider advisor findings match the current filters.`}
               icon={<BarChart3 className="h-5 w-5" />}
               tone="violet"
             />
@@ -709,7 +1019,7 @@ export default function RightsizingPage() {
 
       <Expander
         title="Filters And Search"
-        description="Narrow recommendations by provider, action, product category, region, account, or resource ID."
+        description="Narrow advisor findings by provider, action, product category, region, account, resource ID, or recommendation type."
         icon={<Filter className="h-5 w-5" />}
         defaultOpen={Boolean(searchQuery) || provider !== 'all' || actionFilter !== 'all' || productFilter !== 'all'}
       >
@@ -722,7 +1032,7 @@ export default function RightsizingPage() {
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search resource, OCID, account, region, evidence, or reason"
+              placeholder="Search recommendation type, resource, OCID, account, region, evidence, or reason"
               className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </span>
@@ -779,14 +1089,14 @@ export default function RightsizingPage() {
       {data && (
         <Expander
           title="Executive Summary"
-          description="Top-line impact from the current scan and filter state."
+          description="Top-line impact from provider advisor findings and resource-level optimization signals."
           icon={<DollarSign className="h-5 w-5" />}
           defaultOpen
         >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             { label: 'Resources Analyzed', value: data.total_resources_analyzed.toLocaleString(), icon: Zap, color: 'from-blue-500 to-blue-600' },
-            { label: 'Rightsizable', value: data.rightsizable_count.toLocaleString(), icon: AlertTriangle, color: 'from-amber-500 to-amber-600' },
+            { label: 'Optimization Items', value: data.rightsizable_count.toLocaleString(), icon: AlertTriangle, color: 'from-amber-500 to-amber-600' },
             { label: 'Monthly Savings', value: fmtK(data.total_monthly_savings_usd), icon: DollarSign, color: 'from-emerald-500 to-emerald-600' },
             { label: 'Non-Compute Savings', value: fmtK(nonComputeSavings), icon: CheckCircle, color: 'from-violet-500 to-violet-600' },
           ].map(kpi => {
@@ -811,7 +1121,7 @@ export default function RightsizingPage() {
       {data && productSummaries.length > 0 && (
         <Expander
           title="Savings And Action Breakdown"
-          description="Explore product categories and action types before opening the full resource list."
+          description="Explore product categories and action types before opening the provider findings and resource drill-down."
           icon={<DollarSign className="h-5 w-5" />}
         >
         <div className="space-y-3">
@@ -863,21 +1173,36 @@ export default function RightsizingPage() {
         </Expander>
       )}
 
+      {data && (
+        <ProviderAdvisorFindings
+          findings={advisorFindings}
+          hasUnfilteredFindings={hasUnfilteredAdvisorFindings}
+          refreshLive={refreshLive}
+          loading={loading}
+          onSelectAction={setActionFilter}
+          onSelectProduct={selectProductFilter}
+          onEnableLive={() => {
+            setRefreshLive(true)
+            forceNextApiRefresh()
+          }}
+        />
+      )}
+
       {/* Recommendations grid */}
       {loading ? (
         <div className="flex min-h-[300px] items-center justify-center text-slate-500">
-          <Loader className="h-6 w-6 animate-spin mr-2" /> Analyzing resources...
+          <Loader className="h-6 w-6 animate-spin mr-2" /> Loading provider advisor findings...
         </div>
       ) : filtered.length > 0 ? (
         <>
           {data && (
             <p className="text-sm text-slate-500">
-              Showing {filtered.length} of {data.rightsizable_count} recommendations · product: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{PRODUCT_LABELS[productFilter] ?? productFilter}</code> · scan: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{refreshLive ? 'live' : 'stored'}</code> · data source: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{data.data_source}</code>
+              Showing {filtered.length} of {data.rightsizable_count} items · advisor findings: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{advisorFindings.length}</code> · product: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{PRODUCT_LABELS[productFilter] ?? productFilter}</code> · scan: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{refreshLive ? 'live' : 'stored'}</code> · data source: <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{data.data_source}</code>
             </p>
           )}
           <Expander
-            title="Resource Recommendations"
-            description="Resource cards open with compact evidence first; each card can reveal execution details."
+            title="Resource Drill-Down"
+            description="Cards show resource-level evidence and execution details behind advisor findings."
             icon={<CheckCircle className="h-5 w-5" />}
             defaultOpen
           >
@@ -893,8 +1218,8 @@ export default function RightsizingPage() {
             {productScoped.length > 0 && actionFilter !== 'all'
               ? `No ${PRODUCT_LABELS[productFilter] ?? productFilter} opportunities match the ${actionFilter} action filter.`
               : data && data.total_resources_analyzed > 0
-              ? 'No rightsizing opportunities found with current filters — your resources are well-sized!'
-              : 'Connect cloud providers and run a scan to surface per-resource rightsizing opportunities.'}
+              ? 'No optimization advisor items match the current filters.'
+              : 'Connect cloud providers and run a live advisor scan to surface Cloud Advisor and resource-level optimization findings.'}
           </p>
           {productScoped.length > 0 && actionFilter !== 'all' && (
             <Button variant="outline" onClick={() => setActionFilter('all')} className="mt-4 rounded-lg">
@@ -906,12 +1231,12 @@ export default function RightsizingPage() {
 
       {/* Info callout */}
       <Expander
-        title="How Rightsizing Works"
-        description="Data sources and recommendation logic behind the list."
+        title="How Advisor Data Is Wired"
+        description="Provider APIs and fallback evidence behind the advisor table and resource drill-down."
         icon={<Info className="h-5 w-5" />}
       >
       <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-200">
-        <strong>How rightsizing works:</strong> Optiora combines live provider inventory, provider recommendation APIs, cost trends, and utilization signals. Storage cleanup actions such as unattached boot/block volumes are included alongside VM downsize and commitment opportunities.
+        <strong>How advisor data is wired:</strong> OptiOra pulls provider-native recommendation APIs first, including OCI Cloud Advisor from the tenancy home region, then adds live inventory, cost trends, and utilization signals. Storage cleanup actions such as unattached boot and block volumes are included alongside VM downsize and commitment opportunities.
       </div>
       </Expander>
     </div>
