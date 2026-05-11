@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from finops_mcp.app import app
+from optiora_backend.app import app
 
 
 def _method_name(http_method: str, path: str) -> str:

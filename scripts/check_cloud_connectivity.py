@@ -11,8 +11,8 @@ import json
 import os
 from typing import Any, Dict
 
-from finops_mcp.config import Config
-from finops_mcp.credentials import CredentialValidator
+from optiora_backend.config import Config
+from optiora_backend.credentials import CredentialValidator
 
 
 def _result_dict(provider: str, configured: bool, status: Any | None, note: str = "") -> Dict[str, Any]:

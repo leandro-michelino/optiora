@@ -7,6 +7,7 @@
 - Documented the Action Ledger provider resource naming boundary so the OCI VM table only shows real OCI Compute instance display names, while account, tenancy, and service aggregates remain in broader recommendation context.
 - Documented the Cost Advisor conversation boundary: chat is wired through the real `/api/ai/chat` route, answers in English for now, and resolves rightsizing/over-provisioning prompts against real AWS, Azure, GCP, and OCI resource candidates instead of generic service/account summaries.
 - Cost Advisor prompt copy now asks for over-provisioned cloud resources rather than over-provisioned resources from a single provider.
+- Renamed the internal Python backend package to `optiora_backend` so documentation, tests, scripts, and deployment templates consistently describe the current OptiOra API runtime.
 - Standardized Terraform validation guidance on tracked `.tf` files plus `terraform -chdir=terraform validate`, avoiding local `terraform.tfvars` formatting noise.
 - Cleanup scanning now skips Terraform provider cache directories before deleting generated infrastructure cache.
 
@@ -20,7 +21,7 @@
 
 ### Validation
 
-- `python3 -m py_compile $(find ./finops_mcp -name '*.py')`
+- `python3 -m py_compile $(find ./optiora_backend -name '*.py')`
 - `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`301` passing)
 - `npm run build --prefix dashboard`
 - `npm run type-check --prefix dashboard`
@@ -160,7 +161,7 @@ Repository release metadata:
 ### Validation
 
 - `bash -n deploy/deploy-oci.sh scripts/cleanup-workspace.sh dashboard/scripts/playwright-backend.sh dashboard/scripts/playwright-frontend.sh`
-- `python3 -m py_compile $(find ./finops_mcp -name '*.py')`
+- `python3 -m py_compile $(find ./optiora_backend -name '*.py')`
 - `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`281` passing, `2` skipped)
 - `terraform fmt -check` on tracked `.tf` files
 - `terraform validate`
@@ -223,7 +224,7 @@ error handling, validation order, documentation, and local cleanup behavior.
 - `cd dashboard && npm run type-check`
 - `cd dashboard && npm run lint`
 - `cd dashboard && npm audit --audit-level=high`
-- `python3 -m py_compile $(find ./finops_mcp -name '*.py')`
+- `python3 -m py_compile $(find ./optiora_backend -name '*.py')`
 - `python -m unittest discover -s tests -p 'test_*.py'` (`278` passing, `2` skipped)
 - tracked Terraform `fmt -check` + `validate`
 - `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`

@@ -1,4 +1,4 @@
-from finops_mcp.provider_support import (
+from optiora_backend.provider_support import (
     SUPPORTED_CLOUD_PROVIDERS,
     provider_api_capabilities,
     provider_bounded_limit,

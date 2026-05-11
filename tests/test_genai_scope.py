@@ -3,7 +3,7 @@ Unit tests for GenAI scope validation and enforcement.
 """
 
 import unittest
-from finops_mcp.genai_scope import (
+from optiora_backend.genai_scope import (
     validate_genai_scope,
     calculate_finops_score,
     GenAIValidator,

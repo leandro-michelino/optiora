@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from finops_mcp.imported_costs import summarize_imported_cost_rows
+from optiora_backend.imported_costs import summarize_imported_cost_rows
 
 
 class ImportedCostsHelperTest(unittest.TestCase):

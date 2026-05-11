@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from finops_mcp.cost_context import (
+from optiora_backend.cost_context import (
     LiveDataPolicyError,
     build_imported_cost_context,
     build_live_cost_context,

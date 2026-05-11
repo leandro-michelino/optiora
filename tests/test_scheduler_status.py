@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from finops_mcp.scheduler_status import (
+from optiora_backend.scheduler_status import (
     build_scheduler_timeline,
     compute_next_run,
     scan_interval_seconds,

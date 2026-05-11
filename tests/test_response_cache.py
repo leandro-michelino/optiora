@@ -5,7 +5,7 @@ import unittest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from finops_mcp.response_cache import ApiResponseCache, ApiResponseCacheMiddleware
+from optiora_backend.response_cache import ApiResponseCache, ApiResponseCacheMiddleware
 
 
 class ResponseCacheTest(unittest.TestCase):

@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from finops_mcp.tools import finops_rag, genai_advisor
+from optiora_backend.tools import finops_rag, genai_advisor
 
 
 def test_rag_catalog_retrieves_guidance_for_optimization_roadmap() -> None:

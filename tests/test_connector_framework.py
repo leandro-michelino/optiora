@@ -4,7 +4,7 @@ Tests for connector framework supporting CloudHealth, Spot, and OpenCost.
 
 import unittest
 from datetime import datetime, timedelta, timezone
-from finops_mcp.connectors import (
+from optiora_backend.connectors import (
     ConnectorManager,
     ConnectorType,
     CloudHealthConnector,

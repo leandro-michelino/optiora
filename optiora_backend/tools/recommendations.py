@@ -183,7 +183,7 @@ async def get_department_budgets(params: dict[str, Any]) -> str:
         tag_key = params.get("tag_key", "department")
 
         if cloud_provider == "aws":
-            from finops_mcp.config import Config
+            from optiora_backend.config import Config
             import boto3
 
             cfg = Config()
@@ -388,13 +388,13 @@ async def optimize_storage(params: dict[str, Any]) -> str:
         min_savings = params.get("min_savings_usd", 100)
 
         if cloud_provider == "aws":
-            from finops_mcp.tools.aws_costs import get_cost_summary
+            from optiora_backend.tools.aws_costs import get_cost_summary
         elif cloud_provider == "azure":
-            from finops_mcp.tools.azure_costs import get_cost_summary
+            from optiora_backend.tools.azure_costs import get_cost_summary
         elif cloud_provider == "gcp":
-            from finops_mcp.tools.gcp_costs import get_cost_summary
+            from optiora_backend.tools.gcp_costs import get_cost_summary
         elif cloud_provider == "oci":
-            from finops_mcp.tools.oci_costs import get_cost_summary
+            from optiora_backend.tools.oci_costs import get_cost_summary
         else:
             return json.dumps({"error": f"Unsupported provider: {cloud_provider}"})
 
@@ -536,7 +536,7 @@ async def get_commitments(params: dict[str, Any]) -> str:
         show_opportunities = params.get("show_opportunities", True)
 
         if cloud_provider == "aws":
-            from finops_mcp.config import Config
+            from optiora_backend.config import Config
             import boto3
 
             cfg = Config()
@@ -662,7 +662,7 @@ async def get_rightsizing(params: dict[str, Any]) -> str:
         }
 
         if cloud_provider == "aws":
-            from finops_mcp.tools.aws_costs import get_unused_resources
+            from optiora_backend.tools.aws_costs import get_unused_resources
 
             unused_raw = await get_unused_resources()
             unused = json.loads(unused_raw)

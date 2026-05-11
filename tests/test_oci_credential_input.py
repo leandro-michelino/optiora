@@ -2,8 +2,8 @@
 
 import unittest
 
-from finops_mcp.credentials import CredentialValidator
-from finops_mcp.provider_support import OCICredentialInput, parse_credential_payload
+from optiora_backend.credentials import CredentialValidator
+from optiora_backend.provider_support import OCICredentialInput, parse_credential_payload
 
 
 class OciCredentialInputTest(unittest.TestCase):

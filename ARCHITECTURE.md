@@ -139,7 +139,7 @@ source data (live providers and/or imported CSV)
 _cost_context aggregation helper
         |
         v
-finops_mcp/tools/finops_analytics.py
+optiora_backend/tools/finops_analytics.py
         |
         +-- Forecasting
         |   - build_forecast()
@@ -410,7 +410,7 @@ Path A: Frontend chat
       -> English response for current release
 
 Path B: Backend narrative generation
-  finops_mcp/tools/genai_advisor.py
+  optiora_backend/tools/genai_advisor.py
       -> spend narratives
       -> anomaly explanations
       -> optimization briefs and roadmaps
@@ -565,7 +565,7 @@ If no eligible real signals exist: empty recommendation list with no_data_availa
 ```text
 /api/v1/provider-diagnostics
         |
-        +--> finops_mcp.provider_support.provider_api_capabilities()
+        +--> optiora_backend.provider_support.provider_api_capabilities()
               |
               +-- AWS
               |   scope: payer/linked account plus regional inventory
@@ -797,9 +797,9 @@ Deterministic FinOps context
 analysis_type + provider + context tokens
         |
         v
-finops_mcp/tools/finops_rag.py
+optiora_backend/tools/finops_rag.py
         |
-        +--> load finops_mcp/data/finops_rag_catalog.csv
+        +--> load optiora_backend/data/finops_rag_catalog.csv
         +--> score entries by analysis/provider/token overlap
         +--> return top guidance snippets + sources + rag_brief
         |
@@ -899,7 +899,7 @@ enterprise profile
         |     fetches backend /api/v1/genai/rag-guidance for RAG context
         |
         +--> Backend runtime
-              finops_mcp/config.py + tools/genai_advisor.py
+              optiora_backend/config.py + tools/genai_advisor.py
               resolves "~/" and env-expanded file paths for:
                 - OCI_CONFIG_FILE
                 - OCI_PRIVATE_KEY_PATH
@@ -1001,7 +1001,7 @@ dashboard/app/dashboard/page.tsx
 ## Release Documentation Wiring
 
 ```text
-pyproject.toml + finops_mcp/__init__.py + dashboard/package.json
+pyproject.toml + optiora_backend/__init__.py + dashboard/package.json
         |
         v
 version 0.9.2

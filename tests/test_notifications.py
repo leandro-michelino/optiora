@@ -12,8 +12,8 @@ try:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from finops_mcp.notifications import evaluate_budget_alert
-    from finops_mcp.orm_models import AlertEvent, Base
+    from optiora_backend.notifications import evaluate_budget_alert
+    from optiora_backend.orm_models import AlertEvent, Base
 except ImportError as exc:  # pragma: no cover - local dependency guard
     raise unittest.SkipTest(f"Backend dependencies are not installed: {exc}") from exc
 
@@ -59,7 +59,7 @@ class NotificationFlowTests(unittest.TestCase):
 
         with (
             patch(
-                "finops_mcp.notifications.Config",
+                "optiora_backend.notifications.Config",
                 return_value=SimpleNamespace(
                     smtp_host="smtp.example.com",
                     smtp_port=587,
@@ -71,9 +71,9 @@ class NotificationFlowTests(unittest.TestCase):
                     teams_webhook="https://teams.microsoft.test/demo",
                 ),
             ),
-            patch("finops_mcp.notifications._send_email", return_value=True),
-            patch("finops_mcp.notifications._send_slack_message", return_value=True),
-            patch("finops_mcp.notifications._send_teams_message", return_value=True),
+            patch("optiora_backend.notifications._send_email", return_value=True),
+            patch("optiora_backend.notifications._send_slack_message", return_value=True),
+            patch("optiora_backend.notifications._send_teams_message", return_value=True),
         ):
             event = evaluate_budget_alert(
                 db=self.db,
@@ -96,7 +96,7 @@ class NotificationFlowTests(unittest.TestCase):
 
         with (
             patch(
-                "finops_mcp.notifications.Config",
+                "optiora_backend.notifications.Config",
                 return_value=SimpleNamespace(
                     smtp_host="smtp.example.com",
                     smtp_port=587,
@@ -108,9 +108,9 @@ class NotificationFlowTests(unittest.TestCase):
                     teams_webhook="https://teams.microsoft.test/demo",
                 ),
             ),
-            patch("finops_mcp.notifications._send_email", return_value=True),
-            patch("finops_mcp.notifications._send_slack_message", return_value=True),
-            patch("finops_mcp.notifications._send_teams_message", return_value=True),
+            patch("optiora_backend.notifications._send_email", return_value=True),
+            patch("optiora_backend.notifications._send_slack_message", return_value=True),
+            patch("optiora_backend.notifications._send_teams_message", return_value=True),
         ):
             event_disabled = evaluate_budget_alert(
                 db=self.db,

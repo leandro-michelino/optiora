@@ -23,13 +23,13 @@ async def detect_anomalies(params: dict[str, Any]) -> str:
         sensitivity = float(params.get("sensitivity", 5))
 
         if cloud_provider == "aws":
-            from finops_mcp.tools.aws_costs import get_cost_summary
+            from optiora_backend.tools.aws_costs import get_cost_summary
         elif cloud_provider == "azure":
-            from finops_mcp.tools.azure_costs import get_cost_summary
+            from optiora_backend.tools.azure_costs import get_cost_summary
         elif cloud_provider == "gcp":
-            from finops_mcp.tools.gcp_costs import get_cost_summary
+            from optiora_backend.tools.gcp_costs import get_cost_summary
         elif cloud_provider == "oci":
-            from finops_mcp.tools.oci_costs import get_cost_summary
+            from optiora_backend.tools.oci_costs import get_cost_summary
         else:
             return json.dumps({"error": f"Unsupported provider: {cloud_provider}"})
 

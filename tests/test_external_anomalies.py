@@ -3,7 +3,7 @@
 import unittest
 from datetime import datetime
 
-from finops_mcp.external_anomalies import (
+from optiora_backend.external_anomalies import (
     aws_anomaly_severity,
     coerce_aws_anomaly_impact_usd,
     derive_aws_anomaly_alert,

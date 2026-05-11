@@ -8,13 +8,13 @@ from pathlib import Path
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-# Make sure the finops_mcp package is importable when running alembic from the
+# Make sure the optiora_backend package is importable when running alembic from the
 # repo root (e.g. `alembic upgrade head`).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # Import the SQLAlchemy metadata and the resolved DATABASE_URL from the ORM
 # module so that autogenerate and migrations always target the same schema.
-from finops_mcp.orm_models import Base, DATABASE_URL  # noqa: E402
+from optiora_backend.orm_models import Base, DATABASE_URL  # noqa: E402
 
 # Alembic Config object, giving access to values in alembic.ini.
 config = context.config

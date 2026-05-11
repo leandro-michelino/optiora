@@ -257,7 +257,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     uvicorn.run(
-        "finops_mcp.app:app",
+        "optiora_backend.app:app",
         host=args.host,
         port=args.port,
         reload=args.reload or os.getenv("UVICORN_RELOAD", "false").lower() == "true",

@@ -19,9 +19,9 @@ try:
     from fastapi.testclient import TestClient
     from sqlalchemy import inspect as sa_inspect
 
-    from finops_mcp import api as api_module
-    from finops_mcp.app import app
-    from finops_mcp.orm_models import (
+    from optiora_backend import api as api_module
+    from optiora_backend.app import app
+    from optiora_backend.orm_models import (
         Base,
         Organization,
         SessionLocal,

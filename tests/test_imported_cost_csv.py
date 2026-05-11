@@ -2,7 +2,7 @@
 
 import unittest
 
-from finops_mcp.imported_cost_csv import CsvImportError, load_normalized_csv_upload, validate_cost_csv_row
+from optiora_backend.imported_cost_csv import CsvImportError, load_normalized_csv_upload, validate_cost_csv_row
 
 
 class ImportedCostCsvHelperTest(unittest.TestCase):

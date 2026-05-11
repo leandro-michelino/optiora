@@ -5,7 +5,7 @@ import logging
 from typing import Any
 from datetime import datetime
 
-from finops_mcp.config import Config
+from optiora_backend.config import Config
 
 logger = logging.getLogger(__name__)
 config = Config()

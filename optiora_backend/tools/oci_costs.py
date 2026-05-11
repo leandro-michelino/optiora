@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from finops_mcp.config import Config
+from optiora_backend.config import Config
 
 logger = logging.getLogger(__name__)
 config = Config()

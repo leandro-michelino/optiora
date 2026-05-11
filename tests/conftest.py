@@ -21,7 +21,7 @@ os.environ.setdefault("REQUIRE_LIVE_PROVIDER_DATA", "false")
 
 # Import once so engine/session are bound to the suite DB before test modules
 # with per-file env overrides are imported.
-from finops_mcp.orm_models import Base, engine  # noqa: E402,F401
+from optiora_backend.orm_models import Base, engine  # noqa: E402,F401
 
 
 def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-untyped-def]

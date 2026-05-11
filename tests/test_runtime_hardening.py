@@ -16,8 +16,8 @@ os.environ["REQUIRE_LIVE_PROVIDER_DATA"] = "false"
 try:
     from fastapi.testclient import TestClient
 
-    from finops_mcp.app import app
-    from finops_mcp.orm_models import Base, engine
+    from optiora_backend.app import app
+    from optiora_backend.orm_models import Base, engine
 except ImportError as exc:  # pragma: no cover
     raise unittest.SkipTest(f"Backend dependencies not installed: {exc}") from exc
 

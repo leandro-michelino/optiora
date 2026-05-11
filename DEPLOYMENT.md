@@ -611,7 +611,7 @@ Developer Laptop
    v
 OCI VM
 ├── /opt/optiora
-│   ├── finops_mcp/ (internal backend package)
+│   ├── optiora_backend/ (internal backend package)
 │   ├── dashboard
 │   ├── .env
 │   └── venv

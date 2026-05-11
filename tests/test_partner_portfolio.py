@@ -16,8 +16,8 @@ os.environ["WHITE_LABEL_PRIMARY_COLOR"] = "#0f766e"
 try:
     from fastapi.testclient import TestClient
 
-    from finops_mcp.app import app
-    from finops_mcp.orm_models import (
+    from optiora_backend.app import app
+    from optiora_backend.orm_models import (
         AlertEvent,
         Base,
         ImportedCostRecord,

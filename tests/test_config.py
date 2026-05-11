@@ -4,8 +4,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from finops_mcp.config import Config
-from finops_mcp.provider_support import (
+from optiora_backend.config import Config
+from optiora_backend.provider_support import (
     SUPPORTED_CLOUD_PROVIDERS,
     provider_diagnostic_requirements,
 )

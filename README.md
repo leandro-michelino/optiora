@@ -148,7 +148,7 @@ If no real source exists, the application surfaces an explicit empty or unavaila
 
 ```text
 .
-|-- finops_mcp/              FastAPI backend, analytics, auth, provider integrations
+|-- optiora_backend/              FastAPI backend, analytics, auth, provider integrations
 |-- dashboard/               Next.js dashboard and e2e tests
 |-- deploy/deploy-oci.sh     OCI deployment and operations entrypoint
 |-- terraform/               OCI network, compute, data volume, archive bucket, scheduler resources
@@ -264,7 +264,7 @@ For prerequisites, environment variables, networking, Terraform/Ansible details,
 High-signal local gates:
 
 ```bash
-python3 -m py_compile $(find ./finops_mcp -name '*.py')
+python3 -m py_compile $(find ./optiora_backend -name '*.py')
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 
 cd dashboard

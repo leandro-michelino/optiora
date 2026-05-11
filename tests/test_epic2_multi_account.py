@@ -24,8 +24,8 @@ try:
     from fastapi.testclient import TestClient
     from sqlalchemy import inspect as sa_inspect
 
-    from finops_mcp.app import app
-    from finops_mcp.orm_models import (
+    from optiora_backend.app import app
+    from optiora_backend.orm_models import (
         Base,
         CostAllocationSnapshot,
         Organization,
@@ -551,7 +551,7 @@ class HierarchyAwareScanOrchestrationTest(unittest.TestCase):
         )
         self.client.post("/auth/login", json={"email": "hier-owner@example.com", "password": "StrongPass1!"})
 
-        import finops_mcp.api as api_module
+        import optiora_backend.api as api_module
 
         async def _noop(scan_id: str, customer_id: str, providers: list, target_accounts=None) -> None:
             _ = (scan_id, customer_id, providers, target_accounts)
@@ -582,7 +582,7 @@ class HierarchyAwareScanOrchestrationTest(unittest.TestCase):
         )
         self.client.post("/auth/login", json={"email": "hier-owner2@example.com", "password": "StrongPass1!"})
 
-        import finops_mcp.api as api_module
+        import optiora_backend.api as api_module
 
         async def _noop(scan_id: str, customer_id: str, providers: list, target_accounts=None) -> None:
             _ = (scan_id, customer_id, providers, target_accounts)
@@ -610,7 +610,7 @@ class OciCompartmentListTest(unittest.TestCase):
     """Verify OCI _compartment_list returns tenancy plus any extra compartment IDs."""
 
     def test_compartment_list_tenancy_only(self) -> None:
-        from finops_mcp.tools.oci_costs import _compartment_list
+        from optiora_backend.tools.oci_costs import _compartment_list
         import os
 
         orig = os.environ.pop("OCI_COMPARTMENT_IDS", None)
@@ -622,7 +622,7 @@ class OciCompartmentListTest(unittest.TestCase):
                 os.environ["OCI_COMPARTMENT_IDS"] = orig
 
     def test_compartment_list_with_extra_compartments(self) -> None:
-        from finops_mcp.tools.oci_costs import _compartment_list
+        from optiora_backend.tools.oci_costs import _compartment_list
         import os
 
         os.environ["OCI_COMPARTMENT_IDS"] = "ocid1.compartment.oc1..comp1, ocid1.compartment.oc1..comp2"
@@ -636,7 +636,7 @@ class OciCompartmentListTest(unittest.TestCase):
             os.environ.pop("OCI_COMPARTMENT_IDS", None)
 
     def test_compartment_list_deduplicates_tenancy(self) -> None:
-        from finops_mcp.tools.oci_costs import _compartment_list
+        from optiora_backend.tools.oci_costs import _compartment_list
         import os
 
         os.environ["OCI_COMPARTMENT_IDS"] = "ocid1.tenancy.oc1..aaaatest,ocid1.compartment.oc1..compX"
@@ -674,7 +674,7 @@ class HierarchyPersistenceFromScopeMetadataTest(unittest.TestCase):
         _teardown_db()
 
     def test_oci_scope_parent_relationship_surfaces_in_rollups_and_federation(self) -> None:
-        import finops_mcp.api as api_module
+        import optiora_backend.api as api_module
 
         async def _fake_cost_summary(provider: str, period: str = "month") -> dict:
             _ = period

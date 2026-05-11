@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from finops_mcp import api as api_module
+from optiora_backend import api as api_module
 
 
 class _FakeIdentityClient:
@@ -375,7 +375,7 @@ class RightsizingOciStorageTest(unittest.TestCase):
         self.assertEqual(rows[1]["type"], "idle-resources")
         self.assertEqual(rows[1]["region"], "me-dubai-1")
 
-    def test_oci_resource_console_urls_use_service_pages(self) -> None:
+    def test_oci_resource_console_urls_use_direct_resource_pages(self) -> None:
         self.assertEqual(
             api_module._rightsizing_console_url(
                 "oci",
@@ -384,7 +384,7 @@ class RightsizingOciStorageTest(unittest.TestCase):
                 "acct",
                 "BlockVolume",
             ),
-            "https://cloud.oracle.com/block-storage/volumes?region=me-dubai-1",
+            "https://cloud.oracle.com/block-storage/volumes/ocid1.volume.oc1.me-dubai-1.example?region=me-dubai-1",
         )
         self.assertEqual(
             api_module._rightsizing_console_url(
@@ -394,7 +394,7 @@ class RightsizingOciStorageTest(unittest.TestCase):
                 "acct",
                 "BootVolume",
             ),
-            "https://cloud.oracle.com/block-storage/boot-volumes?region=me-dubai-1",
+            "https://cloud.oracle.com/block-storage/boot-volumes/ocid1.bootvolume.oc1.me-dubai-1.example?region=me-dubai-1",
         )
         self.assertNotIn(
             "/search?",

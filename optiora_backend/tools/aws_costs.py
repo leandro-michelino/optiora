@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
 import boto3
-from finops_mcp.config import Config
+from optiora_backend.config import Config
 
 logger = logging.getLogger(__name__)
 config = Config()

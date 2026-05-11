@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 svg_file="$repo_root/dashboard/public/optiora-animated.svg"
-api_file="$repo_root/finops_mcp/api.py"
+api_file="$repo_root/optiora_backend/api.py"
 
 if [[ ! -f "$svg_file" ]]; then
   echo "SVG not found: $svg_file"

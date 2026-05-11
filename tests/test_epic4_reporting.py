@@ -28,9 +28,9 @@ try:
     from fastapi.testclient import TestClient
     from sqlalchemy import inspect as sa_inspect
 
-    from finops_mcp.app import app
-    from finops_mcp.api import CostTrendPoint
-    from finops_mcp.orm_models import (
+    from optiora_backend.app import app
+    from optiora_backend.api import CostTrendPoint
+    from optiora_backend.orm_models import (
         Base,
         CostPeriodSummary,
         ImportedCostRecord,
@@ -256,8 +256,8 @@ class CostTrendEndpointTest(unittest.TestCase):
             "provider_errors": {},
         }
 
-        with patch("finops_mcp.api.Config", return_value=live_required_config):
-            with patch("finops_mcp.api._cost_context", new=AsyncMock(return_value=live_context)):
+        with patch("optiora_backend.api.Config", return_value=live_required_config):
+            with patch("optiora_backend.api._cost_context", new=AsyncMock(return_value=live_context)):
                 resp = self.client.get(
                     "/api/v1/reports/cost-trend?period_type=monthly&lookback=3",
                     headers={"Authorization": f"Bearer {self.token}"},
