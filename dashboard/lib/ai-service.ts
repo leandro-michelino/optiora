@@ -91,6 +91,23 @@ interface ServiceHotspotResponseLite {
   focus?: string | null;
 }
 
+interface RagGuidanceDocLite {
+  id?: string;
+  topic?: string;
+  provider?: string;
+  guidance?: string;
+  source?: string;
+  score?: number;
+}
+
+interface RagGuidanceResponseLite {
+  rag?: {
+    retrieved_count?: number;
+    retrieved_docs?: RagGuidanceDocLite[];
+    rag_brief?: string;
+  };
+}
+
 interface ResourceIntelligenceItemLite {
   provider?: string;
   resource_type?: string;
@@ -153,6 +170,20 @@ async function postJsonSafe(url: string, body: Record<string, unknown> = {}): Pr
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+async function fetchPostJsonSafe<T>(url: string, body: Record<string, unknown> = {}): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
   }
 }
 
@@ -1412,8 +1443,9 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
   const apiBase = resolveBackendApiBase();
   const focus = detectResourceFocus(message);
   const focusParam = focus ? `&focus=${encodeURIComponent(focus.key)}` : '';
+  const analysisType = pickAnalysisType(message);
 
-  const [hybrid, serviceHotspots, inventory, rightsizing] = await Promise.all([
+  const [hybrid, serviceHotspots, inventory, rightsizing, ragGuidance] = await Promise.all([
     fetchJsonSafe<HybridAdvisorResult>(
       `${apiBase}/api/v1/advisor/hybrid?narrative_type=optimization_roadmap&cloud_provider=all`,
     ),
@@ -1425,6 +1457,18 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
     ),
     fetchJsonSafe<RightsizingResponseLite>(
       `${apiBase}/api/v1/recommendations/rightsizing?provider=all&min_savings=0&limit=10`,
+    ),
+    fetchPostJsonSafe<RagGuidanceResponseLite>(
+      `${apiBase}/api/v1/genai/rag-guidance`,
+      {
+        analysis_type: analysisType,
+        cloud_provider: 'all',
+        top_k: 4,
+        context: {
+          user_question: message,
+          resource_focus: focus?.key || '',
+        },
+      },
     ),
   ]);
 
@@ -1480,6 +1524,23 @@ async function buildRAGContext(message: string, allowRefresh = true): Promise<st
         return `${idx + 1}. ${name}: ${action}, save ${formatMoney(toSafeNumber(item.monthly_savings_usd))}/month`;
       }, 5),
     );
+  }
+
+  const ragDocs = Array.isArray(ragGuidance?.rag?.retrieved_docs) ? ragGuidance.rag.retrieved_docs : [];
+  if (ragDocs.length > 0) {
+    lines.push('Retrieved FinOps guidance catalog snippets:');
+    lines.push(
+      ...buildTopLines(ragDocs, (doc, idx) => {
+        const id = sanitizeText(doc.id) || `rag-${idx + 1}`;
+        const topic = sanitizeText(doc.topic) || 'FinOps guidance';
+        const guidance = sanitizeText(doc.guidance);
+        const source = sanitizeText(doc.source);
+        return `${idx + 1}. [${id}] ${topic}: ${guidance}${source ? ` (source: ${source})` : ''}`;
+      }, 4),
+    );
+  } else if (sanitizeText(ragGuidance?.rag?.rag_brief)) {
+    lines.push('Retrieved FinOps guidance catalog snippets:');
+    lines.push(sanitizeText(ragGuidance?.rag?.rag_brief));
   }
 
   if (lines.length === 0) {
@@ -1638,17 +1699,19 @@ function signRequest(
   tenancyOcid: string,
   userOcid: string
 ): Record<string, string> {
-  const signingHeaders = ['(request-target)', 'host', 'date', 'content-type', 'content-length'];
+  const signingHeaders = ['(request-target)', 'host', 'date', 'content-type', 'content-length', 'x-content-sha256'];
   const date = new Date().toUTCString();
   const contentLength = Buffer.byteLength(body).toString();
   const contentType = headers['content-type'] || 'application/json';
+  const contentSha256 = crypto.createHash('sha256').update(body).digest('base64');
 
   const signingString = [
     `(request-target): ${method.toLowerCase()} ${path}`,
     `host: ${host}`,
     `date: ${date}`,
     `content-type: ${contentType}`,
-    `content-length: ${contentLength}`
+    `content-length: ${contentLength}`,
+    `x-content-sha256: ${contentSha256}`
   ].join('\n');
 
   const signer = crypto.createSign('RSA-SHA256');
@@ -1668,6 +1731,7 @@ function signRequest(
     date,
     'content-type': contentType,
     'content-length': contentLength,
+    'x-content-sha256': contentSha256,
     authorization: auth
   };
 }
@@ -1677,6 +1741,33 @@ type GenAICallMode = 'assistant' | 'translation';
 interface GenAICallOptions {
   mode?: GenAICallMode;
   targetLanguage?: SupportedLanguage;
+}
+
+function extractOCIChatText(payload: unknown): string {
+  const data = payload as Record<string, any>;
+  const choice =
+    data?.chatResponse?.choices?.[0] ??
+    data?.data?.chatResponse?.choices?.[0] ??
+    data?.data?.choices?.[0] ??
+    data?.choices?.[0];
+  const content = choice?.message?.content;
+  if (Array.isArray(content)) {
+    const text = content
+      .map((item) => (typeof item?.text === 'string' ? item.text : ''))
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    if (text) return text;
+  }
+  if (typeof content === 'string' && content.trim()) return content.trim();
+  if (typeof choice?.text === 'string' && choice.text.trim()) return choice.text.trim();
+  if (typeof data?.chatResponse?.text === 'string' && data.chatResponse.text.trim()) {
+    return data.chatResponse.text.trim();
+  }
+  if (typeof data?.data?.chatResponse?.text === 'string' && data.data.chatResponse.text.trim()) {
+    return data.data.chatResponse.text.trim();
+  }
+  return '';
 }
 
 async function callOCIGenAI(
@@ -1696,6 +1787,10 @@ async function callOCIGenAI(
 
   const host = new URL(endpoint).host;
   const path = `/20231130/actions/chat`; // OCI Generative AI Chat Inference path
+  const compartmentId = required(
+    'OCI_GENAI_COMPARTMENT_ID or OCI_COMPARTMENT_OCID',
+    env('OCI_GENAI_COMPARTMENT_ID') || env('OCI_COMPARTMENT_OCID'),
+  );
 
   // System prompts by call mode.
   const assistantPrompt = `You are OptiOra Cloud & FinOps AI Assistant.
@@ -1718,18 +1813,24 @@ Do not add explanations.`;
   const systemPrompt = mode === 'translation' ? translationPrompt : assistantPrompt;
 
   const payload = {
-    compartmentId: required('OCI_COMPARTMENT_OCID', env('OCI_COMPARTMENT_OCID')),
-    modelId: model,
-    messages: [
-      { role: 'user', content: [{ type: 'text', text: systemPrompt }] },
-      ...history.map(h => ({ role: h.role, content: [{ type: 'text', text: h.content }] })),
-      { role: 'user', content: [{ type: 'text', text: prompt }] }
-    ],
-    maxTokens: 800,
-    temperature: mode === 'translation' ? 0 : 0.2,
-    topP: 0.9,
-    frequencyPenalty: 0,
-    presencePenalty: 0
+    compartmentId,
+    servingMode: { modelId: model, servingType: 'ON_DEMAND' },
+    chatRequest: {
+      apiFormat: 'GENERIC',
+      messages: [
+        { role: 'USER', content: [{ type: 'TEXT', text: systemPrompt }] },
+        ...history.map(h => ({
+          role: h.role === 'assistant' ? 'ASSISTANT' : 'USER',
+          content: [{ type: 'TEXT', text: h.content }],
+        })),
+        { role: 'USER', content: [{ type: 'TEXT', text: prompt }] }
+      ],
+      maxTokens: 800,
+      temperature: mode === 'translation' ? 0 : 0.2,
+      topP: 0.9,
+      frequencyPenalty: 0,
+      presencePenalty: 0
+    }
   };
 
   const body = JSON.stringify(payload);
@@ -1757,8 +1858,7 @@ Do not add explanations.`;
   }
 
   const json = await res.json();
-  const content = json?.data?.choices?.[0]?.message?.content?.[0]?.text;
-  return content || 'No response generated';
+  return extractOCIChatText(json) || 'No response generated';
 }
 
 export async function askCostQuestion(

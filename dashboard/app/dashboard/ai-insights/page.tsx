@@ -98,6 +98,8 @@ export default function AIInsightsPage() {
       .sort((a, b) => b.estimated_waste_usd - a.estimated_waste_usd)
       .slice(0, 3)
     : []
+  const genAiNarrative = analytics?.genai_narrative?.trim() || ''
+  const genAiPrompt = analytics?.genai_prompt?.trim() || analytics?.genai_advice_prompt?.trim() || ''
 
   return (
     <div className="space-y-8">
@@ -265,9 +267,28 @@ export default function AIInsightsPage() {
               <Zap className="w-5 h-5 text-purple-500" />
               GenAI Role
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-              OptiOra keeps savings math deterministic. The GenAI advisor turns the findings into explanations, rollout plans, and executive summaries.
-            </p>
+            {genAiNarrative ? (
+              <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-950 dark:border-purple-900 dark:bg-purple-950/30 dark:text-purple-100">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
+                  Live OCI GenAI narrative
+                </p>
+                <p className="whitespace-pre-line leading-relaxed">{genAiNarrative}</p>
+              </div>
+            ) : (
+              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  Deterministic prompt mode
+                </p>
+                <p>
+                  OCI GenAI is not returning a live narrative for this payload yet. The backend is still preparing the grounded prompt from deterministic metrics.
+                </p>
+                {genAiPrompt && (
+                  <p className="mt-2 line-clamp-4 text-xs text-slate-500 dark:text-slate-400">
+                    {genAiPrompt}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
               {analytics.actions.map((action) => (
                 <div key={action} className="flex items-start gap-2">

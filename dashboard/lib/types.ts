@@ -842,6 +842,8 @@ export interface FinOpsAnalyticsResponse {
   }>
   actions: string[]
   genai_advice_prompt?: string
+  genai_narrative?: string | null
+  genai_prompt?: string
 }
 
 // ── Business Mapping & Chargeback ─────────────────────────────────────────
