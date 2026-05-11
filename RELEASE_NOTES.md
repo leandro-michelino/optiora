@@ -1,5 +1,31 @@
 # Release Notes
 
+## Unreleased - Repository Hygiene and OCI VM Naming (May 11, 2026)
+
+### Changed
+
+- Documented the Action Ledger provider resource naming boundary so the OCI VM table only shows real OCI Compute instance display names, while account, tenancy, and service aggregates remain in broader recommendation context.
+- Standardized Terraform validation guidance on tracked `.tf` files plus `terraform -chdir=terraform validate`, avoiding local `terraform.tfvars` formatting noise.
+- Cleanup scanning now skips Terraform provider cache directories before deleting generated infrastructure cache.
+
+### Fixed
+
+- Removed the last tracked non-OCI deployment target fixture from configuration tests; negative validation now uses a generic unsupported cloud target while preserving the OCI VM-only runtime policy.
+- Fixed order-sensitive backend regression tests by force-refreshing cached reads after direct DB seeding and resolving the active organization id from the auth API instead of assuming `1`.
+
+### Validation
+
+- `python3 -m py_compile $(find ./finops_mcp -name '*.py')`
+- `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'` (`301` passing)
+- `npm run build --prefix dashboard`
+- `npm run type-check --prefix dashboard`
+- `npm run lint --prefix dashboard`
+- `terraform fmt -check terraform/*.tf`
+- `terraform -chdir=terraform init -backend=false`
+- `terraform -chdir=terraform validate`
+- `ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml`
+- `./scripts/check-animated-svg-routes.sh`
+
 ## 0.9.2 - Advisor, Scorecards, Control Tower, and UIX Polish (May 10, 2026)
 
 Repository release metadata:

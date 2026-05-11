@@ -46,7 +46,7 @@ class ConfigTest(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "DEPLOYMENT_TARGET": "onprem",
+                "DEPLOYMENT_TARGET": "aws",
                 "OCI_RUNTIME_REQUIRED": "false",
                 "REQUIRE_LIVE_PROVIDER_DATA": "false",
             },

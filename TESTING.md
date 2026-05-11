@@ -1,6 +1,6 @@
 # Testing and Verification
 
-Validation snapshot (May 11, 2026): backend regression suite passing (`281` unittest cases, `2` skipped), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
+Validation snapshot (May 11, 2026): backend regression suite passing (`301` unittest cases), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
 
 ## Backend
 
@@ -227,6 +227,8 @@ The deployed May 11, 2026 run returned in roughly `50s` with about `730` OCI rec
 ## Terraform
 
 ```bash
+terraform fmt -check terraform/*.tf
+terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 ```
 

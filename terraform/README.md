@@ -62,6 +62,7 @@ If you want a more restrictive outbound policy, override `egress_cidr`.
 ## Usage
 
 ```bash
+terraform fmt -check *.tf
 terraform init
 terraform validate
 terraform plan \

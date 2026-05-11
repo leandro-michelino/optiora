@@ -626,6 +626,35 @@ Finance visibility
               variance
 ```
 
+## Action Ledger Provider Resource Naming
+
+```text
+GET /api/v1/recommendations/rightsizing
+    |
+    +--> provider resource rows
+    |       required for OCI VM candidate table:
+    |       - provider = oci
+    |       - evidence_source = oci_compute_inventory
+    |       - resource_id = ocid1.instance.*
+    |       - resource_name = OCI Compute display name
+    |       - resource_type = OCI Compute Instance
+    |
+    +--> account, tenancy, and service aggregate rows
+            examples:
+            - oci-acct-*
+            - ocid1.tenancy.*
+            - OCI Compute account aggregate
+            - cost_trend_analysis / service_cost_snapshot
+            |
+            v
+       excluded from Top OCI VM Candidates
+```
+
+Aggregate rows remain valid for the broader provider recommendation feed and
+finance context. Resource candidate tables must use cloud-provider resource
+names only, so the Action Ledger OCI VM rail only displays real OCI Compute
+instances.
+
 ## Optimization Advisor Dashboard UX Wiring
 
 ```text
@@ -939,7 +968,8 @@ code change
    +--> static python compile
    +--> backend regression suite
    +--> dashboard build -> type-check -> lint
-   +--> terraform validate
+   +--> terraform fmt -check terraform/*.tf
+   +--> terraform -chdir=terraform validate
    |
    v
 deploy-oci.sh verify

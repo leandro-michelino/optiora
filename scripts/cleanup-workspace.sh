@@ -9,7 +9,7 @@ echo "Cleaning duplicate copy artifacts and generated local caches..."
 # Remove common duplicate-copy and editor/OS artifacts from Finder, Downloads,
 # and one-off merge/edit workflows.
 find . \
-  \( -path './.git' -o -path './.venv' -o -path './.venv313' -o -path './dashboard/node_modules' -o -path './dashboard/.next' \) -prune \
+  \( -path './.git' -o -path './.venv' -o -path './.venv313' -o -path './dashboard/node_modules' -o -path './dashboard/.next' -o -path './terraform/.terraform' \) -prune \
   -o -type f \( \
     -name '* ([0-9]).*' \
     -o -name '* ([0-9])' \
@@ -26,7 +26,7 @@ find . \
 
 # Remove Python and pytest cache directories.
 find . \
-  \( -path './.git' -o -path './.venv' -o -path './.venv313' -o -path './dashboard/node_modules' -o -path './dashboard/.next' \) -prune \
+  \( -path './.git' -o -path './.venv' -o -path './.venv313' -o -path './dashboard/node_modules' -o -path './dashboard/.next' -o -path './terraform/.terraform' \) -prune \
   -o -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.mypy_cache' -o -name '.ruff_cache' \) \
   -print -exec rm -rf {} +
 

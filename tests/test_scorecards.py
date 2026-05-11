@@ -45,6 +45,9 @@ class ScorecardsTest(unittest.TestCase):
         cls.client = TestClient(app)
         cls.token = _register_and_login(cls.client)
         cls.headers = {"Authorization": f"Bearer {cls.token}"}
+        org = cls.client.get("/auth/organization", headers=cls.headers)
+        assert org.status_code == 200, org.text
+        cls.organization_id = int(org.json()["id"])
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -117,11 +120,12 @@ class ScorecardsTest(unittest.TestCase):
             self.assertIsInstance(team_entry["dimensions"], list)
 
     def test_06_realized_savings_scorecards_group_by_finance_dimensions(self) -> None:
+        organization_id = self.organization_id
         db = SessionLocal()
         try:
             db.add(
                 NormalizedCostDimension(
-                    organization_id=1,
+                    organization_id=organization_id,
                     customer_id="default",
                     provider="aws",
                     service_name="EC2",
@@ -136,7 +140,7 @@ class ScorecardsTest(unittest.TestCase):
             db.add_all(
                 [
                     RecommendationLedger(
-                        organization_id=1,
+                        organization_id=organization_id,
                         customer_id="default",
                         provider="aws",
                         resource_id="i-001",
@@ -165,7 +169,7 @@ class ScorecardsTest(unittest.TestCase):
                         realized_at=datetime(2026, 5, 15),
                     ),
                     RecommendationLedger(
-                        organization_id=1,
+                        organization_id=organization_id,
                         customer_id="default",
                         provider="azure",
                         resource_id="vm-002",
@@ -199,7 +203,10 @@ class ScorecardsTest(unittest.TestCase):
         finally:
             db.close()
 
-        resp = self.client.get("/api/v1/analytics/scorecards", headers=self.headers)
+        resp = self.client.get(
+            "/api/v1/analytics/scorecards?force_refresh=true",
+            headers=self.headers,
+        )
         self.assertEqual(resp.status_code, 200, resp.text)
         realized = resp.json()["realized_savings"]
 

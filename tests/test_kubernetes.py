@@ -143,7 +143,10 @@ class KubernetesTest(unittest.TestCase):
             },
         ]
         try:
-            resp = self.client.get("/api/v1/analytics/kubernetes/summary", headers=self.headers)
+            resp = self.client.get(
+                "/api/v1/analytics/kubernetes/summary?force_refresh=true",
+                headers=self.headers,
+            )
         finally:
             api_module._collect_oci_live_kubernetes_inventory_rows = original_inventory
 

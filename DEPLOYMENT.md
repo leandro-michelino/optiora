@@ -57,7 +57,7 @@ What the deploy script does for a fresh environment:
 - checks core tooling and local prerequisites
 - resolves required Terraform values (`compartment_id`, `laptop_cidr`, `oci_object_storage_namespace`) from `TF_VAR_*`, `terraform/terraform.tfvars`, OCI CLI auto-detection where possible, or prompts
 - writes/updates `terraform/terraform.tfvars` so Terraform owns the target infrastructure
-- runs `terraform init`, `terraform validate`, `terraform plan`
+- runs Terraform init, tracked-file format checks, validate, and plan
 - optionally runs `terraform apply`
 - creates or updates the OCI compute instance through Terraform
 - creates and attaches an extra OCI block volume through Terraform when enabled in `terraform.tfvars`
@@ -148,9 +148,11 @@ exists before TypeScript reads generated Next.js route types.
 Optional Terraform baseline:
 
 ```bash
-terraform -chdir=../terraform init
-terraform -chdir=../terraform validate
-terraform -chdir=../terraform plan \
+cd ..
+terraform fmt -check terraform/*.tf
+terraform -chdir=terraform init
+terraform -chdir=terraform validate
+terraform -chdir=terraform plan \
   -var="compartment_id=ocid1.compartment.oc1..<compartment_ocid>" \
   -var="region=uk-london-1" \
   -var="laptop_cidr=<your_public_ip>/32"

@@ -276,10 +276,14 @@ npm run test:e2e
 Infrastructure gates:
 
 ```bash
-terraform fmt -check
-terraform validate
+terraform fmt -check terraform/*.tf
+terraform -chdir=terraform init -backend=false
+terraform -chdir=terraform validate
 ansible-playbook --syntax-check -i ansible/inventory.example.yml ansible/playbooks/site.yml
 ```
+
+The scoped Terraform format command intentionally ignores local
+`terraform/terraform.tfvars` and state files.
 
 Wiring and cleanup:
 
