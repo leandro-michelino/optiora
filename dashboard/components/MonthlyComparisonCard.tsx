@@ -41,7 +41,7 @@ export function MonthlyComparisonCard({
   title?: string
   className?: string
 }) {
-  const months = useMemo(() => data.map((point) => String(point.month)), [data])
+  const months = useMemo(() => Array.from(new Set(data.map((point) => String(point.month)))), [data])
   const providerKeys = useMemo(() => getProviderKeys(data), [data])
   const [fromMonth, setFromMonth] = useState('')
   const [toMonth, setToMonth] = useState('')
@@ -69,19 +69,37 @@ export function MonthlyComparisonCard({
     [data, toMonth],
   )
 
-  if (!fromPoint || !toPoint) {
+  if (months.length < 2) {
+    const currentPoint = data.length > 0 ? data[data.length - 1] : undefined
+    const currentTotal = currentPoint ? getTrendPointTotal(currentPoint) : 0
+    const currentMonth = currentPoint ? String(currentPoint.month) : ''
+
     return (
       <Card className={className}>
-        <CardHeader>
+        <CardHeader className="border-b border-slate-200 dark:border-slate-700">
           <CardTitle className="text-xl">{title}</CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            At least two monthly periods are required before comparison is available.
-          </p>
+        <CardContent className="space-y-4 pt-6">
+          {currentPoint ? (
+            <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+              <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {formatTrendMonthLabel(currentMonth)}
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+                {formatCurrency(currentTotal)}
+              </p>
+            </div>
+          ) : null}
+          <div className="rounded-md border border-dashed border-slate-300 p-3 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
+            Month-over-month comparison needs at least two distinct monthly periods.
+          </div>
         </CardContent>
       </Card>
     )
+  }
+
+  if (!fromPoint || !toPoint) {
+    return null
   }
 
   const fromTotal = getTrendPointTotal(fromPoint)

@@ -17,4 +17,4 @@ export DATABASE_URL="${DATABASE_URL:-sqlite:///${DB_PATH}}"
 
 cd "$ROOT_DIR"
 "${ROOT_DIR}/.venv/bin/alembic" -c "${ROOT_DIR}/alembic.ini" upgrade head >/dev/null
-exec "${ROOT_DIR}/.venv/bin/optiora" --host 127.0.0.1 --port 8000
+exec "${ROOT_DIR}/.venv/bin/python" -m optiora_backend.app --host 127.0.0.1 --port 8000

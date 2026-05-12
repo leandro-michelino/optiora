@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Tag,
   Target,
+  type LucideIcon,
 } from 'lucide-react'
 import { CostChart } from '@/components/CostChart'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
@@ -208,6 +209,82 @@ function exportCsv(state: DashboardState) {
   document.body.removeChild(element)
 }
 
+type ActionTone = 'amber' | 'rose' | 'blue' | 'emerald' | 'violet'
+
+interface OverviewActionItem {
+  key: string
+  title: string
+  detail: string
+  href: string
+  metric: string
+  tone: ActionTone
+  icon: LucideIcon
+}
+
+const actionToneClasses: Record<ActionTone, string> = {
+  amber: 'border-amber-200 bg-amber-50/70 text-amber-700 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-300',
+  rose: 'border-rose-200 bg-rose-50/70 text-rose-700 dark:border-rose-900 dark:bg-rose-950/25 dark:text-rose-300',
+  blue: 'border-blue-200 bg-blue-50/70 text-blue-700 dark:border-blue-900 dark:bg-blue-950/25 dark:text-blue-300',
+  emerald: 'border-emerald-200 bg-emerald-50/70 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/25 dark:text-emerald-300',
+  violet: 'border-violet-200 bg-violet-50/70 text-violet-700 dark:border-violet-900 dark:bg-violet-950/25 dark:text-violet-300',
+}
+
+function formatTrendSourceLabel(source?: string): string {
+  switch (source) {
+    case 'computed':
+      return 'Period summaries'
+    case 'raw_records':
+      return 'Imported records'
+    case 'cost_snapshots_live':
+      return 'Live snapshots'
+    case 'live_provider_api_current_period':
+      return 'Current live period'
+    case 'empty':
+      return 'No trend rows'
+    default:
+      return source ? source.replace(/_/g, ' ') : 'Current cost snapshot'
+  }
+}
+
+function OverviewActionQueue({ items }: { items: OverviewActionItem[] }) {
+  return (
+    <Card className="rounded-lg border-slate-200 dark:border-slate-700">
+      <CardHeader className="border-b border-slate-200 dark:border-slate-700">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <Target className="h-5 w-5" />
+          Action Queue
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 gap-3 pt-4 md:grid-cols-2 xl:grid-cols-4">
+        {items.map((item) => {
+          const Icon = item.icon
+          return (
+            <Link
+              key={item.key}
+              href={item.href}
+              className={`group flex min-h-28 min-w-0 flex-col justify-between rounded-lg border p-4 transition hover:-translate-y-0.5 hover:shadow-sm ${actionToneClasses[item.tone]}`}
+            >
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <Icon className="mt-0.5 h-5 w-5 shrink-0" />
+                <span className="rounded-md bg-white/70 px-2 py-1 text-xs font-semibold dark:bg-slate-950/35">
+                  {item.metric}
+                </span>
+              </div>
+              <div className="mt-4 min-w-0">
+                <p className="font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-600 dark:text-slate-400">{item.detail}</p>
+              </div>
+              <div className="mt-3 inline-flex items-center gap-1 text-sm font-medium">
+                Open <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+              </div>
+            </Link>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function DashboardPage() {
   const [state, setState] = useState<DashboardState>(initialState)
   const [loading, setLoading] = useState(true)
@@ -215,6 +292,8 @@ export default function DashboardPage() {
   const [trendLookback, setTrendLookback] = useState<3 | 6 | 12>(6)
   const [trendApiData, setTrendApiData] = useState<CostTrendResponse | null>(null)
   const [trendFromArchive, setTrendFromArchive] = useState(false)
+  const [trendLoading, setTrendLoading] = useState(false)
+  const [trendError, setTrendError] = useState<string | null>(null)
 
   const connectedProviders = useMemo(
     () => state.credentials.filter((credential) => credential.is_valid),
@@ -227,7 +306,9 @@ export default function DashboardPage() {
     [state.costs, isVisible],
   )
   const trendData = useMemo(() => {
-    const raw = trendApiData ? transformApiTrend(trendApiData) : makeFallbackTrendData(state.costs)
+    const raw = trendApiData && trendApiData.points.length > 0
+      ? transformApiTrend(trendApiData)
+      : makeFallbackTrendData(state.costs)
     if (hiddenProviders.length === 0) return raw
     return raw.map((point) => {
       const filtered = { ...point }
@@ -269,6 +350,110 @@ export default function DashboardPage() {
     primaryLoaded: Boolean(state.costs),
     pageName: 'Overview',
   })
+  const trendSourceLabel = trendApiData && trendApiData.points.length > 0
+    ? formatTrendSourceLabel(trendApiData.data_source)
+    : formatTrendSourceLabel(undefined)
+  const overviewActions = useMemo<OverviewActionItem[]>(() => {
+    const items: OverviewActionItem[] = []
+    const providerTotal = supportedProviders.length || 1
+
+    if (dataSourceStatus.state !== 'live') {
+      items.push({
+        key: 'data-source',
+        title: 'Verify data source',
+        detail: dataSourceStatus.description,
+        href: '/dashboard/settings',
+        metric: dataSourceStatus.label,
+        tone: dataSourceStatus.state === 'fallback' ? 'rose' : 'amber',
+        icon: AlertCircle,
+      })
+    }
+
+    if (connectedProviders.length < providerTotal) {
+      items.push({
+        key: 'provider-coverage',
+        title: 'Complete provider coverage',
+        detail: 'Add or retest credentials so spend, inventory, recommendations, and anomaly signals cover every supported provider.',
+        href: '/dashboard/settings',
+        metric: `${connectedProviders.length}/${providerTotal}`,
+        tone: 'blue',
+        icon: KeyRound,
+      })
+    }
+
+    if (!scanApproved) {
+      items.push({
+        key: 'scan-readiness',
+        title: 'Approve scanning',
+        detail: `Current scan state: ${state.permission?.state || 'not configured'}. Approval unlocks inventory and provider-backed optimization signals.`,
+        href: '/dashboard/settings',
+        metric: state.permission?.state || 'pending',
+        tone: 'amber',
+        icon: ShieldCheck,
+      })
+    }
+
+    if (highestAnomaly) {
+      items.push({
+        key: 'highest-anomaly',
+        title: `${highestAnomaly.service} anomaly`,
+        detail: highestAnomaly.message,
+        href: '/dashboard/anomalies',
+        metric: `${highestAnomaly.change.toFixed(0)}%`,
+        tone: 'rose',
+        icon: AlertCircle,
+      })
+    }
+
+    if (topRecommendation) {
+      items.push({
+        key: 'top-recommendation',
+        title: 'Assign next optimization',
+        detail: topRecommendation.title,
+        href: '/dashboard/recommendations',
+        metric: `${formatCurrency(topRecommendation.savings)}/mo`,
+        tone: 'emerald',
+        icon: Target,
+      })
+    }
+
+    if (state.coverage && state.coverage.coverage_percent < 80) {
+      items.push({
+        key: 'allocation-coverage',
+        title: 'Improve allocation coverage',
+        detail: 'Review business mapping and chargeback rows so more spend is attributable to teams, environments, or projects.',
+        href: '/dashboard/costs',
+        metric: `${state.coverage.coverage_percent.toFixed(1)}%`,
+        tone: 'violet',
+        icon: Tag,
+      })
+    }
+
+    if (items.length === 0) {
+      items.push({
+        key: 'healthy-operations',
+        title: 'Review operating freshness',
+        detail: 'Provider readiness looks healthy. Check scan freshness, scheduler state, exports, and alert delivery before the next operating review.',
+        href: '/dashboard/operations',
+        metric: 'steady',
+        tone: 'emerald',
+        icon: CheckCircle2,
+      })
+    }
+
+    return items.slice(0, 4)
+  }, [
+    connectedProviders.length,
+    dataSourceStatus.description,
+    dataSourceStatus.label,
+    dataSourceStatus.state,
+    highestAnomaly,
+    scanApproved,
+    state.coverage,
+    state.permission?.state,
+    supportedProviders.length,
+    topRecommendation,
+  ])
 
   const loadDashboard = useCallback(async () => {
     setLoading(true)
@@ -328,6 +513,24 @@ export default function DashboardPage() {
     setLoading(false)
   }, [])
 
+  const loadTrend = useCallback(async () => {
+    setTrendLoading(true)
+    setTrendError(null)
+    try {
+      const resp = await fetchCostTrend('monthly', trendLookback)
+      setTrendApiData(resp)
+      const hotCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+      const hasArchive = resp.points.some((p) => new Date(p.period_start) < hotCutoff)
+      setTrendFromArchive(hasArchive)
+    } catch (error) {
+      setTrendApiData(null)
+      setTrendFromArchive(false)
+      setTrendError(error instanceof Error ? error.message : 'Unable to load cost trend data.')
+    } finally {
+      setTrendLoading(false)
+    }
+  }, [trendLookback])
+
   useEffect(() => {
     let mounted = true
     const run = async () => {
@@ -341,24 +544,8 @@ export default function DashboardPage() {
   }, [loadDashboard])
 
   useEffect(() => {
-    let mounted = true
-    const run = async () => {
-      try {
-        const resp = await fetchCostTrend('monthly', trendLookback)
-        if (!mounted) return
-        setTrendApiData(resp)
-        // data_source === 'computed' can include archive rows; backend sets it the same way
-        // We detect archive by checking if any point predates the 90-day hot window
-        const hotCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-        const hasArchive = resp.points.some((p) => new Date(p.period_start) < hotCutoff)
-        setTrendFromArchive(hasArchive)
-      } catch {
-        // Ignore; chart keeps an empty state until live trend data is available.
-      }
-    }
-    void run()
-    return () => { mounted = false }
-  }, [trendLookback])
+    void loadTrend()
+  }, [loadTrend])
 
   if (loading) {
     return (
@@ -416,7 +603,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void loadDashboard() }} className="rounded-lg">
+          <Button variant="outline" onClick={() => { forceNextApiRefresh(); void Promise.all([loadDashboard(), loadTrend()]) }} className="rounded-lg">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -436,6 +623,8 @@ export default function DashboardPage() {
       )}
 
       <DataSourceBanner status={dataSourceStatus} />
+
+      <OverviewActionQueue items={overviewActions} />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
@@ -645,12 +834,28 @@ export default function DashboardPage() {
               <CardTitle className="flex items-center gap-2 text-xl">
                 <Activity className="h-5 w-5" />
                 Cost Trend By Provider
+                <Badge variant="outline" className="rounded-md">
+                  {trendSourceLabel}
+                </Badge>
                 {trendFromArchive && (
                   <Badge
                     variant="outline"
                     className="rounded-md border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950/30 dark:text-violet-300"
                   >
                     Includes archived data
+                  </Badge>
+                )}
+                {trendLoading && (
+                  <Badge variant="outline" className="rounded-md">
+                    Refreshing
+                  </Badge>
+                )}
+                {trendError && (
+                  <Badge
+                    variant="outline"
+                    className="rounded-md border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                  >
+                    Fallback
                   </Badge>
                 )}
               </CardTitle>
@@ -669,6 +874,16 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
+            {trendError && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                Trend endpoint is unavailable, so the chart is using the current cost snapshot when possible.
+              </div>
+            )}
+            {!trendError && trendData.length === 1 && (
+              <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+                Only one monthly period is available. The comparison panel will activate after another month or summary period is loaded.
+              </div>
+            )}
             <CostChart data={trendData} />
           </CardContent>
         </Card>

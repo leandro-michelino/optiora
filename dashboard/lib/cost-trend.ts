@@ -10,8 +10,22 @@ export interface ChartCostTrendPoint {
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export function makeFallbackTrendData(costs: CostResponse | null): ChartCostTrendPoint[] {
-  void costs
-  return []
+  if (!costs) return []
+
+  const point: ChartCostTrendPoint = { month: new Date().toISOString().slice(0, 7) }
+
+  for (const [provider, value] of Object.entries(costs.breakdown || {})) {
+    const providerCost = Number(value.cost || 0)
+    if (providerCost > 0) {
+      point[provider.toLowerCase()] = providerCost
+    }
+  }
+
+  if (Object.keys(point).length === 1 && costs.totalCost > 0) {
+    point.current = costs.totalCost
+  }
+
+  return Object.keys(point).length > 1 ? [point] : []
 }
 
 export function transformApiTrend(response: CostTrendResponse): ChartCostTrendPoint[] {
@@ -19,12 +33,13 @@ export function transformApiTrend(response: CostTrendResponse): ChartCostTrendPo
 
   for (const point of response.points) {
     const label = point.period_start.slice(0, 7)
+    const provider = String(point.provider || point.dimension_value || 'unknown').toLowerCase()
     if (!byPeriod[label]) {
       byPeriod[label] = { month: label }
     }
 
-    const existing = byPeriod[label][point.provider]
-    byPeriod[label][point.provider] =
+    const existing = byPeriod[label][provider]
+    byPeriod[label][provider] =
       typeof existing === 'number' ? existing + point.total_cost_usd : point.total_cost_usd
   }
 
