@@ -1,0 +1,12 @@
+[Unit]
+Description=Run OptiOra OCI Cost Reports ingestion on a schedule
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec={{ optiora_oci_cost_reports_interval_hours | default(6, true) }}h
+RandomizedDelaySec=15min
+Persistent=true
+Unit=optiora-cost-report-ingest.service
+
+[Install]
+WantedBy=timers.target

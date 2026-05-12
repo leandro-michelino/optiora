@@ -1,0 +1,21 @@
+[Unit]
+Description=OptiOra OCI Cost Reports ingestion
+Wants=network-online.target
+After=network-online.target optiora-api.service
+ConditionPathExists={{ optiora_app_dir }}/.env
+
+[Service]
+Type=oneshot
+User={{ optiora_app_user }}
+Group={{ optiora_app_user }}
+WorkingDirectory={{ optiora_app_dir }}
+EnvironmentFile={{ optiora_app_dir }}/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart={{ optiora_app_dir }}/venv/bin/python -m optiora_backend.oci_cost_reports --once
+TimeoutStartSec=30min
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+[Install]
+WantedBy=multi-user.target

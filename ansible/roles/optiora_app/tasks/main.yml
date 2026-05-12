@@ -612,6 +612,32 @@
     - Reload systemd
     - Restart optiora dashboard
 
+- name: Install OCI cost report ingestion service
+  ansible.builtin.template:
+    src: optiora-cost-report-ingest.service.j2
+    dest: /etc/systemd/system/optiora-cost-report-ingest.service
+    mode: "0644"
+  when: optiora_oci_cost_reports_enabled | bool
+  notify:
+    - Reload systemd
+
+- name: Install OCI cost report ingestion timer
+  ansible.builtin.template:
+    src: optiora-cost-report-ingest.timer.j2
+    dest: /etc/systemd/system/optiora-cost-report-ingest.timer
+    mode: "0644"
+  when: optiora_oci_cost_reports_enabled | bool
+  notify:
+    - Reload systemd
+
+- name: Disable OCI cost report ingestion timer when disabled
+  ansible.builtin.systemd:
+    name: optiora-cost-report-ingest.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not (optiora_oci_cost_reports_enabled | bool)
+
 - name: Run database migrations
   ansible.builtin.command:
     cmd: "{{ optiora_app_dir }}/venv/bin/alembic -c {{ optiora_app_dir }}/alembic.ini upgrade head"
@@ -643,6 +669,13 @@
   loop:
     - optiora-api.service
     - optiora-dashboard.service
+
+- name: Enable OCI cost report ingestion timer
+  ansible.builtin.systemd:
+    name: optiora-cost-report-ingest.timer
+    enabled: true
+    state: started
+  when: optiora_oci_cost_reports_enabled | bool
 
 - name: Wait for API health
   ansible.builtin.uri:

@@ -817,6 +817,33 @@ class CostPeriodSummary(Base):
         )
 
 
+class OciCostReportIngestion(Base):
+    """Audit/watermark rows for OCI cost report ingestion from Object Storage."""
+
+    __tablename__ = "oci_cost_report_ingestions"
+    __table_args__ = (
+        UniqueConstraint("object_name", name="uq_oci_cost_report_ingestion_object"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    object_name = Column(String(1024), nullable=False, index=True)
+    namespace = Column(String(255), nullable=False, default="bling")
+    bucket_name = Column(String(255), nullable=False)
+    object_size = Column(Integer, nullable=True)
+    object_etag = Column(String(255), nullable=True)
+    object_time_created = Column(DateTime, nullable=True)
+    status = Column(String(40), nullable=False, default="processed", index=True)
+    rows_processed = Column(Integer, nullable=False, default=0)
+    rows_skipped = Column(Integer, nullable=False, default=0)
+    periods_json = Column(Text, nullable=False, default="[]")
+    error_message = Column(Text, nullable=True)
+    first_seen_at = Column(DateTime, default=_utcnow, nullable=False)
+    last_processed_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
+
+    def __repr__(self):
+        return f"<OciCostReportIngestion(object_name={self.object_name}, status={self.status})>"
+
+
 class RecommendationLedger(Base):
     """Persistent recommendation lifecycle ledger for finance reconciliation.
 

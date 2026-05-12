@@ -9193,6 +9193,46 @@ async def get_cost_trend(
                 except (json.JSONDecodeError, ValueError):
                     pass
 
+        # Cost reports are the durable historical source, but fresh OCI report
+        # files can arrive before all rows are rated. When a hot-month computed
+        # bucket is missing or still zero, overlay scan snapshots so the current
+        # trend does not disappear while billing reports settle.
+        snapshot_query = db.query(CostSnapshot).filter(CostSnapshot.customer_id == customer_id)
+        if provider:
+            snapshot_query = snapshot_query.filter(CostSnapshot.provider == provider.lower())
+        for row in snapshot_query.order_by(CostSnapshot.captured_at.desc()).limit(1000).all():
+            provider_key = str(row.provider or "unknown").strip().lower() or "unknown"
+            anchor = row.period_start or row.period_end or row.captured_at or _utcnow()
+            pstart, pend = _compute_period_bucket(anchor, period_type)
+            key = (pstart, pend, provider_key)
+            existing_key = next(
+                (
+                    candidate
+                    for candidate in by_period
+                    if candidate[0] == pstart and candidate[2] == provider_key
+                ),
+                None,
+            )
+            if existing_key is not None:
+                key = existing_key
+            existing = by_period.get(key)
+            if existing is not None and float(existing.get("total") or 0.0) > 0:
+                continue
+            b = by_period.setdefault(
+                key,
+                {"total": 0.0, "mapped": 0.0, "unmapped": 0.0, "count": 0, "svcs": {}},
+            )
+            if existing is not None:
+                b["total"] = 0.0
+                b["mapped"] = 0.0
+                b["unmapped"] = 0.0
+                b["count"] = 0
+                b["svcs"] = {}
+            snapshot_total = float(row.total_cost_usd or 0.0)
+            b["total"] += snapshot_total
+            b["unmapped"] += snapshot_total
+            b["count"] += 1
+
         sorted_keys = sorted(by_period.keys(), key=lambda k: k[0], reverse=True)[:lookback]
         points = [
             CostTrendPoint(

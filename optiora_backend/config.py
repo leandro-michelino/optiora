@@ -254,6 +254,29 @@ class Config:
         default_factory=lambda: _env_str("OCI_ARCHIVE_NAMESPACE")
     )
 
+    # OCI Cost Reports ingestion (Oracle-managed Object Storage reports).
+    oci_cost_reports_enabled: bool = field(
+        default_factory=lambda: _env_bool("OCI_COST_REPORTS_ENABLED", "false")
+    )
+    oci_cost_reports_namespace: str = field(
+        default_factory=lambda: _env_str("OCI_COST_REPORTS_NAMESPACE", "bling")
+    )
+    oci_cost_reports_bucket: str = field(
+        default_factory=lambda: _env_str("OCI_COST_REPORTS_BUCKET")
+    )
+    oci_cost_reports_prefix: str = field(
+        default_factory=lambda: _env_str("OCI_COST_REPORTS_PREFIX", "reports/cost-csv/")
+    )
+    oci_cost_reports_lookback_months: int = field(
+        default_factory=lambda: _env_int("OCI_COST_REPORTS_LOOKBACK_MONTHS", 13)
+    )
+    oci_cost_reports_max_objects: int = field(
+        default_factory=lambda: _env_int("OCI_COST_REPORTS_MAX_OBJECTS", 500)
+    )
+    oci_cost_reports_interval_hours: int = field(
+        default_factory=lambda: _env_int("OCI_COST_REPORTS_INTERVAL_HOURS", 6)
+    )
+
     # Data source policy
     require_live_provider_data: bool = field(
         default_factory=lambda: _env_bool("REQUIRE_LIVE_PROVIDER_DATA", "true")

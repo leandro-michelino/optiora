@@ -28,6 +28,13 @@ optiora_retention_hot_months: 3
 optiora_retention_run_interval_hours: 24
 optiora_archive_bucket: ""
 optiora_archive_namespace: ""
+optiora_oci_cost_reports_enabled: true
+optiora_oci_cost_reports_namespace: "bling"
+optiora_oci_cost_reports_bucket: ""
+optiora_oci_cost_reports_prefix: "reports/cost-csv/"
+optiora_oci_cost_reports_lookback_months: 13
+optiora_oci_cost_reports_max_objects: 200
+optiora_oci_cost_reports_interval_hours: 6
 optiora_oci_db_license_model: "BYOL"
 optiora_enable_scan_scheduler: true
 optiora_scan_scheduler_interval_minutes: 60
