@@ -1,1037 +1,323 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" width="900" height="540">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" width="900" height="540" role="img" aria-labelledby="title desc">
+<title id="title">OptiOra live FinOps control plane</title>
+<desc id="desc">Animated dashboard summary showing live OCI advisor findings, action ledger lifecycle tracking, provider credential status, and historical trend coverage.</desc>
 <defs>
   <clipPath id="frame"><rect width="900" height="540" rx="18"/></clipPath>
-
-  <!-- Backgrounds -->
-  <linearGradient id="shellBg" x1="0" y1="0" x2="1" y2="1">
+  <linearGradient id="pageBg" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="#f8fafc"/>
-    <stop offset="55%" stop-color="#eff6ff"/>
+    <stop offset="50%" stop-color="#eef6ff"/>
     <stop offset="100%" stop-color="#f0fdf4"/>
   </linearGradient>
   <linearGradient id="sidebarBg" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#0f172a"/>
     <stop offset="100%" stop-color="#111827"/>
   </linearGradient>
-  <linearGradient id="heroGlow" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="#38bdf8" stop-opacity=".18"/>
-    <stop offset="100%" stop-color="#14b8a6" stop-opacity=".06"/>
-  </linearGradient>
-
-  <!-- Provider bars -->
-  <linearGradient id="awsBar" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#f97316"/>
-    <stop offset="100%" stop-color="#fb923c"/>
-  </linearGradient>
-  <linearGradient id="azureBar" x1="0" y1="0" x2="1" y2="0">
+  <linearGradient id="blueGrad" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="#2563eb"/>
-    <stop offset="100%" stop-color="#60a5fa"/>
-  </linearGradient>
-  <linearGradient id="gcpBar" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#16a34a"/>
-    <stop offset="100%" stop-color="#4ade80"/>
-  </linearGradient>
-  <linearGradient id="ociBar" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#7c3aed"/>
-    <stop offset="100%" stop-color="#c084fc"/>
-  </linearGradient>
-
-  <!-- Forecast / analytics -->
-  <linearGradient id="forecastBand" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="#8b5cf6" stop-opacity=".20"/>
-    <stop offset="100%" stop-color="#8b5cf6" stop-opacity=".02"/>
-  </linearGradient>
-  <linearGradient id="p95Band" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="#ef4444" stop-opacity=".10"/>
-    <stop offset="100%" stop-color="#ef4444" stop-opacity=".01"/>
-  </linearGradient>
-  <linearGradient id="maturityBar" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#f59e0b"/>
-    <stop offset="60%" stop-color="#22c55e"/>
-    <stop offset="100%" stop-color="#0ea5e9"/>
-  </linearGradient>
-  <linearGradient id="paretoBar" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#0ea5e9"/>
     <stop offset="100%" stop-color="#38bdf8"/>
   </linearGradient>
-  <linearGradient id="opsProgress" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#14b8a6"/>
-    <stop offset="100%" stop-color="#38bdf8"/>
+  <linearGradient id="greenGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#059669"/>
+    <stop offset="100%" stop-color="#22c55e"/>
   </linearGradient>
-
-  <!-- Pills -->
-  <linearGradient id="csvPill" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#dcfce7"/>
-    <stop offset="100%" stop-color="#bbf7d0"/>
+  <linearGradient id="amberGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#d97706"/>
+    <stop offset="100%" stop-color="#fbbf24"/>
   </linearGradient>
-  <linearGradient id="livePill" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#dbeafe"/>
-    <stop offset="100%" stop-color="#bfdbfe"/>
+  <linearGradient id="redGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#b91c1c"/>
+    <stop offset="100%" stop-color="#f97316"/>
   </linearGradient>
-  <linearGradient id="walkPill" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="#fef3c7"/>
-    <stop offset="100%" stop-color="#fde68a"/>
-  </linearGradient>
-
-  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-    <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0f172a" flood-opacity=".07"/>
+  <filter id="shadow" x="-18%" y="-18%" width="136%" height="136%">
+    <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#0f172a" flood-opacity=".08"/>
+  </filter>
+  <filter id="smallShadow" x="-12%" y="-12%" width="124%" height="124%">
+    <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity=".07"/>
   </filter>
 </defs>
-
 <style>
   text { font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
   .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Monaco,Consolas,monospace; }
-  .scene1,.nav1 { opacity:1; }
-  .scene2,.scene3,.scene4,.scene5,.nav2,.nav3,.nav4,.nav5 { opacity:0; }
-  .scene1,.nav1 { animation: s1 35s linear infinite; }
-  .scene2,.nav2 { animation: s2 35s linear infinite; }
-  .scene3,.nav3 { animation: s3 35s linear infinite; }
-  .scene4,.nav4 { animation: s4 35s linear infinite; }
-  .scene5,.nav5 { animation: s5 35s linear infinite; }
-  .pulse  { animation: pulse 2s ease-in-out infinite; }
-  .blink  { animation: blink 1.1s step-end infinite; }
-  .scanSweep { animation: scanSweep 2.6s ease-in-out infinite; }
-  .dot1   { animation: dot 1.2s ease-in-out infinite; }
-  .dot2   { animation: dot 1.2s ease-in-out .2s infinite; }
-  .dot3   { animation: dot 1.2s ease-in-out .4s infinite; }
-  @keyframes s1 { 0%,17%{opacity:1} 20%,100%{opacity:0} }
-  @keyframes s2 { 0%,20%{opacity:0} 23%,37%{opacity:1} 40%,100%{opacity:0} }
-  @keyframes s3 { 0%,40%{opacity:0} 43%,57%{opacity:1} 60%,100%{opacity:0} }
-  @keyframes s4 { 0%,60%{opacity:0} 63%,77%{opacity:1} 80%,100%{opacity:0} }
-  @keyframes s5 { 0%,80%{opacity:0} 83%,97%{opacity:1} 100%{opacity:0} }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-  @keyframes scanSweep {
-    0%{transform:translateX(-54px);opacity:0} 15%{opacity:.8} 85%{opacity:.8} 100%{transform:translateX(240px);opacity:0}
-  }
-  @keyframes dot { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+  .screen2,.screen3,.screen4,.nav2,.nav3,.nav4 { opacity:0; }
+  .screen1,.nav1 { animation: show1 24s linear infinite; }
+  .screen2,.nav2 { animation: show2 24s linear infinite; }
+  .screen3,.nav3 { animation: show3 24s linear infinite; }
+  .screen4,.nav4 { animation: show4 24s linear infinite; }
+  .pulse { animation: pulse 2.2s ease-in-out infinite; }
+  .flow1 { animation: flow 2.8s ease-in-out infinite; }
+  .flow2 { animation: flow 2.8s ease-in-out .8s infinite; }
+  .flow3 { animation: flow 2.8s ease-in-out 1.6s infinite; }
+  .barGrow { transform-origin:left center; animation: barGrow 3s ease-in-out infinite; }
+  @keyframes show1 { 0%,22%{opacity:1} 25%,100%{opacity:0} }
+  @keyframes show2 { 0%,25%{opacity:0} 28%,47%{opacity:1} 50%,100%{opacity:0} }
+  @keyframes show3 { 0%,50%{opacity:0} 53%,72%{opacity:1} 75%,100%{opacity:0} }
+  @keyframes show4 { 0%,75%{opacity:0} 78%,97%{opacity:1} 100%{opacity:0} }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  @keyframes flow { 0%{transform:translateX(0);opacity:.15} 45%{opacity:1} 100%{transform:translateX(64px);opacity:.15} }
+  @keyframes barGrow { 0%,100%{transform:scaleX(.82)} 50%{transform:scaleX(1)} }
   @media (prefers-reduced-motion: reduce) {
-    .scene1,.nav1 { opacity:1; animation:none; }
-    .scene2,.scene3,.scene4,.scene5,.nav2,.nav3,.nav4,.nav5 { opacity:0; animation:none; }
-    .pulse,.blink,.scanSweep,.dot1,.dot2,.dot3 { animation:none; }
+    .screen1,.nav1 { opacity:1; animation:none; }
+    .screen2,.screen3,.screen4,.nav2,.nav3,.nav4 { opacity:0; animation:none; }
+    .pulse,.flow1,.flow2,.flow3,.barGrow { animation:none; }
   }
 </style>
-
 <g clip-path="url(#frame)">
-  <!-- Background -->
-  <rect width="900" height="540" fill="url(#shellBg)"/>
-  <circle cx="720" cy="70" r="120" fill="url(#heroGlow)"/>
-  <circle cx="840" cy="460" r="130" fill="#dbeafe" fill-opacity=".25"/>
+  <rect width="900" height="540" fill="url(#pageBg)"/>
+  <circle cx="745" cy="74" r="132" fill="#dbeafe" fill-opacity=".42"/>
+  <circle cx="830" cy="470" r="150" fill="#dcfce7" fill-opacity=".34"/>
 
-  <!-- ─── Sidebar ─── -->
-  <rect width="182" height="540" fill="url(#sidebarBg)"/>
-  <rect x="0" y="18" width="4" height="26" rx="2" fill="#38bdf8"/>
-  <text x="18" y="34" fill="#ffffff" font-size="16" font-weight="700">OptiOra</text>
-  <text x="18" y="50" fill="#64748b" font-size="9.5">Release 1.0 · FinOps platform</text>
-  <line x1="14" y1="62" x2="168" y2="62" stroke="#1e293b"/>
+  <rect width="184" height="540" fill="url(#sidebarBg)"/>
+  <rect x="0" y="18" width="4" height="28" rx="2" fill="#38bdf8"/>
+  <text x="20" y="36" fill="#fff" font-size="17" font-weight="800">OptiOra</text>
+  <text x="20" y="53" fill="#94a3b8" font-size="9.5">FinOps Control Plane</text>
+  <line x1="14" y1="68" x2="170" y2="68" stroke="#1e293b"/>
 
-  <!-- Active nav highlight per scene -->
-  <rect class="nav1" x="10" y="72"  width="162" height="26" rx="7" fill="#1d4ed8"/>
-  <rect class="nav2" x="10" y="132" width="162" height="26" rx="7" fill="#6d28d9"/>
-  <rect class="nav3" x="10" y="192" width="162" height="26" rx="7" fill="#1d4ed8"/>
-  <rect class="nav4" x="10" y="358" width="162" height="24" rx="7" fill="#b45309"/>
-  <rect class="nav5" x="10" y="326" width="162" height="26" rx="7" fill="#059669"/>
+  <text x="18" y="86" fill="#64748b" font-size="8" font-weight="800" letter-spacing=".8">WORKSPACE</text>
+  <rect class="nav1" x="10" y="94" width="164" height="28" rx="8" fill="#1d4ed8"/>
+  <circle cx="28" cy="108" r="4" fill="#38bdf8"/><text x="42" y="112" fill="#e2e8f0" font-size="11.5">Overview</text>
+  <rect class="nav3" x="10" y="126" width="164" height="28" rx="8" fill="#1d4ed8"/>
+  <circle cx="28" cy="140" r="4" fill="#60a5fa"/><text x="42" y="144" fill="#e2e8f0" font-size="11.5">Action Ledger</text>
 
-  <!-- Nav items (static) -->
-  <circle cx="26" cy="85"  r="3.5" fill="#38bdf8"/>
-  <text   x="38"  y="89"  fill="#e2e8f0" font-size="11">Overview</text>
+  <text x="18" y="177" fill="#64748b" font-size="8" font-weight="800" letter-spacing=".8">OPTIMIZE</text>
+  <rect class="nav2" x="10" y="185" width="164" height="28" rx="8" fill="#059669"/>
+  <circle cx="28" cy="199" r="4" fill="#22c55e"/><text x="42" y="203" fill="#e2e8f0" font-size="11.5">Optimization Advisor</text>
+  <circle cx="28" cy="232" r="4" fill="#10b981"/><text x="42" y="236" fill="#94a3b8" font-size="11">Unit Economics</text>
+  <circle cx="28" cy="260" r="4" fill="#10b981"/><text x="42" y="264" fill="#94a3b8" font-size="11">Cost Advisor</text>
 
-  <circle cx="26" cy="115" r="3.5" fill="#64748b"/>
-  <text   x="38"  y="119" fill="#64748b" font-size="11">Costs</text>
+  <text x="18" y="299" fill="#64748b" font-size="8" font-weight="800" letter-spacing=".8">CLOUD ESTATE</text>
+  <rect class="nav4" x="10" y="307" width="164" height="28" rx="8" fill="#b45309"/>
+  <circle cx="28" cy="321" r="4" fill="#f97316"/><text x="42" y="325" fill="#e2e8f0" font-size="11.5">Provider Coverage</text>
+  <circle cx="28" cy="354" r="4" fill="#f59e0b"/><text x="42" y="358" fill="#94a3b8" font-size="11">Inventory Explorer</text>
+  <circle cx="28" cy="382" r="4" fill="#f59e0b"/><text x="42" y="386" fill="#94a3b8" font-size="11">Billing Allocation</text>
 
-  <circle cx="26" cy="145" r="3.5" fill="#a78bfa"/>
-  <text   x="38"  y="149" fill="#e2e8f0" font-size="11">AI Insights</text>
-  <rect   x="140" y="138" width="26" height="14" rx="6" fill="#7c3aed"/>
-  <text   x="153" y="149" fill="#fff" font-size="8" font-weight="700" text-anchor="middle">NEW</text>
+  <line x1="14" y1="415" x2="170" y2="415" stroke="#1e293b"/>
+  <text x="18" y="434" fill="#64748b" font-size="8" font-weight="800" letter-spacing=".8">LIVE STATUS</text>
+  <rect x="18" y="444" width="148" height="25" rx="7" fill="#052e16"/>
+  <circle cx="32" cy="456" r="4" fill="#22c55e" class="pulse"/>
+  <text x="44" y="460" fill="#bbf7d0" font-size="9.5" font-weight="800">OCI connected</text>
+  <rect x="18" y="476" width="148" height="25" rx="7" fill="#422006"/>
+  <circle cx="32" cy="488" r="4" fill="#f59e0b"/>
+  <text x="44" y="492" fill="#fde68a" font-size="9.5" font-weight="800">3 providers pending</text>
+  <text x="18" y="520" fill="#94a3b8" font-size="9">Remote OCI VM deployment</text>
 
-  <circle cx="26" cy="175" r="3.5" fill="#22c55e"/>
-  <text   x="38"  y="179" fill="#64748b" font-size="11">Saved Views</text>
+  <rect x="184" y="0" width="716" height="58" fill="#ffffff" fill-opacity=".82"/>
+  <line x1="184" y1="58" x2="900" y2="58" stroke="#dbeafe"/>
+  <text class="screen1" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Overview: live OCI estate with honest multi-cloud status</text>
+  <text class="screen2" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Optimization Advisor: provider findings loaded by default</text>
+  <text class="screen3" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Action Ledger: lifecycle, variance, owner follow-through</text>
+  <text class="screen4" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Historical data: OCI trends live, other providers gated by credentials</text>
+  <text class="screen1" x="204" y="43" fill="#64748b" font-size="10">No demo badge - dashboard reflects the running OCI VM and configured provider state.</text>
+  <text class="screen2" x="204" y="43" fill="#64748b" font-size="10">111 advisor findings, $13.2K/mo advisor savings, 285 unattached volumes.</text>
+  <text class="screen3" x="204" y="43" fill="#64748b" font-size="10">150 ledger actions, $284.4K/mo planned savings, realized savings tracked separately.</text>
+  <text class="screen4" x="204" y="43" fill="#64748b" font-size="10">AWS, Azure, and GCP remain clean empty states until credentials are configured.</text>
+  <rect x="740" y="15" width="142" height="27" rx="8" fill="#ecfdf5"/>
+  <circle cx="757" cy="28" r="4" fill="#16a34a" class="pulse"/>
+  <text x="812" y="32" fill="#166534" font-size="9.5" font-weight="800" text-anchor="middle">LIVE BACKEND</text>
 
-  <circle cx="26" cy="205" r="3.5" fill="#60a5fa"/>
-  <text   x="38"  y="209" fill="#e2e8f0" font-size="11">Forecasting</text>
+  <g class="screen1">
+    <rect x="204" y="78" width="676" height="48" rx="12" fill="#eff6ff" stroke="#bfdbfe" filter="url(#smallShadow)"/>
+    <text x="224" y="101" fill="#1e40af" font-size="11.5" font-weight="800">Provider data source</text>
+    <text x="224" y="117" fill="#475569" font-size="9.5">OCI runtime access is configured. AWS, Azure, and GCP are intentionally shown as credential-pending empty states.</text>
+    <rect x="664" y="91" width="194" height="24" rx="8" fill="#ffffff"/>
+    <text x="761" y="107" fill="#166534" font-size="9.5" font-weight="800" text-anchor="middle">remote VM verified</text>
 
-  <circle cx="26" cy="235" r="3.5" fill="#f59e0b"/>
-  <text   x="38"  y="239" fill="#64748b" font-size="11">Cost Advisor</text>
+    <rect x="204" y="146" width="150" height="98" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="204" y="146" width="5" height="98" rx="3" fill="#16a34a"/>
+    <text x="224" y="170" fill="#64748b" font-size="8.5" font-weight="800" letter-spacing=".5">CONNECTED</text>
+    <text x="224" y="199" fill="#0f172a" font-size="30" font-weight="900">OCI</text>
+    <text x="224" y="220" fill="#16a34a" font-size="10" font-weight="800">advisor + ledger live</text>
 
-  <!-- FinOps Analytics section -->
-  <text x="18" y="254" fill="#475569" font-size="7.5" font-weight="700" letter-spacing=".6">FINOPS ANALYTICS</text>
+    <rect x="374" y="146" width="150" height="98" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="374" y="146" width="5" height="98" rx="3" fill="#f59e0b"/>
+    <text x="394" y="170" fill="#64748b" font-size="8.5" font-weight="800" letter-spacing=".5">PENDING</text>
+    <text x="394" y="199" fill="#0f172a" font-size="30" font-weight="900">3</text>
+    <text x="394" y="220" fill="#92400e" font-size="10" font-weight="800">AWS Azure GCP creds</text>
 
-  <circle cx="26" cy="266" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="270" fill="#e2e8f0" font-size="10.5">Unit Economics</text>
-  <rect   x="130" y="260" width="26" height="13" rx="5" fill="#059669"/>
-  <text   x="143" y="270" fill="#fff" font-size="7.5" font-weight="700" text-anchor="middle">NEW</text>
+    <rect x="544" y="146" width="150" height="98" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="544" y="146" width="5" height="98" rx="3" fill="#2563eb"/>
+    <text x="564" y="170" fill="#64748b" font-size="8.5" font-weight="800" letter-spacing=".5">HISTORY</text>
+    <text x="564" y="199" fill="#0f172a" font-size="30" font-weight="900">OCI</text>
+    <text x="564" y="220" fill="#1d4ed8" font-size="10" font-weight="800">trends available</text>
 
-  <circle cx="26" cy="283" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="287" fill="#e2e8f0" font-size="10.5">Scorecards</text>
-  <rect   x="117" y="277" width="26" height="13" rx="5" fill="#059669"/>
-  <text   x="130" y="287" fill="#fff" font-size="7.5" font-weight="700" text-anchor="middle">NEW</text>
+    <rect x="714" y="146" width="166" height="98" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="714" y="146" width="5" height="98" rx="3" fill="#7c3aed"/>
+    <text x="734" y="170" fill="#64748b" font-size="8.5" font-weight="800" letter-spacing=".5">MENU</text>
+    <text x="734" y="199" fill="#0f172a" font-size="24" font-weight="900">organized</text>
+    <text x="734" y="220" fill="#6d28d9" font-size="10" font-weight="800">workspace optimize estate</text>
 
-  <circle cx="26" cy="300" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="304" fill="#e2e8f0" font-size="10.5">Inventory Explorer</text>
-
-  <circle cx="26" cy="317" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="321" fill="#e2e8f0" font-size="10.5">Kubernetes</text>
-
-  <circle cx="26" cy="334" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="338" fill="#e2e8f0" font-size="10.5">Virtual Tags</text>
-  <rect   x="113" y="328" width="26" height="13" rx="5" fill="#059669"/>
-  <text   x="126" y="338" fill="#fff" font-size="7.5" font-weight="700" text-anchor="middle">NEW</text>
-
-  <circle cx="26" cy="351" r="3.5" fill="#10b981"/>
-  <text   x="38"  y="355" fill="#e2e8f0" font-size="10.5">Optimization</text>
-  <rect   x="110" y="345" width="26" height="13" rx="5" fill="#059669"/>
-  <text   x="123" y="355" fill="#fff" font-size="7.5" font-weight="700" text-anchor="middle">NEW</text>
-
-  <!-- Management section -->
-  <circle cx="26" cy="368" r="3.5" fill="#f97316"/>
-  <text   x="38"  y="372" fill="#64748b" font-size="10.5">Operations</text>
-  <rect   x="108" y="362" width="26" height="13" rx="5" fill="#b45309"/>
-  <text   x="121" y="372" fill="#fff" font-size="7.5" font-weight="700" text-anchor="middle">NEW</text>
-
-  <circle cx="26" cy="384" r="3.5" fill="#64748b"/>
-  <text   x="38"  y="388" fill="#64748b" font-size="10.5">Action Ledger</text>
-
-  <circle cx="26" cy="400" r="3.5" fill="#64748b"/>
-  <text   x="38"  y="404" fill="#64748b" font-size="10.5">Settings</text>
-
-  <line x1="14" y1="418" x2="168" y2="418" stroke="#1e293b"/>
-  <text x="18" y="435" fill="#475569" font-size="8.5" font-weight="700" letter-spacing=".6">DATA SOURCES</text>
-  <rect x="18" y="443" width="146" height="22" rx="6" fill="#052e16"/>
-  <text x="30" y="458" fill="#86efac" font-size="9.5" font-weight="700">CSV ACTIVE</text>
-  <text x="98" y="458" fill="#dcfce7" font-size="9">214 rows</text>
-  <rect x="18" y="470" width="146" height="22" rx="6" fill="#172554"/>
-  <text x="30" y="485" fill="#93c5fd" font-size="9.5" font-weight="700">LIVE READY</text>
-  <text x="96" y="485" fill="#dbeafe" font-size="9">4 providers</text>
-
-  <line x1="14" y1="500" x2="168" y2="500" stroke="#1e293b"/>
-  <text x="18" y="516" fill="#475569" font-size="9.5">OCI GenAI</text>
-  <rect x="18" y="520" width="106" height="16" rx="5" fill="#1e1b4b"/>
-  <text x="71" y="532" fill="#c4b5fd" font-size="9" text-anchor="middle">uk-london-1 active</text>
-
-  <text x="18" y="492" fill="#475569" font-size="9">GenAI backend narration</text>
-  <circle cx="26" cy="507" r="4" fill="#22c55e" class="pulse"/>
-  <text x="38" y="511" fill="#86efac" font-size="9">wired</text>
-
-  <!-- ─── Top bar ─── -->
-  <rect x="182" y="0" width="718" height="54" fill="#ffffff" fill-opacity=".78"/>
-  <line x1="182" y1="54" x2="900" y2="54" stroke="#dbeafe"/>
-
-  <!-- Scene titles -->
-  <text class="scene1" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Account Hierarchy + Multi-Cloud Overview + Budget Rollups</text>
-  <text class="scene2" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Deep FinOps Analytics — Maturity · Attribution · Commitment ROI</text>
-  <text class="scene3" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Forecasting with GenAI Narration + Budget Risk</text>
-  <text class="scene4" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">Anomaly Z-Score + Alert Ops Policy + Scheduler Controls</text>
-  <text class="scene5" x="202" y="22" fill="#0f172a" font-size="13" font-weight="700">FinOps Intelligence Workspace</text>
-
-  <text class="scene1" x="202" y="40" fill="#64748b" font-size="9.5">Epic 2 · tree view, region drill-down, cost rollups + budget utilization/status per account</text>
-  <text class="scene2" x="202" y="40" fill="#64748b" font-size="9.5">CRAWL/WALK/RUN/OPTIMIZE · Pareto 80/20 · RI savings projection per provider tier</text>
-  <text class="scene3" x="202" y="40" fill="#64748b" font-size="9.5">p10/p50/p90/p95 fan · velocity +3.2% MoM · OCI GenAI backend narration active</text>
-  <text class="scene4" x="202" y="40" fill="#64748b" font-size="9.5">z-score ranking · ack/reactivate lifecycle · executive summary · scheduler policy · admin diagnostics</text>
-  <text class="scene5" x="202" y="40" fill="#64748b" font-size="9.5">Virtual tags · rightsizing · scorecards · inventory rows · OpenCost namespace sync</text>
-
-  <rect x="810" y="12" width="72" height="26" rx="7" fill="#f8fafc"/>
-  <text x="846" y="29" fill="#334155" font-size="10" text-anchor="middle" font-weight="700">Apr 2026</text>
-  <rect x="728" y="12" width="74" height="26" rx="7" fill="#fef3c7"/>
-  <text x="765" y="29" fill="#92400e" font-size="9" text-anchor="middle" font-weight="700">DEMO DATA</text>
-
-
-  <!-- ═══════════════════════════════════════════════════════
-       SCENE 1 — Account Hierarchy + Multi-Cloud Overview
-       ═══════════════════════════════════════════════════════ -->
-  <g class="scene1">
-    <!-- Source banner -->
-    <rect x="202" y="64" width="678" height="26" rx="9" fill="url(#csvPill)" filter="url(#shadow)"/>
-    <circle cx="220" cy="77" r="4.5" fill="#16a34a"/>
-    <text x="232" y="81" fill="#166534" font-size="9.5" font-weight="700">Imported CSV active</text>
-    <text x="346" y="81" fill="#166534" font-size="9.5">214 rows · 4 providers · account_identifier + region columns present · no placeholders</text>
-    <rect x="742" y="66" width="128" height="18" rx="6" fill="#ffffff" fill-opacity=".85"/>
-    <text x="806" y="78" fill="#1d4ed8" font-size="8.5" font-weight="700" text-anchor="middle">rollup tree built from CSV</text>
-
-    <!-- Summary cards row -->
-    <rect x="202" y="100" width="128" height="74" rx="10" fill="#ffffff" filter="url(#shadow)"/>
-    <rect x="202" y="100" width="4"   height="74" rx="2" fill="#2563eb"/>
-    <text x="218" y="118" fill="#64748b" font-size="8" font-weight="700" letter-spacing=".5">TOTAL ROLLUP</text>
-    <text x="218" y="142" fill="#0f172a" font-size="20" font-weight="800">$47,230</text>
-    <text x="218" y="158" fill="#16a34a" font-size="9">4 providers</text>
-    <text x="218" y="170" fill="#94a3b8" font-size="8.5">Apr 2026 import</text>
-
-    <rect x="340" y="100" width="116" height="74" rx="10" fill="#ffffff" filter="url(#shadow)"/>
-    <rect x="340" y="100" width="4"   height="74" rx="2" fill="#f59e0b"/>
-    <text x="356" y="118" fill="#64748b" font-size="8" font-weight="700" letter-spacing=".5">HIERARCHY NODES</text>
-    <text x="356" y="142" fill="#0f172a" font-size="20" font-weight="800">9</text>
-    <text x="356" y="158" fill="#d97706" font-size="9">accts + compartments</text>
-    <text x="356" y="170" fill="#94a3b8" font-size="8.5">depth 0-2</text>
-
-    <rect x="466" y="100" width="120" height="74" rx="10" fill="#ffffff" filter="url(#shadow)"/>
-    <rect x="466" y="100" width="4"   height="74" rx="2" fill="#7c3aed"/>
-    <text x="482" y="118" fill="#64748b" font-size="8" font-weight="700" letter-spacing=".5">BUDGET ROLLUPS</text>
-    <text x="482" y="142" fill="#0f172a" font-size="20" font-weight="800">96.4%</text>
-    <text x="482" y="158" fill="#7c3aed" font-size="9">utilization (rolled up)</text>
-    <text x="482" y="170" fill="#94a3b8" font-size="8.5">status: warning</text>
-
-    <rect x="596" y="100" width="284" height="74" rx="10" fill="#ffffff" filter="url(#shadow)"/>
-    <rect x="596" y="100" width="4"   height="74" rx="2" fill="#ef4444"/>
-    <text x="612" y="118" fill="#64748b" font-size="8" font-weight="700" letter-spacing=".5">ANALYTICS SNAPSHOT</text>
-    <text x="612" y="134" fill="#64748b" font-size="9">Risk score</text>
-    <text x="692" y="134" fill="#ef4444" font-size="9" font-weight="700">62 / 100</text>
-    <text x="612" y="150" fill="#64748b" font-size="9">Commitment coverage</text>
-    <text x="692" y="150" fill="#0f172a" font-size="9" font-weight="700">48.2%</text>
-    <text x="612" y="166" fill="#64748b" font-size="9">Est. monthly waste</text>
-    <text x="692" y="166" fill="#d97706" font-size="9" font-weight="700">$7,540</text>
-
-    <!-- Account tree panel -->
-    <rect x="202" y="186" width="440" height="306" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="222" y="208" fill="#0f172a" font-size="11.5" font-weight="700">Account Tree</text>
-    <text x="222" y="222" fill="#94a3b8" font-size="8.5">Rolled-up costs · click row to expand region breakdown</text>
-    <line x1="222" y1="232" x2="622" y2="232" stroke="#f1f5f9"/>
-
-    <!-- AWS master row (depth 0) -->
-    <rect x="222" y="238" width="400" height="32" rx="8" fill="#fff7ed"/>
-    <rect x="222" y="238" width="3"   height="32" rx="2" fill="#f97316"/>
-    <text x="236" y="255" fill="#0f172a" font-size="10" font-weight="700">▾</text>
-    <rect x="248" y="244" width="26" height="14" rx="4" fill="#fff7ed"/>
-    <text x="261" y="255" fill="#c2410c" font-size="8" font-weight="700" text-anchor="middle">AWS</text>
-    <text x="282" y="255" fill="#0f172a" font-size="10" font-weight="600">aws-master</text>
-    <text x="408" y="253" fill="#94a3b8" font-size="8.5">management</text>
-    <text x="598" y="255" fill="#0f172a" font-size="10" font-weight="700" text-anchor="end">$19,837</text>
-    <text x="598" y="266" fill="#94a3b8" font-size="7.5" text-anchor="end">2 children</text>
-
-    <!-- AWS prod (depth 1) -->
-    <rect x="236" y="278" width="386" height="30" rx="7" fill="#eff6ff"/>
-    <rect x="236" y="278" width="3"   height="30" rx="2" fill="#2563eb"/>
-    <text x="250" y="294" fill="#0f172a" font-size="9.5" font-weight="700">▾</text>
-    <text x="264" y="295" fill="#0f172a" font-size="9.5">aws-prod</text>
-    <text x="352" y="293" fill="#64748b" font-size="8">account</text>
-    <text x="598" y="295" fill="#1d4ed8" font-size="9.5" font-weight="700" text-anchor="end">$16,400</text>
-
-    <!-- Region rows (depth 2 drill-down) -->
-    <rect x="254" y="316" width="368" height="22" rx="6" fill="#f8fafc"/>
-    <text x="268" y="331" fill="#64748b" font-size="8.5">us-east-1</text>
-    <rect x="384" y="319" width="80" height="13" rx="4" fill="#dbeafe"/>
-    <text x="424" y="330" fill="#1d4ed8" font-size="8" font-weight="700" text-anchor="middle">CostAllocSnap</text>
-    <text x="598" y="331" fill="#475569" font-size="9" font-weight="600" text-anchor="end">$12,800</text>
-
-    <rect x="254" y="344" width="368" height="22" rx="6" fill="#f8fafc"/>
-    <text x="268" y="359" fill="#64748b" font-size="8.5">eu-west-1</text>
-    <text x="598" y="359" fill="#475569" font-size="9" font-weight="600" text-anchor="end">$3,600</text>
-
-    <!-- AWS dev (depth 1) -->
-    <rect x="236" y="372" width="386" height="28" rx="7" fill="#f8fafc"/>
-    <text x="250" y="389" fill="#64748b" font-size="9.5">▶  aws-dev</text>
-    <text x="352" y="387" fill="#64748b" font-size="8">account</text>
-    <text x="598" y="389" fill="#475569" font-size="9.5" text-anchor="end">$3,437</text>
-
-    <!-- Azure root (depth 0) -->
-    <rect x="222" y="406" width="400" height="30" rx="8" fill="#eff6ff"/>
-    <rect x="222" y="406" width="3"   height="30" rx="2" fill="#2563eb"/>
-    <rect x="234" y="412" width="30"  height="14" rx="4" fill="#dbeafe"/>
-    <text x="249" y="423" fill="#1e40af" font-size="8" font-weight="700" text-anchor="middle">Azure</text>
-    <text x="272" y="425" fill="#0f172a" font-size="10" font-weight="600">azure-core</text>
-    <text x="390" y="423" fill="#94a3b8" font-size="8.5">subscription</text>
-    <text x="598" y="425" fill="#0f172a" font-size="10" font-weight="700" text-anchor="end">$13,224</text>
-
-    <!-- OCI root (depth 0) -->
-    <rect x="222" y="442" width="400" height="30" rx="8" fill="#f5f3ff"/>
-    <rect x="222" y="442" width="3"   height="30" rx="2" fill="#7c3aed"/>
-    <rect x="234" y="448" width="22"  height="14" rx="4" fill="#ede9fe"/>
-    <text x="245" y="459" fill="#6d28d9" font-size="8" font-weight="700" text-anchor="middle">OCI</text>
-    <text x="264" y="461" fill="#0f172a" font-size="10" font-weight="600">finops-compartment</text>
-    <text x="406" y="459" fill="#94a3b8" font-size="8.5">compartment</text>
-    <text x="598" y="461" fill="#0f172a" font-size="10" font-weight="700" text-anchor="end">$5,667</text>
-
-    <!-- Right panel: region breakdown -->
-    <rect x="654" y="186" width="226" height="306" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="674" y="208" fill="#0f172a" font-size="11.5" font-weight="700">Region Breakdown</text>
-    <text x="674" y="222" fill="#94a3b8" font-size="8.5">aws-prod · scan snapshot + provider rollups</text>
-    <line x1="674" y1="232" x2="860" y2="232" stroke="#f1f5f9"/>
-
-    <!-- Region rows -->
-    <text x="674" y="252" fill="#64748b" font-size="9">us-east-1</text>
-    <rect x="730" y="240" width="100" height="14" rx="5" fill="#f1f5f9"/>
-    <rect x="730" y="240" width="78"  height="14" rx="5" fill="url(#awsBar)"/>
-    <text x="840" y="252" fill="#0f172a" font-size="9" text-anchor="end">$12,800</text>
-
-    <text x="674" y="272" fill="#64748b" font-size="9">eu-west-1</text>
-    <rect x="730" y="260" width="100" height="14" rx="5" fill="#f1f5f9"/>
-    <rect x="730" y="260" width="28"  height="14" rx="5" fill="url(#awsBar)" fill-opacity=".6"/>
-    <text x="840" y="272" fill="#0f172a" font-size="9" text-anchor="end">$3,600</text>
-
-    <text x="674" y="292" fill="#64748b" font-size="9">ap-southeast-1</text>
-    <rect x="730" y="280" width="100" height="14" rx="5" fill="#f1f5f9"/>
-    <rect x="730" y="280" width="18"  height="14" rx="5" fill="url(#awsBar)" fill-opacity=".4"/>
-    <text x="840" y="292" fill="#0f172a" font-size="9" text-anchor="end">$2,100</text>
-
-    <line x1="674" y1="304" x2="860" y2="304" stroke="#f1f5f9"/>
-    <text x="674" y="320" fill="#0f172a" font-size="11.5" font-weight="700">Provider Attribution</text>
-
-    <text x="674" y="340" fill="#64748b" font-size="9">AWS</text>
-    <rect x="706" y="328" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="328" width="72"  height="13" rx="5" fill="url(#awsBar)">
-      <animate attributeName="width" values="0;72;70;72" dur="3s" repeatCount="indefinite"/>
-    </rect>
-    <text x="836" y="340" fill="#ea580c" font-size="9" font-weight="700" text-anchor="end">42%</text>
-
-    <text x="674" y="358" fill="#64748b" font-size="9">Azure</text>
-    <rect x="706" y="346" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="346" width="50"  height="13" rx="5" fill="url(#azureBar)">
-      <animate attributeName="width" values="0;50;48;50" dur="3s" repeatCount="indefinite"/>
-    </rect>
-    <text x="836" y="358" fill="#2563eb" font-size="9" font-weight="700" text-anchor="end">28%</text>
-
-    <text x="674" y="376" fill="#64748b" font-size="9">GCP</text>
-    <rect x="706" y="364" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="364" width="32"  height="13" rx="5" fill="url(#gcpBar)">
-      <animate attributeName="width" values="0;32;30;32" dur="3s" repeatCount="indefinite"/>
-    </rect>
-    <text x="836" y="376" fill="#15803d" font-size="9" font-weight="700" text-anchor="end">18%</text>
-
-    <text x="674" y="394" fill="#64748b" font-size="9">OCI</text>
-    <rect x="706" y="382" width="120" height="13" rx="5" fill="#f1f5f9"/>
-    <rect x="706" y="382" width="22"  height="13" rx="5" fill="url(#ociBar)">
-      <animate attributeName="width" values="0;22;20;22" dur="3s" repeatCount="indefinite"/>
-    </rect>
-    <text x="836" y="394" fill="#7c3aed" font-size="9" font-weight="700" text-anchor="end">12%</text>
-
-    <rect x="674" y="412" width="166" height="34" rx="9" fill="#f0fdf4"/>
-    <text x="757" y="427" fill="#166534" font-size="9.5" font-weight="700" text-anchor="middle">HHI: 0.34 · Low concentration</text>
-    <text x="757" y="441" fill="#166534" font-size="9"   text-anchor="middle">Pareto cutoff: top 2 providers = 70%</text>
-
-    <rect x="674" y="450" width="186" height="26" rx="8" fill="#fff7ed"/>
-    <text x="767" y="467" fill="#c2410c" font-size="8.5" font-weight="700" text-anchor="middle">Budget rollup: warning at 96.4% utilization</text>
-
-    <text x="674" y="482" fill="#475569" font-size="8.5">Endpoints: /api/v1/provider-accounts/rollups</text>
-    <text x="674" y="496" fill="#475569" font-size="8.5">/api/v1/costs · /api/v1/analytics</text>
+    <rect x="204" y="272" width="676" height="198" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="226" y="299" fill="#0f172a" font-size="13" font-weight="800">Current provider matrix</text>
+    <line x1="226" y1="314" x2="858" y2="314" stroke="#e2e8f0"/>
+    <text x="226" y="337" fill="#64748b" font-size="9" font-weight="800">PROVIDER</text>
+    <text x="388" y="337" fill="#64748b" font-size="9" font-weight="800">ADVISOR</text>
+    <text x="530" y="337" fill="#64748b" font-size="9" font-weight="800">LEDGER</text>
+    <text x="672" y="337" fill="#64748b" font-size="9" font-weight="800">HISTORY</text>
+    <text x="800" y="337" fill="#64748b" font-size="9" font-weight="800" text-anchor="end">STATE</text>
+    <g>
+      <rect x="226" y="352" width="632" height="30" rx="8" fill="#f0fdf4"/>
+      <text x="226" y="371" fill="#0f172a" font-size="10.5" font-weight="800">OCI</text>
+      <text x="388" y="371" fill="#166534" font-size="10" font-weight="800">111 live findings</text>
+      <text x="530" y="371" fill="#166534" font-size="10" font-weight="800">150 actions</text>
+      <text x="672" y="371" fill="#166534" font-size="10" font-weight="800">available</text>
+      <text x="800" y="371" fill="#166534" font-size="10" font-weight="800" text-anchor="end">connected</text>
+    </g>
+    <g fill="#fff7ed">
+      <rect x="226" y="390" width="632" height="30" rx="8"/>
+      <rect x="226" y="428" width="632" height="30" rx="8"/>
+      <rect x="226" y="466" width="632" height="30" rx="8"/>
+    </g>
+    <text x="226" y="409" fill="#0f172a" font-size="10.5" font-weight="800">AWS</text>
+    <text x="226" y="447" fill="#0f172a" font-size="10.5" font-weight="800">Azure</text>
+    <text x="226" y="485" fill="#0f172a" font-size="10.5" font-weight="800">GCP</text>
+    <text x="388" y="409" fill="#92400e" font-size="10" font-weight="800">not configured</text>
+    <text x="388" y="447" fill="#92400e" font-size="10" font-weight="800">not configured</text>
+    <text x="388" y="485" fill="#92400e" font-size="10" font-weight="800">not configured</text>
+    <text x="530" y="409" fill="#0369a1" font-size="10" font-weight="800">0 clean rows</text>
+    <text x="530" y="447" fill="#0369a1" font-size="10" font-weight="800">0 clean rows</text>
+    <text x="530" y="485" fill="#0369a1" font-size="10" font-weight="800">0 clean rows</text>
+    <text x="672" y="409" fill="#0369a1" font-size="10" font-weight="800">empty state</text>
+    <text x="672" y="447" fill="#0369a1" font-size="10" font-weight="800">empty state</text>
+    <text x="672" y="485" fill="#0369a1" font-size="10" font-weight="800">empty state</text>
+    <text x="800" y="409" fill="#92400e" font-size="10" font-weight="800" text-anchor="end">awaiting creds</text>
+    <text x="800" y="447" fill="#92400e" font-size="10" font-weight="800" text-anchor="end">awaiting creds</text>
+    <text x="800" y="485" fill="#92400e" font-size="10" font-weight="800" text-anchor="end">awaiting creds</text>
   </g>
 
+  <g class="screen2">
+    <rect x="204" y="78" width="676" height="42" rx="12" fill="#ecfdf5" stroke="#a7f3d0" filter="url(#smallShadow)"/>
+    <circle cx="224" cy="99" r="5" fill="#16a34a" class="pulse"/>
+    <text x="240" y="103" fill="#166534" font-size="11" font-weight="800">Provider Advisor loaded by default from live provider scan</text>
+    <text x="586" y="103" fill="#047857" font-size="9.5" font-weight="700">/dashboard/rightsizing?provider=oci</text>
 
-  <!-- ═══════════════════════════════════════════════════════
-       SCENE 2 — Deep FinOps Analytics
-       ═══════════════════════════════════════════════════════ -->
-  <g class="scene2">
-    <!-- Banner -->
-    <rect x="202" y="64" width="500" height="26" rx="9" fill="#eef2ff" filter="url(#shadow)"/>
-    <circle cx="220" cy="77" r="4.5" fill="#6d28d9"/>
-    <text x="232" y="81" fill="#4338ca" font-size="9.5" font-weight="700">Deep FinOps Analytics</text>
-    <text x="342" y="81" fill="#4338ca" font-size="9.5">maturity · attribution · commitment ROI · unit economics · GenAI narration</text>
+    <rect x="204" y="142" width="156" height="104" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="222" y="160" width="38" height="38" rx="10" fill="#dbeafe"/>
+    <text x="241" y="185" fill="#1d4ed8" font-size="22" font-weight="900" text-anchor="middle">111</text>
+    <text x="222" y="217" fill="#0f172a" font-size="12" font-weight="800">Advisor findings</text>
+    <text x="222" y="233" fill="#64748b" font-size="9.5">854 resources represented</text>
 
-    <!-- Maturity panel (left) -->
-    <rect x="202" y="100" width="322" height="392" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="222" y="122" fill="#0f172a" font-size="11.5" font-weight="700">FinOps Maturity Assessment</text>
-    <text x="222" y="136" fill="#94a3b8" font-size="8.5">CRAWL / WALK / RUN / OPTIMIZE · 7 weighted dimensions</text>
+    <rect x="378" y="142" width="156" height="104" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="396" y="160" width="38" height="38" rx="10" fill="#dcfce7"/>
+    <text x="415" y="185" fill="#166534" font-size="16" font-weight="900" text-anchor="middle">$</text>
+    <text x="396" y="217" fill="#0f172a" font-size="20" font-weight="900">$13.2K</text>
+    <text x="396" y="233" fill="#64748b" font-size="9.5">advisor savings per month</text>
 
-    <!-- Maturity level badge -->
-    <rect x="222" y="148" width="282" height="40" rx="10" fill="url(#walkPill)"/>
-    <text x="363" y="164" fill="#92400e" font-size="11" font-weight="800" text-anchor="middle">WALK</text>
-    <text x="363" y="181" fill="#78350f" font-size="9" text-anchor="middle">Overall score: 54 / 100 · next level: RUN (≥60)</text>
+    <rect x="552" y="142" width="156" height="104" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="570" y="160" width="38" height="38" rx="10" fill="#fee2e2"/>
+    <text x="589" y="185" fill="#dc2626" font-size="21" font-weight="900" text-anchor="middle">57</text>
+    <text x="570" y="217" fill="#0f172a" font-size="12" font-weight="800">Storage cleanup</text>
+    <text x="570" y="233" fill="#64748b" font-size="9.5">$5.8K/mo opportunity</text>
 
-    <!-- Progress bar toward RUN -->
-    <text x="222" y="204" fill="#64748b" font-size="8.5">Progress toward RUN</text>
-    <rect x="222" y="210" width="282" height="12" rx="6" fill="#f1f5f9"/>
-    <rect x="222" y="210" width="152" height="12" rx="6" fill="url(#maturityBar)"/>
-    <text x="382" y="221" fill="#16a34a" font-size="8" font-weight="700">54%</text>
+    <rect x="724" y="142" width="156" height="104" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <rect x="742" y="160" width="38" height="38" rx="10" fill="#fef3c7"/>
+    <text x="761" y="185" fill="#b45309" font-size="21" font-weight="900" text-anchor="middle">285</text>
+    <text x="742" y="217" fill="#0f172a" font-size="12" font-weight="800">Unattached volumes</text>
+    <text x="742" y="233" fill="#64748b" font-size="9.5">block, boot, disk cleanup</text>
 
-    <!-- Dimension scores -->
-    <text x="222" y="240" fill="#475569" font-size="9" font-weight="700">Dimension Scores</text>
-    <!-- each dim: label, score bar, value -->
-    <text x="222" y="257" fill="#64748b" font-size="9">Cost Visibility</text>
-    <rect x="316" y="246" width="158" height="10" rx="4" fill="#f1f5f9"/>
-    <rect x="316" y="246" width="111" height="10" rx="4" fill="#0ea5e9" fill-opacity=".7"/>
-    <text x="480" y="256" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">70</text>
-
-    <text x="222" y="273" fill="#64748b" font-size="9">Waste Reduction</text>
-    <rect x="316" y="262" width="158" height="10" rx="4" fill="#f1f5f9"/>
-    <rect x="316" y="262" width="79"  height="10" rx="4" fill="#f59e0b" fill-opacity=".8"/>
-    <text x="480" y="272" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">50</text>
-
-    <text x="222" y="289" fill="#64748b" font-size="9">Commitment Coverage</text>
-    <rect x="316" y="278" width="158" height="10" rx="4" fill="#f1f5f9"/>
-    <rect x="316" y="278" width="79"  height="10" rx="4" fill="#f59e0b" fill-opacity=".8"/>
-    <text x="480" y="288" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">50</text>
-
-    <text x="222" y="305" fill="#64748b" font-size="9">Anomaly Detection</text>
-    <rect x="316" y="294" width="158" height="10" rx="4" fill="#f1f5f9"/>
-    <rect x="316" y="294" width="111" height="10" rx="4" fill="#22c55e" fill-opacity=".7"/>
-    <text x="480" y="304" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">70</text>
-
-    <text x="222" y="321" fill="#64748b" font-size="9">Forecasting Quality</text>
-    <rect x="316" y="310" width="158" height="10" rx="4" fill="#f1f5f9"/>
-    <rect x="316" y="310" width="79"  height="10" rx="4" fill="#f59e0b" fill-opacity=".8"/>
-    <text x="480" y="320" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">50</text>
-
-    <text x="222" y="337" fill="#64748b" font-size="9">Automation Level</text>
-    <rect x="316" y="326" width="158" height="10" rx="4" fill="#f1f5f9"/>
-    <rect x="316" y="326" width="47"  height="10" rx="4" fill="#ef4444" fill-opacity=".6"/>
-    <text x="480" y="336" fill="#ef4444" font-size="9" font-weight="700" text-anchor="end">30</text>
-
-    <text x="222" y="353" fill="#64748b" font-size="9">Savings Capture</text>
-    <rect x="316" y="342" width="158" height="10" rx="4" fill="#f1f5f9"/>
-    <rect x="316" y="342" width="79"  height="10" rx="4" fill="#f59e0b" fill-opacity=".8"/>
-    <text x="480" y="352" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">50</text>
-
-    <!-- Priority actions -->
-    <text x="222" y="378" fill="#475569" font-size="9" font-weight="700">Priority actions to reach RUN</text>
-    <rect x="222" y="384" width="282" height="14" rx="5" fill="#fef3c7"/>
-    <text x="230" y="395" fill="#92400e" font-size="8.5">1. Improve Automation Level (score 30)</text>
-    <rect x="222" y="402" width="282" height="14" rx="5" fill="#fef3c7"/>
-    <text x="230" y="413" fill="#92400e" font-size="8.5">2. Improve Commitment Coverage (score 50)</text>
-    <rect x="222" y="420" width="282" height="14" rx="5" fill="#fef3c7"/>
-    <text x="230" y="431" fill="#92400e" font-size="8.5">3. Improve Forecasting Quality (score 50)</text>
-
-    <!-- GenAI narration bubble -->
-    <rect x="222" y="444" width="282" height="34" rx="10" fill="#eef2ff"/>
-    <circle cx="238" cy="461" r="6" fill="#6d28d9"/>
-    <text x="238" y="465" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle">AI</text>
-    <text x="252" y="456" fill="#4338ca" font-size="8.5" font-weight="700">OCI GenAI backend narration</text>
-    <text x="252" y="470" fill="#374151" font-size="8.5">Enable scheduler + RI coverage to advance to RUN.</text>
-
-    <!-- Attribution + Commitment panels (right) -->
-    <rect x="536" y="100" width="344" height="185" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="556" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Cost Attribution — Pareto 80/20</text>
-    <text x="556" y="136" fill="#94a3b8" font-size="8.5">/api/v1/analytics · HHI concentration · top provider cutoff</text>
-    <line x1="556" y1="144" x2="860" y2="144" stroke="#f1f5f9"/>
-
-    <!-- Pareto table -->
-    <text x="556" y="162" fill="#475569" font-size="8.5" font-weight="700"># PROVIDER</text>
-    <text x="692" y="162" fill="#475569" font-size="8.5" font-weight="700">SPEND</text>
-    <text x="752" y="162" fill="#475569" font-size="8.5" font-weight="700">%</text>
-    <text x="800" y="162" fill="#475569" font-size="8.5" font-weight="700">CUMUL.</text>
-
-    <text x="556" y="179" fill="#f97316" font-size="9" font-weight="700">1</text>
-    <text x="574" y="179" fill="#0f172a" font-size="9">AWS</text>
-    <text x="692" y="179" fill="#0f172a" font-size="9">$19,837</text>
-    <text x="752" y="179" fill="#ea580c" font-size="9" font-weight="700">42%</text>
-    <rect x="790" y="170" width="60" height="12" rx="4" fill="#dcfce7"/>
-    <text x="820" y="180" fill="#166534" font-size="8" text-anchor="middle">42%</text>
-
-    <text x="556" y="197" fill="#2563eb" font-size="9" font-weight="700">2</text>
-    <text x="574" y="197" fill="#0f172a" font-size="9">Azure</text>
-    <text x="692" y="197" fill="#0f172a" font-size="9">$13,224</text>
-    <text x="752" y="197" fill="#2563eb" font-size="9" font-weight="700">28%</text>
-    <rect x="790" y="188" width="60" height="12" rx="4" fill="#dbeafe"/>
-    <text x="820" y="198" fill="#1d4ed8" font-size="8" text-anchor="middle">70%</text>
-
-    <text x="556" y="215" fill="#64748b" font-size="9">3</text>
-    <text x="574" y="215" fill="#0f172a" font-size="9">GCP</text>
-    <text x="692" y="215" fill="#0f172a" font-size="9">$8,502</text>
-    <text x="752" y="215" fill="#15803d" font-size="9" font-weight="700">18%</text>
-    <rect x="790" y="206" width="60" height="12" rx="4" fill="#f8fafc"/>
-    <text x="820" y="216" fill="#64748b" font-size="8" text-anchor="middle">88%</text>
-
-    <text x="556" y="233" fill="#64748b" font-size="9">4</text>
-    <text x="574" y="233" fill="#0f172a" font-size="9">OCI</text>
-    <text x="692" y="233" fill="#0f172a" font-size="9">$5,667</text>
-    <text x="752" y="233" fill="#7c3aed" font-size="9" font-weight="700">12%</text>
-    <text x="820" y="233" fill="#64748b" font-size="8" text-anchor="middle">100%</text>
-
-    <rect x="556" y="250" width="284" height="20" rx="7" fill="#f0f9ff"/>
-    <text x="698" y="264" fill="#0369a1" font-size="8.5" font-weight="700" text-anchor="middle">Pareto cutoff: top 2 of 4 providers = 70% of spend</text>
-
-    <!-- Commitment Optimization panel -->
-    <rect x="536" y="297" width="344" height="195" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="556" y="319" fill="#0f172a" font-size="11.5" font-weight="700">Commitment Optimization ROI</text>
-    <text x="556" y="333" fill="#94a3b8" font-size="8.5">/api/v1/analytics · RI/SP at 50/65/80% coverage tiers</text>
-    <line x1="556" y1="341" x2="860" y2="341" stroke="#f1f5f9"/>
-
-    <!-- AWS tiers -->
-    <text x="556" y="358" fill="#f97316" font-size="9.5" font-weight="700">AWS</text>
-    <text x="596" y="358" fill="#64748b" font-size="8.5">current coverage 58%</text>
-    <rect x="720" y="348" width="120" height="16" rx="6" fill="#f0fdf4"/>
-    <text x="780" y="360" fill="#166534" font-size="8.5" font-weight="700" text-anchor="middle">65% tier → $8,740/yr</text>
-
-    <text x="556" y="380" fill="#2563eb" font-size="9.5" font-weight="700">Azure</text>
-    <text x="596" y="380" fill="#64748b" font-size="8.5">current coverage 42%</text>
-    <rect x="720" y="370" width="120" height="16" rx="6" fill="#f0fdf4"/>
-    <text x="780" y="382" fill="#166534" font-size="8.5" font-weight="700" text-anchor="middle">65% tier → $6,820/yr</text>
-
-    <text x="556" y="402" fill="#16a34a" font-size="9.5" font-weight="700">GCP</text>
-    <text x="596" y="402" fill="#64748b" font-size="8.5">current coverage 36%</text>
-    <rect x="720" y="392" width="120" height="16" rx="6" fill="#f0fdf4"/>
-    <text x="780" y="404" fill="#166534" font-size="8.5" font-weight="700" text-anchor="middle">65% tier → $3,100/yr</text>
-
-    <text x="556" y="424" fill="#7c3aed" font-size="9.5" font-weight="700">OCI</text>
-    <text x="596" y="424" fill="#64748b" font-size="8.5">current coverage 28%</text>
-    <rect x="720" y="414" width="120" height="16" rx="6" fill="#f0fdf4"/>
-    <text x="780" y="426" fill="#166534" font-size="8.5" font-weight="700" text-anchor="middle">65% tier → $1,340/yr</text>
-
-    <line x1="556" y1="440" x2="860" y2="440" stroke="#f1f5f9"/>
-    <rect x="556" y="448" width="284" height="28" rx="9" fill="#ecfdf5"/>
-    <text x="698" y="460" fill="#166534" font-size="9.5" font-weight="700" text-anchor="middle">Total annual savings potential at 65% tier</text>
-    <text x="698" y="475" fill="#166534" font-size="11" font-weight="800" text-anchor="middle">$20,000 / year</text>
+    <rect x="204" y="274" width="676" height="220" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="226" y="302" fill="#0f172a" font-size="13" font-weight="800">Provider-native findings table</text>
+    <text x="226" y="318" fill="#64748b" font-size="9.5">Live OCI rows replace the old empty panel.</text>
+    <line x1="226" y1="334" x2="858" y2="334" stroke="#e2e8f0"/>
+    <text x="226" y="356" fill="#64748b" font-size="8.8" font-weight="800">RECOMMENDATION</text>
+    <text x="548" y="356" fill="#64748b" font-size="8.8" font-weight="800">CATEGORY</text>
+    <text x="662" y="356" fill="#64748b" font-size="8.8" font-weight="800">SAVINGS</text>
+    <text x="790" y="356" fill="#64748b" font-size="8.8" font-weight="800">STATUS</text>
+    <rect x="226" y="370" width="632" height="36" rx="9" fill="#f8fafc"/>
+    <text x="240" y="391" fill="#0f172a" font-size="10.5" font-weight="800">Right-size flexible shapes using observed utilization</text>
+    <text x="240" y="402" fill="#64748b" font-size="8.2">live provider recommendations</text>
+    <rect x="548" y="379" width="70" height="18" rx="6" fill="#dbeafe"/><text x="583" y="392" fill="#1d4ed8" font-size="8.5" font-weight="800" text-anchor="middle">Compute</text>
+    <text x="662" y="392" fill="#166534" font-size="10.5" font-weight="900">$7,270</text>
+    <rect x="790" y="379" width="54" height="18" rx="6" fill="#dcfce7"/><text x="817" y="392" fill="#166534" font-size="8.5" font-weight="800" text-anchor="middle">Active</text>
+    <rect x="226" y="416" width="632" height="36" rx="9" fill="#f8fafc"/>
+    <text x="240" y="437" fill="#0f172a" font-size="10.5" font-weight="800">Delete unattached storage resources</text>
+    <text x="240" y="448" fill="#64748b" font-size="8.2">live provider recommendations</text>
+    <rect x="548" y="425" width="70" height="18" rx="6" fill="#fee2e2"/><text x="583" y="438" fill="#b91c1c" font-size="8.5" font-weight="800" text-anchor="middle">Storage</text>
+    <text x="662" y="438" fill="#166534" font-size="10.5" font-weight="900">$2,644</text>
+    <rect x="790" y="425" width="54" height="18" rx="6" fill="#dcfce7"/><text x="817" y="438" fill="#166534" font-size="8.5" font-weight="800" text-anchor="middle">Active</text>
+    <rect x="226" y="462" width="632" height="20" rx="7" fill="#eff6ff"/>
+    <text x="542" y="476" fill="#1d4ed8" font-size="9" font-weight="800" text-anchor="middle">AWS, Azure, and GCP populate here after credentials are configured</text>
   </g>
 
+  <g class="screen3">
+    <rect x="204" y="78" width="676" height="42" rx="12" fill="#eff6ff" stroke="#bfdbfe" filter="url(#smallShadow)"/>
+    <text x="224" y="103" fill="#1e40af" font-size="11" font-weight="800">Action Ledger is now lifecycle-first: planned, realized, variance, owner, and evidence.</text>
+    <circle class="flow1" cx="780" cy="99" r="4" fill="#2563eb"/>
+    <circle class="flow2" cx="806" cy="99" r="4" fill="#22c55e"/>
+    <circle class="flow3" cx="832" cy="99" r="4" fill="#f59e0b"/>
 
-  <!-- ═══════════════════════════════════════════════════════
-       SCENE 3 — Forecasting + GenAI Narration
-       ═══════════════════════════════════════════════════════ -->
-  <g class="scene3">
-    <!-- Banner -->
-    <rect x="202" y="64" width="310" height="26" rx="9" fill="#ede9fe" filter="url(#shadow)"/>
-    <circle cx="220" cy="77" r="4.5" fill="#7c3aed"/>
-    <text x="232" y="81" fill="#6d28d9" font-size="9.5" font-weight="700">OCI GenAI backend narration active</text>
-    <text x="428" y="81" fill="#6d28d9" font-size="9.5">uk-london-1</text>
+    <rect x="204" y="144" width="158" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="224" y="169" fill="#64748b" font-size="8.5" font-weight="800">LEDGER ACTIONS</text>
+    <text x="224" y="201" fill="#0f172a" font-size="31" font-weight="900">150</text>
+    <text x="224" y="224" fill="#1d4ed8" font-size="10" font-weight="800">open execution queue</text>
+    <rect x="384" y="144" width="158" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="404" y="169" fill="#64748b" font-size="8.5" font-weight="800">PLANNED SAVINGS</text>
+    <text x="404" y="201" fill="#0f172a" font-size="26" font-weight="900">$284.4K</text>
+    <text x="404" y="224" fill="#166534" font-size="10" font-weight="800">per month</text>
+    <rect x="564" y="144" width="158" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="584" y="169" fill="#64748b" font-size="8.5" font-weight="800">REALIZED</text>
+    <text x="584" y="201" fill="#0f172a" font-size="26" font-weight="900">$0.00</text>
+    <text x="584" y="224" fill="#92400e" font-size="10" font-weight="800">awaiting completion</text>
+    <rect x="744" y="144" width="136" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="764" y="169" fill="#64748b" font-size="8.5" font-weight="800">VARIANCE</text>
+    <text x="764" y="201" fill="#0f172a" font-size="25" font-weight="900">-$284K</text>
+    <text x="764" y="224" fill="#b45309" font-size="10" font-weight="800">planned less realized</text>
 
-    <!-- Forecast chart panel -->
-    <rect x="202" y="100" width="432" height="392" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="222" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Forecast Fan — p10/p50/p90/p95</text>
-    <text x="222" y="136" fill="#94a3b8" font-size="8.5">Deterministic Monte Carlo · budget breach probability · cost velocity</text>
-
-    <!-- Velocity badge -->
-    <rect x="506" y="110" width="108" height="22" rx="7" fill="#eff6ff"/>
-    <text x="560" y="125" fill="#1d4ed8" font-size="9" font-weight="700" text-anchor="middle">velocity +3.2% MoM</text>
-
-    <!-- Grid lines -->
-    <line x1="242" y1="192" x2="610" y2="192" stroke="#f1f5f9"/>
-    <line x1="242" y1="232" x2="610" y2="232" stroke="#f1f5f9"/>
-    <line x1="242" y1="272" x2="610" y2="272" stroke="#f1f5f9"/>
-    <line x1="242" y1="312" x2="610" y2="312" stroke="#f1f5f9"/>
-    <line x1="242" y1="352" x2="610" y2="352" stroke="#f1f5f9"/>
-
-    <text x="214" y="196" fill="#94a3b8" font-size="8.5">$68k</text>
-    <text x="214" y="236" fill="#94a3b8" font-size="8.5">$63k</text>
-    <text x="214" y="276" fill="#94a3b8" font-size="8.5">$58k</text>
-    <text x="214" y="316" fill="#94a3b8" font-size="8.5">$53k</text>
-    <text x="214" y="356" fill="#94a3b8" font-size="8.5">$48k</text>
-
-    <!-- P95 band (new) -->
-    <path d="M262,340 C316,322 350,298 398,280 C444,262 484,238 532,218 C556,208 575,200 602,194 L602,362 L262,362 Z" fill="url(#p95Band)"/>
-    <!-- P90/P10 band -->
-    <path d="M262,336 C316,318 350,294 398,274 C444,256 482,234 532,212 C556,202 575,194 602,186 L602,362 L262,362 Z" fill="url(#forecastBand)"/>
-    <!-- P50 baseline -->
-    <path d="M262,324 C316,308 350,284 398,262 C442,244 482,222 532,200 C556,190 575,182 602,174" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="420" stroke-dashoffset="420">
-      <animate attributeName="stroke-dashoffset" from="420" to="0" dur="1.6s" repeatCount="indefinite"/>
-    </path>
-    <!-- P10 line -->
-    <path d="M262,308 C316,294 350,272 398,252 C444,234 484,214 532,196 C556,186 575,178 602,168" fill="none" stroke="#c4b5fd" stroke-width="1.5" stroke-dasharray="6 5"/>
-    <!-- P95 line (new) -->
-    <path d="M262,344 C316,328 350,308 398,292 C444,276 484,258 532,242 C556,236 575,228 602,220" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 4"/>
-
-    <!-- Budget line -->
-    <line x1="242" y1="252" x2="610" y2="252" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="8 4"/>
-    <text x="612" y="256" fill="#d97706" font-size="8" font-weight="700">BUDGET $59k</text>
-
-    <!-- Live dot -->
-    <circle cx="532" cy="200" r="5" fill="#7c3aed" class="pulse"/>
-    <rect x="498" y="166" width="96" height="24" rx="8" fill="#7c3aed"/>
-    <text x="546" y="182" fill="#ffffff" font-size="9.5" font-weight="700" text-anchor="middle">P50 $55.8k</text>
-
-    <!-- Breach probability badge -->
-    <rect x="430" y="230" width="150" height="18" rx="6" fill="#fff7ed"/>
-    <text x="505" y="242" fill="#c2410c" font-size="8.5" font-weight="700" text-anchor="middle">breach prob: 34% in Oct</text>
-
-    <!-- Month labels -->
-    <text x="262" y="378" fill="#94a3b8" font-size="9" text-anchor="middle">May</text>
-    <text x="330" y="378" fill="#94a3b8" font-size="9" text-anchor="middle">Jun</text>
-    <text x="398" y="378" fill="#94a3b8" font-size="9" text-anchor="middle">Jul</text>
-    <text x="466" y="378" fill="#94a3b8" font-size="9" text-anchor="middle">Aug</text>
-    <text x="534" y="378" fill="#94a3b8" font-size="9" text-anchor="middle">Sep</text>
-    <text x="602" y="378" fill="#7c3aed" font-size="9" font-weight="700" text-anchor="middle">Oct</text>
-
-    <!-- Legend -->
-    <line x1="242" y1="396" x2="264" y2="396" stroke="#7c3aed" stroke-width="2.5"/>
-    <text x="268" y="400" fill="#64748b" font-size="8.5">P50</text>
-    <line x1="298" y1="396" x2="320" y2="396" stroke="#c4b5fd" stroke-width="1.5" stroke-dasharray="4 3"/>
-    <text x="324" y="400" fill="#64748b" font-size="8.5">P10</text>
-    <line x1="354" y1="396" x2="376" y2="396" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 3"/>
-    <text x="380" y="400" fill="#ef4444" font-size="8.5">P95 (new)</text>
-    <line x1="434" y1="396" x2="456" y2="396" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6 3"/>
-    <text x="460" y="400" fill="#d97706" font-size="8.5">Budget</text>
-
-    <!-- Scenario pills -->
-    <rect x="222" y="408" width="96" height="22" rx="8" fill="#eff6ff"/>
-    <text x="270" y="423" fill="#1d4ed8" font-size="9" font-weight="700" text-anchor="middle">baseline</text>
-    <rect x="326" y="408" width="116" height="22" rx="8" fill="#f5f3ff"/>
-    <text x="384" y="423" fill="#6d28d9" font-size="9" font-weight="700" text-anchor="middle">p10 / p50 / p90</text>
-    <rect x="450" y="408" width="154" height="22" rx="8" fill="#fefce8"/>
-    <text x="527" y="423" fill="#854d0e" font-size="9" font-weight="700" text-anchor="middle">safe budget 95%: $62.4k</text>
-
-    <!-- Backtesting badge -->
-    <rect x="222" y="438" width="400" height="38" rx="10" fill="#f8fafc"/>
-    <text x="242" y="452" fill="#475569" font-size="9" font-weight="700">Backtesting  (holdout 3mo)</text>
-    <text x="400" y="452" fill="#64748b" font-size="9">MAPE: 8.4%</text>
-    <text x="476" y="452" fill="#64748b" font-size="9">wMAPE: 7.9%</text>
-    <text x="242" y="468" fill="#94a3b8" font-size="8.5">History source: cost_snapshots (12 months) · regression + smoothing blend</text>
-
-    <!-- GenAI narration panel (right) -->
-    <rect x="648" y="100" width="232" height="392" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="668" y="122" fill="#0f172a" font-size="11.5" font-weight="700">GenAI Spend Narrative</text>
-    <text x="668" y="136" fill="#94a3b8" font-size="8.5">Backend OCI GenAI · /api/v1/analytics + genai_narrative field</text>
-    <line x1="668" y1="144" x2="860" y2="144" stroke="#f1f5f9"/>
-
-    <!-- Prompt box -->
-    <rect x="668" y="152" width="192" height="54" rx="9" fill="#f8fafc"/>
-    <text x="682" y="168" fill="#64748b" font-size="8.5" font-weight="700">PROMPT SENT</text>
-    <text x="682" y="184" fill="#334155" font-size="8.5">Summarize cloud cost metrics</text>
-    <text x="682" y="196" fill="#334155" font-size="8.5">for finance. Monthly $47,230</text>
-    <text x="682" y="208" fill="#334155" font-size="8.5">+3.2% MoM. Waste $7,540.</text>
-
-    <!-- GenAI response -->
-    <rect x="668" y="216" width="192" height="130" rx="9" fill="#eef2ff"/>
-    <circle cx="684" cy="232" r="7" fill="#6d28d9"/>
-    <text x="684" y="236" fill="#ffffff" font-size="8" font-weight="800" text-anchor="middle">AI</text>
-    <text x="698" y="232" fill="#4338ca" font-size="8.5" font-weight="700">OCI GenAI · uk-london-1</text>
-    <text x="682" y="250" fill="#1f2937" font-size="9">Spend rose 3.2% MoM driven</text>
-    <text x="682" y="264" fill="#1f2937" font-size="9">by AWS compute expansion.</text>
-    <text x="682" y="278" fill="#1f2937" font-size="9">AWS accounts for 42% of</text>
-    <text x="682" y="292" fill="#1f2937" font-size="9">total cost. GCP commitment</text>
-    <text x="682" y="306" fill="#1f2937" font-size="9">is the highest ROI action at</text>
-    <text x="682" y="320" fill="#1f2937" font-size="9">$3,100/year with 2-month</text>
-    <text x="682" y="334" fill="#1f2937" font-size="9">payback on 1yr partial RI.</text>
-
-    <!-- Generating indicator -->
-    <rect x="668" y="358" width="192" height="36" rx="9" fill="#f8fafc"/>
-    <text x="686" y="378" fill="#64748b" font-size="9">Generating next brief</text>
-    <circle class="dot1" cx="750" cy="375" r="3" fill="#7c3aed"/>
-    <circle class="dot2" cx="762" cy="375" r="3" fill="#7c3aed"/>
-    <circle class="dot3" cx="774" cy="375" r="3" fill="#7c3aed"/>
-
-    <!-- Analysis type badges -->
-    <text x="668" y="416" fill="#475569" font-size="8.5" font-weight="700">Available GenAI analysis types</text>
-    <rect x="668" y="422" width="60"  height="16" rx="5" fill="#eff6ff"/>
-    <text x="698" y="433" fill="#1d4ed8" font-size="7.5" text-anchor="middle">spend</text>
-    <rect x="734" y="422" width="58"  height="16" rx="5" fill="#fef3c7"/>
-    <text x="763" y="433" fill="#92400e" font-size="7.5" text-anchor="middle">anomaly</text>
-    <rect x="668" y="444" width="72"  height="16" rx="5" fill="#f0fdf4"/>
-    <text x="704" y="455" fill="#166534" font-size="7.5" text-anchor="middle">optimization</text>
-    <rect x="746" y="444" width="56"  height="16" rx="5" fill="#f5f3ff"/>
-    <text x="774" y="455" fill="#6d28d9" font-size="7.5" text-anchor="middle">maturity</text>
-    <rect x="668" y="466" width="72"  height="16" rx="5" fill="#fff7ed"/>
-    <text x="704" y="477" fill="#c2410c" font-size="7.5" text-anchor="middle">budget_risk</text>
-    <text x="668" y="492" fill="#94a3b8" font-size="8">GET /api/v1/analytics · POST /api/ai/chat</text>
+    <rect x="204" y="274" width="676" height="218" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="226" y="302" fill="#0f172a" font-size="13" font-weight="800">Execution ledger rows</text>
+    <line x1="226" y1="318" x2="858" y2="318" stroke="#e2e8f0"/>
+    <text x="226" y="340" fill="#64748b" font-size="8.7" font-weight="800">ACTION</text>
+    <text x="508" y="340" fill="#64748b" font-size="8.7" font-weight="800">STATUS</text>
+    <text x="626" y="340" fill="#64748b" font-size="8.7" font-weight="800">OWNER</text>
+    <text x="748" y="340" fill="#64748b" font-size="8.7" font-weight="800">PLANNED</text>
+    <rect x="226" y="354" width="632" height="36" rx="9" fill="#f8fafc"/>
+    <text x="240" y="375" fill="#0f172a" font-size="10.2" font-weight="800">OCI Compute service opportunity</text>
+    <text x="240" y="386" fill="#64748b" font-size="8.2">source: live provider recommendations</text>
+    <rect x="508" y="363" width="58" height="18" rx="6" fill="#fef3c7"/><text x="537" y="376" fill="#92400e" font-size="8.5" font-weight="800" text-anchor="middle">open</text>
+    <text x="626" y="376" fill="#475569" font-size="9.5">Unassigned</text>
+    <text x="748" y="376" fill="#166534" font-size="10.5" font-weight="900">$7,270</text>
+    <rect x="226" y="402" width="632" height="36" rx="9" fill="#f8fafc"/>
+    <text x="240" y="423" fill="#0f172a" font-size="10.2" font-weight="800">Storage cleanup finding</text>
+    <text x="240" y="434" fill="#64748b" font-size="8.2">source: lifecycle ledger</text>
+    <rect x="508" y="411" width="58" height="18" rx="6" fill="#dbeafe"/><text x="537" y="424" fill="#1d4ed8" font-size="8.5" font-weight="800" text-anchor="middle">planned</text>
+    <text x="626" y="424" fill="#475569" font-size="9.5">Unassigned</text>
+    <text x="748" y="424" fill="#166534" font-size="10.5" font-weight="900">$2,644</text>
+    <rect x="226" y="454" width="632" height="20" rx="7" fill="#ecfdf5"/>
+    <text x="542" y="468" fill="#166534" font-size="9" font-weight="800" text-anchor="middle">Empty VM-candidate widget removed - ledger stays focused on lifecycle data</text>
   </g>
 
+  <g class="screen4">
+    <rect x="204" y="78" width="676" height="42" rx="12" fill="#fff7ed" stroke="#fed7aa" filter="url(#smallShadow)"/>
+    <text x="224" y="103" fill="#92400e" font-size="11" font-weight="800">Historical and provider trend views distinguish real OCI data from credential-pending providers.</text>
+    <rect x="204" y="144" width="326" height="140" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="226" y="171" fill="#0f172a" font-size="13" font-weight="800">Historical trends</text>
+    <text x="226" y="189" fill="#64748b" font-size="9.5">Provider-aware current state</text>
+    <line x1="226" y1="214" x2="500" y2="214" stroke="#e2e8f0"/>
+    <text x="226" y="238" fill="#475569" font-size="10">OCI</text><rect class="barGrow" x="298" y="226" width="172" height="18" rx="7" fill="url(#greenGrad)"/><text x="384" y="239" fill="#fff" font-size="8.5" font-weight="800" text-anchor="middle">live trend rows</text>
+    <text x="226" y="264" fill="#475569" font-size="10">AWS/Azure/GCP</text><rect x="342" y="252" width="128" height="18" rx="7" fill="#e0f2fe"/><text x="406" y="265" fill="#0369a1" font-size="8.5" font-weight="800" text-anchor="middle">clean empty states</text>
 
-  <!-- ═══════════════════════════════════════════════════════
-       SCENE 4 — Anomaly Z-Score Scoring + Operations
-       ═══════════════════════════════════════════════════════ -->
-  <g class="scene4">
-    <!-- Banner -->
-    <rect x="202" y="64" width="350" height="26" rx="9" fill="#fff7ed" filter="url(#shadow)"/>
-    <circle cx="220" cy="77" r="4.5" fill="#f97316"/>
-    <text x="232" y="81" fill="#c2410c" font-size="9.5" font-weight="700">Anomaly z-score scoring</text>
-    <text x="348" y="81" fill="#c2410c" font-size="9.5">statistical severity · alert ops policy · scheduler controls</text>
+    <rect x="554" y="144" width="326" height="140" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="576" y="171" fill="#0f172a" font-size="13" font-weight="800">Lifecycle automation</text>
+    <text x="576" y="189" fill="#64748b" font-size="9.5">Hot DB plus archive retention path</text>
+    <rect x="576" y="216" width="92" height="42" rx="10" fill="#eff6ff"/><text x="622" y="239" fill="#1d4ed8" font-size="10" font-weight="900" text-anchor="middle">hot DB</text><text x="622" y="252" fill="#64748b" font-size="8" text-anchor="middle">3 months</text>
+    <rect x="694" y="216" width="92" height="42" rx="10" fill="#ecfdf5"/><text x="740" y="239" fill="#166534" font-size="10" font-weight="900" text-anchor="middle">archive</text><text x="740" y="252" fill="#64748b" font-size="8" text-anchor="middle">365 days</text>
+    <path d="M668 237 C678 237 684 237 694 237" stroke="#94a3b8" stroke-width="2" fill="none"/>
+    <circle class="flow1" cx="674" cy="237" r="3" fill="#2563eb"/>
 
-    <!-- Anomaly scoring panel -->
-    <rect x="202" y="100" width="420" height="392" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="222" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Anomaly Z-Score Severity Ranking</text>
-    <text x="222" y="136" fill="#94a3b8" font-size="8.5">Statistical outlier detection · impact % of monthly spend · total financial exposure</text>
-    <line x1="222" y1="144" x2="602" y2="144" stroke="#f1f5f9"/>
-
-    <!-- Header -->
-    <text x="222" y="160" fill="#475569" font-size="8.5" font-weight="700">SEVERITY</text>
-    <text x="300" y="160" fill="#475569" font-size="8.5" font-weight="700">SERVICE</text>
-    <text x="450" y="160" fill="#475569" font-size="8.5" font-weight="700">Δ COST</text>
-    <text x="516" y="160" fill="#475569" font-size="8.5" font-weight="700">Z</text>
-    <text x="548" y="160" fill="#475569" font-size="8.5" font-weight="700">IMPACT</text>
-
-    <!-- CRITICAL row -->
-    <rect x="222" y="166" width="398" height="30" rx="7" fill="#fef2f2"/>
-    <rect x="222" y="166" width="4"   height="30" rx="2" fill="#ef4444"/>
-    <rect x="228" y="172" width="52" height="16" rx="5" fill="#fca5a5"/>
-    <text x="254" y="184" fill="#7f1d1d" font-size="8.5" font-weight="700" text-anchor="middle">CRITICAL</text>
-    <text x="300" y="184" fill="#0f172a" font-size="9">AWS / EC2</text>
-    <text x="450" y="184" fill="#ef4444" font-size="9" font-weight="700">+$4,200</text>
-    <text x="516" y="184" fill="#ef4444" font-size="9" font-weight="700">3.8</text>
-    <rect x="538" y="170" width="72" height="16" rx="5" fill="#fca5a5"/>
-    <text x="574" y="182" fill="#7f1d1d" font-size="8.5" font-weight="700" text-anchor="middle">8.9% spend</text>
-
-    <!-- HIGH row -->
-    <rect x="222" y="202" width="398" height="30" rx="7" fill="#fff7ed"/>
-    <rect x="222" y="202" width="4"   height="30" rx="2" fill="#f97316"/>
-    <rect x="228" y="208" width="40" height="16" rx="5" fill="#fed7aa"/>
-    <text x="248" y="220" fill="#7c2d12" font-size="8.5" font-weight="700" text-anchor="middle">HIGH</text>
-    <text x="300" y="220" fill="#0f172a" font-size="9">Azure / Networking</text>
-    <text x="450" y="220" fill="#f97316" font-size="9" font-weight="700">+$2,100</text>
-    <text x="516" y="220" fill="#f97316" font-size="9" font-weight="700">2.4</text>
-    <rect x="538" y="206" width="72" height="16" rx="5" fill="#fed7aa"/>
-    <text x="574" y="218" fill="#7c2d12" font-size="8.5" font-weight="700" text-anchor="middle">4.4% spend</text>
-
-    <!-- HIGH row 2 -->
-    <rect x="222" y="238" width="398" height="30" rx="7" fill="#fff7ed"/>
-    <rect x="222" y="238" width="4"   height="30" rx="2" fill="#f97316"/>
-    <rect x="228" y="244" width="40" height="16" rx="5" fill="#fed7aa"/>
-    <text x="248" y="256" fill="#7c2d12" font-size="8.5" font-weight="700" text-anchor="middle">HIGH</text>
-    <text x="300" y="256" fill="#0f172a" font-size="9">GCP / BigQuery</text>
-    <text x="450" y="256" fill="#f97316" font-size="9" font-weight="700">+$1,840</text>
-    <text x="516" y="256" fill="#f97316" font-size="9" font-weight="700">2.1</text>
-    <rect x="538" y="242" width="72" height="16" rx="5" fill="#fed7aa"/>
-    <text x="574" y="254" fill="#7c2d12" font-size="8.5" font-weight="700" text-anchor="middle">3.9% spend</text>
-
-    <!-- MEDIUM rows -->
-    <rect x="222" y="274" width="398" height="28" rx="7" fill="#fffbeb"/>
-    <rect x="222" y="274" width="4"   height="28" rx="2" fill="#f59e0b"/>
-    <rect x="228" y="279" width="52" height="16" rx="5" fill="#fde68a"/>
-    <text x="254" y="291" fill="#713f12" font-size="8.5" font-weight="700" text-anchor="middle">MEDIUM</text>
-    <text x="300" y="291" fill="#0f172a" font-size="9">AWS / Lambda</text>
-    <text x="450" y="291" fill="#f59e0b" font-size="9" font-weight="700">+$900</text>
-    <text x="516" y="291" fill="#f59e0b" font-size="9" font-weight="700">1.3</text>
-    <text x="574" y="291" fill="#92400e" font-size="8.5">1.9%</text>
-
-    <rect x="222" y="308" width="398" height="28" rx="7" fill="#fffbeb"/>
-    <rect x="222" y="308" width="4"   height="28" rx="2" fill="#f59e0b"/>
-    <rect x="228" y="313" width="52" height="16" rx="5" fill="#fde68a"/>
-    <text x="254" y="325" fill="#713f12" font-size="8.5" font-weight="700" text-anchor="middle">MEDIUM</text>
-    <text x="300" y="325" fill="#0f172a" font-size="9">OCI / Object Storage</text>
-    <text x="450" y="325" fill="#f59e0b" font-size="9" font-weight="700">+$620</text>
-    <text x="516" y="325" fill="#f59e0b" font-size="9" font-weight="700">1.1</text>
-    <text x="574" y="325" fill="#92400e" font-size="8.5">1.3%</text>
-
-    <!-- Summary totals -->
-    <line x1="222" y1="344" x2="602" y2="344" stroke="#e2e8f0"/>
-    <rect x="222" y="352" width="398" height="26" rx="8" fill="#f8fafc"/>
-    <text x="232" y="368" fill="#475569" font-size="9">Total financial impact</text>
-    <text x="480" y="368" fill="#ef4444" font-size="11" font-weight="800" text-anchor="end">$9,660</text>
-    <text x="494" y="368" fill="#64748b" font-size="8.5">20.4% spend</text>
-
-    <!-- GenAI anomaly brief -->
-    <rect x="222" y="388" width="398" height="50" rx="10" fill="#eef2ff"/>
-    <circle cx="238" cy="413" r="7" fill="#6d28d9"/>
-    <text x="238" y="417" fill="#ffffff" font-size="8" font-weight="800" text-anchor="middle">AI</text>
-    <text x="254" y="406" fill="#4338ca" font-size="8.5" font-weight="700">GenAI anomaly explanation</text>
-    <text x="254" y="420" fill="#374151" font-size="8.5">AWS EC2 spike likely from autoscale event or new instance type migration.</text>
-    <text x="254" y="434" fill="#374151" font-size="8.5">Check reserved instance expiry and compare to last 3 scan diffs.</text>
-
-    <!-- Operations panel (right) -->
-    <rect x="634" y="100" width="246" height="392" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="654" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Operations + Admin Diagnostics</text>
-    <text x="654" y="136" fill="#94a3b8" font-size="8.5">history · diff · exports · alert ops policy · scheduler policy</text>
-    <line x1="654" y1="144" x2="860" y2="144" stroke="#f1f5f9"/>
-
-    <!-- Current scan progress -->
-    <text x="654" y="162" fill="#0f172a" font-size="10" font-weight="700">Current Scan</text>
-    <rect x="654" y="168" width="200" height="16" rx="6" fill="#e0f2fe"/>
-    <rect x="654" y="168" width="0"   height="16" rx="6" fill="url(#opsProgress)">
-      <animate attributeName="width" values="30;130;200;180;200" dur="3s" repeatCount="indefinite"/>
-    </rect>
-    <rect class="scanSweep" x="654" y="168" width="44" height="16" rx="6" fill="#ffffff" fill-opacity=".35"/>
-    <text x="654" y="198" fill="#0f766e" font-size="8.5">validate → collect → diff → alert → export</text>
-
-    <!-- Stats row -->
-    <rect x="654" y="208" width="92" height="42" rx="8" fill="#f8fafc"/>
-    <text x="700" y="226" fill="#64748b" font-size="8.5" text-anchor="middle">SCANS</text>
-    <text x="700" y="244" fill="#0f172a" font-size="18" font-weight="800" text-anchor="middle">12</text>
-
-    <rect x="758" y="208" width="92" height="42" rx="8" fill="#fffbeb"/>
-    <text x="804" y="226" fill="#64748b" font-size="8.5" text-anchor="middle">ALERTS</text>
-    <text x="804" y="244" fill="#f59e0b" font-size="18" font-weight="800" text-anchor="middle">3</text>
-
-    <line x1="654" y1="260" x2="860" y2="260" stroke="#f1f5f9"/>
-
-    <!-- Recent scan rows -->
-    <text x="654" y="276" fill="#475569" font-size="8.5" font-weight="700">Recent runs</text>
-    <text x="654" y="294" fill="#64748b" font-size="8.5" class="mono">scan_2026_04_17_0904</text>
-    <rect x="654" y="298" width="58" height="14" rx="5" fill="#dcfce7"/>
-    <text x="683" y="309" fill="#166534" font-size="8" font-weight="700" text-anchor="middle">complete</text>
-    <text x="724" y="309" fill="#1d4ed8" font-size="8.5">+$1.8k AWS</text>
-    <rect x="782" y="298" width="72" height="14" rx="5" fill="#eff6ff"/>
-    <text x="818" y="309" fill="#1d4ed8" font-size="8" text-anchor="middle">diff.csv ready</text>
-
-    <text x="654" y="326" fill="#64748b" font-size="8.5" class="mono">scan_2026_04_16_1702</text>
-    <rect x="654" y="330" width="58" height="14" rx="5" fill="#dcfce7"/>
-    <text x="683" y="341" fill="#166534" font-size="8" font-weight="700" text-anchor="middle">complete</text>
-    <text x="724" y="341" fill="#16a34a" font-size="8.5">-$0.9k GCP</text>
-    <rect x="782" y="330" width="72" height="14" rx="5" fill="#eff6ff"/>
-    <text x="818" y="341" fill="#1d4ed8" font-size="8" text-anchor="middle">diff.csv ready</text>
-
-    <line x1="654" y1="356" x2="860" y2="356" stroke="#f1f5f9"/>
-
-    <!-- Alert stream -->
-    <text x="654" y="372" fill="#475569" font-size="8.5" font-weight="700">Alert stream</text>
-    <rect x="654" y="378" width="200" height="38" rx="8" fill="#fffbeb"/>
-    <text x="664" y="392" fill="#78350f" font-size="8.5" font-weight="700">Azure network +11.6% vs prev scan</text>
-    <text x="664" y="406" fill="#a16207" font-size="8">ACK + Reactivate · escalation in 40m (owner → admin)</text>
-    <rect x="800" y="382" width="44" height="16" rx="6" fill="#fed7aa"/>
-    <text x="822" y="394" fill="#7c2d12" font-size="8" font-weight="700" text-anchor="middle">ACK</text>
-
-    <rect x="654" y="418" width="200" height="22" rx="8" fill="#ecfeff"/>
-    <text x="664" y="432" fill="#0f766e" font-size="8" font-weight="700">Exec summary: open 3 · critical 1 · avg ack 1h42m</text>
-
-    <rect x="654" y="444" width="200" height="22" rx="8" fill="#eef2ff"/>
-    <text x="664" y="458" fill="#4338ca" font-size="8" font-weight="700">Admin diagnostics: queue 0 · retries healthy · stale scans 0</text>
-
-    <line x1="654" y1="472" x2="860" y2="472" stroke="#f1f5f9"/>
-    <text x="654" y="484" fill="#475569" font-size="8.5" font-weight="700">Policy controls</text>
-    <text x="654" y="492" fill="#64748b" font-size="7.5">/api/v1/alerts/ops-policy · /api/v1/scanning/scheduler/policy · /api/v1/admin/diagnostics</text>
+    <rect x="204" y="314" width="676" height="178" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="226" y="342" fill="#0f172a" font-size="13" font-weight="800">What changed in the product surface</text>
+    <line x1="226" y1="358" x2="858" y2="358" stroke="#e2e8f0"/>
+    <rect x="226" y="376" width="190" height="78" rx="12" fill="#f0fdf4"/>
+    <text x="246" y="401" fill="#166534" font-size="11" font-weight="900">Provider Advisor</text>
+    <text x="246" y="419" fill="#475569" font-size="9.5">loads live OCI findings</text>
+    <text x="246" y="435" fill="#475569" font-size="9.5">explains unconfigured providers</text>
+    <rect x="454" y="376" width="190" height="78" rx="12" fill="#eff6ff"/>
+    <text x="474" y="401" fill="#1d4ed8" font-size="11" font-weight="900">Action Ledger</text>
+    <text x="474" y="419" fill="#475569" font-size="9.5">removed empty VM widget</text>
+    <text x="474" y="435" fill="#475569" font-size="9.5">tracks lifecycle variance</text>
+    <rect x="682" y="376" width="176" height="78" rx="12" fill="#fff7ed"/>
+    <text x="702" y="401" fill="#92400e" font-size="11" font-weight="900">Current SVG</text>
+    <text x="702" y="419" fill="#475569" font-size="9.5">no demo state labels</text>
+    <text x="702" y="435" fill="#475569" font-size="9.5">matches remote VM data</text>
   </g>
-
-  <!-- ═══════════════════════════════════════════════════════
-      SCENE 5 - FinOps Intelligence: Virtual Tags · Optimization · Scorecards · Inventory · Kubernetes
-       ═══════════════════════════════════════════════════════ -->
-  <g class="scene5">
-    <!-- Banner -->
-    <rect x="202" y="64" width="560" height="26" rx="9" fill="#f0fdf4" filter="url(#shadow)"/>
-    <circle cx="220" cy="77" r="4.5" fill="#10b981"/>
-    <text x="232" y="81" fill="#065f46" font-size="9.5" font-weight="700">FinOps Intelligence</text>
-    <text x="336" y="81" fill="#065f46" font-size="9.5">Virtual Tags · Optimization · Scorecards · Inventory · Kubernetes</text>
-
-    <!-- ── Virtual Tag Engine (left top) ─────────────────────── -->
-    <rect x="202" y="100" width="306" height="200" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="222" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Virtual Tag Engine</text>
-    <text x="222" y="136" fill="#94a3b8" font-size="8.5">Rule builder · AND-combined conditions · dry-run preview</text>
-    <rect x="434" y="106" width="64" height="22" rx="8" fill="#f0fdf4"/>
-    <text x="466" y="121" fill="#166534" font-size="11" font-weight="800" text-anchor="middle">78%</text>
-    <line x1="222" y1="144" x2="488" y2="144" stroke="#f1f5f9"/>
-    <text x="222" y="158" fill="#475569" font-size="8" font-weight="700">PRI</text>
-    <text x="252" y="158" fill="#475569" font-size="8" font-weight="700">TAG KEY=VALUE</text>
-    <text x="368" y="158" fill="#475569" font-size="8" font-weight="700">MATCH</text>
-    <text x="458" y="158" fill="#475569" font-size="8" font-weight="700">ON</text>
-    <!-- Rule 1 -->
-    <rect x="222" y="163" width="276" height="26" rx="7" fill="#f0fdf4"/>
-    <rect x="222" y="163" width="3"   height="26" rx="2" fill="#10b981"/>
-    <text x="234" y="179" fill="#0f172a" font-size="9" font-weight="700">300</text>
-    <text x="252" y="179" fill="#0f172a" font-size="9">team=infrastructure</text>
-    <rect x="368" y="167" width="62" height="14" rx="4" fill="#dcfce7"/>
-    <text x="399" y="178" fill="#166534" font-size="7.5" text-anchor="middle">AWS EC2</text>
-    <circle cx="466" cy="176" r="4" fill="#10b981"/>
-    <!-- Rule 2 -->
-    <rect x="222" y="195" width="276" height="26" rx="7" fill="#eff6ff"/>
-    <rect x="222" y="195" width="3"   height="26" rx="2" fill="#2563eb"/>
-    <text x="234" y="211" fill="#0f172a" font-size="9" font-weight="700">200</text>
-    <text x="252" y="211" fill="#0f172a" font-size="9">team=platform</text>
-    <rect x="368" y="199" width="68" height="14" rx="4" fill="#dbeafe"/>
-    <text x="402" y="210" fill="#1e40af" font-size="7.5" text-anchor="middle">AWS all svc</text>
-    <circle cx="466" cy="208" r="4" fill="#10b981"/>
-    <!-- Rule 3 -->
-    <rect x="222" y="227" width="276" height="26" rx="7" fill="#f5f3ff"/>
-    <rect x="222" y="227" width="3"   height="26" rx="2" fill="#7c3aed"/>
-    <text x="234" y="243" fill="#0f172a" font-size="9" font-weight="700">100</text>
-    <text x="252" y="243" fill="#0f172a" font-size="9">env=production</text>
-    <rect x="368" y="231" width="52" height="14" rx="4" fill="#ede9fe"/>
-    <text x="394" y="242" fill="#6d28d9" font-size="7.5" text-anchor="middle">all providers</text>
-    <circle cx="466" cy="240" r="4" fill="#10b981"/>
-    <!-- Coverage bar animated -->
-    <text x="222" y="270" fill="#475569" font-size="8.5">Coverage: 28 / 36 resources tagged</text>
-    <rect x="222" y="276" width="276" height="12" rx="5" fill="#f1f5f9"/>
-    <rect x="222" y="276" width="0" height="12" rx="5" fill="#10b981">
-      <animate attributeName="width" values="0;215;210;215" dur="2.5s" repeatCount="indefinite"/>
-    </rect>
-    <text x="222" y="296" fill="#94a3b8" font-size="7.5">POST /api/v1/virtual-tags/rules · GET /api/v1/virtual-tags/preview</text>
-
-    <!-- ── Tag Preview table (left bottom) ──────────────────── -->
-    <rect x="202" y="312" width="306" height="180" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="222" y="334" fill="#0f172a" font-size="11.5" font-weight="700">Tag Preview</text>
-    <text x="222" y="348" fill="#94a3b8" font-size="8.5">Dry-run preview · real-time tag evaluation</text>
-    <line x1="222" y1="356" x2="488" y2="356" stroke="#f1f5f9"/>
-    <text x="222" y="370" fill="#475569" font-size="8" font-weight="700">RESOURCE</text>
-    <text x="346" y="370" fill="#475569" font-size="8" font-weight="700">PROV</text>
-    <text x="386" y="370" fill="#475569" font-size="8" font-weight="700">APPLIED TAGS</text>
-    <rect x="222" y="375" width="276" height="22" rx="5" fill="#f8fafc"/>
-    <text x="226" y="390" fill="#0f172a" font-size="8.5" class="mono">aws-ec2-i-0a1b2c</text>
-    <text x="346" y="390" fill="#f97316" font-size="8" font-weight="700">aws</text>
-    <rect x="384" y="378" width="106" height="14" rx="4" fill="#dcfce7"/>
-    <text x="437" y="389" fill="#166534" font-size="7.5" text-anchor="middle">team:infra · env:prod</text>
-    <rect x="222" y="402" width="276" height="22" rx="5" fill="#f8fafc"/>
-    <text x="226" y="417" fill="#0f172a" font-size="8.5" class="mono">azure-vm-southuk-9</text>
-    <text x="346" y="417" fill="#2563eb" font-size="8" font-weight="700">azure</text>
-    <rect x="384" y="405" width="62" height="14" rx="4" fill="#ede9fe"/>
-    <text x="415" y="416" fill="#6d28d9" font-size="7.5" text-anchor="middle">env:prod</text>
-    <rect x="222" y="429" width="276" height="22" rx="5" fill="#f8fafc"/>
-    <text x="226" y="444" fill="#0f172a" font-size="8.5" class="mono">gcp-gce-n2-std-8-uk</text>
-    <text x="346" y="444" fill="#16a34a" font-size="8" font-weight="700">gcp</text>
-    <rect x="384" y="432" width="62" height="14" rx="4" fill="#ede9fe"/>
-    <text x="415" y="443" fill="#6d28d9" font-size="7.5" text-anchor="middle">env:prod</text>
-    <rect x="222" y="456" width="276" height="22" rx="5" fill="#fff7ed"/>
-    <text x="226" y="471" fill="#92400e" font-size="8.5" class="mono">oci-compute-flex-lon</text>
-    <text x="346" y="471" fill="#9a3412" font-size="8" font-weight="700">oci</text>
-    <rect x="384" y="459" width="52" height="14" rx="4" fill="#fde68a"/>
-    <text x="410" y="470" fill="#713f12" font-size="7.5" text-anchor="middle">untagged</text>
-
-    <!-- ── Optimization recommendations (right top) ───────────── -->
-    <rect x="520" y="100" width="360" height="196" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="540" y="122" fill="#0f172a" font-size="11.5" font-weight="700">Resource-Level Optimization</text>
-    <text x="540" y="136" fill="#94a3b8" font-size="8.5">Per-instance/volume · downsize · terminate · reserve · modernize</text>
-    <rect x="752" y="106" width="118" height="22" rx="8" fill="#ecfdf5"/>
-    <text x="811" y="121" fill="#166534" font-size="9.5" font-weight="700" text-anchor="middle">$4,380 / mo saved</text>
-    <line x1="540" y1="144" x2="860" y2="144" stroke="#f1f5f9"/>
-    <text x="540" y="158" fill="#475569" font-size="8" font-weight="700">RESOURCE</text>
-    <text x="662" y="158" fill="#475569" font-size="8" font-weight="700">TYPE</text>
-    <text x="700" y="158" fill="#475569" font-size="8" font-weight="700">SIZE CHANGE</text>
-    <text x="806" y="158" fill="#475569" font-size="8" font-weight="700">SAVE</text>
-    <text x="848" y="158" fill="#475569" font-size="8" font-weight="700">CPU↓</text>
-    <!-- Row 1 -->
-    <rect x="540" y="163" width="320" height="28" rx="7" fill="#eff6ff"/>
-    <rect x="540" y="163" width="3"   height="28" rx="2" fill="#2563eb"/>
-    <text x="550" y="179" fill="#0f172a" font-size="8.5" class="mono">aws-ec2-r5.2xl-0a1</text>
-    <rect x="658" y="167" width="30" height="14" rx="4" fill="#dbeafe"/>
-    <text x="673" y="178" fill="#1e40af" font-size="7.5" text-anchor="middle">EC2</text>
-    <text x="698" y="179" fill="#64748b" font-size="8">r5.2xl → r5.xl</text>
-    <text x="806" y="179" fill="#166534" font-size="9" font-weight="700">$720</text>
-    <text x="848" y="179" fill="#ef4444" font-size="8.5">12%</text>
-    <!-- Row 2 -->
-    <rect x="540" y="197" width="320" height="28" rx="7" fill="#fff7ed"/>
-    <rect x="540" y="197" width="3"   height="28" rx="2" fill="#f97316"/>
-    <text x="550" y="213" fill="#0f172a" font-size="8.5" class="mono">azure-vm-D4s-southuk</text>
-    <rect x="658" y="201" width="28" height="14" rx="4" fill="#fed7aa"/>
-    <text x="672" y="212" fill="#7c2d12" font-size="7.5" text-anchor="middle">VM</text>
-    <text x="698" y="213" fill="#64748b" font-size="8">D4s v3 → D2s v3</text>
-    <text x="806" y="213" fill="#166534" font-size="9" font-weight="700">$580</text>
-    <text x="848" y="213" fill="#ef4444" font-size="8.5">18%</text>
-    <!-- Row 3 -->
-    <rect x="540" y="231" width="320" height="28" rx="7" fill="#f0fdf4"/>
-    <rect x="540" y="231" width="3"   height="28" rx="2" fill="#16a34a"/>
-    <text x="550" y="247" fill="#0f172a" font-size="8.5" class="mono">gcp-n2-standard-8-uk</text>
-    <rect x="658" y="235" width="30" height="14" rx="4" fill="#dcfce7"/>
-    <text x="673" y="246" fill="#166534" font-size="7.5" text-anchor="middle">GCE</text>
-    <text x="698" y="247" fill="#64748b" font-size="8">n2-std-8 → n2-std-4</text>
-    <text x="806" y="247" fill="#166534" font-size="9" font-weight="700">$440</text>
-    <text x="848" y="247" fill="#ef4444" font-size="8.5">22%</text>
-    <!-- Action pills -->
-    <rect x="540" y="268" width="50"  height="16" rx="5" fill="#dbeafe"/>
-    <text x="565" y="280" fill="#1e40af" font-size="7.5" text-anchor="middle">downsize</text>
-    <rect x="594" y="268" width="50"  height="16" rx="5" fill="#fce7f3"/>
-    <text x="619" y="280" fill="#9d174d" font-size="7.5" text-anchor="middle">terminate</text>
-    <rect x="648" y="268" width="42"  height="16" rx="5" fill="#ecfdf5"/>
-    <text x="669" y="280" fill="#065f46" font-size="7.5" text-anchor="middle">reserve</text>
-    <rect x="694" y="268" width="56"  height="16" rx="5" fill="#f5f3ff"/>
-    <text x="722" y="280" fill="#6d28d9" font-size="7.5" text-anchor="middle">modernize</text>
-    <rect x="774" y="264" width="86"  height="22" rx="7" fill="#ecfdf5"/>
-    <text x="817" y="279" fill="#166534" font-size="9" font-weight="700" text-anchor="middle">12 rightsizable</text>
-
-    <!-- ── FinOps Scorecards (right bottom left) ──────────────── -->
-    <rect x="520" y="308" width="174" height="184" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="540" y="330" fill="#0f172a" font-size="11" font-weight="700">FinOps Scorecards</text>
-    <text x="540" y="344" fill="#94a3b8" font-size="8.5">Per-team maturity · unit economics</text>
-    <line x1="540" y1="352" x2="674" y2="352" stroke="#f1f5f9"/>
-    <text x="540" y="368" fill="#475569" font-size="9">Platform</text>
-    <rect x="594" y="357" width="66" height="16" rx="6" fill="#dcfce7"/>
-    <text x="654" y="370" fill="#166534" font-size="10" font-weight="800" text-anchor="end">82  A</text>
-    <text x="540" y="390" fill="#475569" font-size="9">Data Eng</text>
-    <rect x="594" y="379" width="66" height="16" rx="6" fill="#dbeafe"/>
-    <text x="654" y="392" fill="#1e40af" font-size="10" font-weight="800" text-anchor="end">71  B</text>
-    <text x="540" y="412" fill="#475569" font-size="9">Frontend</text>
-    <rect x="594" y="401" width="66" height="16" rx="6" fill="#fef3c7"/>
-    <text x="654" y="414" fill="#92400e" font-size="10" font-weight="800" text-anchor="end">58  C</text>
-    <line x1="540" y1="426" x2="674" y2="426" stroke="#f1f5f9"/>
-    <text x="540" y="442" fill="#475569" font-size="8.5" font-weight="700">Unit Economics</text>
-    <text x="540" y="456" fill="#64748b" font-size="8.5">Cost/resource: $38.09</text>
-    <text x="540" y="470" fill="#64748b" font-size="8.5">Waste ratio: 16.0%  Grade: B+</text>
-    <text x="540" y="484" fill="#94a3b8" font-size="7.5">GET /api/v1/analytics/unit-economics</text>
-
-    <!-- ── Kubernetes + inventory (right bottom right) ───────── -->
-    <rect x="706" y="308" width="174" height="184" rx="12" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="726" y="330" fill="#0f172a" font-size="11" font-weight="700">K8s Namespace Costs</text>
-    <text x="726" y="344" fill="#94a3b8" font-size="8.5">OpenCost namespace attribution</text>
-    <line x1="726" y1="352" x2="860" y2="352" stroke="#f1f5f9"/>
-    <text x="726" y="368" fill="#475569" font-size="8.5">production</text>
-    <text x="858" y="368" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">$8,400</text>
-    <text x="726" y="384" fill="#475569" font-size="8.5">staging</text>
-    <text x="858" y="384" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">$3,100</text>
-    <text x="726" y="400" fill="#475569" font-size="8.5">kube-system</text>
-    <text x="858" y="400" fill="#0f172a" font-size="9" font-weight="700" text-anchor="end">$1,200</text>
-    <text x="726" y="416" fill="#94a3b8" font-size="8">monitoring</text>
-    <text x="858" y="416" fill="#94a3b8" font-size="9" text-anchor="end">$640</text>
-    <line x1="726" y1="424" x2="860" y2="424" stroke="#f1f5f9"/>
-    <text x="726" y="440" fill="#475569" font-size="8.5" font-weight="700">Inventory</text>
-    <text x="726" y="455" fill="#64748b" font-size="8.5">Total: 1,240 assets</text>
-    <rect x="726" y="460" width="124" height="30" rx="7" fill="#f8fafc"/>
-    <text x="730" y="472" fill="#f97316" font-size="7.5" font-weight="700">AWS</text>
-    <text x="756" y="472" fill="#0f172a" font-size="7.5">620</text>
-    <text x="792" y="472" fill="#2563eb" font-size="7.5" font-weight="700">Azure</text>
-    <text x="820" y="472" fill="#0f172a" font-size="7.5">380</text>
-    <text x="730" y="484" fill="#16a34a" font-size="7.5" font-weight="700">GCP</text>
-    <text x="756" y="484" fill="#0f172a" font-size="7.5">180</text>
-    <text x="792" y="484" fill="#dc2626" font-size="7.5" font-weight="700">OCI</text>
-    <text x="820" y="484" fill="#0f172a" font-size="7.5">60</text>
-  </g>
-
 </g>
 <rect width="900" height="540" rx="18" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
 </svg>
