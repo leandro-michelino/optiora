@@ -56,6 +56,15 @@ function varianceColor(value: number): string {
   return 'text-rose-600 dark:text-rose-400'
 }
 
+function ledgerHref(entry: RealizedSavingsScorecardEntry): string {
+  const params = new URLSearchParams()
+  params.set('status', entry.dimension === 'month' ? 'verified' : 'all')
+  if (entry.dimension === 'provider') params.set('provider', entry.key.toLowerCase())
+  if (entry.dimension !== 'provider') params.set('q', entry.key)
+  const query = params.toString()
+  return `/dashboard/recommendations${query ? `?${query}` : ''}`
+}
+
 function ScorecardCard({ team }: { team: ScorecardEntry }) {
   const [expanded, setExpanded] = useState(false)
   return (
@@ -138,6 +147,7 @@ function RealizedSavingsTable({
               <th className="px-4 py-3 text-right font-semibold">Variance</th>
               <th className="px-4 py-3 text-right font-semibold">Realization</th>
               <th className="px-4 py-3 text-right font-semibold">Verified</th>
+              <th className="px-4 py-3 text-right font-semibold">Ledger</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-950">
@@ -161,6 +171,14 @@ function RealizedSavingsTable({
                 </td>
                 <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{fmtPct(entry.realization_rate_percent)}</td>
                 <td className="px-4 py-3 text-right text-slate-700 dark:text-slate-300">{entry.verified_count}</td>
+                <td className="px-4 py-3 text-right">
+                  <a
+                    href={ledgerHref(entry)}
+                    className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    Open
+                  </a>
+                </td>
               </tr>
             ))}
           </tbody>

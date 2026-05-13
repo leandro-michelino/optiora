@@ -59,6 +59,75 @@ export interface RecommendationResponse {
   resource_console_url?: string | null
 }
 
+export type RecommendationLedgerStatus =
+  | 'open'
+  | 'planned'
+  | 'approved'
+  | 'executed'
+  | 'verified'
+  | 'rejected'
+  | 'expired'
+
+export interface RecommendationLedgerItem {
+  id: number
+  organization_id: number
+  provider: string
+  resource_id: string
+  resource_name: string | null
+  resource_type: string | null
+  account_id: string | null
+  region: string | null
+  recommendation_source: string
+  recommendation_fingerprint: string
+  action: string
+  confidence: string
+  effort: string
+  status: RecommendationLedgerStatus
+  owner: string | null
+  current_size: string | null
+  recommended_size: string | null
+  current_monthly_cost_usd: number
+  projected_monthly_cost_usd: number
+  planned_monthly_savings_usd: number
+  planned_annual_savings_usd: number
+  realized_monthly_savings_usd: number
+  realized_annual_savings_usd: number
+  variance_monthly_usd: number
+  variance_annual_usd: number
+  variance_percent: number
+  variance_reason: string | null
+  reason: string | null
+  resource_console_url: string | null
+  first_seen_at: string | null
+  last_seen_at: string | null
+  planned_at: string | null
+  realized_at: string | null
+  last_exported_at: string | null
+  times_seen: number
+}
+
+export interface RecommendationLedgerResponse {
+  generated_at: string
+  organization_id: number
+  total_count: number
+  total_planned_monthly_savings_usd: number
+  total_realized_monthly_savings_usd: number
+  total_variance_monthly_usd: number
+  total_planned_annual_savings_usd: number
+  total_realized_annual_savings_usd: number
+  total_variance_annual_usd: number
+  items: RecommendationLedgerItem[]
+}
+
+export interface RecommendationLedgerUpdate {
+  realized_monthly_savings_usd?: number
+  realized_annual_savings_usd?: number
+  variance_reason?: string
+  status?: RecommendationLedgerStatus
+  owner?: string
+  realized_at?: string
+}
+
 export interface PaginatedResponse<T> {
   items: T[]
   total: number

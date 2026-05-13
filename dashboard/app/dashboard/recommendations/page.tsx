@@ -4,24 +4,31 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   CheckCircle2,
+  ClipboardList,
   DollarSign,
   ExternalLink,
+  FileDown,
   Layers3,
   Loader,
   RefreshCw,
+  Save,
   ShieldCheck,
   Sparkles,
   TrendingDown,
+  UserCheck,
   Zap,
 } from 'lucide-react'
 import {
+  downloadRecommendationLedgerCsv,
   fetchApiHealth,
   fetchDecisionGradeRecommendations,
   fetchImportedCostSummary,
   fetchProviderDiagnostics,
+  fetchRecommendationLedger,
   fetchRecommendationsStrict,
   fetchRightsizingRecommendations,
   forceNextApiRefresh,
+  updateRecommendationLedgerItem,
 } from '@/lib/api'
 import { DataSourceBanner } from '@/components/DataSourceBanner'
 import { buildCostDataSourceStatus } from '@/lib/data-source'
@@ -30,6 +37,9 @@ import {
   DecisionRecommendationItem,
   ImportedCostSummaryResponse,
   ProviderDiagnostic,
+  RecommendationLedgerItem,
+  RecommendationLedgerResponse,
+  RecommendationLedgerStatus,
   RecommendationResponse,
   RightsizingRecommendation,
 } from '@/lib/types'
@@ -38,9 +48,23 @@ import { Badge } from '@/components/ui/badge'
 import { Expander } from '@/components/ui/expander'
 
 const PROVIDERS = ['all', 'aws', 'azure', 'gcp', 'oci']
+const LEDGER_STATUSES = ['all', 'open', 'planned', 'approved', 'executed', 'verified', 'rejected', 'expired'] as const
+const MUTABLE_LEDGER_STATUSES = LEDGER_STATUSES.filter(
+  (item): item is RecommendationLedgerStatus => item !== 'all'
+)
+
+type LedgerStatusFilter = (typeof LEDGER_STATUSES)[number]
+
+interface LedgerDraft {
+  status: RecommendationLedgerStatus
+  owner: string
+  realizedMonthlySavings: string
+  varianceReason: string
+}
 
 interface RecommendationState {
   items: RecommendationResponse[]
+  ledger: RecommendationLedgerResponse | null
   health: ApiHealth | null
   importedSummary: ImportedCostSummaryResponse | null
   diagnostics: ProviderDiagnostic[]
@@ -50,6 +74,7 @@ interface RecommendationState {
   decisionTop: DecisionRecommendationItem[]
   loaded: boolean
   error: string | null
+  ledgerError: string | null
   rightsizingSource: string
 }
 
@@ -248,12 +273,72 @@ function topOciVmCandidates(recommendations: RightsizingRecommendation[]) {
     .slice(0, 12)
 }
 
+function initialProviderFilter(): string {
+  if (typeof window === 'undefined') return 'all'
+  const value = new URLSearchParams(window.location.search).get('provider')?.toLowerCase() || 'all'
+  return PROVIDERS.includes(value) ? value : 'all'
+}
+
+function initialLedgerStatusFilter(): LedgerStatusFilter {
+  if (typeof window === 'undefined') return 'all'
+  const value = new URLSearchParams(window.location.search).get('status')?.toLowerCase() || 'all'
+  return LEDGER_STATUSES.includes(value as LedgerStatusFilter) ? (value as LedgerStatusFilter) : 'all'
+}
+
+function initialLedgerSearch(): string {
+  if (typeof window === 'undefined') return ''
+  return new URLSearchParams(window.location.search).get('q')?.trim() || ''
+}
+
+function draftFromLedgerItem(item: RecommendationLedgerItem): LedgerDraft {
+  return {
+    status: item.status,
+    owner: item.owner || '',
+    realizedMonthlySavings:
+      item.realized_monthly_savings_usd > 0 ? String(item.realized_monthly_savings_usd) : '',
+    varianceReason: item.variance_reason || '',
+  }
+}
+
+function statusTone(status: string): string {
+  return (
+    {
+      open: 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300',
+      planned: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300',
+      approved:
+        'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300',
+      executed:
+        'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300',
+      verified:
+        'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300',
+      rejected:
+        'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-300',
+      expired:
+        'border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300',
+    }[status] ??
+    'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+  )
+}
+
+function readableDate(value: string | null): string {
+  if (!value) return 'n/a'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 export default function RecommendationsPage() {
   const [provider, setProvider] = useState('all')
+  const [ledgerStatus, setLedgerStatus] = useState<LedgerStatusFilter>('all')
+  const [ledgerSearch, setLedgerSearch] = useState('')
   const [includeLive, setIncludeLive] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [ledgerForms, setLedgerForms] = useState<Record<number, LedgerDraft>>({})
+  const [ledgerSavingId, setLedgerSavingId] = useState<number | null>(null)
+  const [ledgerExporting, setLedgerExporting] = useState(false)
   const [state, setState] = useState<RecommendationState>({
     items: [],
+    ledger: null,
     health: null,
     importedSummary: null,
     diagnostics: [],
@@ -263,8 +348,15 @@ export default function RecommendationsPage() {
     decisionTop: [],
     loaded: false,
     error: null,
+    ledgerError: null,
     rightsizingSource: 'no_data_available',
   })
+
+  useEffect(() => {
+    setProvider(initialProviderFilter())
+    setLedgerStatus(initialLedgerStatusFilter())
+    setLedgerSearch(initialLedgerSearch())
+  }, [])
 
   const loadRecommendations = useCallback(async () => {
     setLoading(true)
@@ -278,16 +370,33 @@ export default function RecommendationsPage() {
     const importedRequest = fetchImportedCostSummary()
     const healthRequest = fetchApiHealth()
     const diagnosticsRequest = fetchProviderDiagnostics()
+    const ledgerRequest = fetchRecommendationLedger({
+      provider,
+      status: ledgerStatus,
+      limit: 100,
+    })
 
-    const [response, importedResult, healthResult, diagnosticsResult] = await Promise.allSettled([
+    const [response, importedResult, healthResult, diagnosticsResult, ledgerResult] = await Promise.allSettled([
       recommendationsRequest,
       importedRequest,
       healthRequest,
       diagnosticsRequest,
+      ledgerRequest,
     ])
+    const ledger = ledgerResult.status === 'fulfilled' ? ledgerResult.value : null
+    if (ledger) {
+      setLedgerForms(current => {
+        const next = { ...current }
+        ledger.items.forEach(item => {
+          if (!next[item.id]) next[item.id] = draftFromLedgerItem(item)
+        })
+        return next
+      })
+    }
     setState(current => ({
       ...current,
       items: response.status === 'fulfilled' ? response.value.items : [],
+      ledger,
       health: healthResult.status === 'fulfilled' ? healthResult.value : null,
       importedSummary: importedResult.status === 'fulfilled' ? importedResult.value : null,
       diagnostics: diagnosticsResult.status === 'fulfilled' ? diagnosticsResult.value : [],
@@ -297,6 +406,12 @@ export default function RecommendationsPage() {
           ? response.reason instanceof Error
             ? response.reason.message
             : 'Unable to load recommendations.'
+          : null,
+      ledgerError:
+        ledgerResult.status === 'rejected'
+          ? ledgerResult.reason instanceof Error
+            ? ledgerResult.reason.message
+            : 'Unable to load recommendation ledger.'
           : null,
     }))
     setLoading(false)
@@ -335,11 +450,81 @@ export default function RecommendationsPage() {
       decisionTop:
         decisionResult.status === 'fulfilled' ? decisionResult.value.top_recommendations || [] : [],
     }))
-  }, [includeLive, provider])
+  }, [includeLive, ledgerStatus, provider])
 
   useEffect(() => {
     void loadRecommendations()
   }, [loadRecommendations])
+
+  const handleLedgerDraftChange = useCallback(
+    (ledgerId: number, patch: Partial<LedgerDraft>) => {
+      setLedgerForms(current => ({
+        ...current,
+        [ledgerId]: {
+          ...(current[ledgerId] || {
+            status: 'open',
+            owner: '',
+            realizedMonthlySavings: '',
+            varianceReason: '',
+          }),
+          ...patch,
+        },
+      }))
+    },
+    []
+  )
+
+  const handleSaveLedgerItem = useCallback(
+    async (item: RecommendationLedgerItem) => {
+      const draft = ledgerForms[item.id] || draftFromLedgerItem(item)
+      const realizedText = draft.realizedMonthlySavings.trim()
+      const realized = realizedText.length > 0 ? Number(realizedText) : undefined
+      if (realized !== undefined && !Number.isFinite(realized)) {
+        setState(current => ({
+          ...current,
+          ledgerError: 'Realized monthly savings must be a valid number.',
+        }))
+        return
+      }
+
+      setLedgerSavingId(item.id)
+      setState(current => ({ ...current, ledgerError: null }))
+      try {
+        await updateRecommendationLedgerItem(item.id, {
+          status: draft.status,
+          owner: draft.owner,
+          variance_reason: draft.varianceReason,
+          ...(realized !== undefined ? { realized_monthly_savings_usd: Math.max(0, realized) } : {}),
+        })
+        await loadRecommendations()
+      } catch (error) {
+        setState(current => ({
+          ...current,
+          ledgerError:
+            error instanceof Error ? error.message : 'Unable to update recommendation ledger row.',
+        }))
+      } finally {
+        setLedgerSavingId(null)
+      }
+    },
+    [ledgerForms, loadRecommendations]
+  )
+
+  const handleDownloadLedger = useCallback(async () => {
+    setLedgerExporting(true)
+    setState(current => ({ ...current, ledgerError: null }))
+    try {
+      await downloadRecommendationLedgerCsv({ provider, status: ledgerStatus })
+      await loadRecommendations()
+    } catch (error) {
+      setState(current => ({
+        ...current,
+        ledgerError: error instanceof Error ? error.message : 'Unable to export recommendation ledger.',
+      }))
+    } finally {
+      setLedgerExporting(false)
+    }
+  }, [ledgerStatus, loadRecommendations, provider])
 
   const dataSourceStatus = buildCostDataSourceStatus({
     health: state.health,
@@ -397,6 +582,35 @@ export default function RecommendationsPage() {
       return acc
     }, {})
   ).sort((a, b) => b[1].savings - a[1].savings)
+  const ledger = state.ledger
+  const allLedgerItems = ledger?.items ?? []
+  const ledgerSearchNormalized = ledgerSearch.trim().toLowerCase()
+  const ledgerItems = ledgerSearchNormalized
+    ? allLedgerItems.filter(item =>
+        [
+          item.provider,
+          item.resource_id,
+          item.resource_name,
+          item.resource_type,
+          item.account_id,
+          item.region,
+          item.recommendation_source,
+          item.action,
+          item.status,
+          item.owner,
+          item.reason,
+          item.variance_reason,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(ledgerSearchNormalized)
+      )
+    : allLedgerItems
+  const verifiedLedgerCount = ledgerItems.filter(item => item.status === 'verified').length
+  const ledgerRealizationRate =
+    ledger && ledger.total_planned_monthly_savings_usd > 0
+      ? (ledger.total_realized_monthly_savings_usd / ledger.total_planned_monthly_savings_usd) * 100
+      : 0
 
   return (
     <div className="space-y-8">
@@ -445,20 +659,40 @@ export default function RecommendationsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {PROVIDERS.map(item => (
-          <button
-            key={item}
-            onClick={() => setProvider(item)}
-            className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
-              provider === item
-                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
-            }`}
-          >
-            {item === 'all' ? 'All providers' : item.toUpperCase()}
-          </button>
-        ))}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-2">
+          {PROVIDERS.map(item => (
+            <button
+              key={item}
+              onClick={() => setProvider(item)}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                provider === item
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+              }`}
+            >
+              {item === 'all' ? 'All providers' : item.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            Ledger status
+          </span>
+          {LEDGER_STATUSES.map(item => (
+            <button
+              key={item}
+              onClick={() => setLedgerStatus(item)}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-medium capitalize transition ${
+                ledgerStatus === item
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
       </div>
 
       <DataSourceBanner status={dataSourceStatus} />
@@ -469,7 +703,13 @@ export default function RecommendationsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {state.ledgerError && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+          {state.ledgerError}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {[
           {
             label: 'Provider Recommendations',
@@ -491,6 +731,13 @@ export default function RecommendationsPage() {
             detail: state.rightsizingSource.replace(/_/g, ' '),
             icon: Zap,
             color: 'from-amber-500 to-amber-600',
+          },
+          {
+            label: 'Tracked Ledger Rows',
+            value: (ledger?.total_count ?? 0).toLocaleString(),
+            detail: `${verifiedLedgerCount} verified · ${ledgerRealizationRate.toFixed(0)}% realized`,
+            icon: ClipboardList,
+            color: 'from-teal-500 to-teal-600',
           },
           {
             label: 'Connected Providers',
@@ -532,6 +779,245 @@ export default function RecommendationsPage() {
             defaultOpen
           >
             <div className="space-y-4">
+              <Expander
+                title="Execution Board"
+                description="Persisted recommendation ledger rows for owner assignment, approvals, realization, and finance export."
+                icon={<ClipboardList className="h-5 w-5" />}
+                actions={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={event => {
+                      event.stopPropagation()
+                      void handleDownloadLedger()
+                    }}
+                    className="rounded-lg"
+                    disabled={ledgerExporting || ledgerItems.length === 0}
+                  >
+                    <FileDown className={`mr-2 h-4 w-4 ${ledgerExporting ? 'animate-pulse' : ''}`} />
+                    Export CSV
+                  </Button>
+                }
+                defaultOpen
+              >
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    {[
+                      {
+                        label: 'Planned / mo',
+                        value: fmtK(ledger?.total_planned_monthly_savings_usd ?? 0),
+                      },
+                      {
+                        label: 'Realized / mo',
+                        value: fmtK(ledger?.total_realized_monthly_savings_usd ?? 0),
+                      },
+                      {
+                        label: 'Variance / mo',
+                        value: fmtK(ledger?.total_variance_monthly_usd ?? 0),
+                      },
+                    ].map(item => (
+                      <div
+                        key={item.label}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950"
+                      >
+                        <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {item.label}
+                        </p>
+                        <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">
+                          {item.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {ledgerItems.length.toLocaleString()} visible row
+                        {ledgerItems.length === 1 ? '' : 's'}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Filtered from {(ledger?.items.length ?? 0).toLocaleString()} persisted
+                        ledger row{ledger?.items.length === 1 ? '' : 's'}.
+                      </p>
+                    </div>
+                    <input
+                      value={ledgerSearch}
+                      onChange={event => setLedgerSearch(event.target.value)}
+                      placeholder="Search owner, provider, resource, reason"
+                      className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 md:max-w-md"
+                    />
+                  </div>
+
+                  {ledgerItems.length > 0 ? (
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-[1180px] text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                              <th className="px-4 py-3">Recommendation</th>
+                              <th className="px-4 py-3">Status</th>
+                              <th className="px-4 py-3">Owner</th>
+                              <th className="px-4 py-3 text-right">Plan / mo</th>
+                              <th className="px-4 py-3">Realized / mo</th>
+                              <th className="px-4 py-3 text-right">Variance</th>
+                              <th className="px-4 py-3">Evidence note</th>
+                              <th className="px-4 py-3">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ledgerItems.map(item => {
+                              const draft = ledgerForms[item.id] || draftFromLedgerItem(item)
+                              const saving = ledgerSavingId === item.id
+                              return (
+                                <tr
+                                  key={`ledger-${item.id}`}
+                                  className="border-b border-slate-100 align-top dark:border-slate-800"
+                                >
+                                  <td className="px-4 py-3">
+                                    <div className="mb-2 flex flex-wrap gap-2">
+                                      <Badge
+                                        className={`rounded-md border text-xs ${providerTone(item.provider)}`}
+                                      >
+                                        {item.provider.toUpperCase()}
+                                      </Badge>
+                                      <Badge
+                                        className={`rounded-md border text-xs ${sourceTone(item.recommendation_source)}`}
+                                      >
+                                        {sourceLabel(item.recommendation_source)}
+                                      </Badge>
+                                      <Badge
+                                        className={`rounded-md border text-xs ${statusTone(item.status)}`}
+                                      >
+                                        {item.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="font-medium text-slate-900 dark:text-white">
+                                      {item.resource_name || item.resource_id}
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                                      {productCategory(`${item.resource_type} ${item.action}`)} ·{' '}
+                                      {item.action} · seen {item.times_seen}x · last{' '}
+                                      {readableDate(item.last_seen_at)}
+                                    </div>
+                                    <div className="mt-1 max-w-[34rem] break-all font-mono text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                      {item.resource_id}
+                                    </div>
+                                    {item.reason && (
+                                      <p className="mt-2 max-w-[34rem] text-xs leading-5 text-slate-600 dark:text-slate-300">
+                                        {item.reason}
+                                      </p>
+                                    )}
+                                    {item.resource_console_url && (
+                                      <a
+                                        href={item.resource_console_url}
+                                        target="_blank"
+                                        rel="noreferrer noopener"
+                                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                                      >
+                                        Open cloud console <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <select
+                                      value={draft.status}
+                                      onChange={event =>
+                                        handleLedgerDraftChange(item.id, {
+                                          status: event.target.value as RecommendationLedgerStatus,
+                                        })
+                                      }
+                                      className="h-9 w-32 rounded-lg border border-slate-300 bg-white px-2 text-sm capitalize text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    >
+                                      {MUTABLE_LEDGER_STATUSES.map(status => (
+                                        <option key={status} value={status}>
+                                          {status}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="relative">
+                                      <UserCheck className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                                      <input
+                                        value={draft.owner}
+                                        onChange={event =>
+                                          handleLedgerDraftChange(item.id, {
+                                            owner: event.target.value,
+                                          })
+                                        }
+                                        placeholder="Owner"
+                                        className="h-9 w-40 rounded-lg border border-slate-300 bg-white pl-8 pr-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">
+                                    {fmt(item.planned_monthly_savings_usd)}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={draft.realizedMonthlySavings}
+                                      onChange={event =>
+                                        handleLedgerDraftChange(item.id, {
+                                          realizedMonthlySavings: event.target.value,
+                                        })
+                                      }
+                                      placeholder="0.00"
+                                      className="h-9 w-32 rounded-lg border border-slate-300 bg-white px-2 text-right text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    />
+                                  </td>
+                                  <td
+                                    className={`px-4 py-3 text-right font-semibold ${
+                                      item.variance_monthly_usd >= 0
+                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                        : 'text-rose-600 dark:text-rose-400'
+                                    }`}
+                                  >
+                                    {fmt(item.variance_monthly_usd)}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <textarea
+                                      value={draft.varianceReason}
+                                      onChange={event =>
+                                        handleLedgerDraftChange(item.id, {
+                                          varianceReason: event.target.value,
+                                        })
+                                      }
+                                      placeholder="Approval note or finance evidence"
+                                      className="min-h-[72px] w-56 resize-none rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <Button
+                                      type="button"
+                                      onClick={() => void handleSaveLedgerItem(item)}
+                                      className="rounded-lg"
+                                      disabled={saving}
+                                    >
+                                      <Save className={`mr-2 h-4 w-4 ${saving ? 'animate-pulse' : ''}`} />
+                                      Save
+                                    </Button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500 dark:border-slate-700">
+                      No persisted recommendation ledger rows match this filter yet. Run
+                      Optimization Advisor or refresh provider recommendations to populate planned
+                      savings rows, then assign owners and record realized savings here.
+                    </div>
+                  )}
+                </div>
+              </Expander>
+
               <Expander
                 title="Top OCI VM Candidates"
                 description="Live OCI compute instance actions from VM inventory and Cloud Advisor signals."
@@ -1159,9 +1645,10 @@ export default function RecommendationsPage() {
                     <Layers3 className="mt-0.5 h-5 w-5 shrink-0" />
                     <div>
                       <strong>How this page is wired:</strong> provider-native APIs populate the
-                      feed, rightsizing supplies exact resources, and decision-grade scoring ranks
-                      the actions. Use the provider filter to isolate OCI, AWS, Azure, or GCP
-                      signals.
+                      feed, rightsizing supplies exact resources, decision-grade scoring ranks the
+                      actions, and the persisted recommendation ledger stores owner, status,
+                      realized savings, variance notes, and export timestamps. Use the provider and
+                      status filters to isolate OCI, AWS, Azure, or GCP execution work.
                     </div>
                   </div>
                 </div>

@@ -13,6 +13,9 @@ import {
   CostResponse,
   AnomalyResponse,
   PaginatedResponse,
+  RecommendationLedgerResponse,
+  RecommendationLedgerUpdate,
+  RecommendationLedgerItem,
   ProviderAccountInventoryResponse,
   ProviderAccountRollupResponse,
   RecommendationResponse,
@@ -319,6 +322,49 @@ export async function fetchRecommendationsStrict(query: RecommendationQuery = {}
     { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
   return paginate(rows, query)
+}
+
+export async function fetchRecommendationLedger(query: {
+  provider?: string
+  status?: string
+  limit?: number
+} = {}): Promise<RecommendationLedgerResponse> {
+  return requestJson<RecommendationLedgerResponse>(
+    `/api/v1/recommendations/ledger${toQueryString({
+      provider: query.provider || 'all',
+      status: query.status || 'all',
+      limit: query.limit ?? 200,
+    })}`,
+    {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
+  )
+}
+
+export async function updateRecommendationLedgerItem(
+  ledgerId: number,
+  payload: RecommendationLedgerUpdate,
+): Promise<RecommendationLedgerItem> {
+  return requestJson<RecommendationLedgerItem>(
+    `/api/v1/recommendations/ledger/${encodeURIComponent(String(ledgerId))}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    },
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
+  )
+}
+
+export async function downloadRecommendationLedgerCsv(query: {
+  provider?: string
+  status?: string
+} = {}): Promise<void> {
+  const blob = await requestBlob(
+    `/api/v1/recommendations/ledger.csv${toQueryString({
+      provider: query.provider || 'all',
+      status: query.status || 'all',
+    })}`,
+  )
+  saveBlob(blob, `optiora-recommendation-ledger-${new Date().toISOString().slice(0, 10)}.csv`)
 }
 
 export async function fetchApiHealth(): Promise<ApiHealth> {

@@ -993,6 +993,12 @@ export default function RightsizingPage() {
           <Button variant="outline" onClick={() => { forceNextApiRefresh(); void load() }} className="rounded-lg" disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh
           </Button>
+          <a
+            href={`/dashboard/recommendations?provider=${encodeURIComponent(provider)}&status=open`}
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-blue-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-blue-300"
+          >
+            Track ledger <ArrowRight className="h-4 w-4" />
+          </a>
         </div>
       </div>
 
