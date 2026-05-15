@@ -28,14 +28,26 @@ interface HybridAdvisorResult {
     analytics?: {
       current_monthly_spend_usd?: number;
       mom_change_percent?: number | null;
+      risk_score?: number;
     };
     waste?: {
       total_estimated_waste_usd?: number;
       total_waste_rate_percent?: number;
+      quick_wins?: Array<{
+        category?: string;
+        remediation?: string;
+        estimated_waste_usd?: number;
+        effort?: string;
+      }>;
     };
     efficiency?: {
       overall_score?: number;
       grade?: string;
+    };
+    commitment_gap?: {
+      total_annual_opportunity_usd?: number;
+      priority_provider?: string | null;
+      provider_gaps?: Array<Record<string, unknown>>;
     };
     recommendations?: Array<{
       title?: string;
@@ -110,6 +122,34 @@ interface RagGuidanceResponseLite {
     retrieved_docs?: RagGuidanceDocLite[];
     rag_brief?: string;
   };
+}
+
+interface ControlTowerLaneLite {
+  lane?: string;
+  label?: string;
+  status?: string;
+  primary_metric?: number;
+  primary_metric_label?: string;
+  evidence?: unknown;
+  next_action?: string;
+}
+
+interface ControlTowerResponseLite {
+  posture?: string;
+  control_score?: number;
+  executive_summary?: {
+    monthly_spend_usd?: number;
+    annualized_run_rate_usd?: number;
+    risk_score?: number;
+    maturity_score?: number;
+    forecast_confidence_score?: number;
+    recommended_scenario?: string | null;
+    expected_monthly_savings_pool_usd?: number;
+  };
+  control_lanes?: ControlTowerLaneLite[];
+  priority_actions?: string[];
+  supporting_blocks?: Record<string, unknown>;
+  rag_by_lane?: Record<string, { rag_brief?: string; retrieved_docs?: RagGuidanceDocLite[] }>;
 }
 
 interface ResourceIntelligenceItemLite {
@@ -396,6 +436,12 @@ function toSafeNumber(value: unknown): number {
 
 function sanitizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 const LANGUAGE_TERMS: Array<{ lang: SupportedLanguage; terms: string[] }> = [
@@ -1792,6 +1838,222 @@ function buildTopLines<T>(
   return items.slice(0, max).map((item, idx) => mapper(item, idx));
 }
 
+function normalizeForMatch(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function isControlTowerConversation(
+  message: string,
+  history: ConversationEntry[] = [],
+): boolean {
+  const haystack = normalizeForMatch(
+    [message, ...history.slice(-4).map((entry) => entry.content)].join(' '),
+  );
+  return (
+    haystack.includes('control tower') ||
+    haystack.includes('control tower action') ||
+    haystack.includes('finops control tower')
+  );
+}
+
+function laneOwner(laneKey: string): string {
+  if (laneKey === 'forecast_risk') return 'FinOps lead with the finance budget owner';
+  if (laneKey === 'waste') return 'Platform engineering plus the application owner for each quick win';
+  if (laneKey === 'commitment') return 'FinOps/procurement with workload owners confirming steady-state demand';
+  if (laneKey === 'governance') return 'Cloud governance/platform team with app teams accountable for required tags';
+  if (laneKey === 'decision') return 'FinOps council, finance, and platform leadership';
+  return 'FinOps owner with the relevant service owner';
+}
+
+function laneRisk(laneKey: string): string {
+  if (laneKey === 'forecast_risk') return 'Do not change budget guardrails without checking forecast backtests and high-risk months.';
+  if (laneKey === 'waste') return 'Avoid deleting or downsizing anything until ownership, last-used signal, and rollback path are clear.';
+  if (laneKey === 'commitment') return 'Do not expand commitments from one-off spikes; use measured baseline demand and renewal windows.';
+  if (laneKey === 'governance') return 'Policy gates should start in warn/report mode before blocking production deploys.';
+  if (laneKey === 'decision') return 'Scenario choice should balance savings, execution risk, confidence, and payback.';
+  return 'Treat the action as advisory until the owner confirms the underlying telemetry.';
+}
+
+function firstUsefulValue(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (key.toLowerCase().includes('usd') || key.toLowerCase().includes('cost') || key.toLowerCase().includes('savings') || key.toLowerCase().includes('opportunity')) {
+        return `${key.replace(/_/g, ' ')} ${formatMoney(value)}`;
+      }
+      if (key.toLowerCase().includes('percent') || key.toLowerCase().includes('pct')) {
+        return `${key.replace(/_/g, ' ')} ${value.toFixed(1)}%`;
+      }
+      return `${key.replace(/_/g, ' ')} ${value.toFixed(1)}`;
+    }
+    const text = sanitizeText(value);
+    if (text) return `${key.replace(/_/g, ' ')} ${text}`;
+  }
+  return '';
+}
+
+function summarizeLaneEvidence(evidence: unknown): string[] {
+  const rows = Array.isArray(evidence) ? evidence : [evidence];
+  return rows
+    .map((item) => {
+      const row = toRecord(item);
+      if (Object.keys(row).length === 0) return sanitizeText(item);
+      const label = sanitizeText(row.provider) || sanitizeText(row.category) || sanitizeText(row.scenario) || sanitizeText(row.month) || sanitizeText(row.lane);
+      const primary = firstUsefulValue(row, [
+        'annual_opportunity_usd',
+        'estimated_waste_usd',
+        'estimated_waste_rate_percent',
+        'coverage_percent',
+        'gap_percent',
+        'breach_probability',
+        'expected_monthly_savings_usd',
+        'confidence_score',
+        'recommendation',
+        'description',
+      ]);
+      return [label, primary].filter(Boolean).join(': ');
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function findControlTowerLane(
+  payload: ControlTowerResponseLite,
+  message: string,
+  history: ConversationEntry[],
+): ControlTowerLaneLite | null {
+  const lanes = Array.isArray(payload.control_lanes) ? payload.control_lanes : [];
+  if (lanes.length === 0) return null;
+  const searchTexts = [
+    message,
+    ...history
+      .slice()
+      .reverse()
+      .filter((entry) => entry.role === 'user')
+      .slice(0, 3)
+      .map((entry) => entry.content),
+  ].map(normalizeForMatch);
+
+  for (const text of searchTexts) {
+    const explicit = lanes.find((lane) => {
+      const action = normalizeForMatch(sanitizeText(lane.next_action));
+      return action.length > 0 && text.includes(action);
+    });
+    if (explicit) return explicit;
+  }
+
+  const laneTerms: Record<string, string[]> = {
+    forecast_risk: ['forecast', 'budget', 'backtesting', 'risk'],
+    waste: ['waste', 'quick win', 'quick wins', 'idle', 'cleanup'],
+    commitment: ['commitment', 'steady state', 'reserved', 'reservation', 'coverage'],
+    governance: ['tag', 'tags', 'policy', 'unallocated', 'governance'],
+    decision: ['scenario', 'balanced', 'decision', 'frontier', 'plan'],
+  };
+  const joined = searchTexts.join(' ');
+  const semantic = lanes.find((lane) => {
+    const key = sanitizeText(lane.lane);
+    return (laneTerms[key] || []).some((term) => joined.includes(term));
+  });
+  if (semantic) return semantic;
+
+  const priority = new Map((payload.priority_actions || []).map((action, idx) => [normalizeForMatch(action), idx]));
+  return lanes
+    .slice()
+    .sort((a, b) => {
+      const aPriority = priority.get(normalizeForMatch(sanitizeText(a.next_action))) ?? 99;
+      const bPriority = priority.get(normalizeForMatch(sanitizeText(b.next_action))) ?? 99;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      const statusRank = (status?: string) => status === 'attention' ? 0 : status === 'watch' ? 1 : 2;
+      return statusRank(sanitizeText(a.status)) - statusRank(sanitizeText(b.status));
+    })[0] || null;
+}
+
+function buildLaneSpecificWhy(
+  lane: ControlTowerLaneLite,
+  tower: ControlTowerResponseLite,
+  hybrid: HybridAdvisorResult | null,
+): string {
+  const laneKey = sanitizeText(lane.lane);
+  const summary = tower.executive_summary || {};
+  if (laneKey === 'commitment') {
+    const annualOpp = toSafeNumber(hybrid?.deterministic?.commitment_gap?.total_annual_opportunity_usd);
+    const priorityProvider = sanitizeText(hybrid?.deterministic?.commitment_gap?.priority_provider);
+    return `This matters because commitments can reduce run-rate only when the demand is stable. Current commitment opportunity is ${formatMoney(annualOpp || toSafeNumber(lane.primary_metric))}/year${priorityProvider ? `, with ${priorityProvider.toUpperCase()} as the priority provider` : ''}.`;
+  }
+  if (laneKey === 'waste') {
+    const waste = hybrid?.deterministic?.waste;
+    return `This matters because the waste lane is measuring ${formatMoney(toSafeNumber(waste?.total_estimated_waste_usd))}/month of estimated waste, or ${toSafeNumber(waste?.total_waste_rate_percent || lane.primary_metric).toFixed(1)}% of monthly spend.`;
+  }
+  if (laneKey === 'forecast_risk') {
+    return `This matters because forecast confidence is ${toSafeNumber(summary.forecast_confidence_score || lane.primary_metric).toFixed(1)}/100 against an annual run rate of ${formatMoney(toSafeNumber(summary.annualized_run_rate_usd))}.`;
+  }
+  if (laneKey === 'governance') {
+    return `This matters because tag coverage is ${toSafeNumber(lane.primary_metric).toFixed(1)}%, which controls allocation quality, showback, and policy enforcement.`;
+  }
+  if (laneKey === 'decision') {
+    return `This matters because the recommended scenario is ${sanitizeText(summary.recommended_scenario) || 'balanced'} with an expected savings pool of ${formatMoney(toSafeNumber(summary.expected_monthly_savings_pool_usd))}/month.`;
+  }
+  return `This matters because the Control Tower marks this lane as ${sanitizeText(lane.status) || 'active'} with ${sanitizeText(lane.primary_metric_label) || 'primary metric'} at ${toSafeNumber(lane.primary_metric).toFixed(1)}.`;
+}
+
+async function buildControlTowerActionReply(
+  message: string,
+  conversationHistory: ConversationEntry[],
+): Promise<string | null> {
+  if (!isControlTowerConversation(message, conversationHistory)) return null;
+
+  const apiBase = resolveBackendApiBase();
+  const [tower, hybrid] = await Promise.all([
+    fetchJsonSafe<ControlTowerResponseLite>(
+      `${apiBase}/api/v1/analytics/control-tower?cloud_provider=all&months=12`,
+      12_000,
+    ),
+    fetchJsonSafe<HybridAdvisorResult>(
+      `${apiBase}/api/v1/advisor/hybrid?narrative_type=optimization_roadmap&cloud_provider=all`,
+      12_000,
+    ),
+  ]);
+  if (!tower) return null;
+
+  const lane = findControlTowerLane(tower, message, conversationHistory);
+  if (!lane) return null;
+
+  const laneKey = sanitizeText(lane.lane);
+  const label = sanitizeText(lane.label) || 'Control Tower';
+  const action = sanitizeText(lane.next_action) || sanitizeText(message);
+  const status = sanitizeText(lane.status) || 'watch';
+  const metricLabel = sanitizeText(lane.primary_metric_label) || 'primary metric';
+  const metricValue = toSafeNumber(lane.primary_metric);
+  const summary = tower.executive_summary || {};
+  const evidenceLines = summarizeLaneEvidence(lane.evidence);
+  const ragBrief = sanitizeText(tower.rag_by_lane?.[laneKey]?.rag_brief || tower.rag_by_lane?.control_tower?.rag_brief);
+
+  const lines: string[] = [];
+  lines.push(`I checked the live Control Tower telemetry. For "${action}", the owning lane is ${label} and its status is ${status}.`);
+  lines.push(buildLaneSpecificWhy(lane, tower, hybrid));
+  lines.push(`Owner: ${laneOwner(laneKey)}.`);
+  lines.push(
+    `Evidence: monthly spend ${formatMoney(toSafeNumber(summary.monthly_spend_usd || hybrid?.deterministic?.analytics?.current_monthly_spend_usd))}, annual run rate ${formatMoney(toSafeNumber(summary.annualized_run_rate_usd))}, Control Tower score ${toSafeNumber(tower.control_score).toFixed(1)}/100 (${sanitizeText(tower.posture) || 'unknown'} posture), and ${metricLabel} ${metricValue.toFixed(1)}${metricLabel.includes('rate') || metricLabel.includes('coverage') || metricLabel.includes('confidence') ? '%' : ''}.`
+  );
+  if (evidenceLines.length > 0) {
+    lines.push(`Lane evidence:\n${evidenceLines.map((line, idx) => `${idx + 1}. ${line}`).join('\n')}`);
+  }
+  if (ragBrief) {
+    lines.push(`Guidance: ${ragBrief.split('\n').slice(0, 2).join(' ')}`);
+  }
+  lines.push(`Risk/guardrail: ${laneRisk(laneKey)}`);
+  lines.push(
+    [
+      'Next steps:',
+      `1. Confirm the lane owner and target scope for "${action}".`,
+      '2. Attach the evidence above to the owner ticket or weekly FinOps review.',
+      '3. Recheck the lane after the next telemetry refresh so finance can compare expected vs. actual impact.',
+    ].join('\n')
+  );
+
+  return lines.join('\n\n');
+}
+
 async function buildRAGContext(message: string, allowRefresh = true): Promise<string> {
   const apiBase = resolveBackendApiBase();
   const focus = detectResourceFocus(message);
@@ -2282,6 +2544,10 @@ Please verify provider account connectivity and recent billing ingestion, then r
         return await localizeResponseText(fallback, preferredLanguage);
       }
       // Continue to broader advisory flow if resource-level feeds are empty.
+    }
+    const controlTowerReply = await buildControlTowerActionReply(message, conversationHistory);
+    if (controlTowerReply) {
+      return await localizeResponseText(controlTowerReply, preferredLanguage);
     }
 
     const validation = validateQueryScope(message);
