@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { askCostQuestion } from "@/lib/ai-service";
+import { askCostQuestion, runWithBackendAuthHeaders } from "@/lib/ai-service";
 
 const CHAT_ROUTE_TIMEOUT_MS = 45_000;
 
@@ -31,8 +31,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const backendHeaders = new Headers();
+    const cookie = request.headers.get("cookie");
+    const authorization = request.headers.get("authorization");
+    if (cookie) backendHeaders.set("cookie", cookie);
+    if (authorization) backendHeaders.set("authorization", authorization);
+
     const response = await Promise.race([
-      askCostQuestion(message, conversationHistory),
+      runWithBackendAuthHeaders(backendHeaders, () => askCostQuestion(message, conversationHistory)),
       timeoutFallback(message),
     ]);
 

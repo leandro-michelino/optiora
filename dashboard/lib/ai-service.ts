@@ -4,6 +4,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
+import { AsyncLocalStorage } from 'async_hooks';
 
 interface ConversationEntry {
   role: 'user' | 'assistant';
@@ -173,10 +174,32 @@ interface VMUtilizationHotspotResponseLite {
 
 let lastProviderRefreshAttemptMs = 0;
 const PROVIDER_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+const backendAuthHeaders = new AsyncLocalStorage<HeadersInit>();
+
+export async function runWithBackendAuthHeaders<T>(
+  headers: HeadersInit,
+  callback: () => Promise<T>,
+): Promise<T> {
+  return backendAuthHeaders.run(headers, callback);
+}
+
+function mergeHeaders(base?: HeadersInit, override?: HeadersInit): Headers {
+  const headers = new Headers(base);
+  const overrideHeaders = new Headers(override);
+  overrideHeaders.forEach((value, key) => headers.set(key, value));
+  return headers;
+}
+
+function backendFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    headers: mergeHeaders(backendAuthHeaders.getStore(), init.headers),
+  });
+}
 
 async function postJsonSafe(url: string, body: Record<string, unknown> = {}): Promise<boolean> {
   try {
-    const res = await fetch(url, {
+    const res = await backendFetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -191,7 +214,7 @@ async function fetchPostJsonSafe<T>(url: string, body: Record<string, unknown> =
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await backendFetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -1064,7 +1087,7 @@ async function buildResourceLifecycleReply(message: string, allowRefresh = true)
   const apiBase = resolveBackendApiBase();
   const wantsVmScope = isVmScopedQuestion(message);
   try {
-    const res = await fetch(
+    const res = await backendFetch(
       `${apiBase}/api/v1/analytics/resource-intelligence?cloud_provider=all&query=${encodeURIComponent(message)}`,
       { method: 'GET' },
     );
@@ -1168,7 +1191,7 @@ async function buildVMUtilizationReply(message: string, allowRefresh = true): Pr
   const focus = detectVMMetricFocus(message);
   const requestedLimit = detectRequestedTopLimit(message, focus === 'all' ? 3 : 1, 10);
   try {
-    const res = await fetch(
+    const res = await backendFetch(
       `${apiBase}/api/v1/analytics/vm-utilization-hotspots?provider=all&limit=${requestedLimit}`,
       { method: 'GET' },
     );
@@ -1264,7 +1287,7 @@ async function buildProviderRightsizingReply(message: string, allowRefresh = tru
   const wantsVmScope = isVmScopedQuestion(message) || isVMCostHotspotQuestion(message) || isVMUtilizationQuestion(message);
 
   try {
-    const rightsizingRes = await fetch(
+    const rightsizingRes = await backendFetch(
       `${apiBase}/api/v1/recommendations/rightsizing?provider=${encodeURIComponent(providerParam)}&min_savings=0&limit=120`,
       { method: 'GET' },
     );
@@ -1330,7 +1353,7 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
 
   // First choice: rightsizing feed gives actionable resource-level recommendations.
   try {
-    const rightsizingRes = await fetch(
+    const rightsizingRes = await backendFetch(
       `${apiBase}/api/v1/recommendations/rightsizing?provider=${encodeURIComponent(providerParam)}&min_savings=0&limit=120`,
       { method: 'GET' },
     );
@@ -1387,7 +1410,7 @@ async function buildResourceHotspotReply(message: string, allowRefresh = true): 
 
   // Second choice: inventory feed, if rightsizing has no actionable data yet.
   try {
-    const inventoryRes = await fetch(
+    const inventoryRes = await backendFetch(
       `${apiBase}/api/v1/inventory/resources?provider=all&limit=500&offset=0`,
       { method: 'GET' },
     );
@@ -1448,7 +1471,7 @@ I excluded boot/block volumes, account or tenancy records, service snapshots, an
   if (focus || wantsServiceView || queryTokens.length > 0) {
     try {
       const focusParam = focus ? `&focus=${encodeURIComponent(focus.key)}` : "";
-      let serviceRes = await fetch(
+      let serviceRes = await backendFetch(
         `${apiBase}/api/v1/analytics/service-hotspots?period=month&cloud_provider=all&limit=8${focusParam}`,
         { method: 'GET' },
       );
@@ -1458,7 +1481,7 @@ I excluded boot/block volumes, account or tenancy records, service snapshots, an
         let usedGenericFallback = false;
 
         if ((focus || queryTokens.length > 0) && items.length === 0) {
-          serviceRes = await fetch(
+          serviceRes = await backendFetch(
             `${apiBase}/api/v1/analytics/service-hotspots?period=month&cloud_provider=all&limit=30`,
             { method: 'GET' },
           );
@@ -1538,7 +1561,7 @@ async function buildResourceCountReply(message: string, allowRefresh = true): Pr
   const queryTokens = extractQueryTokens(message);
 
   try {
-    const inventoryRes = await fetch(
+    const inventoryRes = await backendFetch(
       `${apiBase}/api/v1/inventory/resources?provider=all&limit=1000&offset=0`,
       { method: 'GET' },
     );
@@ -1589,7 +1612,7 @@ async function buildResourceCountReply(message: string, allowRefresh = true): Pr
   if (focus || queryTokens.length > 0) {
     try {
       const focusParam = focus ? `&focus=${encodeURIComponent(focus.key)}` : '';
-      const serviceRes = await fetch(
+      const serviceRes = await backendFetch(
         `${apiBase}/api/v1/analytics/service-hotspots?period=month&cloud_provider=all&limit=100${focusParam}`,
         { method: 'GET' },
       );
@@ -1667,7 +1690,7 @@ async function buildVMCostHotspotReply(allowRefresh = true): Promise<string | nu
   const apiBase = resolveBackendApiBase();
 
   try {
-    const rightsizingRes = await fetch(
+    const rightsizingRes = await backendFetch(
       `${apiBase}/api/v1/recommendations/rightsizing?provider=all&min_savings=0&limit=120`,
       { method: 'GET' },
     );
@@ -1697,7 +1720,7 @@ async function buildVMCostHotspotReply(allowRefresh = true): Promise<string | nu
   }
 
   try {
-    const inventoryRes = await fetch(
+    const inventoryRes = await backendFetch(
       `${apiBase}/api/v1/inventory/resources?provider=all&limit=500&offset=0`,
       { method: 'GET' },
     );
@@ -1730,7 +1753,7 @@ async function buildVMCostHotspotReply(allowRefresh = true): Promise<string | nu
 async function callBackendGenAIAnalyze(message: string): Promise<GenAIAnalyzeResult> {
   const analysisType = pickAnalysisType(message);
   const apiBase = resolveBackendApiBase();
-  const res = await fetch(`${apiBase}/api/v1/genai/analyze`, {
+  const res = await backendFetch(`${apiBase}/api/v1/genai/analyze`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -1751,7 +1774,7 @@ async function fetchJsonSafe<T>(url: string, timeoutMs = 8000): Promise<T | null
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { method: 'GET', signal: controller.signal });
+    const res = await backendFetch(url, { method: 'GET', signal: controller.signal });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
@@ -1973,7 +1996,7 @@ function toNarrativeType(message: string): 'waste_insights' | 'optimization_road
 async function buildDeterministicFallbackReply(message: string): Promise<string> {
   const apiBase = resolveBackendApiBase();
   const narrativeType = toNarrativeType(message);
-  const res = await fetch(
+  const res = await backendFetch(
     `${apiBase}/api/v1/advisor/hybrid?narrative_type=${encodeURIComponent(narrativeType)}&cloud_provider=all`,
     { method: 'GET' },
   );
