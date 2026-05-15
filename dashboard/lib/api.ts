@@ -1083,6 +1083,8 @@ export async function fetchDecisionGradeRecommendations(params?: {
       top_n: params?.top_n,
       min_monthly_savings: params?.min_monthly_savings,
     })}`,
+    {},
+    { timeoutMs: LIVE_DATA_TIMEOUT_MS },
   )
 }
 
