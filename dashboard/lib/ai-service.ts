@@ -2519,6 +2519,10 @@ Please retry with provider + region, or connect monitoring telemetry for VM perf
       }
       // Continue to broader advisory flow if inventory/service feeds are unavailable.
     }
+    const controlTowerReply = await buildControlTowerActionReply(message, conversationHistory);
+    if (controlTowerReply) {
+      return await localizeResponseText(controlTowerReply, preferredLanguage);
+    }
     if (isRightsizingQuestion(message)) {
       const rightsizingReply = await buildProviderRightsizingReply(message);
       if (rightsizingReply) {
@@ -2544,10 +2548,6 @@ Please verify provider account connectivity and recent billing ingestion, then r
         return await localizeResponseText(fallback, preferredLanguage);
       }
       // Continue to broader advisory flow if resource-level feeds are empty.
-    }
-    const controlTowerReply = await buildControlTowerActionReply(message, conversationHistory);
-    if (controlTowerReply) {
-      return await localizeResponseText(controlTowerReply, preferredLanguage);
     }
 
     const validation = validateQueryScope(message);
