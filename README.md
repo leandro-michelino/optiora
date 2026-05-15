@@ -2,7 +2,7 @@
 
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
-Current release: `0.9.3` advisor grounding, exact provider console deep links, backend namespace cleanup, dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
+Current release: `0.9.3` advisor grounding, authenticated Advisor Conversation telemetry, decision-grade recommendation timeout alignment, exact provider console deep links, backend namespace cleanup, dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
 Current documentation baseline: May 11, 2026.
 
 > **A quick, honest note:** OptiOra is still an active work in progress. The core platform, deployment path, and dashboard experiences are evolving quickly, but it is not being presented as a fully finished product yet. Some live-provider workflows depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not all available in my current test environments across every provider. If you are interested in running a real pilot, validating it with your cloud data, or shaping the next set of features, please get in touch.
@@ -107,6 +107,8 @@ For the deeper system topology, API surface, and data pipelines, see [ARCHITECTU
 Recent UIX and wiring updates:
 
 - Cost Advisor chat now uses the server-side dashboard `/api/ai/chat` route to call OCI GenAI with signed requests and enriches answers with backend RAG guidance from `/api/v1/genai/rag-guidance`.
+- Advisor Conversation now forwards the browser session into server-side backend telemetry calls, so authenticated cost, rightsizing, inventory, and RAG context can be used by the chat path.
+- Decision-grade recommendation fetches now use the same longer live-data timeout as the surrounding Advanced FinOps page, avoiding early dashboard-side aborts while the backend gathers cost context.
 - Advisor Conversation answers are intentionally English-only for now and rightsizing, lifecycle, VM-cost, and RAG resource prompts are grounded to real AWS, Azure, GCP, and OCI resource candidates from provider-backed rightsizing, utilization, inventory, and resource-intelligence feeds. Tenancy, account, segment, service snapshot, imported aggregate, and non-VM storage rows are excluded from actionable VM answers.
 - Backend GenAI narratives now inject retrieved RAG briefs into the OCI GenAI prompt path while preserving deterministic cost, savings, risk, and forecast numbers as the source of truth.
 - OCI deployment is wired end to end through Terraform-managed infrastructure and Ansible-managed runtime provisioning, with the deploy script reading Terraform outputs for inventory, upload, provisioning, and smoke checks.

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" width="900" height="540" role="img" aria-labelledby="title desc">
 <title id="title">OptiOra live FinOps control plane</title>
-<desc id="desc">Animated dashboard summary showing live OCI advisor findings, action ledger lifecycle tracking, provider credential status, and historical trend coverage.</desc>
+<desc id="desc">Animated dashboard summary showing live OCI advisor findings, decision-grade ranking, authenticated Advisor Conversation telemetry, action ledger lifecycle tracking, and provider credential status.</desc>
 <defs>
   <clipPath id="frame"><rect width="900" height="540" rx="18"/></clipPath>
   <linearGradient id="pageBg" x1="0" y1="0" x2="1" y2="1">
@@ -86,7 +86,7 @@
 
   <text x="18" y="299" fill="#64748b" font-size="8" font-weight="800" letter-spacing=".8">CLOUD ESTATE</text>
   <rect class="nav4" x="10" y="307" width="164" height="28" rx="8" fill="#b45309"/>
-  <circle cx="28" cy="321" r="4" fill="#f97316"/><text x="42" y="325" fill="#e2e8f0" font-size="11.5">Provider Coverage</text>
+  <circle cx="28" cy="321" r="4" fill="#f97316"/><text x="42" y="325" fill="#e2e8f0" font-size="11.5">Advanced FinOps</text>
   <circle cx="28" cy="354" r="4" fill="#f59e0b"/><text x="42" y="358" fill="#94a3b8" font-size="11">Inventory Explorer</text>
   <circle cx="28" cy="382" r="4" fill="#f59e0b"/><text x="42" y="386" fill="#94a3b8" font-size="11">Billing Allocation</text>
 
@@ -105,11 +105,11 @@
   <text class="screen1" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Overview: live OCI estate with honest multi-cloud status</text>
   <text class="screen2" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Optimization Advisor: provider findings loaded by default</text>
   <text class="screen3" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Action Ledger: lifecycle, variance, owner follow-through</text>
-  <text class="screen4" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Historical data: OCI trends live, other providers gated by credentials</text>
+  <text class="screen4" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Advanced FinOps: decision-grade ranking plus authenticated advisor context</text>
   <text class="screen1" x="204" y="43" fill="#64748b" font-size="10">No demo badge - dashboard reflects the running OCI VM and configured provider state.</text>
   <text class="screen2" x="204" y="43" fill="#64748b" font-size="10">111 advisor findings, $13.2K/mo advisor savings, 285 unattached volumes.</text>
   <text class="screen3" x="204" y="43" fill="#64748b" font-size="10">150 ledger actions, $284.4K/mo planned savings, realized savings tracked separately.</text>
-  <text class="screen4" x="204" y="43" fill="#64748b" font-size="10">AWS, Azure, and GCP remain clean empty states until credentials are configured.</text>
+  <text class="screen4" x="204" y="43" fill="#64748b" font-size="10">Advisor Conversation now carries the browser session into backend telemetry calls.</text>
   <rect x="740" y="15" width="142" height="27" rx="8" fill="#ecfdf5"/>
   <circle cx="757" cy="28" r="4" fill="#16a34a" class="pulse"/>
   <text x="812" y="32" fill="#166534" font-size="9.5" font-weight="800" text-anchor="middle">LIVE BACKEND</text>
@@ -286,37 +286,56 @@
 
   <g class="screen4">
     <rect x="204" y="78" width="676" height="42" rx="12" fill="#fff7ed" stroke="#fed7aa" filter="url(#smallShadow)"/>
-    <text x="224" y="103" fill="#92400e" font-size="11" font-weight="800">Historical and provider trend views distinguish real OCI data from credential-pending providers.</text>
-    <rect x="204" y="144" width="326" height="140" rx="14" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="226" y="171" fill="#0f172a" font-size="13" font-weight="800">Historical trends</text>
-    <text x="226" y="189" fill="#64748b" font-size="9.5">Provider-aware current state</text>
-    <line x1="226" y1="214" x2="500" y2="214" stroke="#e2e8f0"/>
-    <text x="226" y="238" fill="#475569" font-size="10">OCI</text><rect class="barGrow" x="298" y="226" width="172" height="18" rx="7" fill="url(#greenGrad)"/><text x="384" y="239" fill="#fff" font-size="8.5" font-weight="800" text-anchor="middle">live trend rows</text>
-    <text x="226" y="264" fill="#475569" font-size="10">AWS/Azure/GCP</text><rect x="342" y="252" width="128" height="18" rx="7" fill="#e0f2fe"/><text x="406" y="265" fill="#0369a1" font-size="8.5" font-weight="800" text-anchor="middle">clean empty states</text>
+    <text x="224" y="103" fill="#92400e" font-size="11" font-weight="800">Control tower panels now pair tag quality, decision-grade actions, federation, and authenticated advisor chat.</text>
 
-    <rect x="554" y="144" width="326" height="140" rx="14" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="576" y="171" fill="#0f172a" font-size="13" font-weight="800">Lifecycle automation</text>
-    <text x="576" y="189" fill="#64748b" font-size="9.5">Hot DB plus archive retention path</text>
-    <rect x="576" y="216" width="92" height="42" rx="10" fill="#eff6ff"/><text x="622" y="239" fill="#1d4ed8" font-size="10" font-weight="900" text-anchor="middle">hot DB</text><text x="622" y="252" fill="#64748b" font-size="8" text-anchor="middle">3 months</text>
-    <rect x="694" y="216" width="92" height="42" rx="10" fill="#ecfdf5"/><text x="740" y="239" fill="#166534" font-size="10" font-weight="900" text-anchor="middle">archive</text><text x="740" y="252" fill="#64748b" font-size="8" text-anchor="middle">365 days</text>
-    <path d="M668 237 C678 237 684 237 694 237" stroke="#94a3b8" stroke-width="2" fill="none"/>
-    <circle class="flow1" cx="674" cy="237" r="3" fill="#2563eb"/>
+    <rect x="204" y="144" width="158" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="224" y="169" fill="#64748b" font-size="8.5" font-weight="800">TAG QUALITY</text>
+    <text x="224" y="201" fill="#0f172a" font-size="27" font-weight="900">live</text>
+    <text x="224" y="224" fill="#1d4ed8" font-size="10" font-weight="800">team, env, app, cost center</text>
+    <rect x="384" y="144" width="158" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="404" y="169" fill="#64748b" font-size="8.5" font-weight="800">DECISION-GRADE</text>
+    <text x="404" y="201" fill="#0f172a" font-size="27" font-weight="900">45s</text>
+    <text x="404" y="224" fill="#166534" font-size="10" font-weight="800">analytics timeout aligned</text>
+    <rect x="564" y="144" width="158" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="584" y="169" fill="#64748b" font-size="8.5" font-weight="800">ADVISOR CHAT</text>
+    <text x="584" y="201" fill="#0f172a" font-size="26" font-weight="900">auth</text>
+    <text x="584" y="224" fill="#92400e" font-size="10" font-weight="800">session reaches telemetry</text>
+    <rect x="744" y="144" width="136" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="764" y="169" fill="#64748b" font-size="8.5" font-weight="800">FEDERATION</text>
+    <text x="764" y="201" fill="#0f172a" font-size="25" font-weight="900">rollup</text>
+    <text x="764" y="224" fill="#1d4ed8" font-size="10" font-weight="800">multi-account cost tree</text>
 
-    <rect x="204" y="314" width="676" height="178" rx="14" fill="#ffffff" filter="url(#shadow)"/>
-    <text x="226" y="342" fill="#0f172a" font-size="13" font-weight="800">What changed in the product surface</text>
-    <line x1="226" y1="358" x2="858" y2="358" stroke="#e2e8f0"/>
-    <rect x="226" y="376" width="190" height="78" rx="12" fill="#f0fdf4"/>
-    <text x="246" y="401" fill="#166534" font-size="11" font-weight="900">Provider Advisor</text>
-    <text x="246" y="419" fill="#475569" font-size="9.5">loads live OCI findings</text>
-    <text x="246" y="435" fill="#475569" font-size="9.5">explains unconfigured providers</text>
-    <rect x="454" y="376" width="190" height="78" rx="12" fill="#eff6ff"/>
-    <text x="474" y="401" fill="#1d4ed8" font-size="11" font-weight="900">Action Ledger</text>
-    <text x="474" y="419" fill="#475569" font-size="9.5">removed empty VM widget</text>
-    <text x="474" y="435" fill="#475569" font-size="9.5">tracks lifecycle variance</text>
-    <rect x="682" y="376" width="176" height="78" rx="12" fill="#fff7ed"/>
-    <text x="702" y="401" fill="#92400e" font-size="11" font-weight="900">Current SVG</text>
-    <text x="702" y="419" fill="#475569" font-size="9.5">no demo state labels</text>
-    <text x="702" y="435" fill="#475569" font-size="9.5">matches remote VM data</text>
+    <rect x="204" y="274" width="676" height="218" rx="14" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="226" y="302" fill="#0f172a" font-size="13" font-weight="800">Authenticated advisor telemetry path</text>
+    <line x1="226" y1="318" x2="858" y2="318" stroke="#e2e8f0"/>
+    <rect x="226" y="344" width="130" height="48" rx="12" fill="#eff6ff"/>
+    <text x="291" y="364" fill="#1d4ed8" font-size="10" font-weight="900" text-anchor="middle">Browser session</text>
+    <text x="291" y="379" fill="#64748b" font-size="8.5" text-anchor="middle">cookie or bearer</text>
+    <path d="M356 368 C376 368 388 368 408 368" stroke="#94a3b8" stroke-width="2" fill="none"/>
+    <circle class="flow1" cx="370" cy="368" r="3" fill="#2563eb"/>
+    <rect x="408" y="344" width="130" height="48" rx="12" fill="#fff7ed"/>
+    <text x="473" y="364" fill="#92400e" font-size="10" font-weight="900" text-anchor="middle">/api/ai/chat</text>
+    <text x="473" y="379" fill="#64748b" font-size="8.5" text-anchor="middle">request-scoped headers</text>
+    <path d="M538 368 C558 368 570 368 590 368" stroke="#94a3b8" stroke-width="2" fill="none"/>
+    <circle class="flow2" cx="554" cy="368" r="3" fill="#22c55e"/>
+    <rect x="590" y="344" width="130" height="48" rx="12" fill="#ecfdf5"/>
+    <text x="655" y="364" fill="#166534" font-size="10" font-weight="900" text-anchor="middle">FastAPI telemetry</text>
+    <text x="655" y="379" fill="#64748b" font-size="8.5" text-anchor="middle">cost, RAG, rightsizing</text>
+    <path d="M720 368 C740 368 752 368 772 368" stroke="#94a3b8" stroke-width="2" fill="none"/>
+    <circle class="flow3" cx="738" cy="368" r="3" fill="#f59e0b"/>
+    <rect x="772" y="344" width="86" height="48" rx="12" fill="#f8fafc"/>
+    <text x="815" y="364" fill="#0f172a" font-size="10" font-weight="900" text-anchor="middle">Answer</text>
+    <text x="815" y="379" fill="#64748b" font-size="8.5" text-anchor="middle">grounded</text>
+
+    <rect x="226" y="420" width="190" height="50" rx="12" fill="#f0fdf4"/>
+    <text x="246" y="443" fill="#166534" font-size="11" font-weight="900">Decision ranking</text>
+    <text x="246" y="459" fill="#475569" font-size="9.5">no early 10s aborts</text>
+    <rect x="454" y="420" width="190" height="50" rx="12" fill="#eff6ff"/>
+    <text x="474" y="443" fill="#1d4ed8" font-size="11" font-weight="900">Advisor Conversation</text>
+    <text x="474" y="459" fill="#475569" font-size="9.5">uses signed session context</text>
+    <rect x="682" y="420" width="176" height="50" rx="12" fill="#fff7ed"/>
+    <text x="702" y="443" fill="#92400e" font-size="11" font-weight="900">README animation</text>
+    <text x="702" y="459" fill="#475569" font-size="9.5">reflects latest wiring</text>
   </g>
 </g>
 <rect width="900" height="540" rx="18" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
