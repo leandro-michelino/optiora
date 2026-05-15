@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 540" width="900" height="540" role="img" aria-labelledby="title desc">
 <title id="title">OptiOra live FinOps control plane</title>
-<desc id="desc">Animated dashboard summary showing live OCI advisor findings, decision-grade ranking, authenticated Advisor Conversation telemetry, action ledger lifecycle tracking, and provider credential status.</desc>
+<desc id="desc">Animated dashboard summary showing live OCI advisor findings, decision-grade ranking, authenticated Advisor Conversation telemetry, action ledger lifecycle state machine, OCI cost report ingestion from bling namespace, and overview action queue.</desc>
 <defs>
   <clipPath id="frame"><rect width="900" height="540" rx="18"/></clipPath>
   <linearGradient id="pageBg" x1="0" y1="0" x2="1" y2="1">
@@ -106,7 +106,7 @@
   <text class="screen2" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Optimization Advisor: provider findings loaded by default</text>
   <text class="screen3" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Action Ledger: lifecycle, variance, owner follow-through</text>
   <text class="screen4" x="204" y="25" fill="#0f172a" font-size="14" font-weight="800">Advanced FinOps: decision-grade ranking plus authenticated advisor context</text>
-  <text class="screen1" x="204" y="43" fill="#64748b" font-size="10">No demo badge - dashboard reflects the running OCI VM and configured provider state.</text>
+  <text class="screen1" x="204" y="43" fill="#64748b" font-size="10">Action Queue links live advisor findings, unattached storage, and open ledger actions directly from the overview.</text>
   <text class="screen2" x="204" y="43" fill="#64748b" font-size="10">111 advisor findings, $13.2K/mo advisor savings, 285 unattached volumes.</text>
   <text class="screen3" x="204" y="43" fill="#64748b" font-size="10">150 ledger actions, $284.4K/mo planned savings, realized savings tracked separately.</text>
   <text class="screen4" x="204" y="43" fill="#64748b" font-size="10">Advisor Conversation now carries the browser session into backend telemetry calls.</text>
@@ -117,7 +117,7 @@
   <g class="screen1">
     <rect x="204" y="78" width="676" height="48" rx="12" fill="#eff6ff" stroke="#bfdbfe" filter="url(#smallShadow)"/>
     <text x="224" y="101" fill="#1e40af" font-size="11.5" font-weight="800">Provider data source</text>
-    <text x="224" y="117" fill="#475569" font-size="9.5">OCI runtime access is configured. AWS, Azure, and GCP are intentionally shown as credential-pending empty states.</text>
+    <text x="224" y="117" fill="#475569" font-size="9.5">OCI runtime access configured. Cost Reports (bling namespace) feed monthly summaries. AWS, Azure, and GCP await credentials.</text>
     <rect x="664" y="91" width="194" height="24" rx="8" fill="#ffffff"/>
     <text x="761" y="107" fill="#166534" font-size="9.5" font-weight="800" text-anchor="middle">remote VM verified</text>
 
@@ -239,7 +239,7 @@
 
   <g class="screen3">
     <rect x="204" y="78" width="676" height="42" rx="12" fill="#eff6ff" stroke="#bfdbfe" filter="url(#smallShadow)"/>
-    <text x="224" y="103" fill="#1e40af" font-size="11" font-weight="800">Action Ledger is now lifecycle-first: planned, realized, variance, owner, and evidence.</text>
+    <text x="224" y="103" fill="#1e40af" font-size="11" font-weight="800">Action Ledger: open → planned → approved → executed → verified, owner, realized savings, CSV export.</text>
     <circle class="flow1" cx="780" cy="99" r="4" fill="#2563eb"/>
     <circle class="flow2" cx="806" cy="99" r="4" fill="#22c55e"/>
     <circle class="flow3" cx="832" cy="99" r="4" fill="#f59e0b"/>
@@ -281,12 +281,12 @@
     <text x="626" y="424" fill="#475569" font-size="9.5">Unassigned</text>
     <text x="748" y="424" fill="#166534" font-size="10.5" font-weight="900">$2,644</text>
     <rect x="226" y="454" width="632" height="20" rx="7" fill="#ecfdf5"/>
-    <text x="542" y="468" fill="#166534" font-size="9" font-weight="800" text-anchor="middle">Empty VM-candidate widget removed - ledger stays focused on lifecycle data</text>
+    <text x="542" y="468" fill="#166534" font-size="9" font-weight="800" text-anchor="middle">Lifecycle status filter, owner, realized savings, variance, and CSV export now wired end-to-end</text>
   </g>
 
   <g class="screen4">
     <rect x="204" y="78" width="676" height="42" rx="12" fill="#fff7ed" stroke="#fed7aa" filter="url(#smallShadow)"/>
-    <text x="224" y="103" fill="#92400e" font-size="11" font-weight="800">Control tower panels now pair tag quality, decision-grade actions, federation, and authenticated advisor chat.</text>
+    <text x="224" y="103" fill="#92400e" font-size="11" font-weight="800">Control tower: tag quality, decision-grade actions, federation, advisor chat auth, OCI cost report ingestion.</text>
 
     <rect x="204" y="144" width="158" height="100" rx="13" fill="#ffffff" filter="url(#shadow)"/>
     <text x="224" y="169" fill="#64748b" font-size="8.5" font-weight="800">TAG QUALITY</text>
@@ -334,8 +334,8 @@
     <text x="474" y="443" fill="#1d4ed8" font-size="11" font-weight="900">Advisor Conversation</text>
     <text x="474" y="459" fill="#475569" font-size="9.5">uses signed session context</text>
     <rect x="682" y="420" width="176" height="50" rx="12" fill="#fff7ed"/>
-    <text x="702" y="443" fill="#92400e" font-size="11" font-weight="900">README animation</text>
-    <text x="702" y="459" fill="#475569" font-size="9.5">reflects latest wiring</text>
+    <text x="702" y="443" fill="#92400e" font-size="11" font-weight="900">OCI Cost Reports</text>
+    <text x="702" y="459" fill="#475569" font-size="9.5">bling namespace, monthly summaries</text>
   </g>
 </g>
 <rect width="900" height="540" rx="18" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
