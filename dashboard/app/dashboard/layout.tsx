@@ -18,6 +18,7 @@ import {
   Info,
   Lightbulb,
   LogOut,
+  Mail,
   Menu,
   MessageCircle,
   Search,
@@ -112,6 +113,8 @@ const activeDotClasses: Record<NavTone, string> = {
   emerald: 'bg-emerald-600 dark:bg-emerald-300',
   slate: 'bg-slate-600 dark:bg-slate-300',
 }
+
+const CONTACT_EMAIL = 'chord.sighted0m@icloud.com'
 
 const flatNavItems = navSections.flatMap((section) =>
   section.items.map((item) => ({ ...item, tone: section.tone, section: section.label })),
@@ -610,6 +613,18 @@ function DashboardLayoutContent({
               </div>
             </label>
           )}
+
+          <a
+            href={`mailto:${CONTACT_EMAIL}`}
+            className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-800 transition hover:border-blue-200 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:border-blue-800 dark:hover:bg-blue-950/70"
+            title={`Contact ${CONTACT_EMAIL}`}
+          >
+            <Mail className="h-4 w-4 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold uppercase tracking-[0.12em]">Contact / Pilot</span>
+              <span className="block truncate">{CONTACT_EMAIL}</span>
+            </span>
+          </a>
 
           <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900">
