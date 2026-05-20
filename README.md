@@ -5,7 +5,7 @@
 Current release: `0.9.3` advisor grounding, authenticated Advisor Conversation telemetry, decision-grade recommendation timeout alignment, exact provider console deep links, backend namespace cleanup, dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
 Current documentation baseline: May 11, 2026.
 
-> **A quick, honest note:** OptiOra is still an active work in progress. The core platform, deployment path, and dashboard experiences are evolving quickly, but it is not being presented as a fully finished product yet. Some live-provider workflows depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not all available in my current test environments across every provider. If you are interested in running a real pilot, validating it with your cloud data, or shaping the next set of features, please get in touch.
+> **A quick, honest note:** OptiOra is a personal project that I am actively building and refining. It is not a commercial product today, and some live-provider workflows still depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not available in every test environment. If you see potential here and are interested in running a pilot, validating it with real cloud data, or exploring how this could become a commercial product, please get in touch.
 
 ![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)
 
@@ -33,7 +33,7 @@ OptiOra helps FinOps, platform, and cloud operations teams turn cloud billing an
 - [Cost Planning](#cost-planning)
 - [Documentation Map](#documentation-map)
 - [License](#license)
-- [Contact / Pilot](#contact--pilot)
+- [Contact / Commercial Interest](#contact--commercial-interest)
 
 ## Architecture
 
@@ -381,6 +381,8 @@ estimator before purchase.
 
 MIT. See [LICENSE](LICENSE).
 
-## Contact / Pilot
+## Contact / Commercial Interest
 
-Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot
+OptiOra is currently a personal project by Leandro Michelino. If you are interested in a pilot, want to validate it with real cloud data, or would like to discuss making it a commercial product, get in touch:
+
+Leandro Michelino - ACE - leandro.michelino@oracle.com
