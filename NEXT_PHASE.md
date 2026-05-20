@@ -121,4 +121,4 @@ NEXT_PUBLIC_ENABLE_AUTH=true
 
 ## Contact / Pilot
 
-Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot
+Leandro Michelino - ACE : chord.sighted0m@icloud.com - get in touch to more details or features or if you are interested to run a Pilot

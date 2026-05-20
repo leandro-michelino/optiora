@@ -385,4 +385,4 @@ MIT. See [LICENSE](LICENSE).
 
 OptiOra is currently a personal project by Leandro Michelino. If you are interested in a pilot, want to validate it with real cloud data, or would like to discuss making it a commercial product, get in touch:
 
-Leandro Michelino - ACE - leandro.michelino@oracle.com
+Leandro Michelino - ACE - chord.sighted0m@icloud.com

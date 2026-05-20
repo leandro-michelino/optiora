@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 
-// Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot
+// Leandro Michelino - ACE : chord.sighted0m@icloud.com - get in touch to more details or features or if you are interested to run a Pilot
 
 const fixtureCsv = path.join(__dirname, 'fixtures', 'import-costs.csv')
 

@@ -431,7 +431,7 @@ export default function Home() {
               <Cloud className="h-4 w-4" />
               <span>OptiOra — Intelligent Cloud Cost Management</span>
             </div>
-            <p>Leandro Michelino - ACE : leandro.michelino@oracle.com - get in touch to more details or features or if you are interested to run a Pilot</p>
+            <p>Leandro Michelino - ACE : chord.sighted0m@icloud.com - get in touch to more details or features or if you are interested to run a Pilot</p>
           </div>
           <div className="flex gap-6">
             <Link href="/dashboard" className="hover:text-slate-700 dark:hover:text-slate-300 transition">Dashboard</Link>
