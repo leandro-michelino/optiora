@@ -128,6 +128,23 @@ variable "ssh_public_key" {
   sensitive   = true
 }
 
+variable "ssh_public_keys_extra" {
+  description = "Optional extra SSH public keys also authorized on the OptiOra compute instance."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+
+  validation {
+    condition = alltrue([
+      for key in var.ssh_public_keys_extra : trimspace(key) == "" ? true : can(regex(
+        "^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521) [A-Za-z0-9+/=]+",
+        trimspace(key)
+      ))
+    ])
+    error_message = "Each entry in ssh_public_keys_extra must be a valid OpenSSH public key."
+  }
+}
+
 variable "image_compartment_id" {
   description = "Compartment OCID used for platform image lookup. For Oracle platform images this is normally the tenancy OCID."
   type        = string

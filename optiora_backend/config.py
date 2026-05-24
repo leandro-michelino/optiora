@@ -101,6 +101,9 @@ class Config:
     aws_secret_access_key: str = field(
         default_factory=lambda: _env_str("AWS_SECRET_ACCESS_KEY")
     )
+    aws_session_token: str = field(
+        default_factory=lambda: _env_str("AWS_SESSION_TOKEN")
+    )
     aws_region: str = field(default_factory=lambda: _env_str("AWS_REGION", "us-east-1"))
     aws_organization_role_arns: str = field(
         default_factory=lambda: _env_str("AWS_ORGANIZATION_ROLE_ARNS")

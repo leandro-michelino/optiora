@@ -21,6 +21,8 @@ locals {
   compute_image_id            = try(data.oci_core_images.oracle_linux[0].images[0].id, "")
   compute_hostname_base       = replace(substr(lower(var.instance_name), 0, 15), "/[^a-z0-9]/", "")
   compute_hostname_label      = can(regex("^[a-z]", local.compute_hostname_base)) ? local.compute_hostname_base : "optiora"
+  compute_extra_ssh_keys      = [for key in var.ssh_public_keys_extra : trimspace(key) if trimspace(key) != ""]
+  compute_ssh_authorized_keys = join("\n", concat([trimspace(var.ssh_public_key)], local.compute_extra_ssh_keys))
 }
 
 resource "oci_core_instance" "optiora" {
@@ -40,7 +42,7 @@ resource "oci_core_instance" "optiora" {
   }
 
   metadata = {
-    ssh_authorized_keys = trimspace(var.ssh_public_key)
+    ssh_authorized_keys = local.compute_ssh_authorized_keys
   }
 
   shape_config {

@@ -1695,6 +1695,16 @@ def _valid_runtime_provider_names(customer_id: str, db: Session) -> set[str]:
             config_file = str(payload.get("config_file") or "").strip()
             if config_file and os.path.isfile(os.path.expanduser(config_file)):
                 providers.add(provider)
+
+    # Backward-compatible host fallback: in public/single-tenant deployments
+    # providers may be configured on the host without scoped runtime records.
+    try:
+        for diagnostic in _provider_diagnostics():
+            provider = str(getattr(diagnostic, "provider", "")).strip().lower()
+            if provider and bool(getattr(diagnostic, "configured", False)):
+                providers.add(provider)
+    except Exception as exc:
+        logger.debug("Host provider fallback diagnostics failed: %s", exc)
     return providers
 
 
@@ -1899,6 +1909,20 @@ def _provider_diagnostics(
                 ],
             },
         }
+        # Scoped-first, host-fallback: if org-scoped runtime credentials are
+        # absent, fall back to host-level provider configuration.
+        host_requirements = provider_diagnostic_requirements(config)
+        for provider, detail in requirements.items():
+            scoped_values = list(detail.get("values") or [])
+            fallback_values = list((host_requirements.get(provider) or {}).get("values") or [])
+            merged_values: list[Any] = []
+            for idx, scoped_value in enumerate(scoped_values):
+                if not _setting_missing(scoped_value):
+                    merged_values.append(scoped_value)
+                    continue
+                fallback_value = fallback_values[idx] if idx < len(fallback_values) else ""
+                merged_values.append(fallback_value)
+            detail["values"] = merged_values
     else:
         requirements = provider_diagnostic_requirements(config)
     capabilities = provider_api_capabilities()

@@ -119,7 +119,12 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         aws_region = str(runtime_credentials.get("region") or "").strip() or str(
             credentials.get("region") or ""
         ).strip() or str(config.aws_region or "us-east-1").strip() or "us-east-1"
-        session_token = str(runtime_credentials.get("session_token") or credentials.get("session_token") or "").strip()
+        session_token = str(
+            runtime_credentials.get("session_token")
+            or credentials.get("session_token")
+            or config.aws_session_token
+            or ""
+        ).strip()
 
         if not access_key_id or not secret_access_key:
             return json.dumps({"error": "AWS not configured"})

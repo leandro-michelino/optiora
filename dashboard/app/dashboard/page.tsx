@@ -295,10 +295,16 @@ export default function DashboardPage() {
   const [trendLoading, setTrendLoading] = useState(false)
   const [trendError, setTrendError] = useState<string | null>(null)
 
-  const connectedProviders = useMemo(
-    () => state.credentials.filter((credential) => credential.is_valid),
-    [state.credentials],
-  )
+  const connectedProviders = useMemo(() => {
+    const providers = new Set<string>()
+    state.credentials
+      .filter((credential) => credential.is_valid)
+      .forEach((credential) => providers.add(credential.provider))
+    state.diagnostics
+      .filter((diagnostic) => diagnostic.configured)
+      .forEach((diagnostic) => providers.add(diagnostic.provider))
+    return Array.from(providers)
+  }, [state.credentials, state.diagnostics])
   const supportedProviders = state.info?.supported_providers || ['aws', 'azure', 'gcp', 'oci']
   const scanApproved = state.permission?.state === 'approved' || state.permission?.state === 'running'
   const breakdownData = useMemo(
@@ -1007,7 +1013,7 @@ export default function DashboardPage() {
               },
               {
                 label: 'Cloud credentials',
-                detail: `${connectedProviders.length} validated provider connection${connectedProviders.length === 1 ? '' : 's'}`,
+                detail: `${connectedProviders.length} active runtime provider connection${connectedProviders.length === 1 ? '' : 's'}`,
                 ok: connectedProviders.length > 0,
                 icon: KeyRound,
               },

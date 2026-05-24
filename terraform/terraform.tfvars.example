@@ -12,6 +12,9 @@ compute_ocpus = 2
 compute_memory_gb = 8
 assign_public_ip = true
 ssh_public_key = "ssh-ed25519 AAAA... optiora-deploy"
+ssh_public_keys_extra = [
+  # "ssh-ed25519 AAAA... emergency-operator-key",
+]
 image_compartment_id = "ocid1.tenancy.oc1..<tenancy_ocid>"
 image_operating_system = "Oracle Linux"
 image_operating_system_version = "9"
