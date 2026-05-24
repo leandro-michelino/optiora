@@ -43,6 +43,17 @@ optiora_deployment_target: "oci"
 optiora_oci_runtime_required: true
 optiora_enforce_oci_runtime: true
 
+# Test-only credential seeding on VM.
+# Keep false for production so customers onboard credentials manually via dashboard.
+optiora_test_seed_cloud_credentials: false
+optiora_test_aws_access_key_id: ""
+optiora_test_aws_secret_access_key: ""
+optiora_test_aws_region: "us-east-1"
+optiora_test_azure_subscription_id: ""
+optiora_test_azure_tenant_id: ""
+optiora_test_azure_client_id: ""
+optiora_test_azure_client_secret: ""
+
 # --- nginx / TLS settings (only used when optiora_install_nginx: true) ---
 # Set optiora_domain to the public FQDN for certbot. Leave blank to serve
 # plain HTTP on port 80 (useful for staging with no DNS yet).

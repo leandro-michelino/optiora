@@ -1515,14 +1515,31 @@ def _resolve_customer_id(
     return derived_customer_id
 
 
+def _runtime_provider_credentials_for_customer(
+    customer_id: str,
+    db: Session,
+) -> Dict[str, Dict[str, Any]]:
+    runtime_credentials = _load_runtime_provider_credentials(customer_id)
+    stored_rows = (
+        db.query(CredentialRecord)
+        .filter(
+            CredentialRecord.customer_id == customer_id,
+            CredentialRecord.is_valid.is_(True),
+            CredentialRecord.provider.in_(["aws", "azure", "gcp", "oci"]),
+        )
+        .all()
+    )
+    return _merge_runtime_with_stored_credentials(runtime_credentials, stored_rows)
+
+
 async def _cost_summary_for_provider(
     provider: str,
     period: str = "month",
-    customer_id: Optional[str] = None,
+    runtime_credentials_by_provider: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     runtime_credentials = (
-        _load_runtime_provider_credentials(customer_id).get(provider)
-        if customer_id
+        (runtime_credentials_by_provider or {}).get(provider)
+        if isinstance(runtime_credentials_by_provider, dict)
         else None
     )
     return await fetch_provider_cost_summary(
@@ -1536,7 +1553,26 @@ async def _cost_summary_for_provider(
             "oci": oci_costs.get_cost_summary,
         },
         safe_json_load=_safe_json_load,
+        extra_params={
+            "runtime_credentials": runtime_credentials or {},
+        },
     )
+
+
+async def _cost_summary_for_provider_scoped(
+    provider: str,
+    period: str = "month",
+    runtime_credentials_by_provider: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Compatibility wrapper for tests that monkeypatch _cost_summary_for_provider with the legacy signature."""
+    try:
+        return await _cost_summary_for_provider(
+            provider,
+            period,
+            runtime_credentials_by_provider=runtime_credentials_by_provider,
+        )
+    except TypeError:
+        return await _cost_summary_for_provider(provider, period)
 
 
 def _imported_cost_context(
@@ -1698,21 +1734,23 @@ async def _cost_context(
     cloud_provider: str = "all",
 ) -> Dict[str, Any]:
     try:
+        customer_id = _customer_id_for_org(membership)
+        runtime_credentials_by_provider = _runtime_provider_credentials_for_customer(customer_id, db)
         context = await build_live_cost_context(
             membership,
             db,
             period=period,
             cloud_provider=cloud_provider,
             require_live_provider_data=Config().require_live_provider_data,
-            provider_diagnostics=lambda: _provider_diagnostics(
-                customer_id=_customer_id_for_org(membership),
+            provider_diagnostics=lambda: _provider_diagnostics_scoped(
+                customer_id=customer_id,
                 db=db,
             ),
             imported_cost_context_builder=_imported_cost_context,
-            cost_summary_for_provider=lambda provider, requested_period: _cost_summary_for_provider(
+            cost_summary_for_provider=lambda provider, query_period: _cost_summary_for_provider_scoped(
                 provider,
-                requested_period,
-                customer_id=_customer_id_for_org(membership),
+                query_period,
+                runtime_credentials_by_provider=runtime_credentials_by_provider,
             ),
             allow_imported_fallback=False,
         )
@@ -1731,6 +1769,16 @@ async def _cost_context(
                     imported_context = dict(imported_context)
                     imported_context["provider_errors"] = context.get("provider_errors")
                 return imported_context
+        imported_context = _imported_cost_context(membership, db, cloud_provider)
+        if (
+            imported_context is not None
+            and float(context.get("total_cost") or 0.0) <= 0.0
+            and str(context.get("source") or "").startswith("live_provider_api")
+        ):
+            if context.get("provider_errors"):
+                imported_context = dict(imported_context)
+                imported_context["provider_errors"] = context.get("provider_errors")
+            return imported_context
         return context
     except LiveDataPolicyError as exc:
         snapshot_context = _cost_snapshot_context(
@@ -1795,7 +1843,64 @@ def _provider_diagnostics(
     db: Optional[Session] = None,
 ) -> List[ProviderDiagnostic]:
     config = Config()
-    requirements = provider_diagnostic_requirements(config)
+    scoped_mode = bool(customer_id and db is not None)
+    runtime_credentials_by_provider: Dict[str, Dict[str, Any]] = (
+        _runtime_provider_credentials_for_customer(customer_id, db)
+        if scoped_mode
+        else {}
+    )
+
+    if scoped_mode:
+        aws_runtime = runtime_credentials_by_provider.get("aws", {})
+        azure_runtime = runtime_credentials_by_provider.get("azure", {})
+        gcp_runtime = runtime_credentials_by_provider.get("gcp", {})
+        oci_runtime = runtime_credentials_by_provider.get("oci", {})
+        requirements: Dict[str, Dict[str, list[str] | list[Any]]] = {
+            "aws": {
+                "settings": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"],
+                "values": [
+                    aws_runtime.get("access_key_id") or "",
+                    aws_runtime.get("secret_access_key") or "",
+                    aws_runtime.get("region") or "",
+                ],
+            },
+            "azure": {
+                "settings": [
+                    "AZURE_SUBSCRIPTION_ID|AZURE_SUBSCRIPTION_IDS|AZURE_MANAGEMENT_GROUP_ID",
+                    "AZURE_TENANT_ID",
+                    "AZURE_CLIENT_ID",
+                    "AZURE_CLIENT_SECRET",
+                ],
+                "values": [
+                    azure_runtime.get("subscription_id") or "",
+                    azure_runtime.get("tenant_id") or "",
+                    azure_runtime.get("client_id") or "",
+                    azure_runtime.get("client_secret") or "",
+                ],
+            },
+            "gcp": {
+                "settings": [
+                    "GOOGLE_APPLICATION_CREDENTIALS",
+                    "GCP_PROJECT_ID|GCP_PROJECT_IDS",
+                ],
+                "values": [
+                    gcp_runtime.get("service_account_file")
+                    or gcp_runtime.get("service_account_json")
+                    or "",
+                    gcp_runtime.get("project_id") or "",
+                ],
+            },
+            "oci": {
+                "settings": ["OCI_CONFIG_FILE", "OCI_PROFILE", "OCI_REGION"],
+                "values": [
+                    oci_runtime.get("config_file") or "",
+                    oci_runtime.get("profile") or "",
+                    oci_runtime.get("region") or "",
+                ],
+            },
+        }
+    else:
+        requirements = provider_diagnostic_requirements(config)
     capabilities = provider_api_capabilities()
     runtime_ready = _valid_runtime_provider_names(customer_id, db) if customer_id and db else set()
 
@@ -1806,19 +1911,37 @@ def _provider_diagnostics(
         missing = [setting for setting, value in zip(settings, values) if _setting_missing(value)]
         configured = not missing
         if configured and provider == "gcp":
-            credentials_file = os.path.abspath(
-                os.path.expanduser(
-                    os.path.expandvars(str(config.google_application_credentials or ""))
+            if scoped_mode:
+                scoped_gcp = runtime_credentials_by_provider.get("gcp", {})
+                scoped_file = str(scoped_gcp.get("service_account_file") or "").strip()
+                has_inline_json = isinstance(scoped_gcp.get("service_account_json"), dict)
+                if scoped_file and not os.path.isfile(os.path.expanduser(scoped_file)):
+                    missing.append(
+                        f"GOOGLE_APPLICATION_CREDENTIALS file not found: {os.path.abspath(os.path.expanduser(scoped_file))}"
+                    )
+                    configured = False
+                elif not scoped_file and not has_inline_json:
+                    missing.append("GOOGLE_APPLICATION_CREDENTIALS file not found or service_account_json missing")
+                    configured = False
+            else:
+                credentials_file = os.path.abspath(
+                    os.path.expanduser(
+                        os.path.expandvars(str(config.google_application_credentials or ""))
+                    )
                 )
-            )
-            if credentials_file and not os.path.isfile(credentials_file):
-                missing.append(
-                    f"GOOGLE_APPLICATION_CREDENTIALS file not found: {credentials_file}"
-                )
-                configured = False
+                if credentials_file and not os.path.isfile(credentials_file):
+                    missing.append(
+                        f"GOOGLE_APPLICATION_CREDENTIALS file not found: {credentials_file}"
+                    )
+                    configured = False
         if configured and provider == "oci":
+            candidate_config = (
+                str(runtime_credentials_by_provider.get("oci", {}).get("config_file") or "").strip()
+                if scoped_mode
+                else str(config.oci_config_file or "").strip()
+            )
             oci_config_file = os.path.abspath(
-                os.path.expanduser(os.path.expandvars(str(config.oci_config_file or "")))
+                os.path.expanduser(os.path.expandvars(candidate_config))
             )
             if oci_config_file and not os.path.isfile(oci_config_file):
                 missing.append(f"OCI_CONFIG_FILE file not found: {oci_config_file}")
@@ -1854,6 +1977,17 @@ def _provider_diagnostics(
             )
         )
     return diagnostics
+
+
+def _provider_diagnostics_scoped(
+    customer_id: Optional[str] = None,
+    db: Optional[Session] = None,
+) -> List[ProviderDiagnostic]:
+    """Compatibility wrapper for tests that monkeypatch _provider_diagnostics with zero-arg callables."""
+    try:
+        return _provider_diagnostics(customer_id=customer_id, db=db)
+    except TypeError:
+        return _provider_diagnostics()
 
 
 @router.post("/credentials/validate", response_model=CredentialResponse)
@@ -2264,6 +2398,7 @@ async def start_scan(
     scanning_manager: ScanningManager = Depends(get_scanning_manager),
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> ScanProgressResponse:
     try:
         _require_management_role(membership, "scan start")
@@ -2289,7 +2424,7 @@ async def start_scan(
         if Config().require_live_provider_data:
             diagnostics_map = {
                 d.provider: bool(d.configured)
-                for d in _provider_diagnostics(customer_id=customer_id, db=scanning_manager.db)
+                for d in _provider_diagnostics_scoped(customer_id=customer_id, db=db)
             }
             configured_targets = [provider for provider in providers_to_scan if diagnostics_map.get(provider, False)]
             if not configured_targets:
@@ -6758,7 +6893,10 @@ async def analytics_service_hotspots(
 
     diagnostics = {
         d.provider: bool(d.configured)
-        for d in _provider_diagnostics(customer_id=customer_id, db=db)
+        for d in _provider_diagnostics_scoped(
+            customer_id=_customer_id_for_org(membership),
+            db=db,
+        )
     }
 
     if require_live_provider_data and not any(diagnostics.get(provider, False) for provider in providers):
@@ -7224,7 +7362,10 @@ async def provider_diagnostics(
 ) -> List[ProviderDiagnostic]:
     """Return provider readiness checks without exposing secret values."""
     _ = current_user
-    return _provider_diagnostics(customer_id=_customer_id_for_org(membership), db=db)
+    return _provider_diagnostics_scoped(
+        customer_id=_customer_id_for_org(membership),
+        db=db,
+    )
 
 
 @router.get("/health")
@@ -7397,6 +7538,7 @@ async def api_info() -> Dict[str, Any]:
 async def admin_diagnostics(
     current_user: User = Depends(get_current_user),
     membership: UserOrganization = Depends(get_current_membership),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """Consolidated operational snapshot for admin troubleshooting views."""
     organization_id = _organization_id_for_membership(membership)
@@ -7418,7 +7560,10 @@ async def admin_diagnostics(
         "organization_id": organization_id,
         "api_health": await health_check(),
         "api_info": await api_info(),
-        "provider_diagnostics": _provider_diagnostics(),
+        "provider_diagnostics": _provider_diagnostics_scoped(
+            customer_id=customer_id,
+            db=db,
+        ),
         "scanning_permission": permission,
         "scheduler": scheduler.model_dump(),
         "data_freshness": freshness.model_dump(),
@@ -7453,14 +7598,14 @@ async def _run_cost_analysis(
         successful_providers: List[str] = []
         provider_errors: Dict[str, str] = {}
         require_live_provider_data = Config().require_live_provider_data
+        runtime_credentials_by_provider = _runtime_provider_credentials_for_customer(customer_id, db)
 
         for provider in providers:
-            try:
-                summary = await _cost_summary_for_provider(provider, "month", customer_id=customer_id)
-            except TypeError as exc:
-                if "customer_id" not in str(exc) and "keyword" not in str(exc):
-                    raise
-                summary = await _cost_summary_for_provider(provider, "month")
+            summary = await _cost_summary_for_provider_scoped(
+                provider,
+                "month",
+                runtime_credentials_by_provider=runtime_credentials_by_provider,
+            )
             if "error" in summary:
                 provider_errors[provider] = str(summary.get("error") or "Unknown provider error")
                 _mark_provider_credentials_unreachable(

@@ -2,8 +2,9 @@
 
 import json
 import logging
-from typing import Any, Dict, List
 from datetime import datetime, timedelta
+from typing import Any, Dict, List
+
 from optiora_backend.config import Config
 
 logger = logging.getLogger(__name__)
@@ -36,26 +37,45 @@ def _csv_or_list_values(value: Any) -> List[str]:
 async def get_cost_summary(params: dict[str, Any]) -> str:
     """
     Get Azure cost summary for specified period using Cost Management API.
-    
+
     Returns: JSON string with total cost, top services, trends
     """
     try:
         period = params.get("period", "month")
-        credentials = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
-        subscription_id = str(credentials.get("subscription_id") or config.azure_subscription_id or "")
-        subscription_ids = _csv_or_list_values(credentials.get("subscription_ids"))
-        tenant_id = str(credentials.get("tenant_id") or config.azure_tenant_id or "")
-        client_id = str(credentials.get("client_id") or config.azure_client_id or "")
-        client_secret = str(credentials.get("client_secret") or config.azure_client_secret or "")
+        runtime_credentials = params.get("runtime_credentials", {}) if isinstance(params, dict) else {}
+        credentials = params.get("credentials", {}) if isinstance(params, dict) else {}
+        if not isinstance(runtime_credentials, dict):
+            runtime_credentials = {}
+        if not isinstance(credentials, dict):
+            credentials = {}
+
+        subscription_id = str(runtime_credentials.get("subscription_id") or "").strip() or str(
+            credentials.get("subscription_id") or ""
+        ).strip() or str(config.azure_subscription_id or "").strip()
+        subscription_ids = _csv_or_list_values(
+            runtime_credentials.get("subscription_ids")
+            or credentials.get("subscription_ids")
+            or config.azure_subscription_ids
+        )
+        tenant_id = str(runtime_credentials.get("tenant_id") or "").strip() or str(
+            credentials.get("tenant_id") or ""
+        ).strip() or str(config.azure_tenant_id or "").strip()
+        client_id = str(runtime_credentials.get("client_id") or "").strip() or str(
+            credentials.get("client_id") or ""
+        ).strip() or str(config.azure_client_id or "").strip()
+        client_secret = str(runtime_credentials.get("client_secret") or "").strip() or str(
+            credentials.get("client_secret") or ""
+        ).strip() or str(config.azure_client_secret or "").strip()
         management_group_id = str(
-            credentials.get("management_group_id")
+            runtime_credentials.get("management_group_id")
+            or credentials.get("management_group_id")
             or config.azure_management_group_id
             or ""
         ).strip()
-        
-        if not subscription_id and not subscription_ids and not config.azure_subscription_ids and not management_group_id:
+
+        if not subscription_id and not subscription_ids and not management_group_id:
             return json.dumps({"error": "Azure not configured (subscription id or management group id not set)"})
-        
+
         try:
             from azure.identity import ClientSecretCredential
             from azure.mgmt.costmanagement import CostManagementClient
@@ -63,18 +83,15 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         except ImportError:
             logger.warning("Azure SDK not available")
             return json.dumps({"error": "Azure SDK not available", "cloud_provider": "azure"})
-        
-        # Create credentials
+
         credential = ClientSecretCredential(
             tenant_id=tenant_id,
             client_id=client_id,
             client_secret=client_secret,
         )
-        
-        # Create CostManagement client
+
         client = CostManagementClient(credential)
-        
-        # Calculate date range
+
         end_date = datetime.now().date()
         if period == "day":
             start_date = end_date - timedelta(days=1)
@@ -82,41 +99,40 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             start_date = end_date - timedelta(days=7)
         elif period == "month":
             start_date = end_date - timedelta(days=30)
-        else:  # year
+        else:
             start_date = end_date - timedelta(days=365)
-        
+
         def _build_query(group_dimension: str) -> QueryDefinition:
             return QueryDefinition(
-            type="Usage",
-            timeframe="Custom",
-            time_period={
-                "from": f"{start_date.isoformat()}T00:00:00Z",
-                "to": f"{end_date.isoformat()}T23:59:59Z"
-            },
-            dataset={
-                "granularity": "Monthly",
-                "aggregation": {
-                    "totalCost": {
-                        "name": "PreTaxCost",
-                        "function": "Sum"
-                    }
+                type="Usage",
+                timeframe="Custom",
+                time_period={
+                    "from": f"{start_date.isoformat()}T00:00:00Z",
+                    "to": f"{end_date.isoformat()}T23:59:59Z",
                 },
-                "grouping": [
-                    {
-                        "type": "Dimension",
-                        "name": group_dimension
-                    }
-                ],
-                "sorting": [
-                    {
-                        "direction": "Ascending",
-                        "name": group_dimension
-                    }
-                ]
-            }
-        )
+                dataset={
+                    "granularity": "Monthly",
+                    "aggregation": {
+                        "totalCost": {
+                            "name": "PreTaxCost",
+                            "function": "Sum",
+                        }
+                    },
+                    "grouping": [
+                        {
+                            "type": "Dimension",
+                            "name": group_dimension,
+                        }
+                    ],
+                    "sorting": [
+                        {
+                            "direction": "Ascending",
+                            "name": group_dimension,
+                        }
+                    ],
+                },
+            )
 
-        # Build scan scopes: management group first (if provided), then subscriptions.
         scopes: List[Dict[str, str]] = []
         if management_group_id:
             scopes.append(
@@ -126,14 +142,16 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     "scope_type": "management_group",
                 }
             )
+
         subscription_values = subscription_ids or ([subscription_id] if subscription_id else _subscription_list())
         if subscription_id and subscription_id not in subscription_values:
             subscription_values.insert(0, subscription_id)
-        for subscription_id in subscription_values:
+
+        for sid in subscription_values:
             scopes.append(
                 {
-                    "scope": f"/subscriptions/{subscription_id}",
-                    "identifier": subscription_id,
+                    "scope": f"/subscriptions/{sid}",
+                    "identifier": sid,
                     "scope_type": "subscription",
                     "parent_scope_id": management_group_id or None,
                     "parent_scope_type": "management_group" if management_group_id else None,
@@ -193,27 +211,29 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
 
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
         top_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)[:10]
-        
-        return json.dumps({
-            "period": period,
-            "start_date": str(start_date),
-            "end_date": str(end_date),
-            "total_cost_usd": round(total_cost, 2),
-            "top_services": [
-                {"service": s, "cost_usd": round(c, 2)} for s, c in top_services
-            ],
-            "region_breakdown": [
-                {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
-            ],
-            "account_breakdown": scope_breakdown,
-            "currency": "USD",
-            "cloud_provider": "azure",
-            "data_source": "live_provider_api",
-            "api_source": "Azure Cost Management Query Usage",
-            "cost_dimensions": ["MeterCategory", "ResourceLocation"],
-            "scope_count": len(scope_breakdown),
-        })
-        
+
+        return json.dumps(
+            {
+                "period": period,
+                "start_date": str(start_date),
+                "end_date": str(end_date),
+                "total_cost_usd": round(total_cost, 2),
+                "top_services": [
+                    {"service": s, "cost_usd": round(c, 2)} for s, c in top_services
+                ],
+                "region_breakdown": [
+                    {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
+                ],
+                "account_breakdown": scope_breakdown,
+                "currency": "USD",
+                "cloud_provider": "azure",
+                "data_source": "live_provider_api",
+                "api_source": "Azure Cost Management Query API",
+                "cost_dimensions": ["MeterCategory", "ResourceLocation"],
+                "scope_count": len(scope_breakdown),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error fetching Azure costs: {str(e)}")
         return json.dumps({"error": str(e), "cloud_provider": "azure"})

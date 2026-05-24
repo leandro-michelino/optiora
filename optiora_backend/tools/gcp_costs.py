@@ -3,8 +3,9 @@
 import json
 import logging
 import re
-from typing import Any, Dict, List
 from datetime import datetime, timedelta
+from typing import Any, Dict, List
+
 from optiora_backend.config import Config
 
 logger = logging.getLogger(__name__)
@@ -51,62 +52,74 @@ def _billing_export_table(project_id: str, dataset: str, table_prefix: str) -> s
 async def get_cost_summary(params: dict[str, Any]) -> str:
     """
     Get GCP cost summary for specified period using BigQuery billing export.
-    
+
     Returns: JSON string with total cost, top services, trends
     """
     try:
         period = params.get("period", "month")
-        credentials_payload = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
+        runtime_credentials = params.get("runtime_credentials", {}) if isinstance(params, dict) else {}
+        credentials_payload = params.get("credentials", {}) if isinstance(params, dict) else {}
+        if not isinstance(runtime_credentials, dict):
+            runtime_credentials = {}
+        if not isinstance(credentials_payload, dict):
+            credentials_payload = {}
+
         credentials_file = str(
-            credentials_payload.get("service_account_file")
+            runtime_credentials.get("service_account_file")
+            or credentials_payload.get("service_account_file")
             or config.google_application_credentials
             or ""
+        ).strip()
+        service_account_json = (
+            runtime_credentials.get("service_account_json")
+            or credentials_payload.get("service_account_json")
         )
-        project_id = str(credentials_payload.get("project_id") or config.gcp_project_id or "")
-        project_ids = _csv_or_list_values(credentials_payload.get("project_ids"))
+        project_id = str(runtime_credentials.get("project_id") or credentials_payload.get("project_id") or config.gcp_project_id or "").strip()
+        project_ids = _csv_or_list_values(
+            runtime_credentials.get("project_ids")
+            or credentials_payload.get("project_ids")
+            or config.gcp_project_ids
+        )
         export_project_ids = _csv_or_list_values(
-            credentials_payload.get("billing_export_project_ids")
+            runtime_credentials.get("billing_export_project_ids")
+            or credentials_payload.get("billing_export_project_ids")
             or config.gcp_billing_export_project_ids
         )
         export_dataset = str(
-            credentials_payload.get("billing_export_dataset")
+            runtime_credentials.get("billing_export_dataset")
+            or credentials_payload.get("billing_export_dataset")
             or config.gcp_billing_export_dataset
             or "billing"
         ).strip()
         export_table_prefix = str(
-            credentials_payload.get("billing_export_table_prefix")
+            runtime_credentials.get("billing_export_table_prefix")
+            or credentials_payload.get("billing_export_table_prefix")
             or config.gcp_billing_export_table_prefix
             or "gcp_billing_export_v1_"
         ).strip()
-        
-        if not credentials_file and not credentials_payload.get("service_account_json"):
+
+        if not credentials_file and service_account_json is None:
             return json.dumps({"error": "GCP not configured (GOOGLE_APPLICATION_CREDENTIALS not set)"})
         if not project_id and not project_ids and not config.gcp_project_ids and not export_project_ids:
             return json.dumps({"error": "GCP not configured (GCP_PROJECT_ID not set)"})
-        
+
         try:
             from google.cloud import bigquery
             from google.oauth2 import service_account
         except ImportError:
             logger.warning("GCP SDK not available")
             return json.dumps({"error": "GCP SDK not available", "cloud_provider": "gcp"})
-        
+
         if credentials_file:
-            credentials = service_account.Credentials.from_service_account_file(
-                credentials_file
-            )
+            credentials = service_account.Credentials.from_service_account_file(credentials_file)
         else:
-            service_account_json = credentials_payload.get("service_account_json")
             if isinstance(service_account_json, str):
                 service_account_json = json.loads(service_account_json)
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_json
-            )
-        
+            credentials = service_account.Credentials.from_service_account_info(service_account_json)
+
         client_project = project_id or (project_ids[0] if project_ids else "") or (export_project_ids[0] if export_project_ids else "")
         client = bigquery.Client(project=client_project or None, credentials=credentials)
-        
-        # Calculate date range
+
         end_date = datetime.now().date()
         if period == "day":
             start_date = end_date - timedelta(days=1)
@@ -114,21 +127,21 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             start_date = end_date - timedelta(days=7)
         elif period == "month":
             start_date = end_date - timedelta(days=30)
-        else:  # year
+        else:
             start_date = end_date - timedelta(days=365)
-        
+
         total_cost = 0.0
         services: Dict[str, float] = {}
         regions: Dict[str, float] = {}
         project_breakdown: List[Dict[str, Any]] = []
-        organization_id = str(credentials_payload.get("organization_id") or config.gcp_organization_id or "").strip()
-        folder_id = str(credentials_payload.get("folder_id") or config.gcp_folder_id or "").strip()
+        organization_id = str(runtime_credentials.get("organization_id") or credentials_payload.get("organization_id") or config.gcp_organization_id or "").strip()
+        folder_id = str(runtime_credentials.get("folder_id") or credentials_payload.get("folder_id") or config.gcp_folder_id or "").strip()
         parent_scope_id = folder_id or organization_id or None
         parent_scope_type = "folder" if folder_id else ("organization" if organization_id else None)
 
         project_values = export_project_ids or project_ids or ([project_id] if project_id else _project_list())
-        for project_id in project_values:
-            billing_table = _billing_export_table(project_id, export_dataset, export_table_prefix)
+        for scoped_project_id in project_values:
+            billing_table = _billing_export_table(scoped_project_id, export_dataset, export_table_prefix)
             service_query = f"""
             SELECT
                 service.description AS service_name,
@@ -174,8 +187,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                 project_breakdown.append(
                     {
                         "scope_type": "project",
-                        "scope_id": project_id,
-                        "scope_name": project_id,
+                        "scope_id": scoped_project_id,
+                        "scope_name": scoped_project_id,
                         "parent_scope_id": parent_scope_id,
                         "parent_scope_type": parent_scope_type,
                         "total_cost_usd": round(project_total, 2),
@@ -185,8 +198,8 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                 project_breakdown.append(
                     {
                         "scope_type": "project",
-                        "scope_id": project_id,
-                        "scope_name": project_id,
+                        "scope_id": scoped_project_id,
+                        "scope_name": scoped_project_id,
                         "parent_scope_id": parent_scope_id,
                         "parent_scope_type": parent_scope_type,
                         "error": str(project_exc),
@@ -217,33 +230,35 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
 
         top_services = sorted(services.items(), key=lambda x: x[1], reverse=True)[:5]
         top_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)[:10]
-        
-        return json.dumps({
-            "period": period,
-            "start_date": str(start_date),
-            "end_date": str(end_date),
-            "total_cost_usd": round(total_cost, 2),
-            "top_services": [
-                {"service": s, "cost_usd": round(c, 2)} for s, c in top_services
-            ],
-            "region_breakdown": [
-                {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
-            ],
-            "account_breakdown": hierarchy_prefix + project_breakdown,
-            "scope_context": {
-                "folder_id": folder_id or None,
-                "organization_id": organization_id or None,
-                "billing_export_dataset": export_dataset,
-                "billing_export_table_prefix": export_table_prefix,
-            },
-            "currency": "USD",
-            "cloud_provider": "gcp",
-            "data_source": "live_provider_api",
-            "api_source": "Google BigQuery Cloud Billing export",
-            "cost_dimensions": ["service.description", "location.region"],
-            "scope_count": len(hierarchy_prefix) + len(project_breakdown),
-        })
-        
+
+        return json.dumps(
+            {
+                "period": period,
+                "start_date": str(start_date),
+                "end_date": str(end_date),
+                "total_cost_usd": round(total_cost, 2),
+                "top_services": [
+                    {"service": s, "cost_usd": round(c, 2)} for s, c in top_services
+                ],
+                "region_breakdown": [
+                    {"region": region, "cost_usd": round(cost, 2)} for region, cost in top_regions
+                ],
+                "account_breakdown": hierarchy_prefix + project_breakdown,
+                "scope_context": {
+                    "folder_id": folder_id or None,
+                    "organization_id": organization_id or None,
+                    "billing_export_dataset": export_dataset,
+                    "billing_export_table_prefix": export_table_prefix,
+                },
+                "currency": "USD",
+                "cloud_provider": "gcp",
+                "data_source": "live_provider_api",
+                "api_source": "GCP BigQuery Billing Export",
+                "cost_dimensions": ["service.description", "location.region"],
+                "scope_count": len(hierarchy_prefix + project_breakdown),
+            }
+        )
+
     except Exception as e:
         logger.error(f"Error fetching GCP costs: {str(e)}")
         return json.dumps({"error": str(e), "cloud_provider": "gcp"})

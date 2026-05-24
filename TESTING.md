@@ -167,6 +167,12 @@ Cloud connectivity probe (from the backend runtime host):
 PYTHONPATH=. .venv/bin/python scripts/check_cloud_connectivity.py
 ```
 
+AWS/Azure deployment simulation (read-only, no provisioning):
+
+```bash
+./scripts/simulate_azure_aws_deployments.sh
+```
+
 Notes:
 
 - The script reports configured/missing state for AWS, Azure, GCP, and OCI.
@@ -261,6 +267,12 @@ route, and does not name `ocid1.tenancy.*`, `*-acct-*`, account aggregates,
 imported rollups, or service snapshots as actionable resources. If no real
 provider-backed resource candidate exists, the correct response is an explicit
 empty-state for cross-cloud rightsizing.
+
+Release-critical live route/API gate:
+
+```bash
+API_BASE=http://localhost:8000 DASHBOARD_BASE=http://localhost:3000 bash tests/live_data_gate.sh
+```
 
 ## Terraform
 

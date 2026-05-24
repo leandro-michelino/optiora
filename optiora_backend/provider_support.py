@@ -263,7 +263,7 @@ def provider_diagnostic_requirements(config: Config) -> Dict[str, Dict[str, list
         "gcp": {
             "settings": [
                 "GOOGLE_APPLICATION_CREDENTIALS",
-                "GCP_PROJECT_ID|GCP_PROJECT_IDS|GCP_BILLING_EXPORT_PROJECT_IDS",
+                "GCP_PROJECT_ID|GCP_PROJECT_IDS",
             ],
             "values": [config.google_application_credentials, gcp_project_scope_value],
         },

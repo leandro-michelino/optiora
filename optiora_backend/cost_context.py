@@ -40,14 +40,18 @@ async def fetch_provider_cost_summary(
     credentials: Optional[Dict[str, Any]] = None,
     fetchers: Dict[str, Callable[[Dict[str, Any]], Awaitable[str]]],
     safe_json_load: Callable[[str, Dict[str, Any]], Dict[str, Any]],
+    extra_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     fetcher = fetchers.get(provider)
     if fetcher is None:
         return {"error": f"Unsupported provider: {provider}"}
-    params: Dict[str, Any] = {"period": period, "cloud_provider": provider}
-    if credentials:
-        params["credentials"] = credentials
-    raw = await fetcher(params)
+    payload = {"period": period, "cloud_provider": provider}
+    if isinstance(credentials, dict) and credentials:
+        payload["credentials"] = credentials
+        payload.setdefault("runtime_credentials", credentials)
+    if isinstance(extra_params, dict) and extra_params:
+        payload.update(extra_params)
+    raw = await fetcher(payload)
     return safe_json_load(raw, {"error": "Invalid tool response"})
 
 

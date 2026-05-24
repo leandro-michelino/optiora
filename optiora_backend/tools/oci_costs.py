@@ -53,9 +53,18 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
     """Get OCI cost summary for specified period using OCI Usage API."""
     try:
         period = params.get("period", "month")
-        credentials = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
-        config_file = str(credentials.get("config_file") or config.oci_config_file or "")
-        profile = str(credentials.get("profile") or config.oci_profile or "DEFAULT")
+        runtime_credentials = params.get("runtime_credentials", {}) if isinstance(params, dict) else {}
+        credentials = params.get("credentials", {}) if isinstance(params, dict) else {}
+        if not isinstance(runtime_credentials, dict):
+            runtime_credentials = {}
+        if not isinstance(credentials, dict):
+            credentials = {}
+
+        merged_credentials: Dict[str, Any] = dict(credentials)
+        merged_credentials.update(runtime_credentials)
+
+        config_file = str(merged_credentials.get("config_file") or config.oci_config_file or "").strip()
+        profile = str(merged_credentials.get("profile") or config.oci_profile or "DEFAULT").strip() or "DEFAULT"
 
         if not config_file:
             return json.dumps({"error": "OCI not configured (OCI_CONFIG_FILE not set)"})
@@ -64,10 +73,9 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             import oci
             from oci.usage_api import UsageapiClient
 
-            # Initialize OCI client
             config_path = os.path.expanduser(config_file)
             oci_config = oci.config.from_file(config_path, profile)
-            runtime_region = str(credentials.get("region") or "").strip()
+            runtime_region = str(merged_credentials.get("region") or "").strip()
             if runtime_region:
                 oci_config["region"] = runtime_region
             usage_client = UsageapiClient(oci_config)
@@ -76,7 +84,6 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             logger.warning("OCI SDK not available")
             return json.dumps({"error": "OCI SDK not available", "cloud_provider": "oci"})
 
-        # Calculate date range (UTC boundaries with zeroed time).
         end_date = datetime.now(timezone.utc).date()
         if period == "day":
             start_date = end_date - timedelta(days=1)
@@ -88,6 +95,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             start_date = end_date - timedelta(days=365)
 
         from oci.usage_api import models
+
         start_ts = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
         end_ts = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
 
@@ -121,9 +129,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             if "home region" not in usage_text:
                 raise
             identity_client = oci.identity.IdentityClient(oci_config)
-            subscriptions = identity_client.list_region_subscriptions(
-                tenancy_id=tenancy_id
-            ).data
+            subscriptions = identity_client.list_region_subscriptions(tenancy_id=tenancy_id).data
             home_region = next(
                 (
                     str(sub.region_name)
@@ -194,7 +200,7 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
                     "tenancy_id": tenancy_id,
                     "configured_compartment_ids": _compartment_list(
                         tenancy_id,
-                        credentials.get("compartment_ids"),
+                        merged_credentials.get("compartment_ids"),
                     ),
                 },
                 "usage_region": used_region or None,

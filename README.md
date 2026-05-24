@@ -89,6 +89,13 @@ Local workspace
 
 For the deeper system topology, API surface, and data pipelines, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Credential Source Strategy
+
+- Production default: customers upload cloud credentials from the dashboard (`/dashboard/settings`), scoped per organization.
+- Runtime behavior: live cost collection and provider diagnostics now resolve credentials from the organization runtime store first.
+- Test-only VM mode: optional Ansible seed (`optiora_test_seed_cloud_credentials=true`) can inject AWS/Azure credentials into `.env` for temporary internal validation.
+- Security guidance: keep test seed disabled in production and rely on dashboard onboarding.
+
 ## Core Capabilities
 
 | Area | What OptiOra Provides |

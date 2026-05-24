@@ -28,6 +28,24 @@ Current packaged release metadata is tracked in [RELEASE_NOTES.md](RELEASE_NOTES
 
 Current operator experience notes are tracked in [UIX_REVIEW.md](UIX_REVIEW.md) and [E2E_WALKTHROUGH_NOTES.md](E2E_WALKTHROUGH_NOTES.md). After each deploy, the browser walkthrough should still load every dashboard route, including the Scorecards realized-savings view and the consolidated Kubernetes page.
 
+## Test-Only Cloud Credential Seeding
+
+Use this only for internal validation runs on a temporary VM. Production should keep credentials customer-managed via dashboard onboarding.
+
+Ansible controls:
+
+- `optiora_test_seed_cloud_credentials` (default `false`)
+- `optiora_test_aws_access_key_id`
+- `optiora_test_aws_secret_access_key`
+- `optiora_test_aws_region`
+- `optiora_test_azure_subscription_id`
+- `optiora_test_azure_tenant_id`
+- `optiora_test_azure_client_id`
+- `optiora_test_azure_client_secret`
+
+When enabled, these values are written into `/opt/optiora/.env` on the VM to support test scans and diagnostics.
+Set `optiora_test_seed_cloud_credentials=false` for final customer deployments.
+
 ## Deployment Execution Order
 
 For `./deploy/deploy-oci.sh full` (and menu option `1`), the execution order is:
@@ -156,6 +174,12 @@ terraform -chdir=terraform plan \
   -var="compartment_id=ocid1.compartment.oc1..<compartment_ocid>" \
   -var="region=uk-london-1" \
   -var="laptop_cidr=<your_public_ip>/32"
+```
+
+Cloud simulation (read-only AWS/Azure checks, no provisioning):
+
+```bash
+./scripts/simulate_azure_aws_deployments.sh
 ```
 
 Optional Ansible host provisioning:

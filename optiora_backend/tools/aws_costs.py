@@ -2,8 +2,8 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
 from optiora_backend.config import Config
@@ -45,15 +45,20 @@ def _csv_or_list_values(value: Any) -> List[str]:
 def _assumed_ce_client(
     role_arn: str,
     region: str,
-    access_key_id: str | None = None,
-    secret_access_key: str | None = None,
+    *,
+    access_key_id: str,
+    secret_access_key: str,
+    session_token: Optional[str] = None,
 ):
-    sts = boto3.client(
-        "sts",
-        region_name=region,
-        aws_access_key_id=access_key_id or config.aws_access_key_id,
-        aws_secret_access_key=secret_access_key or config.aws_secret_access_key,
-    )
+    sts_kwargs: Dict[str, Any] = {
+        "region_name": region,
+        "aws_access_key_id": access_key_id,
+        "aws_secret_access_key": secret_access_key,
+    }
+    if session_token:
+        sts_kwargs["aws_session_token"] = session_token
+
+    sts = boto3.client("sts", **sts_kwargs)
     session = sts.assume_role(
         RoleArn=role_arn,
         RoleSessionName="optiora-org-cost-scan",
@@ -93,27 +98,42 @@ def _extract_region_costs(response: Dict[str, Any]) -> Dict[str, float]:
 async def get_cost_summary(params: dict[str, Any]) -> str:
     """
     Get AWS cost summary for specified period.
-    
+
     Returns: JSON string with total cost, top services, trends
     """
     try:
         period = params.get("period", "month")
-        credentials = params.get("credentials") if isinstance(params.get("credentials"), dict) else {}
-        access_key_id = str(credentials.get("access_key_id") or config.aws_access_key_id or "")
-        secret_access_key = str(credentials.get("secret_access_key") or config.aws_secret_access_key or "")
-        region = str(credentials.get("region") or config.aws_region or "us-east-1")
+        runtime_credentials = params.get("runtime_credentials", {}) if isinstance(params, dict) else {}
+        credentials = params.get("credentials", {}) if isinstance(params, dict) else {}
+        if not isinstance(runtime_credentials, dict):
+            runtime_credentials = {}
+        if not isinstance(credentials, dict):
+            credentials = {}
+
+        access_key_id = str(runtime_credentials.get("access_key_id") or "").strip() or str(
+            credentials.get("access_key_id") or ""
+        ).strip() or str(config.aws_access_key_id or "").strip()
+        secret_access_key = str(runtime_credentials.get("secret_access_key") or "").strip() or str(
+            credentials.get("secret_access_key") or ""
+        ).strip() or str(config.aws_secret_access_key or "").strip()
+        aws_region = str(runtime_credentials.get("region") or "").strip() or str(
+            credentials.get("region") or ""
+        ).strip() or str(config.aws_region or "us-east-1").strip() or "us-east-1"
+        session_token = str(runtime_credentials.get("session_token") or credentials.get("session_token") or "").strip()
 
         if not access_key_id or not secret_access_key:
             return json.dumps({"error": "AWS not configured"})
 
-        base_client = boto3.client(
-            "ce",
-            region_name=region,
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
-        )
+        boto_kwargs: Dict[str, Any] = {
+            "region_name": aws_region,
+            "aws_access_key_id": access_key_id,
+            "aws_secret_access_key": secret_access_key,
+        }
+        if session_token:
+            boto_kwargs["aws_session_token"] = session_token
 
-        # Calculate date range
+        base_client = boto3.client("ce", **boto_kwargs)
+
         end_date = datetime.now().date()
         if period == "day":
             start_date = end_date - timedelta(days=1)
@@ -121,10 +141,15 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             start_date = end_date - timedelta(days=7)
         elif period == "month":
             start_date = end_date - timedelta(days=30)
-        else:  # year
+        else:
             start_date = end_date - timedelta(days=365)
 
-        runtime_role_arns = ",".join(_csv_or_list_values(credentials.get("organization_role_arns")))
+        runtime_role_arns = ",".join(
+            _csv_or_list_values(
+                runtime_credentials.get("organization_role_arns")
+                or credentials.get("organization_role_arns")
+            )
+        )
         role_targets = _parse_role_targets(runtime_role_arns or config.aws_organization_role_arns)
         account_rows: List[Dict[str, Any]] = []
         total_cost = 0.0
@@ -146,7 +171,6 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
             for name, cost in account_services.items():
                 services[name] = services.get(name, 0.0) + cost
 
-            # REGION is not guaranteed in all billing dimensions; fall back gracefully.
             region_response = client.get_cost_and_usage(
                 TimePeriod={"Start": str(start_date), "End": str(end_date)},
                 Granularity="MONTHLY",
@@ -174,7 +198,13 @@ async def get_cost_summary(params: dict[str, Any]) -> str:
         _query_account("default", base_client)
         for account_id, role_arn in role_targets:
             try:
-                client = _assumed_ce_client(role_arn, region, access_key_id, secret_access_key)
+                client = _assumed_ce_client(
+                    role_arn,
+                    aws_region,
+                    access_key_id=access_key_id,
+                    secret_access_key=secret_access_key,
+                    session_token=session_token or None,
+                )
                 _query_account(account_id, client, role_arn=role_arn)
             except Exception as exc:
                 logger.warning("Skipping AWS org account %s (%s): %s", account_id, role_arn, exc)
@@ -246,14 +276,12 @@ async def get_unused_resources(account_id: str = None) -> str:
 
         unused = {"stopped_instances": [], "unattached_volumes": []}
 
-        # Find stopped instances (unused for >30 days)
         instances = ec2_client.describe_instances(
             Filters=[{"Name": "instance-state-name", "Values": ["stopped"]}]
         )
 
         for reservation in instances.get("Reservations", []):
             for instance in reservation.get("Instances", []):
-                state_transition_time = instance.get("StateTransitionReason", "")
                 unused["stopped_instances"].append(
                     {
                         "instance_id": instance["InstanceId"],
@@ -262,7 +290,6 @@ async def get_unused_resources(account_id: str = None) -> str:
                     }
                 )
 
-        # Find unattached EBS volumes
         volumes = ec2_client.describe_volumes(
             Filters=[{"Name": "status", "Values": ["available"]}]
         )

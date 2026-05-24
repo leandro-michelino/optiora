@@ -84,6 +84,17 @@ Current as of May 11, 2026.
 | - virtual_tag_rules         |
 | - audit_logs                |
 +-----------------------------+
+        |
+        | scoped runtime credentials (per organization)
+        v
++--------------------------------+
+| Runtime credential store       |
+| /opt/optiora/.runtime/...      |
+| - aws/runtime.json             |
+| - azure/runtime.json           |
+| - gcp/runtime.json             |
+| - oci/runtime.json             |
++--------------------------------+
 ```
 
 Ingress control is enforced primarily at OCI security list level (`laptop_cidr`,
@@ -221,6 +232,26 @@ preserving specialized pages where the user journey is genuinely different.
 The navigation keeps duplicate-feeling recommendation views out of the primary
 path.
 
+## Cloud Credential Resolution
+
+```text
+dashboard settings (credential upload)
+        |
+        v
+/api/v1/credentials/add
+        |
+        +--> validate credentials (safe probe calls)
+        |
+        +--> persist scoped metadata in DB
+        |
+        +--> write runtime credential files per organization
+        |
+        v
+live provider collection routes (/api/v1/costs, scanning, diagnostics)
+        |
+        +--> resolve scoped runtime credentials first
+        +--> fall back to host env only when explicitly seeded
+```
 ## Weekly Operating Review Pack
 
 ```text
