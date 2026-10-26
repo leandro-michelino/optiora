@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from .config import Config
 from . import __version__
 from .api import router as api_router, run_scheduled_scans_once
-from .auth_routes import router as auth_router
+from .auth_routes import router as auth_router, _is_auth_enabled
 from .orm_models import ensure_public_workspace, init_db
 from .retention import run_retention
 from .response_cache import ApiResponseCache, ApiResponseCacheMiddleware, run_response_cache_refresher
@@ -82,7 +82,9 @@ app = FastAPI(
 app.add_middleware(
     ApiResponseCacheMiddleware,
     cache=api_response_cache,
-    enabled=lambda: _response_cache_enabled,
+    # Cache hits bypass route dependencies. Authenticated reads must reach those
+    # dependencies to enforce token expiry and current user/org permissions.
+    enabled=lambda: _response_cache_enabled and not _is_auth_enabled(),
 )
 
 

@@ -12,8 +12,11 @@ import os
 import tempfile
 from pathlib import Path
 
-_SUITE_DB = Path(tempfile.gettempdir()) / "optiora_pytest_suite.db"
+_SUITE_DIR = tempfile.TemporaryDirectory(prefix="optiora-pytest-")
+_SUITE_DB = Path(_SUITE_DIR.name) / "suite.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_SUITE_DB}"
+os.environ["RUNTIME_CREDENTIAL_DIR"] = str(Path(_SUITE_DIR.name) / "runtime-credentials")
+os.environ["OCI_UPLOADED_CREDENTIAL_DIR"] = str(Path(_SUITE_DIR.name) / "uploaded-credentials")
 os.environ.setdefault("ENABLE_AUTH", "true")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-suite")
 os.environ.setdefault("PASSWORD_RESET_RETURN_TOKEN", "true")
@@ -34,3 +37,5 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-untyped-def]
         _SUITE_DB.unlink()
     except FileNotFoundError:
         pass
+    engine.dispose()
+    _SUITE_DIR.cleanup()

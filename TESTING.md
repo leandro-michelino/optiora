@@ -1,5 +1,11 @@
 # Testing and Verification
 
+Local review snapshot (October 26, 2026): `316` backend tests, `3` frontend session tests, and all `6` local Playwright scenarios passed, including navigation across the 20 main dashboard screens. Dashboard production build, TypeScript, ESLint, Terraform format/validate, and Ansible syntax checks passed. Live cloud-provider behavior and the deployed OCI application were not revalidated in this review.
+
+Review regressions cover cookie-only refresh without a JSON body, refresh-token replay rejection, concurrent frontend refresh deduplication, inactive organization access, authenticated cache bypass, explicit `COOKIE_SECURE=false`, bcrypt's UTF-8 byte limit, Azure Monitor metric retrieval, paginated archive reads, and timezone normalization. Pytest uses isolated database and credential directories per invocation. Local Playwright credentials are separated from application runtime credentials; the live configuration selects only the dedicated live walkthrough, excluding local CSV import tests.
+
+Run the frontend session regression tests with `cd dashboard && npm run test:unit`.
+
 Validation snapshot (May 11, 2026): backend regression suite passing (`301` unittest cases), targeted rightsizing/ledger and deep analytics tests passing (`35` via pytest), GenAI/RAG/config scope tests passing (`36` via pytest), dashboard build/type-check/lint passing when run serially, high-severity npm audit clean, animated SVG route integrity passing, tracked Terraform format/validate passing, Ansible playbook syntax passing, production browser smoke passing, live Rightsizing browser toggle passing, Advisor Conversation English/OCI-VM grounding smoke passing on the OCI VM, `/health` reporting version `0.9.3`, and OCI deploy verification passing (`48` passed, `0` failed, `3` skipped).
 
 ## Backend

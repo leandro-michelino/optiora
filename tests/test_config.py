@@ -161,7 +161,8 @@ class ConfigTest(unittest.TestCase):
         )
         self.assertEqual(requirements["azure"]["values"][0], "sub-a,sub-b")
         self.assertEqual(
-            requirements["gcp"]["settings"][1], "GCP_PROJECT_ID|GCP_PROJECT_IDS"
+            requirements["gcp"]["settings"][1],
+            "GCP_PROJECT_ID|GCP_PROJECT_IDS",
         )
         self.assertEqual(requirements["gcp"]["values"][1], "proj-a,proj-b")
 

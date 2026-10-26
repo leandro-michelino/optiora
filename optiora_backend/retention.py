@@ -19,9 +19,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import oci  # oci SDK already in pyproject.toml
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from .config import Config
 from .orm_models import (
     CostAllocationSnapshot,
     CostPeriodSummary,
@@ -170,8 +170,6 @@ def run_retention(config: "Config") -> dict:  # type: ignore[name-defined]
 
     Returns a summary dict with counts per table.
     """
-    from .config import Config  # local import to avoid circular
-
     if not config.retention_enabled:
         logger.debug("Retention is disabled; skipping.")
         return {"skipped": True}
@@ -250,13 +248,21 @@ def fetch_archived_period_summaries(
 
     # List all objects under the summaries prefix
     try:
-        list_resp = client.list_objects(
-            namespace_name=namespace,
-            bucket_name=bucket,
-            prefix=_ARCHIVE_SUMMARIES_PREFIX,
-            limit=1000,
-        )
-        object_names = [obj.name for obj in list_resp.data.objects]
+        object_names: list[str] = []
+        start = None
+        while True:
+            options = {"start": start} if start else {}
+            list_resp = client.list_objects(
+                namespace_name=namespace,
+                bucket_name=bucket,
+                prefix=_ARCHIVE_SUMMARIES_PREFIX,
+                limit=1000,
+                **options,
+            )
+            object_names.extend(obj.name for obj in list_resp.data.objects)
+            start = list_resp.data.next_start_with
+            if not start:
+                break
     except Exception as exc:
         logger.warning("Failed to list archive objects: %s", exc)
         return []
@@ -285,7 +291,9 @@ def fetch_archived_period_summaries(
                     continue
                 # Normalize to datetime for comparison
                 try:
-                    ps = datetime.fromisoformat(str(ps_raw).replace("Z", ""))
+                    ps = datetime.fromisoformat(str(ps_raw).replace("Z", "+00:00"))
+                    if ps.tzinfo is not None:
+                        ps = ps.astimezone(timezone.utc).replace(tzinfo=None)
                 except ValueError:
                     continue
                 if period_start_from <= ps < period_start_to:

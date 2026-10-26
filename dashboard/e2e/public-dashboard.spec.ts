@@ -42,12 +42,12 @@ test('dashboard navigation search narrows screens and active route is precise', 
   await page.goto('/dashboard/rightsizing')
 
   await expect(page.getByRole('link', { name: /^Overview$/ })).not.toHaveAttribute('aria-current', 'page')
-  await expect(page.getByRole('link', { name: /^Rightsizing$/ })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('link', { name: /^Optimization Advisor$/ })).toHaveAttribute('aria-current', 'page')
 
   await page.getByRole('searchbox', { name: 'Find dashboard screen' }).fill('kubernetes')
   await expect(page.getByRole('link', { name: /^Kubernetes$/ })).toBeVisible()
   await expect(page.getByRole('link', { name: /K8s Namespaces/i })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: /^Rightsizing$/ })).toBeHidden()
+  await expect(page.getByRole('link', { name: /^Optimization Advisor$/ })).toBeHidden()
 
   await page.getByRole('searchbox', { name: 'Find dashboard screen' }).fill('no screen here')
   await expect(page.getByText('No screens match that search.')).toBeVisible()

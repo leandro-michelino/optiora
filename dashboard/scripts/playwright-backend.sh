@@ -14,6 +14,8 @@ export ENVIRONMENT="${ENVIRONMENT:-test}"
 export REQUIRE_LIVE_PROVIDER_DATA="${REQUIRE_LIVE_PROVIDER_DATA:-false}"
 export SECRET_KEY="${SECRET_KEY:-optiora-e2e-secret-key}"
 export DATABASE_URL="${DATABASE_URL:-sqlite:///${DB_PATH}}"
+export RUNTIME_CREDENTIAL_DIR="${RUNTIME_CREDENTIAL_DIR:-${TMP_DIR}/e2e-runtime-credentials}"
+export OCI_UPLOADED_CREDENTIAL_DIR="${OCI_UPLOADED_CREDENTIAL_DIR:-${TMP_DIR}/e2e-uploaded-credentials}"
 
 cd "$ROOT_DIR"
 "${ROOT_DIR}/.venv/bin/alembic" -c "${ROOT_DIR}/alembic.ini" upgrade head >/dev/null

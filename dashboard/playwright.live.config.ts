@@ -4,6 +4,7 @@ const liveBaseUrl = process.env.DASHBOARD_BASE || process.env.HOST || 'http://14
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: '**/live-operator-walkthrough.spec.ts',
   timeout: 180_000,
   expect: {
     timeout: 20_000,

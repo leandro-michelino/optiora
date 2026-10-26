@@ -119,11 +119,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshTokenRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshTokenRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -6217,7 +6224,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 100,
+              "default": 50,
               "title": "Limit"
             }
           },
@@ -11672,6 +11679,73 @@
           "recommendation": {
             "type": "string",
             "title": "Recommendation"
+          },
+          "scope_model": {
+            "type": "string",
+            "title": "Scope Model",
+            "default": ""
+          },
+          "primary_apis": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Primary Apis"
+          },
+          "optimization_apis": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Optimization Apis"
+          },
+          "telemetry_apis": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Telemetry Apis"
+          },
+          "default_page_size": {
+            "type": "integer",
+            "title": "Default Page Size",
+            "default": 100
+          },
+          "max_page_size": {
+            "type": "integer",
+            "title": "Max Page Size",
+            "default": 200
+          },
+          "max_parallel_requests": {
+            "type": "integer",
+            "title": "Max Parallel Requests",
+            "default": 3
+          },
+          "request_timeout_seconds": {
+            "type": "integer",
+            "title": "Request Timeout Seconds",
+            "default": 30
+          },
+          "retryable_statuses": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Retryable Statuses"
+          },
+          "throttling_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Throttling Signals"
+          },
+          "scan_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scan Notes"
           }
         },
         "type": "object",
@@ -12704,6 +12778,22 @@
             },
             "type": "object",
             "title": "Tags"
+          },
+          "data_source": {
+            "type": "string",
+            "title": "Data Source",
+            "default": "account_cost_snapshot"
+          },
+          "console_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Console Url"
           }
         },
         "type": "object",
@@ -12745,6 +12835,16 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "data_source": {
+            "type": "string",
+            "title": "Data Source",
+            "default": "account_cost_snapshot"
+          },
+          "coverage_note": {
+            "type": "string",
+            "title": "Coverage Note",
+            "default": ""
           }
         },
         "type": "object",
@@ -12934,6 +13034,72 @@
               }
             ],
             "title": "Risk Note"
+          },
+          "provider_recommendation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Recommendation Type"
+          },
+          "provider_recommendation_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Recommendation Name"
+          },
+          "provider_recommendation_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Recommendation Category"
+          },
+          "provider_recommendation_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Recommendation Status"
+          },
+          "provider_recommendation_importance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Recommendation Importance"
+          },
+          "provider_recommendation_resource_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Recommendation Resource Count"
           }
         },
         "type": "object",

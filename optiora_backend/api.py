@@ -23,6 +23,7 @@ import hmac
 import shutil
 import subprocess
 import time
+import httpx
 from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace

@@ -6,6 +6,7 @@ const e2eDatabasePath = path.join(rootDir, '.tmp', 'optiora-e2e.db')
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: '**/live-operator-walkthrough.spec.ts',
   timeout: 120_000,
   expect: {
     timeout: 15_000,

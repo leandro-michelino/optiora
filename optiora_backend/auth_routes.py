@@ -56,7 +56,9 @@ _REDIS_RATE_LIMIT_CLIENT = None
 _REDIS_RATE_LIMIT_DISABLED = False
 ACCESS_TOKEN_COOKIE_NAME = "optiora_access_token"
 REFRESH_TOKEN_COOKIE_NAME = "optiora_refresh_token"
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", os.getenv("ENVIRONMENT", "development").lower() == "production")
+COOKIE_SECURE = str(os.getenv(
+    "COOKIE_SECURE", str(os.getenv("ENVIRONMENT", "development").lower() == "production")
+)).strip().lower() in {"1", "true", "yes"}
 COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 
@@ -124,6 +126,8 @@ def _normalize_email(email: str) -> str:
 
 def _validate_password_strength(password: str) -> Optional[str]:
     """Keep server-side password rules aligned with the dashboard signup flow."""
+    if len(password.encode("utf-8")) > 72:
+        return "Password must not exceed 72 UTF-8 bytes"
     if len(password) < 8:
         return "Password must be at least 8 characters"
     if not re.search(r"[A-Z]", password):
@@ -253,7 +257,10 @@ def _clear_auth_cookies(response: Response) -> None:
 
 def _resolve_membership(user: User, requested_org_id: Optional[int]) -> Optional[UserOrganization]:
     """Resolve a user membership by org_id, or default to the first available membership."""
-    memberships = list(user.user_organizations or [])
+    memberships = [
+        membership for membership in user.user_organizations or []
+        if membership.organization is not None and membership.organization.is_active
+    ]
     if not memberships:
         return None
     if requested_org_id is None:
@@ -355,7 +362,10 @@ def get_current_membership(
         if org_id_raw is not None:
             org_id = int(org_id_raw)
     except (TypeError, ValueError):
-        org_id = None
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid organization scope",
+        )
 
     membership = _resolve_membership(current_user, org_id)
     if not membership:
@@ -462,7 +472,9 @@ async def login(
         )
     
     # Get user's primary organization
-    user_org = db.query(UserOrganization).filter(UserOrganization.user_id == user.id).first()
+    user_org = _resolve_membership(user, None)
+    if user_org is None:
+        raise HTTPException(status_code=403, detail="No active organization membership found")
     org_id = user_org.organization_id if user_org else None
     role = user_org.role.value if user_org else None
     
@@ -506,14 +518,14 @@ async def login(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(
-    request_body: RefreshTokenRequest,
     request: Request,
     response: Response,
+    request_body: Optional[RefreshTokenRequest] = None,
     db: Session = Depends(get_db),
 ):
     """Refresh access token using refresh token."""
     incoming_refresh_token = (
-        request_body.refresh_token
+        (request_body.refresh_token if request_body else None)
         or request.cookies.get(REFRESH_TOKEN_COOKIE_NAME)
         or ""
     )
@@ -574,8 +586,10 @@ async def refresh(
         if payload.get("org_id") is not None:
             requested_org_id = int(payload.get("org_id"))
     except (TypeError, ValueError):
-        requested_org_id = None
+        raise HTTPException(status_code=403, detail="Invalid organization scope")
     user_org = _resolve_membership(user, requested_org_id)
+    if user_org is None:
+        raise HTTPException(status_code=403, detail="No active organization membership found")
     org_id = user_org.organization_id if user_org else None
     role = user_org.role.value if user_org else None
     
