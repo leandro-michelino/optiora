@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import time
 import httpx
+import math
 from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -60,7 +61,7 @@ from .cost_context import (
     fetch_provider_cost_summary,
 )
 from .external_anomalies import aws_anomaly_severity, coerce_aws_anomaly_impact_usd, derive_aws_anomaly_alert
-from .imported_cost_csv import CsvImportError, load_normalized_csv_upload, validate_cost_csv_row
+from .imported_cost_csv import MAX_CSV_BYTES, CsvImportError, load_normalized_csv_upload, validate_cost_csv_row
 from .imported_costs import query_imported_cost_rows, summarize_imported_cost_rows
 from .provider_support import (
     AWSCredentialInput,
@@ -853,13 +854,18 @@ def _parse_required_float_value(
         parsed = float(text)
     except ValueError:
         return None, f"Invalid {field_name} at CSV line {line_number}."
+    if not math.isfinite(parsed):
+        return None, f"Invalid {field_name} at CSV line {line_number}. A finite number is required."
     if parsed < 0:
         return None, f"Negative {field_name} at CSV line {line_number}. Cost values must be zero or greater."
     return parsed, None
 
 
 def _csv_escape(value: Any) -> str:
-    text = str(value if value is not None else "").replace('"', '""')
+    text = str(value if value is not None else "")
+    if isinstance(value, str) and text.lstrip().startswith(("=", "+", "-", "@")):
+        text = "'" + text
+    text = text.replace('"', '""')
     return f'"{text}"'
 
 
@@ -3186,7 +3192,7 @@ async def preview_cost_csv_import(
     customer_id = _customer_id_for_org(membership)
 
     filename = str(file.filename or "").strip() or "cost-import.csv"
-    raw = await file.read()
+    raw = await file.read(MAX_CSV_BYTES + 1)
     try:
         headers, rows = load_normalized_csv_upload(filename, raw)
     except CsvImportError as exc:
@@ -3300,7 +3306,7 @@ async def upload_cost_csv(
     customer_id = _customer_id_for_org(membership)
 
     filename = str(file.filename or "").strip() or "cost-import.csv"
-    raw = await file.read()
+    raw = await file.read(MAX_CSV_BYTES + 1)
     try:
         headers, rows = load_normalized_csv_upload(filename, raw)
     except CsvImportError as exc:

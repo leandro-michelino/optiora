@@ -1,0 +1,196 @@
+{
+  "terraform_resources": [
+    {
+      "resource": "oci_objectstorage_bucket.cost_archive",
+      "source": "terraform/main.tf",
+      "diagram_label": "Private archive bucket"
+    },
+    {
+      "resource": "oci_objectstorage_object_lifecycle_policy.cost_archive",
+      "source": "terraform/main.tf",
+      "diagram_label": "Bucket lifecycle policy"
+    },
+    {
+      "resource": "oci_core_vcn.main",
+      "source": "terraform/main.tf",
+      "diagram_label": "OptiOra VCN"
+    },
+    {
+      "resource": "oci_core_internet_gateway.main",
+      "source": "terraform/main.tf",
+      "diagram_label": "Internet Gateway"
+    },
+    {
+      "resource": "oci_core_route_table.public",
+      "source": "terraform/main.tf",
+      "diagram_label": "Public route table"
+    },
+    {
+      "resource": "oci_core_security_list.public",
+      "source": "terraform/main.tf",
+      "diagram_label": "Ingress allowlist"
+    },
+    {
+      "resource": "oci_core_subnet.public",
+      "source": "terraform/main.tf",
+      "diagram_label": "Public subnet"
+    },
+    {
+      "resource": "oci_core_instance.optiora",
+      "source": "terraform/compute.tf",
+      "diagram_label": "Optional application VM"
+    },
+    {
+      "resource": "oci_core_volume.optiora_data",
+      "source": "terraform/compute.tf",
+      "diagram_label": "Optional data volume"
+    },
+    {
+      "resource": "oci_core_volume_attachment.optiora_data",
+      "source": "terraform/compute.tf",
+      "diagram_label": "Paravirtualized attachment (optional)"
+    },
+    {
+      "resource": "oci_resource_scheduler_schedule.weekday_start",
+      "source": "terraform/resource_scheduler.tf",
+      "diagram_label": "Optional START / STOP schedules"
+    },
+    {
+      "resource": "oci_resource_scheduler_schedule.weekday_stop",
+      "source": "terraform/resource_scheduler.tf",
+      "diagram_label": "Optional START / STOP schedules"
+    },
+    {
+      "resource": "oci_identity_policy.resource_scheduler_instance_control",
+      "source": "terraform/resource_scheduler.tf",
+      "diagram_label": "Optional scheduler IAM policy"
+    }
+  ],
+  "pages": [
+    {
+      "name": "01 - Application and data flows",
+      "connections": [
+        {
+          "source": "Operators / Finance\nBrowser",
+          "target": "nginx front door\nHTTP :80 / optional TLS :443",
+          "label": "HTTP / HTTPS"
+        },
+        {
+          "source": "nginx front door\nHTTP :80 / optional TLS :443",
+          "target": "Next.js dashboard :3000\nUser interface + /api/ai/chat",
+          "label": "Dashboard + chat"
+        },
+        {
+          "source": "nginx front door\nHTTP :80 / optional TLS :443",
+          "target": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "label": "/auth/* and /api/v1/*"
+        },
+        {
+          "source": "Next.js dashboard :3000\nUser interface + /api/ai/chat",
+          "target": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "label": "Server-side telemetry"
+        },
+        {
+          "source": "Next.js dashboard :3000\nUser interface + /api/ai/chat",
+          "target": "OCI Generative AI\nSigned inference requests",
+          "label": "Signed chat inference"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "OCI Generative AI\nSigned inference requests",
+          "label": "Signed narrative inference"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "OCI provider APIs\nUsage / inventory / recommendations\nOracle-managed Cost Reports",
+          "label": "OCI SDK / HTTPS"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "SQLAlchemy persistence\nSQLite on VM by default\nPostgreSQL configurable externally",
+          "label": "Read / write"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "Local FinOps RAG catalog\nCSV-backed guidance retrieval",
+          "label": "Retrieve guidance"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "Cost archive bucket\nRead / write when retention enabled",
+          "label": "Archive / restore NDJSON"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "AWS | Cost Explorer / inventory",
+          "label": "AWS SDK / HTTPS"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "Azure | Cost Management / Advisor",
+          "label": "Azure SDK / HTTPS"
+        },
+        {
+          "source": "FastAPI :8000\nAuth / org scope / scanning / analytics\nCosts / rightsizing / exports",
+          "target": "GCP | BigQuery billing / inventory",
+          "label": "GCP SDK / HTTPS"
+        }
+      ]
+    },
+    {
+      "name": "02 - Terraform network and optional resources",
+      "connections": [
+        {
+          "source": "Allowed source CIDRs\nSSH :22; web :80/:443",
+          "target": "Internet Gateway",
+          "label": "Permitted ingress"
+        },
+        {
+          "source": "Internet Gateway",
+          "target": "VNIC\nPublic IP configurable",
+          "label": "Public subnet traffic"
+        },
+        {
+          "source": "VNIC\nPublic IP configurable",
+          "target": "Optional application VM\ncompute_enabled = true",
+          "label": "Instance VNIC"
+        },
+        {
+          "source": "Public route table",
+          "target": "Internet Gateway",
+          "label": "0.0.0.0/0 -> IGW"
+        },
+        {
+          "source": "Public route table",
+          "target": "Public subnet\n10.50.1.0/24 (default)",
+          "label": "route_table_id"
+        },
+        {
+          "source": "Ingress allowlist\nEgress destination: 0.0.0.0/0",
+          "target": "Public subnet\n10.50.1.0/24 (default)",
+          "label": "security_list_ids"
+        },
+        {
+          "source": "Private archive bucket",
+          "target": "Bucket lifecycle policy\nDelete archive/ objects after 365 days",
+          "label": "Lifecycle"
+        },
+        {
+          "source": "Optional application VM\ncompute_enabled = true",
+          "target": "Optional data volume\ncompute_enabled && extra_block_volume_enabled",
+          "label": "Paravirtualized attachment (optional)"
+        },
+        {
+          "source": "Optional START / STOP schedules\nresource_scheduler_enabled = true\nConfigured UTC cron expressions",
+          "target": "Optional application VM\ncompute_enabled = true",
+          "label": "Target: VM + explicit resource IDs (optional)"
+        },
+        {
+          "source": "Optional scheduler IAM policy\nresource_scheduler_manage_instance_policy",
+          "target": "Optional START / STOP schedules\nresource_scheduler_enabled = true\nConfigured UTC cron expressions",
+          "label": "Authorize schedule principals (optional)"
+        }
+      ]
+    }
+  ]
+}

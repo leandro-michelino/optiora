@@ -142,10 +142,7 @@ def _validate_password_strength(password: str) -> Optional[str]:
 
 
 def _client_ip(request: Request) -> str:
-    """Resolve a rate-limit client key from standard proxy headers."""
-    forwarded_for = request.headers.get("x-forwarded-for", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+    """Use the client resolved by the server's trusted-proxy configuration."""
     if request.client:
         return request.client.host
     return "unknown"

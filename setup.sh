@@ -138,7 +138,8 @@ if [ "$INSTALL_DEV_TOOLS" = "true" ]; then
     "pytest>=9,<10" \
     "ruff>=0.1,<0.2" \
     "mypy>=1.5,<2" \
-    "black>=23,<24"
+    "black>=23,<24" \
+    "jinja2>=3.1,<4"
   log_ok "Installed backend dev toolchain"
 else
   log_warn "Skipped backend dev toolchain install"

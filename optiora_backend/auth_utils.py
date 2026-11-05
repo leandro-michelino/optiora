@@ -14,7 +14,7 @@ from pydantic import BaseModel
 _SECRET_KEY_DEFAULT = "your-secret-key-change-in-production"
 SECRET_KEY = os.getenv("SECRET_KEY", _SECRET_KEY_DEFAULT)
 _ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
-if SECRET_KEY == _SECRET_KEY_DEFAULT and _ENVIRONMENT == "production":
+if (not SECRET_KEY.strip() or SECRET_KEY == _SECRET_KEY_DEFAULT) and _ENVIRONMENT == "production":
     raise RuntimeError(
         "Refusing to start in production with insecure default SECRET_KEY. "
         "Set SECRET_KEY to a strong, unique value."
@@ -72,6 +72,8 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against hash."""
+    if len(plain_password.encode("utf-8")) > 72:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 
@@ -126,7 +128,10 @@ def create_refresh_token(user_id: int, email: str, org_id: Optional[int] = None)
 def decode_token(token: str) -> Optional[dict]:
     """Decode and validate JWT token."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=[ALGORITHM],
+            options={"require_exp": True, "require_iat": True, "require_sub": True},
+        )
         return payload
     except JWTError:
         return None

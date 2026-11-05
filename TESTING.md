@@ -1,5 +1,25 @@
 # Testing and Verification
 
+Local review snapshot (November 5, 2026): all `341` backend tests, `8` frontend unit tests and `6` local Playwright scenarios passed. The walkthrough covers the 20 main dashboard screens. Production build, TypeScript, ESLint, critical Python name checks, Terraform formatting/validation, and Ansible syntax were checked. The final boolean-template changes were also covered by focused deployment tests.
+
+New coverage includes malformed/ambiguous CSV inputs, finite cost values, CSV formula neutralization, required JWT claims, oversized bcrypt login rejection, proxy-header spoofing, explicit false deployment toggles, TLS-aware cookies, validated chat inputs, timeout cleanup and organization-session enforcement before chat inference. CSV upload reads are also bounded before parsing.
+
+### Terraform plan evidence
+
+Plans ran using profile `DEFAULT`, region `uk-london-1`, and the confirmed `Africa_Team/Leandro.Michelino` compartment with OCID suffix `36vorq`. VCN/subnet defaults were `10.50.0.0/16` and `10.50.1.0/24`. The ingress source `192.0.2.1/32` is a documentation-only address for this plan, not a working operator source.
+
+| Scenario | Create | Update | Destroy | Result |
+|---|---:|---:|---:|---|
+| Default configuration, compute disabled | 7 | 0 | 0 | Plan succeeded |
+| Compute, extra volume and Resource Scheduler enabled | 13 | 0 | 0 | Plan succeeded; OCI image and availability-domain lookups completed |
+| 200 explicit scheduler targets plus the managed VM | - | - | - | Rejected during planning by the combined target limit |
+
+The recovered checkout had no deployment state or local tfvars. These are new-deployment plans, not a drift comparison against an existing installation. No `terraform apply` ran. Plan artifacts and local inputs remain in ignored `.tmp/review/`; credentials and plan binaries are not published. Successful planning does not establish quotas, deployed connectivity, runtime health or cloud-provider/GenAI access.
+
+### Diagram verification
+
+Both native draw.io pages and their PNG exports were generated with the Oracle toolkit and visually inspected. The generator reports zero layout warnings, validates all connector references and unique cell IDs, and checks coverage of all 13 Terraform resource declarations. The source manifest records 23 connections across the two views. The application PNG is embedded in the root README; the infrastructure PNG and editable sources are linked there and in `ARCHITECTURE.md`.
+
 Local review snapshot (October 26, 2026): `316` backend tests, `3` frontend session tests, and all `6` local Playwright scenarios passed, including navigation across the 20 main dashboard screens. Dashboard production build, TypeScript, ESLint, Terraform format/validate, and Ansible syntax checks passed. Live cloud-provider behavior and the deployed OCI application were not revalidated in this review.
 
 Review regressions cover cookie-only refresh without a JSON body, refresh-token replay rejection, concurrent frontend refresh deduplication, inactive organization access, authenticated cache bypass, explicit `COOKIE_SECURE=false`, bcrypt's UTF-8 byte limit, Azure Monitor metric retrieval, paginated archive reads, and timezone normalization. Pytest uses isolated database and credential directories per invocation. Local Playwright credentials are separated from application runtime credentials; the live configuration selects only the dedicated live walkthrough, excluding local CSV import tests.

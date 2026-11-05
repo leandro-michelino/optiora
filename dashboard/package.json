@@ -26,7 +26,7 @@
     "oci"
   ],
   "author": "Leandro Michelino - ACE <chord.sighted0m@icloud.com>",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=20.9.0"
   },

@@ -7,7 +7,7 @@ name = "optiora"
 version = "0.9.3"
 description = "OptiOra - Multi-Cloud Cost Optimization platform deployed on OCI. Optimize costs across AWS, Azure, GCP, and OCI."
 authors = [{name = "Leandro Michelino - ACE", email = "chord.sighted0m@icloud.com"}]
-license = "MIT"
+license = "Apache-2.0"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 
@@ -47,13 +47,14 @@ black = "^23.0.0"
 ruff = "^0.1.0"
 mypy = "^1.5.0"
 pytest = "^9.0.0"
+jinja2 = "^3.1.0"
 
 [tool.poetry.scripts]
 optiora = "optiora_backend.app:main"
 
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312", "py313"]
+target-version = ["py310"]
 include = '\.pyi?$'
 
 [tool.ruff]

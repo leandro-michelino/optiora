@@ -37,6 +37,10 @@ resource "oci_resource_scheduler_schedule" "weekday_start" {
       condition     = length(local.resource_scheduler_target_resource_ids) > 0
       error_message = "Set resource_scheduler_resource_ids to one or more target resource OCIDs, or enable Terraform-managed compute, before enabling Resource Scheduler."
     }
+    precondition {
+      condition     = length(distinct(var.resource_scheduler_resource_ids)) + (var.compute_enabled ? 1 : 0) <= 200
+      error_message = "Resource Scheduler supports at most 200 combined explicit and Terraform-managed compute targets."
+    }
   }
 }
 
@@ -65,6 +69,10 @@ resource "oci_resource_scheduler_schedule" "weekday_stop" {
     precondition {
       condition     = length(local.resource_scheduler_target_resource_ids) > 0
       error_message = "Set resource_scheduler_resource_ids to one or more target resource OCIDs, or enable Terraform-managed compute, before enabling Resource Scheduler."
+    }
+    precondition {
+      condition     = length(distinct(var.resource_scheduler_resource_ids)) + (var.compute_enabled ? 1 : 0) <= 200
+      error_message = "Resource Scheduler supports at most 200 combined explicit and Terraform-managed compute targets."
     }
   }
 }

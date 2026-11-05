@@ -1,101 +1,23 @@
 # OptiOra Architecture
 
-Current as of May 11, 2026.
+Source topology reviewed November 5, 2026. Historical live deployment evidence is not a current runtime guarantee.
 
 ## Runtime Topology
 
-```text
-+----------------+
-| End users      |
-+-------+--------+
-        |
-        | HTTPS (optional nginx front door) or direct app ports
-        v
-+---------------------------------------------------------------+
-| Next.js dashboard, port 3000                                  |
-|                                                               |
-| Surfaces                                                      |
-| - Overview, costs, anomalies, recommendations, forecasting    |
-| - FinOps analytics, inventory, scorecards, chargeback, tags   |
-| - Kubernetes, MSP/customer portfolio, AI advisor              |
-| - Refresh buttons send force-refresh hints for fresh reads    |
-|                                                               |
-| Frontend GenAI path                                           |
-| - /api/ai/chat -> dashboard/lib/ai-service.ts -> OCI GenAI    |
-| - English-only Advisor Conversation until multilingual UX is  |
-|   intentionally re-enabled                                    |
-+-------+-------------------------------------------------------+
-        |
-        | REST /api/v1/*
-        v
-+---------------------------------------------------------------+
-| FastAPI backend, port 8000                                    |
-|                                                               |
-| Response cache                                                |
-| - JSON GET /api/v1/* cache, 5-minute TTL by default           |
-| - active-entry warmer refreshes cached keys every 5 minutes   |
-| - force_refresh=true / no-cache bypasses and repopulates      |
-|                                                               |
-| Core APIs                                                     |
-| - Auth and RBAC                 /auth/*                       |
-| - Credentials                   /api/v1/credentials/*         |
-| - CSV import                    /api/v1/imports/costs/*       |
-| - Scanning and scheduler        /api/v1/scanning/*            |
-| - Costs, anomalies, recs        /api/v1/costs|anomalies|recs  |
-| - Forecasting and diagnostics   /api/v1/forecast*             |
-| - Deep analytics                /api/v1/analytics/*           |
-| - Resource intelligence         /api/v1/analytics/resource-intelligence |
-| - VM utilization hotspots       /api/v1/analytics/vm-utilization-hotspots |
-| - Operating review pack         /api/v1/analytics/operating-review |
-| - Decision intelligence frontier /api/v1/analytics/decision-intelligence |
-| - FinOps control tower          /api/v1/analytics/control-tower |
-| - Hybrid advisor                /api/v1/advisor/hybrid        |
-| - GenAI narratives              /api/v1/genai/*               |
-| - Provider accounts             /api/v1/provider-accounts/*   |
-| - Partner portfolio             /api/v1/partner/*             |
-| - Business mapping              /api/v1/business-mapping/*    |
-| - Virtual tags                  /api/v1/virtual-tags/*        |
-| - Rightsizing                   /api/v1/recommendations/*     |
-| - Alerts, audit, exports        /api/v1/alerts*|reports/*     |
-+-------+----------------------------------+--------------------+
-        |                                  |
-        | SQLAlchemy ORM                   | Provider and GenAI/RAG APIs
-        v                                  v
-+-----------------------------+    +--------------------------------+
-| SQLite dev / PostgreSQL prod|    | AWS, Azure, GCP, OCI           |
-|                             |    | cost and usage endpoints       |
-| Tables                      |    | OCI Generative AI Inference    |
-| - organizations             |    | default region: uk-london-1    |
-| - users, user_organizations |    +--------------------------------+
-| - credential_records        |
-| - scan_runs, cost_snapshots |
-| - provider_accounts         |
-| - provider_account_links    |
-| - provider_account_snaps    |
-| - imported_cost_records     |
-| - cost_allocation_snapshots |
-| - cost_period_summaries     |
-| - alert_events              |
-| - alert_routing_policies    |
-| - export_jobs, export_runs  |
-| - business_mapping_rules    |
-| - normalized_dimensions     |
-| - recommendation_ledger     |
-| - virtual_tag_rules         |
-| - audit_logs                |
-+-----------------------------+
-        |
-        | scoped runtime credentials (per organization)
-        v
-+--------------------------------+
-| Runtime credential store       |
-| /opt/optiora/.runtime/...      |
-| - aws/runtime.json             |
-| - azure/runtime.json           |
-| - gcp/runtime.json             |
-| - oci/runtime.json             |
-+--------------------------------+
-```
+![OptiOra application and data flows](docs/architecture/optiora-architecture.png)
+
+[Editable two-page draw.io](docs/architecture/optiora.drawio) · [Application page](docs/architecture/optiora-architecture.drawio)
+
+The default Ansible environment stores SQLite on the VM. A separately supplied `DATABASE_URL` can point to PostgreSQL. No PostgreSQL service is created by this Terraform baseline.
+
+## Infrastructure Topology
+
+![OptiOra infrastructure and declared connections](docs/architecture/optiora-infrastructure.png)
+
+[Editable infrastructure page](docs/architecture/optiora-infrastructure.drawio)
+
+The VCN and subnet CIDRs shown are Terraform defaults, not a claim about an existing deployment. Compute is disabled by default. When compute is enabled, the extra data volume is enabled by default and can be disabled separately. Resource Scheduler is optional.
+
 
 Ingress control is enforced primarily at OCI security list level (`laptop_cidr`,
 the existing Terraform variable for the operator source CIDR, and optional
@@ -105,7 +27,7 @@ mode is enabled.
 
 ## Textual Diagram - Final Architecture
 
-OptiOra uses a Next.js dashboard as the user-facing control plane and a FastAPI backend as the system of record for FinOps analytics, forecasting, alerts, imports, and advisory flows. The backend stores normalized operational data in SQLite for local development or PostgreSQL for production. Runtime cost data enters the platform from live cloud-provider APIs or from imported CSV billing files. Deterministic analytics are computed first and remain authoritative for cost, savings, risk, and forecast math. OCI Generative AI is then used as a narrative and prioritization layer on top of those deterministic outputs, not as the source of truth for numbers.
+OptiOra uses a Next.js dashboard as the user-facing control plane and a FastAPI backend as the system of record for FinOps analytics, forecasting, alerts, imports, and advisory flows. The backend stores normalized operational data in SQLite on the VM by default, or in a separately configured PostgreSQL database. Runtime cost data enters the platform from live cloud-provider APIs or from imported CSV billing files. Deterministic analytics are computed first and remain authoritative for cost, savings, risk, and forecast math. OCI Generative AI is then used as a narrative and prioritization layer on top of those deterministic outputs, not as the source of truth for numbers.
 
 ## Dashboard Response Cache
 
@@ -136,7 +58,7 @@ background warmer, every 5 minutes
 refresh active cached keys through the same ASGI app with force_refresh=true
 ```
 
-The cache is process-local and bounded. It is intentionally used only for
+The cache is process-local and bounded. Authenticated mode bypasses it to validate current user and organization permissions on every request. In public workspace mode it is used only for
 dashboard JSON `GET /api/v1/*` responses. Health/info endpoints, export/download
 routes, scan-progress polling, and live rightsizing requests are excluded. Cached
 responses are still real responses from provider APIs, stored snapshots, or
@@ -908,13 +830,13 @@ small profile
 
 medium profile
   operator workstation -> deploy-oci.sh full
-        -> Terraform OCI baseline + single VM + managed PostgreSQL
+        -> Terraform OCI baseline + single VM + external PostgreSQL
         -> FastAPI + Next.js + PostgreSQL
         -> direct ingress or nginx/TLS front door
 
 enterprise profile
   operator workstation -> deploy-oci.sh full + policy hardening
-        -> Terraform OCI baseline + single VM + managed PostgreSQL + scheduler
+        -> Terraform OCI baseline + single VM + external PostgreSQL + scheduler
         -> strict ingress CIDRs, optional web-only exposure, auth/RBAC enabled
         -> FastAPI + Next.js + PostgreSQL + GenAI narrative overlays
 ```
@@ -1111,3 +1033,26 @@ Latest May 11, 2026 verification also covered:
 ## Contact / Pilot
 
 Leandro Michelino - ACE : chord.sighted0m@icloud.com - get in touch to more details or features or if you are interested to run a Pilot
+
+## Editable Diagram Sources and Connection Review
+
+The two architecture views use Oracle's OCI Architecture Diagram Toolkit v24.2. AWS, Azure, GCP and application components use labelled boxes; no provider service is represented by an unrelated icon. The editable [two-page document](docs/architecture/optiora.drawio), individual page files, and PNGs are generated together by `scripts/generate_architecture_diagram.py`.
+
+Regenerate with `python3 scripts/generate_architecture_diagram.py --skill-dir /path/to/oci-architecture-diagrams`. The Oracle toolkit and draw.io desktop CLI are authoring prerequisites. The exported files can be viewed independently. Generation rejects layout warnings, duplicate cell IDs, broken connector references, and missing coverage for declared Terraform resources.
+
+| Connection | Source evidence | Meaning |
+|---|---|---|
+| Browser to nginx; nginx to dashboard/API | `ansible/roles/optiora_app/templates/nginx-optiora.conf.j2` | Browser ingress and path routing. TLS requires an enabled domain/certificate configuration. |
+| Dashboard to FastAPI | `dashboard/lib/ai-service.ts`, `dashboard/lib/api.ts` | REST requests; the chat route forwards credentials and verifies active organization access when auth is enabled. |
+| Dashboard and backend to GenAI | `dashboard/lib/ai-service.ts`, `optiora_backend/tools/genai_advisor.py` | Two distinct signed inference paths. |
+| Backend to persistence and RAG | `optiora_backend/orm_models.py`, `optiora_backend/tools/finops_rag.py` | SQLAlchemy data access and local CSV-backed retrieval. |
+| Backend to each external cloud | `optiora_backend/tools/aws_costs.py`, `azure_costs.py`, `gcp_costs.py` | Separate provider SDK requests over HTTPS, not private intercloud circuits. |
+| Backend to OCI APIs and cost reports | `optiora_backend/tools/oci_costs.py`, `optiora_backend/oci_cost_reports.py` | Usage/inventory/recommendation collection and reads from Oracle-managed reports. |
+| Backend to archive bucket | `optiora_backend/retention.py` | Optional archive upload and historical read; this is separate from the Oracle-managed reports bucket. |
+| Subnet to route table and security list | `terraform/main.tf` | Resource associations, shown as plain lines. |
+| Route table to Internet Gateway | `terraform/main.tf` | Configured egress route intent; the gateway is outside the subnet. |
+| VM to VNIC and optional data volume | `terraform/compute.tf` | VNIC ownership and optional paravirtualized volume attachment. |
+| Bucket to lifecycle policy | `terraform/main.tf` | Archive object deletion after 365 days. |
+| Optional schedules to VM; IAM policy to schedules | `terraform/resource_scheduler.tf` | START/STOP control and authorization of the schedule principals. |
+
+The [machine-readable source coverage](docs/architecture/source-coverage.json) records all 13 declared Terraform resources and all 23 drawn connections. The two schedule declarations share one labelled component; volume attachment is represented by its connector. Region and CIDR labels describe the source defaults. Existing resources, provider credentials, GenAI model access, DNS and certificates are external prerequisites rather than resources created by this baseline.

@@ -46,16 +46,25 @@ def load_normalized_csv_upload(filename: str, raw: bytes) -> tuple[list[str], li
     except UnicodeDecodeError as exc:
         raise CsvImportError(400, "CSV upload must be UTF-8 encoded.") from exc
 
-    reader = csv.DictReader(io.StringIO(content))
-    if not reader.fieldnames:
-        raise CsvImportError(
-            400,
-            "CSV header row is missing. Expected columns include provider and cost_usd.",
-        )
+    try:
+        reader = csv.DictReader(io.StringIO(content), strict=True)
+        if not reader.fieldnames:
+            raise CsvImportError(
+                400,
+                "CSV header row is missing. Expected columns include provider and cost_usd.",
+            )
 
-    headers = [str(name or "").strip().lower() for name in reader.fieldnames]
-    reader.fieldnames = headers
-    rows = [normalize_csv_row(row) for row in reader]
+        headers = [str(name or "").strip().lower() for name in reader.fieldnames]
+        if any(not name for name in headers) or len(set(headers)) != len(headers):
+            raise CsvImportError(400, "CSV headers must be non-empty and unique.")
+        reader.fieldnames = headers
+        rows = []
+        for row in reader:
+            if None in row:
+                raise CsvImportError(400, f"Too many fields at CSV line {reader.line_num}.")
+            rows.append(normalize_csv_row(row))
+    except csv.Error as exc:
+        raise CsvImportError(400, f"Malformed CSV: {exc}") from exc
     return headers, rows
 
 

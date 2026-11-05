@@ -3,11 +3,13 @@
 **Multi-cloud FinOps control plane for real cloud cost telemetry, deterministic optimization math, and OCI GenAI-assisted advisory workflows.**
 
 Current release: `0.9.3` advisor grounding, authenticated Advisor Conversation telemetry, decision-grade recommendation timeout alignment, exact provider console deep links, backend namespace cleanup, dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
-Current documentation baseline: May 11, 2026.
+Current documentation baseline: November 5, 2026. Historical deployment evidence retains its original date.
 
 > **A quick, honest note:** OptiOra is a personal project that I am actively building and refining. It is not a commercial product today, and some live-provider workflows still depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not available in every test environment. If you see potential here and are interested in running a pilot, validating it with real cloud data, or exploring how this could become a commercial product, please get in touch.
 
-![OptiOra animated dashboard](dashboard/public/optiora-animated.svg)
+![OptiOra application and multicloud data flows](docs/architecture/optiora-architecture.png)
+
+[Download the editable draw.io diagram](docs/architecture/optiora.drawio) · [Infrastructure diagram](docs/architecture/optiora-infrastructure.png) · [Animated dashboard preview](dashboard/public/optiora-animated.svg)
 
 ## Why OptiOra
 
@@ -37,38 +39,9 @@ OptiOra helps FinOps, platform, and cloud operations teams turn cloud billing an
 
 ## Architecture
 
-```text
-Users / Operators
-        |
-        | browser
-        v
-+-------------------------------------------------------------+
-| Next.js Dashboard                                           |
-| - FinOps cockpit, Cost Advisor, inventory, Kubernetes       |
-| - Forecasting, scorecards, recommendations, operations      |
-| - Refresh controls can bypass backend response cache        |
-| - /api/ai/chat route for OCI GenAI advisor conversations    |
-+----------------------------+--------------------------------+
-                             |
-                             | REST /api/v1/*
-                             v
-+-------------------------------------------------------------+
-| FastAPI Backend                                              |
-| - Costs, scans, imports, forecasts, anomalies, exports       |
-| - Rightsizing, recommendations, decision intelligence        |
-| - Hybrid advisor contract: deterministic data + narrative    |
-| - 5-minute JSON response cache + active-entry warmer         |
-+-------------+----------------------+------------------------+
-              |                      |
-              | SQLAlchemy           | provider / GenAI/RAG APIs
-              v                      v
-+-------------------------+    +--------------------------------+
-| SQLite or PostgreSQL    |    | AWS, Azure, GCP, OCI            |
-| - snapshots             |    | cost, usage, recommendations    |
-| - imports               |    | OCI Generative AI Inference     |
-| - alerts/audit/exports  |    | default region: uk-london-1     |
-+-------------------------+    +--------------------------------+
-```
+The diagram above separates browser ingress, dashboard chat inference, backend analytics, organization-scoped persistence, local RAG retrieval, cloud-provider APIs, and optional cost archival. Each cloud API call has its own connector. The editable draw.io file contains application and infrastructure pages.
+
+The default deployment uses SQLite on the application VM. PostgreSQL can be configured through `DATABASE_URL`; this Terraform baseline does not provision a PostgreSQL server.
 
 Deployment flow:
 
