@@ -1,8 +1,14 @@
 # End-to-End Walkthrough Notes
 
+## Latest Local Regression Run (November 5, 2026)
+
+All 6 local Playwright scenarios passed, including navigation across the 20 main screens, CSV fallback/report links, navigation search, Kubernetes evidence and the two advisor conversation scenarios. The 8 frontend unit tests also passed, including invalid chat inputs, timeout cleanup and active-organization authorization.
+
+This was a local automated regression run using isolated test state. It did not rerun deployed OCI acceptance or validate live AWS/Azure/GCP/GenAI permissions. The older human/live walkthrough below remains a dated record. See [TESTING.md](TESTING.md) for the complete current evidence.
+
 Leandro Michelino - ACE : chord.sighted0m@icloud.com - get in touch to more details or features or if you are interested to run a Pilot
 
-Current walkthrough date: May 11, 2026.
+Historical human/live walkthrough date: May 11, 2026.
 
 ## Human Operator Path
 

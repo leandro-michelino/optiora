@@ -1,6 +1,30 @@
 # OptiOra Deployment Guide (OCI)
 
-Current as of May 11, 2026.
+## Current Configuration and Plan-Only Checks
+
+- Keep ENABLE_AUTH and NEXT_PUBLIC_ENABLE_AUTH aligned. With authentication enabled, chat verifies an active organization session before collecting inference context.
+- Ansible preserves explicit false flags for live-data requirements, OCI runtime checks, cost-report ingestion, scanning and API caching. Production defaults continue to require OCI runtime; overrides are for controlled validation/configuration.
+- The generated COOKIE_SECURE value is true when TLS is enabled with a configured domain; plain HTTP uses false. Set COOKIE_SECURE=true for a manually configured HTTPS deployment. COOKIE_SAMESITE defaults to lax.
+- Chat accepts a non-empty message of up to 20,000 characters and up to 50 user/assistant history entries, each up to 20,000 characters. Invalid payloads return HTTP 400.
+- CSV imports have a 10 MiB maximum, reject duplicate/empty headers and malformed rows, and require finite non-negative costs.
+
+For a plan-only check, configure real values in the ignored terraform/terraform.tfvars file and run:
+
+```bash
+terraform -chdir=terraform init -input=false
+terraform -chdir=terraform validate
+terraform -chdir=terraform plan -input=false -out=tfplan
+```
+
+Use the existing deployment state/backend for a drift comparison. A fresh checkout without state describes a new deployment and can propose resources that already exist. A plan does not establish deployed connectivity, capacity or application health. The November 5 London plan results and documentation-only ingress CIDR are recorded in [TESTING.md](TESTING.md); do not reuse that test CIDR for operator access.
+
+[Application diagram](docs/architecture/optiora-architecture.png) · [Infrastructure diagram](docs/architecture/optiora-infrastructure.png) · [Editable draw.io](docs/architecture/optiora.drawio)
+
+Keep credentials, private keys, local environment files, inventories, state and saved plans outside Git. Commit only sanitized examples and validation summaries.
+
+The evidence-pack helper records the supplied commands and their output. Treat raw packs as private: pass secrets through protected environment/files rather than inline command strings, and inspect/redact logs before sharing. Git ignore rules are a guardrail, not a secret sanitizer.
+
+Runbook updated November 5, 2026. Historical deployment observations retain their original dates.
 
 This repository deploys two services onto one OCI compute instance:
 
@@ -410,7 +434,7 @@ OCI_USER_OCID=ocid1.user.oc1..<user_ocid>
 OCI_FINGERPRINT=<api_key_fingerprint>
 OCI_PRIVATE_KEY_PATH=~/.oci/oci_api_key.pem
 # Optional alternative:
-# OCI_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
+# Provide key material through a protected OCI_PRIVATE_KEY_PATH file.
 OCI_REGION=<oci_region>
 OCI_CONFIG_FILE=
 ENVIRONMENT=production

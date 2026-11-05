@@ -1,5 +1,11 @@
 # OptiOra Roadmap
 
+## Maintenance Baseline (November 5, 2026)
+
+Completed: input/auth/chat hardening, false-preserving deployment flags, TLS-aware cookies, combined Resource Scheduler target validation, and source-checked draw.io/PNG architecture views. Validation passed 341 backend tests, 8 frontend unit tests, 6 local browser scenarios and London plan-only scenarios. Full evidence is in [TESTING.md](TESTING.md).
+
+Pending deployment acceptance: restore the correct state/backend, replace the documentation-only plan ingress source, review an environment-specific plan, and perform a separately authorized deployment plus live-provider checks. Existing May 2026 live results remain historical evidence, not current production health.
+
 ## Implemented
 
 - FastAPI backend with credential metadata storage and scan-state tracking
@@ -12,7 +18,7 @@
 - Terraform OCI infrastructure baseline for network, archive bucket, compute, data volume, and scheduler resources
 - Ansible host provisioning for runtime packages, environment, systemd services, dashboard build, and health checks
 - dashboard credential form with inline per-provider setup guidance (what credentials to obtain and where)
-- animated SVG dashboard preview in README
+- PNG architecture in README, with editable draw.io and a linked animated SVG dashboard preview
 - split credential form into separate "Test Connection" and "Save Credentials" steps
 - secure session flow with HTTP-only auth cookies and refresh rotation
 - active organization switcher in dashboard with `/auth/organization/select`

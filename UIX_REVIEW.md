@@ -1,8 +1,14 @@
 # OptiOra UIX Review
 
+## Local Regression Update (November 5, 2026)
+
+The automated 20-screen navigation walkthrough and all 6 local browser scenarios passed. Advisor request validation now returns a client error for invalid inputs, and authenticated chat checks active organization access before inference. The root README shows the application PNG and links the editable draw.io/infrastructure views.
+
+The UIX analysis below is the original May 2026 review. No new production usability study or live-provider acceptance is claimed. Current test evidence is in [TESTING.md](TESTING.md).
+
 Leandro Michelino - ACE : chord.sighted0m@icloud.com - get in touch to more details or features or if you are interested to run a Pilot
 
-Current review date: May 11, 2026.
+Original UIX review date: May 11, 2026.
 
 ## Review Lens
 

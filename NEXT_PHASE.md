@@ -1,8 +1,14 @@
 # Next Phase Checklist
 
+## Current Verification Position (November 5, 2026)
+
+Repository hardening and diagram updates are complete in the maintenance branch history: 341 backend tests, 8 frontend unit tests and 6 local browser scenarios passed. London plan-only checks covered both default and all-optional infrastructure configurations. The root README now embeds the PNG and links the native draw.io views.
+
+The next deployment gate is to recover the target environment's state/backend, set a real allowed source CIDR, review the resulting plan, then perform a separately authorized deployment and deployed acceptance run. The current review did not apply infrastructure or refresh the older live-provider evidence. Release metadata remains 0.9.3; the maintenance changes are recorded as Unreleased in [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
 This file defines the path from the current `0.9.3` advisor-grounding and backend-namespace cleanup release to the `1.0` go-live gate, then the immediate post-`1.0` focus.
 
-## Current Go-Live Position (May 2026)
+## Historical Go-Live Position (May 2026)
 
 Release `0.9.0` is the packaged readiness baseline for core FinOps workflows, analytics depth, rightsizing, virtual tags, exports, and hybrid advisor behavior. Release `0.9.3` keeps that baseline and adds dashboard wiring, friendly error-state, cleanup, advisor UIX, Advisor Conversation English/cross-cloud grounding, exact provider console deep links, live Rightsizing scan timeout correction, realized savings scorecards, real OCI GenAI + RAG wiring, backend namespace cleanup, Terraform + Ansible deployment wiring, and documentation hygiene. Release `1.0` is now gated less on basic live evidence and more on repeatability, evidence packaging, and customer-like workflow proof.
 

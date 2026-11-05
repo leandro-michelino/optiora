@@ -1,5 +1,31 @@
 # Release Notes
 
+## Unreleased - Input, Deployment and Architecture Hardening (November 5, 2026)
+
+### Fixed
+
+- Reject malformed or ambiguous CSV files and non-finite costs; bound upload reads and neutralize text formulas in CSV exports.
+- Require JWT expiration, issued-at and subject claims; reject bcrypt passwords over 72 UTF-8 bytes during login and ignore untrusted forwarded headers when forming rate-limit identities.
+- Validate chat messages/history, clear response timers and verify an active organization session before inference when authentication is enabled.
+- Preserve explicit false deployment flags, including string boolean values, and derive Secure cookies from the configured TLS front door.
+- Enforce the Resource Scheduler limit across explicit IDs and the Terraform-managed VM.
+- Align package license metadata with the existing Apache-2.0 LICENSE and keep Black's target compatible with the declared tool version.
+
+### Documentation and Diagrams
+
+- Added two editable draw.io views, PNGs and a generator/manifest covering all 13 Terraform resource declarations and 23 connections.
+- Embedded the application PNG in the root README and linked the editable sources and infrastructure view.
+- Corrected persistence documentation: SQLite on the VM is the Ansible default; PostgreSQL requires a separate DATABASE_URL and is not provisioned by this baseline.
+- Synchronized deployment guides, configuration comments, test evidence and release planning. Historical price and deployed-runtime observations retain their original dates.
+- Expanded ignore rules for local cloud configuration, private keys, environment overrides, tfvars, state and saved plans; documented that raw evidence packs require a secret review before sharing.
+
+### Validation
+
+- Complete backend suite: 341 passed. Frontend unit suite: 8 passed. Local Playwright suite: 6 passed, including the 20-screen walkthrough.
+- Production build, TypeScript, ESLint, Python critical-name checks, Terraform formatting/validation and Ansible syntax passed.
+- London plan-only checks: 7 creates for defaults; 13 creates with compute, volume and scheduling enabled; no updates or destroys. The 201-target negative scenario was rejected.
+- No Terraform apply or deployed runtime acceptance occurred. There was no previous state in the recovered checkout; these are new-deployment plans. See [TESTING.md](TESTING.md) for scope and input limitations.
+
 ## Unreleased - Documentation Maintenance (May 11, 2026)
 
 ### Changed

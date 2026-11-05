@@ -1,5 +1,17 @@
 # Terraform OCI Baseline
 
+## Current Plan and Diagram Notes
+
+The November 5, 2026 plan-only checks used London and the explicitly confirmed compartment. Defaults proposed 7 creates; enabling compute, its data volume and Resource Scheduler proposed 13 creates. Neither plan changed or destroyed resources, and no apply ran. The checkout had no prior deployment state, so these are not drift checks. See [TESTING.md](../TESTING.md) for the input scope and documentation-only ingress CIDR.
+
+The schedule target limit includes distinct explicit resource IDs plus the managed compute target. A plan with 200 explicit targets and compute enabled is rejected before apply.
+
+Compute and scheduling default to disabled. extra_block_volume_enabled defaults to true, but the volume and attachment are only created when compute is enabled as well. Recover the correct state/backend before planning an update to an existing deployment.
+
+[Infrastructure PNG](../docs/architecture/optiora-infrastructure.png) · [Editable two-page draw.io](../docs/architecture/optiora.drawio) · [Source coverage manifest](../docs/architecture/source-coverage.json)
+
+Keep tfvars, state, saved plans, credentials and key material out of Git. Version only sanitized examples.
+
 This folder contains the OCI infrastructure baseline used by OptiOra: network, security list, Object Storage archive bucket, Terraform-managed compute, optional data volume attachment, and optional Resource Scheduler resources. Ansible owns host setup and service configuration after Terraform returns the instance outputs.
 
 This module currently does not provision OCI databases. If you extend it with OCI managed database resources, use BYOL as the default license model where OCI offers that choice.

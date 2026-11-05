@@ -1,5 +1,15 @@
 # OptiOra Ansible Provisioning
 
+## November 2026 Configuration Notes
+
+Boolean template inputs preserve both false and the string "false". This includes optiora_require_live_provider_data, optiora_oci_runtime_required, optiora_oci_cost_reports_enabled, optiora_enable_scan_scheduler, optiora_enable_api_response_cache, and the systemd optiora_enforce_oci_runtime preflight. Retain the OCI runtime guards in production.
+
+The environment template derives COOKIE_SECURE from optiora_enable_tls plus a non-empty optiora_domain. Keep frontend/backend auth flags aligned; chat checks the active organization when auth is enabled. The default database remains SQLite under optiora_app_dir. PostgreSQL must be supplied separately through optiora_database_url.
+
+Template regression tests are in tests/test_input_and_deployment_hardening.py; setup.sh installs Jinja2 with the development tools. See [deployment guidance](../DEPLOYMENT.md), [current validation evidence](../TESTING.md), and the [editable topology](../docs/architecture/optiora.drawio).
+
+Local inventories, generated environment files and credential material must remain outside commits.
+
 Terraform owns OCI infrastructure primitives: VCN, subnet, route table, internet gateway, security list, Object Storage archive bucket, compute instance, optional data volume attachment, and optional Resource Scheduler resources. Ansible owns host provisioning and application runtime configuration.
 
 Primary OCI region defaults to `uk-london-1` so the deployed stack can lean on OCI GenAI by default.

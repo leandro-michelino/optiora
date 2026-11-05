@@ -1,8 +1,10 @@
 # Cost Estimate (Monthly, Full Capability)
 
-Current as of **May 11, 2026**.
+Pricing/planning snapshot dated **May 11, 2026**. Prices were not refreshed during the November 5, 2026 engineering review.
 
-This estimate reflects the current OptiOra architecture and behavior:
+The November review produced source-checked [architecture diagrams](docs/architecture/optiora.drawio) and plan-only checks, not an updated quotation or a deployed-resource bill. The default database is SQLite on the VM; PostgreSQL in the larger planning profiles is a separately provisioned option.
+
+This historical estimate reflects the following OptiOra architecture and behavior:
 - OCI-hosted application plane (API + Dashboard).
 - Multi-cloud provider connectivity (AWS, Azure, GCP, OCI).
 - Billing and cost reads prefer live provider APIs, then stored live scan snapshots, then optional CSV imports for manual backfill or reconciliation.

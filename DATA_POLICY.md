@@ -1,5 +1,13 @@
 # OptiOra Data Policy
 
+## Input and Evidence Integrity (November 2026)
+
+CSV uploads are bounded at 10 MiB, reject ambiguous headers and malformed quoting/rows, and reject NaN/infinite or negative cost values. CSV exports neutralize formula-like text without changing numeric values. Authentication and organization scoping apply to chat inference when enabled; malformed chat requests are rejected rather than passed to the provider.
+
+Credentials, private keys, local environment files, deployment state and saved plans must not enter version control or published evidence bundles. Architecture manifests contain resource declarations and relationship labels rather than credential material. Plan summaries and tests do not establish deployed runtime or provider health; keep historical observations dated.
+
+Raw evidence packs record command inputs and output and require a secret review before publication. Their default artifacts directory is ignored. Do not embed credentials in command strings or assume the evidence helper redacts arbitrary provider responses.
+
 ## Real Data Only
 
 OptiOra uses only real cost and utilization inputs.

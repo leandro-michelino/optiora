@@ -22,6 +22,22 @@ htmlcov/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+
+# Credential material and local cloud/runtime configuration
+.ssh/
+.oci/
+.aws/
+.azure/
+.runtime/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+*-credentials.json
 
 # Logs
 logs/
@@ -65,6 +81,13 @@ terraform/terraform.tfvars
 terraform/tfplan
 terraform/crash.log
 terraform/crash.*.log
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+.terraform.tfstate.lock.info
 
 # Local scratch / generated artifacts
 tmp/

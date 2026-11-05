@@ -5,6 +5,8 @@
 Current release: `0.9.3` advisor grounding, authenticated Advisor Conversation telemetry, decision-grade recommendation timeout alignment, exact provider console deep links, backend namespace cleanup, dashboard wiring, advisor polish, live rightsizing scan fix, realized savings scorecards, FinOps Control Tower, Inventory Explorer, 5-minute API response cache, UIX review, Terraform + Ansible OCI deployment wiring, and repository hygiene.
 Current documentation baseline: November 5, 2026. Historical deployment evidence retains its original date.
 
+Latest maintenance adds CSV/auth/chat hardening, deployment flag and cookie corrections, Resource Scheduler limits, and source-checked editable architecture diagrams. See [RELEASE_NOTES.md](RELEASE_NOTES.md) and [TESTING.md](TESTING.md) for changes and validation scope.
+
 > **A quick, honest note:** OptiOra is a personal project that I am actively building and refining. It is not a commercial product today, and some live-provider workflows still depend on cloud account details, permissions, billing exports, utilization telemetry, and recommendation APIs that are not available in every test environment. If you see potential here and are interested in running a pilot, validating it with real cloud data, or exploring how this could become a commercial product, please get in touch.
 
 ![OptiOra application and multicloud data flows](docs/architecture/optiora-architecture.png)
@@ -144,6 +146,7 @@ If no real source exists, the application surfaces an explicit empty or unavaila
 |-- ansible/                 Oracle Linux host provisioning and service templates
 |-- tests/                   Backend, smoke, live-data, and deployment checks
 |-- scripts/                 Local bootstrap, cleanup, evidence, and wiring helpers
+|-- docs/architecture/      Editable draw.io, PNGs, and source coverage
 |-- ARCHITECTURE.md          Runtime topology and pipeline diagrams
 |-- DEPLOYMENT.md            End-to-end OCI deployment guide
 |-- COST_ESTIMATE.md         Monthly planning ranges and cost drivers
@@ -334,7 +337,7 @@ estimator before purchase.
 
 | Document | Purpose |
 |---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Runtime topology, APIs, analytics pipelines, ASCII diagrams |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Runtime topology, APIs, analytics pipelines, draw.io/PNG architecture and source coverage |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | OCI deployment, operations, networking, troubleshooting |
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | Release history, fixes, validation commands |
 | [TESTING.md](TESTING.md) | Test strategy and coverage map |
